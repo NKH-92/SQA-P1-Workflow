@@ -394,15 +394,19 @@ using (
   )
 );
 
-create policy "projects_write#!/bin/sh
+create policy "projects_write_leader"
+on public.projects for all
+to authenticated
+using (public.is_leader())
+with check (public.is_leader());
 
-# An example hook script to update a checked-out tree on a git push.
-#
-# This hook is invoked by git-receive-pack(1) when it reacts to git
-# push and updates reference(s) in its repository, and when the push
-# tries to update the branch that is currently checked out and the
-# receive.denyCurrentBranch configuration variable is set to
-# updateInstead.
-#
-# By default, such a push is refused if the working tree and the index
-# of the r
+create policy "project_assignments_select_self_or_leader"
+on public.project_assignments for select
+to authenticated
+using (user_id = auth.uid() or public.is_leader());
+
+create policy "project_assignments_write_leader"
+on public.project_assignments for all
+to authenticated
+using (public.is_leader())
+with check (public.is_leader());

@@ -8,6 +8,8 @@ export interface Profile {
   name: string
   role: Role
   created_at?: string
+  updated_at?: string
+  must_change_password?: boolean
 }
 
 export interface AllowedUser {

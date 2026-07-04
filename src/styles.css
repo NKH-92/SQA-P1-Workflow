@@ -525,6 +525,7 @@ a:hover {
 }
 
 .section > :not(header) {
+  min-width: 0;
   padding: 20px;
 }
 
@@ -862,24 +863,23 @@ a:hover {
 
 .member-grid {
   display: grid;
-  grid-auto-columns: minmax(280px, 320px);
-  grid-auto-flow: column;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 14px;
-  margin: 0 -4px;
-  overflow-x: auto;
-  padding: 0 4px 8px;
-  scroll-snap-type: x proximity;
+  min-width: 0;
+  max-width: 100%;
+  overflow: visible;
 }
 
 .member-tile {
   display: grid;
   align-content: start;
   gap: 14px;
+  min-width: 0;
+  width: 100%;
   border: 1px solid var(--gray-200);
   border-radius: var(--radius-md);
   background: #fff;
   padding: 16px;
-  scroll-snap-align: start;
   color: inherit;
   text-align: left;
   transition: border-color var(--dur-normal) ease, box-shadow var(--dur-normal) ease;

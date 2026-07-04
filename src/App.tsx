@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  Bell,
   BriefcaseBusiness,
   CalendarClock,
   Check,
@@ -9,7 +10,9 @@ import {
   ListFilter,
   LogOut,
   Menu,
+  MessageSquare,
   Package,
+  Pencil,
   Plus,
   RefreshCw,
   Save,
@@ -24,8 +27,10 @@ import {
 import { createPreviewData, previewLeader as demoLeader, previewMember as demoMember } from './demoData'
 import { hasSupabaseConfig, supabase } from './lib/supabase'
 import { formatDate, makeId, projectStatusLabels, reviewStatusLabels, roleLabels } from './lib/format'
-import { canManageTeamData } from './domain/permissions'
+import { canAssignProjectTo, canManageTeamData } from './domain/permissions'
 import type {
+  ActivityEntityType,
+  ActivityLog,
   AllowedUser,
   AppData,
   Duty,
@@ -43,6 +48,9 @@ import type {
 } from './types'
 
 type TabId = 'dashboard' | 'reviews' | 'projects' | 'admin' | 'operations'
+type ReviewStatusFilter = 'all' | ReviewStatus
+type AdminDeleteTable = 'allowed_users' | 'products' | 'duties' | 'product_assignments' | 'duty_assignments'
+type DeadlineMode = 'date' | 'none'
 
 const PASSWORD_MIN_LENGTH = 8
 const TEMP_PASSWORD_MIN_LENGTH = 4
@@ -58,6 +66,15 @@ const emptyData: AppData = {
   projects: [],
   projectAssignments: [],
   profileNotes: [],
+  activityLogs: [],
+}
+
+const deleteWarnings: Record<AdminDeleteTable, string> = {
+  allowed_users: '초대 목록에서 제거합니다.',
+  products: '제품과 연결된 담당제품 배정이 함께 삭제될 수 있습니다.',
+  duties: '업무와 연결된 담당업무 배정이 함께 삭제될 수 있습니다.',
+  product_assignments: '선택한 담당제품 배정만 삭제합니다.',
+  duty_assignments: '선택한 담당업무 배정만 삭제합니다.',
 }
 
 function csvCell(value: unknown) {
@@ -95,6 +112,93 @@ function downloadCsv(filename: string, rows: Array<Record<string, unknown>>) {
   URL.revokeObjectURL(url)
 }
 
+const DAY_MS = 86400000
+
+function dateOnlyTime(value?: string | null) {
+  if (!value) return null
+  const time = Date.parse(`${value.slice(0, 10)}T00:00:00`)
+  return Number.isNaN(time) ? null : time
+}
+
+function daysUntil(value?: string | null) {
+  const dueTime = dateOnlyTime(value)
+  if (dueTime == null) return null
+  const today = new Date()
+  const todayTime = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+  return Math.ceil((dueTime - todayTime) / DAY_MS)
+}
+
+function ageInDays(value?: string | null) {
+  if (!value) return 0
+  const time = Date.parse(value)
+  if (Number.isNaN(time)) return 0
+  return Math.max(0, Math.floor((Date.now() - time) / DAY_MS))
+}
+
+function dueDateLabel(value?: string | null) {
+  const days = daysUntil(value)
+  if (!value || days == null) return '기한 없음'
+  if (days < 0) return `기한 ${Math.abs(days)}일 초과`
+  if (days === 0) return '오늘까지'
+  if (days === 1) return '내일까지'
+  return `${days}일 남음`
+}
+
+function dueDateStatus(value?: string | null) {
+  const days = daysUntil(value)
+  if (!value || days == null) return 'no_due'
+  if (days < 0) return 'overdue'
+  if (days <= 1) return 'due_now'
+  if (days <= 7) return 'due_soon'
+  return 'scheduled'
+}
+
+function reviewPriorityScore(request: ReviewRequest) {
+  const days = daysUntil(request.due_date)
+  const statusWeight = request.status === 'pending' ? 0 : 2000
+  const dueWeight = days == null ? 1000 + ageInDays(request.created_at) : days
+  return statusWeight + dueWeight
+}
+
+async function recordActivityLog(
+  setData: React.Dispatch<React.SetStateAction<AppData>>,
+  input: {
+    actor: Profile
+    targetUserId?: string | null
+    entityType: ActivityEntityType
+    entityId?: string | null
+    action: string
+    summary: string
+    metadata?: Record<string, unknown>
+  },
+) {
+  const row = {
+    actor_id: input.actor.id,
+    target_user_id: input.targetUserId ?? null,
+    entity_type: input.entityType,
+    entity_id: input.entityId ?? null,
+    action: input.action,
+    summary: input.summary,
+    metadata: input.metadata ?? {},
+  }
+
+  if (supabase) {
+    const { error } = await supabase.from('activity_logs').insert(row)
+    if (error) throw error
+    return
+  }
+
+  const item: ActivityLog = {
+    id: makeId('activity'),
+    ...row,
+    created_at: new Date().toISOString(),
+  }
+  setData((current) => ({
+    ...current,
+    activityLogs: [item, ...current.activityLogs].slice(0, 40),
+  }))
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<TabId>('dashboard')
   const [profile, setProfile] = useState<Profile | null>(hasSupabaseConfig ? null : demoLeader)
@@ -129,6 +233,7 @@ function App() {
           projectsResult,
           projectAssignmentsResult,
           profileNotesResult,
+          activityLogsResult,
         ] = await Promise.all([
           supabase.from('profiles').select('*').order('name'),
           supabase.from('allowed_users').select('*').order('created_at', { ascending: false }),
@@ -152,6 +257,7 @@ function App() {
             .select('*, profiles(name,email), projects(name,description,deadline,status)')
             .order('created_at', { ascending: false }),
           supabase.from('profile_notes').select('*').order('created_at', { ascending: false }),
+          supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(40),
         ])
 
         const results = [
@@ -165,6 +271,7 @@ function App() {
           projectsResult,
           projectAssignmentsResult,
           profileNotesResult,
+          activityLogsResult,
         ]
         const failed = results.find((result) => result.error)
         if (failed?.error) throw failed.error
@@ -180,6 +287,7 @@ function App() {
           projects: (projectsResult.data ?? []) as Project[],
           projectAssignments: (projectAssignmentsResult.data ?? []) as ProjectAssignment[],
           profileNotes: (profileNotesResult.data ?? []) as AppData['profileNotes'],
+          activityLogs: (activityLogsResult.data ?? []) as ActivityLog[],
         })
       } catch (error) {
         setMessage(error instanceof Error ? error.message : '데이터를 불러오지 못했습니다.')
@@ -672,9 +780,93 @@ function Dashboard({
     const deadline = assignment.projects?.deadline ?? data.projects.find((project) => project.id === assignment.project_id)?.deadline
     const status = assignment.projects?.status ?? data.projects.find((project) => project.id === assignment.project_id)?.status
     if (!deadline || status === 'done') return false
-    const daysUntil = Math.ceil((Date.parse(deadline) - Date.now()) / 86400000)
-    return daysUntil >= 0 && daysUntil <= 14
+    const days = daysUntil(deadline)
+    return days != null && days >= 0 && days <= 14
   })
+  const openReviewRequests = data.reviewRequests
+    .filter((request) => request.status === 'pending' || request.status === 'in_review')
+    .sort((left, right) => reviewPriorityScore(left) - reviewPriorityScore(right))
+  const projectReminderItems = data.projectAssignments
+    .map((assignment) => {
+      const project = assignment.projects ?? data.projects.find((item) => item.id === assignment.project_id)
+      const member = assignment.profiles ?? data.profiles.find((item) => item.id === assignment.user_id)
+      const days = daysUntil(project?.deadline)
+      return { assignment, project, member, days }
+    })
+    .filter(({ project, days }) => project?.deadline && project.status !== 'done' && days != null && days <= 14)
+    .sort((left, right) => (left.days ?? 999) - (right.days ?? 999))
+  const priorityQueue = [
+    ...openReviewRequests.map((request) => ({
+      id: `review-${request.id}`,
+      title: request.title,
+      meta: `${request.profiles?.name ?? '요청자'} · ${reviewStatusLabels[request.status]} · 접수 ${ageInDays(request.created_at)}일`,
+      detail: request.due_date ? `${dueDateLabel(request.due_date)} · ${formatDate(request.due_date)}` : '기한 없음 · 오래된 요청 우선',
+      status: dueDateStatus(request.due_date),
+      targetTab: 'reviews' as TabId,
+      icon: <MessageSquare size={16} />,
+      score: reviewPriorityScore(request),
+    })),
+    ...projectReminderItems.map(({ assignment, project, member, days }) => ({
+      id: `project-${assignment.id}`,
+      title: project?.name ?? assignment.project_id,
+      meta: `${member?.name ?? assignment.user_id} · 프로젝트 마감`,
+      detail: `${dueDateLabel(project?.deadline)} · ${project?.deadline ? formatDate(project.deadline) : '마감일 없음'}`,
+      status: days != null && days < 0 ? 'overdue' : 'due_soon',
+      targetTab: 'projects' as TabId,
+      icon: <CalendarClock size={16} />,
+      score: 3000 + (days ?? 999),
+    })),
+    ...(unassignedProducts.length > 0
+      ? [
+          {
+            id: 'unassigned-products',
+            title: '미배정 제품 확인',
+            meta: `${unassignedProducts.length}개 제품`,
+            detail: '제품 담당자를 지정해야 합니다.',
+            status: 'scheduled',
+            targetTab: 'admin' as TabId,
+            icon: <Package size={16} />,
+            score: 5000,
+          },
+        ]
+      : []),
+    ...(membersWithAssignmentGaps.length > 0
+      ? [
+          {
+            id: 'assignment-gaps',
+            title: '배정 누락 파트원 확인',
+            meta: `${membersWithAssignmentGaps.length}명`,
+            detail: '제품 또는 정기 업무가 비어 있습니다.',
+            status: 'scheduled',
+            targetTab: 'admin' as TabId,
+            icon: <ListFilter size={16} />,
+            score: 5100,
+          },
+        ]
+      : []),
+  ].sort((left, right) => left.score - right.score)
+  const ownReminders = [
+    ...ownReviews
+      .filter((request) => request.status === 'pending' || request.status === 'in_review')
+      .sort((left, right) => reviewPriorityScore(left) - reviewPriorityScore(right))
+      .map((request) => ({
+        title: request.title,
+        meta: `검토요청 · ${reviewStatusLabels[request.status]}`,
+        aside: dueDateLabel(request.due_date),
+      })),
+    ...ownProjects
+      .map((assignment) => {
+        const project = assignment.projects ?? data.projects.find((item) => item.id === assignment.project_id)
+        return {
+          title: project?.name ?? assignment.project_id,
+          meta: `배정 업무 · ${project?.deadline ? formatDate(project.deadline) : '마감일 없음'}`,
+          aside: project?.deadline ? dueDateLabel(project.deadline) : undefined,
+          done: project?.status === 'done',
+        }
+      })
+      .filter((item) => !item.done && item.aside && item.aside !== '기한 없음'),
+  ]
+  const visibleActivityLogs = data.activityLogs.slice(0, 6)
 
   const teamSummaries = useMemo(
     () =>
@@ -771,6 +963,12 @@ function Dashboard({
             <Badge>메모 {ownNotes.length}</Badge>
           </div>
         </div>
+        <Section title="내 알림/리마인더" icon={<Bell size={18} />}>
+          <Rows
+            empty="확인할 검토요청이나 마감 리마인더가 없습니다."
+            rows={ownReminders.slice(0, 6)}
+          />
+        </Section>
         <div className="grid two">
           <Section title="담당제품" icon={<Package size={18} />}>
             <Rows
@@ -868,6 +1066,33 @@ function Dashboard({
             배정 누락 {membersWithAssignmentGaps.length}명
           </li>
         </ul>
+      </div>
+      <div className="grid two">
+        <Section title="우선처리 큐" icon={<Bell size={18} />}>
+          <div className="queue-list">
+            {priorityQueue.length === 0 && <p className="empty">오늘 먼저 처리할 항목이 없습니다.</p>}
+            {priorityQueue.slice(0, 8).map((item) => (
+              <button className="queue-item" key={item.id} onClick={() => setActiveTab(item.targetTab)} type="button">
+                <span className="queue-icon">{item.icon}</span>
+                <span>
+                  <strong>{item.title}</strong>
+                  <small>{item.meta}</small>
+                </span>
+                <Badge status={item.status}>{item.detail}</Badge>
+              </button>
+            ))}
+          </div>
+        </Section>
+        <Section title="최근 활동" icon={<MessageSquare size={18} />}>
+          <Rows
+            empty="아직 기록된 활동이 없습니다."
+            rows={visibleActivityLogs.map((log) => ({
+              title: log.summary,
+              meta: formatDate(log.created_at),
+              aside: log.action,
+            }))}
+          />
+        </Section>
       </div>
       <Section title="팀 대시보드" icon={<Users size={18} />}>
         <div className="section-toolbar">
@@ -1055,10 +1280,27 @@ function ReviewsPanel({
   mutate: (operation: () => Promise<void>, success: string) => Promise<void>
   setData: React.Dispatch<React.SetStateAction<AppData>>
 }) {
-  const [form, setForm] = useState({ title: '', description: '', attachment_url: '' })
+  const [form, setForm] = useState({
+    title: '',
+    description: '',
+    attachment_url: '',
+    deadlineMode: 'none' as DeadlineMode,
+    due_date: '',
+  })
   const [feedback, setFeedback] = useState<Record<string, string>>({})
-  const visibleReviewRequests =
+  const [statusFilter, setStatusFilter] = useState<ReviewStatusFilter>('all')
+  const scopedReviewRequests =
     profile.role === 'leader' ? data.reviewRequests : data.reviewRequests.filter((request) => request.requester_id === profile.id)
+  const statusCounts = scopedReviewRequests.reduce(
+    (counts, request) => ({
+      ...counts,
+      [request.status]: counts[request.status] + 1,
+    }),
+    { pending: 0, in_review: 0, approved: 0, rejected: 0 } satisfies Record<ReviewStatus, number>,
+  )
+  const visibleReviewRequests = (
+    statusFilter === 'all' ? scopedReviewRequests : scopedReviewRequests.filter((request) => request.status === statusFilter)
+  ).sort((left, right) => reviewPriorityScore(left) - reviewPriorityScore(right))
 
   const createReview = () =>
     mutate(async () => {
@@ -1066,25 +1308,40 @@ function ReviewsPanel({
       if (form.attachment_url.trim() && !attachmentUrl) {
         throw new Error('첨부 링크는 http 또는 https URL만 사용할 수 있습니다.')
       }
+      const dueDate = form.deadlineMode === 'date' ? form.due_date : null
+      if (form.deadlineMode === 'date' && !dueDate) {
+        throw new Error('검토 기한 날짜를 선택해 주세요.')
+      }
       if (supabase) {
-        const { error } = await supabase.from('review_requests').insert({
+        const { data: created, error } = await supabase.from('review_requests').insert({
           requester_id: profile.id,
           title: form.title,
           description: form.description,
           attachment_url: attachmentUrl,
+          due_date: dueDate,
           status: 'pending',
-        })
+        }).select('id').single()
         if (error) throw error
+        await recordActivityLog(setData, {
+          actor: profile,
+          entityType: 'review_request',
+          entityId: created?.id ?? null,
+          action: 'created',
+          summary: `${profile.name}님이 ${form.title} 검토를 요청했습니다.`,
+          metadata: { due_date: dueDate },
+        })
       } else {
+        const reviewId = makeId('review')
         setData((current) => ({
           ...current,
           reviewRequests: [
             {
-              id: makeId('review'),
+              id: reviewId,
               requester_id: profile.id,
               title: form.title,
               description: form.description,
               attachment_url: attachmentUrl,
+              due_date: dueDate,
               status: 'pending',
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
@@ -1094,12 +1351,21 @@ function ReviewsPanel({
             ...current.reviewRequests,
           ],
         }))
+        await recordActivityLog(setData, {
+          actor: profile,
+          entityType: 'review_request',
+          entityId: reviewId,
+          action: 'created',
+          summary: `${profile.name}님이 ${form.title} 검토를 요청했습니다.`,
+          metadata: { due_date: dueDate },
+        })
       }
-      setForm({ title: '', description: '', attachment_url: '' })
+      setForm({ title: '', description: '', attachment_url: '', deadlineMode: 'none', due_date: '' })
     }, '검토요청을 등록했습니다.')
 
   const updateStatus = (id: string, status: ReviewStatus) =>
     mutate(async () => {
+      const request = data.reviewRequests.find((item) => item.id === id)
       if (supabase) {
         const { error } = await supabase.from('review_requests').update({ status }).eq('id', id)
         if (error) throw error
@@ -1108,25 +1374,38 @@ function ReviewsPanel({
           ...current,
           reviewRequests: current.reviewRequests.map((request) =>
             request.id === id ? { ...request, status, updated_at: new Date().toISOString() } : request,
-          ),
+            ),
         }))
       }
+      await recordActivityLog(setData, {
+        actor: profile,
+        targetUserId: request?.requester_id ?? null,
+        entityType: 'review_request',
+        entityId: id,
+        action: 'status_changed',
+        summary: `${request?.title ?? '검토요청'} 상태를 ${reviewStatusLabels[status]}로 변경했습니다.`,
+        metadata: { status },
+      })
     }, '검토요청 상태를 변경했습니다.')
 
   const addFeedback = (requestId: string) =>
     mutate(async () => {
       const comment = feedback[requestId]?.trim()
       if (!comment) return
+      const request = data.reviewRequests.find((item) => item.id === requestId)
+      let feedbackId: string | null = null
       if (supabase) {
-        const { error } = await supabase.from('review_feedback').insert({
+        const { data: created, error } = await supabase.from('review_feedback').insert({
           review_request_id: requestId,
           leader_id: profile.id,
           comment,
-        })
+        }).select('id').single()
         if (error) throw error
+        feedbackId = created?.id ?? null
       } else {
+        feedbackId = makeId('feedback')
         const item: ReviewFeedback = {
-          id: makeId('feedback'),
+          id: feedbackId,
           review_request_id: requestId,
           leader_id: profile.id,
           comment,
@@ -1142,6 +1421,15 @@ function ReviewsPanel({
           ),
         }))
       }
+      await recordActivityLog(setData, {
+        actor: profile,
+        targetUserId: request?.requester_id ?? null,
+        entityType: 'review_feedback',
+        entityId: feedbackId,
+        action: 'created',
+        summary: `${request?.title ?? '검토요청'}에 피드백을 남겼습니다.`,
+        metadata: { review_request_id: requestId },
+      })
       setFeedback((current) => ({ ...current, [requestId]: '' }))
     }, '피드백을 남겼습니다.')
 
@@ -1164,6 +1452,32 @@ function ReviewsPanel({
                     onChange={(event) => setForm({ ...form, attachment_url: event.target.value })}
                   />
                 </label>
+                <label>
+                  검토 기한
+                  <select
+                    value={form.deadlineMode}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        deadlineMode: event.target.value as DeadlineMode,
+                        due_date: event.target.value === 'none' ? '' : form.due_date,
+                      })
+                    }
+                  >
+                    <option value="none">기한없음</option>
+                    <option value="date">날짜 선택</option>
+                  </select>
+                </label>
+                {form.deadlineMode === 'date' && (
+                  <label>
+                    기한 날짜
+                    <input
+                      type="date"
+                      value={form.due_date}
+                      onChange={(event) => setForm({ ...form, due_date: event.target.value })}
+                    />
+                  </label>
+                )}
                 <label className="wide">
                   설명
                   <textarea
@@ -1174,12 +1488,33 @@ function ReviewsPanel({
               </>
             }
             onSubmit={createReview}
-            disabled={!form.title || !form.description}
+            disabled={!form.title || !form.description || (form.deadlineMode === 'date' && !form.due_date)}
             submitLabel="요청 등록"
           />
         </Section>
       )}
       <Section title={profile.role === 'leader' ? '전체 검토요청' : '내 검토요청'} icon={<Check size={18} />}>
+        <div className="section-toolbar">
+          <select
+            className="compact-select"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as ReviewStatusFilter)}
+          >
+            <option value="all">전체 {scopedReviewRequests.length}건</option>
+            {Object.entries(reviewStatusLabels).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label} {statusCounts[value as ReviewStatus]}건
+              </option>
+            ))}
+          </select>
+          <div className="status-summary" aria-label="검토요청 상태별 건수">
+            {Object.entries(reviewStatusLabels).map(([value, label]) => (
+              <Badge key={value} status={value}>
+                {label} {statusCounts[value as ReviewStatus]}
+              </Badge>
+            ))}
+          </div>
+        </div>
         <div className="request-list">
           {visibleReviewRequests.length === 0 && <p className="empty">검토요청이 없습니다.</p>}
           {visibleReviewRequests.map((request) => (
@@ -1222,7 +1557,7 @@ function ReviewRequestItem({
         <div>
           <strong>{request.title}</strong>
           <span>
-            {request.profiles?.name ?? '요청자'} · {formatDate(request.created_at)}
+            {request.profiles?.name ?? '요청자'} · {formatDate(request.created_at)} · 접수 {ageInDays(request.created_at)}일
           </span>
         </div>
         {profile.role === 'leader' ? (
@@ -1236,6 +1571,11 @@ function ReviewRequestItem({
         ) : (
           <Badge status={request.status}>{reviewStatusLabels[request.status]}</Badge>
         )}
+      </div>
+      <div className="request-meta-row">
+        <Badge status={dueDateStatus(request.due_date)}>
+          {request.due_date ? `${dueDateLabel(request.due_date)} · ${formatDate(request.due_date)}` : '기한 없음'}
+        </Badge>
       </div>
       <p>{request.description}</p>
       {attachmentUrl && (
@@ -1284,10 +1624,19 @@ function ProjectsPanel({
   const [projectQuery, setProjectQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | ProjectStatus>('all')
   const [viewMode, setViewMode] = useState<'project' | 'member'>('project')
+  const [projectEdits, setProjectEdits] = useState<Record<string, { name: string; description: string; deadline: string; status: ProjectStatus }>>({})
   const leaderMode = profile.role === 'leader'
+  const memberOptions = data.profiles.filter(canAssignProjectTo)
   const visibleProjectAssignments = leaderMode
     ? data.projectAssignments
     : data.projectAssignments.filter((assignment) => assignment.user_id === profile.id)
+
+  useEffect(() => {
+    if (!assignmentForm.user_id) return
+    if (!memberOptions.some((member) => member.id === assignmentForm.user_id)) {
+      setAssignmentForm((current) => ({ ...current, user_id: '' }))
+    }
+  }, [assignmentForm.user_id, memberOptions])
 
   const filteredProjectAssignments = visibleProjectAssignments.filter((assignment) => {
     const project = assignment.projects ?? data.projects.find((item) => item.id === assignment.project_id)
@@ -1336,7 +1685,7 @@ function ProjectsPanel({
       return target.includes(query) && (leaderMode || group.assignments.length > 0)
     })
 
-  const memberGroups = (leaderMode ? data.profiles.filter((member) => member.role === 'member') : [profile])
+  const memberGroups = (leaderMode ? memberOptions : [profile])
     .map((member) => ({
       member,
       assignments: filteredProjectAssignments.filter((assignment) => assignment.user_id === member.id),
@@ -1362,21 +1711,25 @@ function ProjectsPanel({
 
   const createProject = () =>
     mutate(async () => {
+      let projectId: string | null = null
       if (supabase) {
-        const { error } = await supabase.from('projects').insert({
+        const { data: created, error } = await supabase.from('projects').insert({
           name: projectForm.name,
           description: projectForm.description,
           deadline: projectForm.deadline || null,
           status: projectForm.status,
           created_by: profile.id,
-        })
+        }).select('id').single()
         if (error) throw error
+        projectId = created?.id ?? null
       } else {
+        const newProjectId = makeId('project')
+        projectId = newProjectId
         setData((current) => ({
           ...current,
           projects: [
             {
-              id: makeId('project'),
+              id: newProjectId,
               name: projectForm.name,
               description: projectForm.description,
               deadline: projectForm.deadline || null,
@@ -1389,26 +1742,41 @@ function ProjectsPanel({
           ],
         }))
       }
+      await recordActivityLog(setData, {
+        actor: profile,
+        entityType: 'project',
+        entityId: projectId,
+        action: 'created',
+        summary: `${projectForm.name} 프로젝트를 생성했습니다.`,
+        metadata: { deadline: projectForm.deadline || null, status: projectForm.status },
+      })
       setProjectForm({ name: '', description: '', deadline: '', status: 'planned' })
     }, '프로젝트를 생성했습니다.')
 
   const assignProject = () =>
     mutate(async () => {
+      if (!memberOptions.some((member) => member.id === assignmentForm.user_id)) {
+        throw new Error('프로젝트는 파트원에게만 배정할 수 있습니다.')
+      }
+      const project = data.projects.find((item) => item.id === assignmentForm.project_id)
+      const member = memberOptions.find((item) => item.id === assignmentForm.user_id)
+      let assignmentId: string | null = null
       if (supabase) {
-        const { error } = await supabase.from('project_assignments').insert({
+        const { data: created, error } = await supabase.from('project_assignments').insert({
           project_id: assignmentForm.project_id,
           user_id: assignmentForm.user_id,
           notes: assignmentForm.notes || null,
-        })
+        }).select('id').single()
         if (error) throw error
+        assignmentId = created?.id ?? null
       } else {
-        const project = data.projects.find((item) => item.id === assignmentForm.project_id)
-        const member = data.profiles.find((item) => item.id === assignmentForm.user_id)
+        const newAssignmentId = makeId('project-assignment')
+        assignmentId = newAssignmentId
         setData((current) => ({
           ...current,
           projectAssignments: [
             {
-              id: makeId('project-assignment'),
+              id: newAssignmentId,
               project_id: assignmentForm.project_id,
               user_id: assignmentForm.user_id,
               notes: assignmentForm.notes || null,
@@ -1422,8 +1790,78 @@ function ProjectsPanel({
           ],
         }))
       }
+      await recordActivityLog(setData, {
+        actor: profile,
+        targetUserId: assignmentForm.user_id,
+        entityType: 'project_assignment',
+        entityId: assignmentId,
+        action: 'assigned',
+        summary: `${member?.name ?? '파트원'}님에게 ${project?.name ?? '프로젝트'}를 배정했습니다.`,
+        metadata: { project_id: assignmentForm.project_id },
+      })
       setAssignmentForm({ project_id: '', user_id: '', notes: '' })
     }, '프로젝트를 배정했습니다.')
+
+  const startProjectEdit = (project: Project) =>
+    setProjectEdits((current) => ({
+      ...current,
+      [project.id]: {
+        name: project.name,
+        description: project.description,
+        deadline: project.deadline ?? '',
+        status: project.status,
+      },
+    }))
+
+  const cancelProjectEdit = (projectId: string) =>
+    setProjectEdits((current) => {
+      const next = { ...current }
+      delete next[projectId]
+      return next
+    })
+
+  const updateProject = (project: Project) =>
+    mutate(async () => {
+      const edit = projectEdits[project.id]
+      if (!edit) return
+      const updated = {
+        name: edit.name,
+        description: edit.description,
+        deadline: edit.deadline || null,
+        status: edit.status,
+      }
+      if (supabase) {
+        const { error } = await supabase.from('projects').update(updated).eq('id', project.id)
+        if (error) throw error
+      } else {
+        setData((current) => ({
+          ...current,
+          projects: current.projects.map((item) => (item.id === project.id ? { ...item, ...updated, updated_at: new Date().toISOString() } : item)),
+          projectAssignments: current.projectAssignments.map((assignment) =>
+            assignment.project_id === project.id
+              ? {
+                  ...assignment,
+                  projects: {
+                    name: updated.name,
+                    description: updated.description,
+                    deadline: updated.deadline,
+                    status: updated.status,
+                  },
+                }
+              : assignment,
+          ),
+        }))
+      }
+      await recordActivityLog(setData, {
+        actor: profile,
+        entityType: 'project',
+        entityId: project.id,
+        action: 'updated',
+        summary: `${updated.name} 프로젝트 정보를 수정했습니다.`,
+        metadata: updated,
+      })
+      cancelProjectEdit(project.id)
+    }, '프로젝트 정보를 수정했습니다.')
 
   return (
     <div className="stack">
@@ -1481,7 +1919,7 @@ function ProjectsPanel({
                     파트원
                     <select value={assignmentForm.user_id} onChange={(event) => setAssignmentForm({ ...assignmentForm, user_id: event.target.value })}>
                       <option value="">선택</option>
-                      {data.profiles.map((member) => (
+                      {memberOptions.map((member) => (
                         <option key={member.id} value={member.id}>
                           {member.name}
                         </option>
@@ -1495,7 +1933,7 @@ function ProjectsPanel({
                 </>
               }
               onSubmit={assignProject}
-              disabled={!assignmentForm.project_id || !assignmentForm.user_id}
+              disabled={!assignmentForm.project_id || !assignmentForm.user_id || memberOptions.length === 0}
               submitLabel="배정"
             />
           </Section>
@@ -1535,26 +1973,77 @@ function ProjectsPanel({
         {viewMode === 'project' ? (
           <div className="group-list">
             {projectGroups.length === 0 && <p className="empty">조건에 맞는 프로젝트가 없습니다.</p>}
-            {projectGroups.map(({ project, assignments }) => (
-              <article className="group-card" key={project.id}>
-                <div className="group-header">
-                  <div>
-                    <strong>{project.name}</strong>
-                    <span>{project.description || '설명 없음'}</span>
-                  </div>
-                  <Badge status={project.status}>{projectStatusLabels[project.status]}</Badge>
-                </div>
-                <Rows
-                  empty="아직 배정된 파트원이 없습니다."
-                  rows={assignments.map((assignment) => ({
-                    title: assignment.profiles?.name ?? assignment.user_id,
-                    meta: `${project.deadline ? `마감 ${formatDate(project.deadline)}` : '마감일 없음'}${
-                      assignment.notes ? ` · ${assignment.notes}` : ''
-                    }`,
-                  }))}
-                />
-              </article>
-            ))}
+            {projectGroups.map(({ project, assignments }) => {
+              const edit = projectEdits[project.id]
+              return (
+                <article className="group-card" key={project.id}>
+                  {edit ? (
+                    <div className="project-edit-form">
+                      <label>
+                        이름
+                        <input value={edit.name} onChange={(event) => setProjectEdits({ ...projectEdits, [project.id]: { ...edit, name: event.target.value } })} />
+                      </label>
+                      <label>
+                        마감일
+                        <input
+                          type="date"
+                          value={edit.deadline}
+                          onChange={(event) => setProjectEdits({ ...projectEdits, [project.id]: { ...edit, deadline: event.target.value } })}
+                        />
+                      </label>
+                      <label>
+                        상태
+                        <select value={edit.status} onChange={(event) => setProjectEdits({ ...projectEdits, [project.id]: { ...edit, status: event.target.value as ProjectStatus } })}>
+                          {Object.entries(projectStatusLabels).map(([value, label]) => (
+                            <option key={value} value={value}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="wide">
+                        설명
+                        <textarea value={edit.description} onChange={(event) => setProjectEdits({ ...projectEdits, [project.id]: { ...edit, description: event.target.value } })} />
+                      </label>
+                      <div className="inline-actions">
+                        <button className="primary compact" disabled={!edit.name.trim()} onClick={() => void updateProject(project)} type="button">
+                          <Save size={16} />
+                          저장
+                        </button>
+                        <button className="ghost compact" onClick={() => cancelProjectEdit(project.id)} type="button">
+                          취소
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="group-header">
+                      <div>
+                        <strong>{project.name}</strong>
+                        <span>{project.description || '설명 없음'}</span>
+                      </div>
+                      <div className="group-actions">
+                        <Badge status={project.status}>{projectStatusLabels[project.status]}</Badge>
+                        {leaderMode && (
+                          <button className="ghost compact" onClick={() => startProjectEdit(project)} title="프로젝트 수정" type="button">
+                            <Pencil size={16} />
+                            수정
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  <Rows
+                    empty="아직 배정된 파트원이 없습니다."
+                    rows={assignments.map((assignment) => ({
+                      title: assignment.profiles?.name ?? assignment.user_id,
+                      meta: `${project.deadline ? `마감 ${formatDate(project.deadline)}` : '마감일 없음'}${
+                        assignment.notes ? ` · ${assignment.notes}` : ''
+                      }`,
+                    }))}
+                  />
+                </article>
+              )
+            })}
           </div>
         ) : (
           <div className="group-list">
@@ -1608,6 +2097,7 @@ function AdminPanel({
   const [dutyAssignment, setDutyAssignment] = useState({ user_id: '', duty_id: '' })
   const [adminView, setAdminView] = useState<'register' | 'assign' | 'inventory'>('register')
   const [adminSearch, setAdminSearch] = useState('')
+  const [pendingDelete, setPendingDelete] = useState<{ table: AdminDeleteTable; id: string } | null>(null)
   const [focusMemberId, setFocusMemberId] = useState(data.profiles.find((member) => member.role === 'member')?.id ?? '')
 
   const memberOptions = data.profiles.filter((member) => member.role === 'member')
@@ -1644,6 +2134,10 @@ function AdminPanel({
       setFocusMemberId(memberOptions[0].id)
     }
   }, [focusMemberId, memberOptions])
+
+  useEffect(() => {
+    setPendingDelete(null)
+  }, [adminSearch, adminView])
 
   const exportAdminCsv = () =>
     downloadCsv('admin-assignments.csv', [
@@ -1775,7 +2269,7 @@ function AdminPanel({
       setDutyAssignment({ user_id: selectedUserId, duty_id: '' })
     }, '담당업무를 배정했습니다.')
 
-  const deleteRow = (table: string, id: string, label: string) =>
+  const deleteRow = (table: AdminDeleteTable, id: string, label: string) =>
     mutate(async () => {
       if (supabase) {
         const { error } = await supabase.from(table).delete().eq('id', id)
@@ -1787,12 +2281,44 @@ function AdminPanel({
           products: table === 'products' ? current.products.filter((item) => item.id !== id) : current.products,
           duties: table === 'duties' ? current.duties.filter((item) => item.id !== id) : current.duties,
           productAssignments:
-            table === 'product_assignments' ? current.productAssignments.filter((item) => item.id !== id) : current.productAssignments,
+            table === 'products'
+              ? current.productAssignments.filter((item) => item.product_id !== id)
+              : table === 'product_assignments'
+                ? current.productAssignments.filter((item) => item.id !== id)
+                : current.productAssignments,
           dutyAssignments:
-            table === 'duty_assignments' ? current.dutyAssignments.filter((item) => item.id !== id) : current.dutyAssignments,
+            table === 'duties'
+              ? current.dutyAssignments.filter((item) => item.duty_id !== id)
+              : table === 'duty_assignments'
+                ? current.dutyAssignments.filter((item) => item.id !== id)
+                : current.dutyAssignments,
         }))
       }
+      setPendingDelete(null)
     }, `${label} 삭제했습니다.`)
+
+  const deleteAction = (table: AdminDeleteTable, id: string, label: string, itemName: string) => {
+    const selected = pendingDelete?.table === table && pendingDelete.id === id
+    if (!selected) {
+      return (
+        <IconAction title={`${label} 삭제`} onClick={() => setPendingDelete({ table, id })}>
+          <Trash2 size={16} />
+        </IconAction>
+      )
+    }
+
+    return (
+      <div className="delete-confirm" title={deleteWarnings[table]}>
+        <button className="danger compact" onClick={() => void deleteRow(table, id, label)} type="button">
+          삭제 확인
+        </button>
+        <button className="ghost compact" onClick={() => setPendingDelete(null)} type="button">
+          취소
+        </button>
+        <span className="sr-only">{itemName}</span>
+      </div>
+    )
+  }
 
   return (
     <div className="stack">
@@ -1920,11 +2446,7 @@ function AdminPanel({
                         title: item.products?.name ?? item.product_id,
                         meta: item.products?.code ?? '코드 없음',
                         aside: item.status ?? '-',
-                        action: (
-                          <IconAction title="제품 배정 삭제" onClick={() => void deleteRow('product_assignments', item.id, '제품 배정')}>
-                            <Trash2 size={16} />
-                          </IconAction>
-                        ),
+                        action: deleteAction('product_assignments', item.id, '제품 배정', item.products?.name ?? item.product_id),
                       }))}
                     />
                   </div>
@@ -1935,11 +2457,7 @@ function AdminPanel({
                       rows={focusedDutyAssignments.map((item) => ({
                         title: item.duties?.name ?? item.duty_id,
                         meta: '정기 담당',
-                        action: (
-                          <IconAction title="업무 배정 삭제" onClick={() => void deleteRow('duty_assignments', item.id, '업무 배정')}>
-                            <Trash2 size={16} />
-                          </IconAction>
-                        ),
+                        action: deleteAction('duty_assignments', item.id, '업무 배정', item.duties?.name ?? item.duty_id),
                       }))}
                     />
                   </div>
@@ -2064,11 +2582,7 @@ function AdminPanel({
                   title: item.name,
                   meta: item.email,
                   aside: roleLabels[item.role],
-                  action: (
-                    <IconAction title="초대 삭제" onClick={() => void deleteRow('allowed_users', item.id, '초대')}>
-                      <Trash2 size={16} />
-                    </IconAction>
-                  ),
+                  action: deleteAction('allowed_users', item.id, '초대', item.email),
                 }))}
               />
             </Section>
@@ -2078,11 +2592,7 @@ function AdminPanel({
                 rows={filteredProducts.map((item) => ({
                   title: item.name,
                   meta: item.code ?? '코드 없음',
-                  action: (
-                    <IconAction title="제품 삭제" onClick={() => void deleteRow('products', item.id, '제품')}>
-                      <Trash2 size={16} />
-                    </IconAction>
-                  ),
+                  action: deleteAction('products', item.id, '제품', item.name),
                 }))}
               />
             </Section>
@@ -2092,11 +2602,7 @@ function AdminPanel({
                 rows={filteredDuties.map((item) => ({
                   title: item.name,
                   meta: '카테고리',
-                  action: (
-                    <IconAction title="업무 삭제" onClick={() => void deleteRow('duties', item.id, '업무')}>
-                      <Trash2 size={16} />
-                    </IconAction>
-                  ),
+                  action: deleteAction('duties', item.id, '업무', item.name),
                 }))}
               />
             </Section>
@@ -2109,11 +2615,7 @@ function AdminPanel({
                   title: item.products?.name ?? item.product_id,
                   meta: item.profiles?.name ?? item.user_id,
                   aside: item.status ?? '-',
-                  action: (
-                    <IconAction title="제품 배정 삭제" onClick={() => void deleteRow('product_assignments', item.id, '제품 배정')}>
-                      <Trash2 size={16} />
-                    </IconAction>
-                  ),
+                  action: deleteAction('product_assignments', item.id, '제품 배정', item.products?.name ?? item.product_id),
                 }))}
               />
             </Section>
@@ -2123,11 +2625,7 @@ function AdminPanel({
                 rows={filteredDutyAssignments.map((item) => ({
                   title: item.duties?.name ?? item.duty_id,
                   meta: item.profiles?.name ?? item.user_id,
-                  action: (
-                    <IconAction title="업무 배정 삭제" onClick={() => void deleteRow('duty_assignments', item.id, '업무 배정')}>
-                      <Trash2 size={16} />
-                    </IconAction>
-                  ),
+                  action: deleteAction('duty_assignments', item.id, '업무 배정', item.duties?.name ?? item.duty_id),
                 }))}
               />
             </Section>

@@ -10,6 +10,8 @@ import type {
   Project,
   ProjectAssignment,
   ProjectStatus,
+  ReviewRequest,
+  ActivityLog,
 } from './types'
 
 const createdAt = '2026-07-02T00:00:00.000Z'
@@ -160,6 +162,57 @@ export function createPreviewData(): AppData {
     })),
   )
 
+  const reviewRequests: ReviewRequest[] = [
+    {
+      id: 'review-01',
+      requester_id: 'member-03',
+      title: '파트너 API 전환 검토',
+      description: '전환 일정과 영향 범위 검토가 필요합니다.',
+      attachment_url: 'https://example.com/reviews/partner-api',
+      due_date: '2026-07-05',
+      status: 'pending',
+      created_at: '2026-07-03T09:20:00.000Z',
+      updated_at: '2026-07-03T09:20:00.000Z',
+      profiles: { name: '박도윤', email: 'doyun.park@example.com' },
+      review_feedback: [],
+    },
+    {
+      id: 'review-02',
+      requester_id: 'member-02',
+      title: '정산 자동화 화면 문구 확인',
+      description: '파트너 안내 문구와 예외 케이스를 확인해 주세요.',
+      attachment_url: null,
+      due_date: null,
+      status: 'in_review',
+      created_at: '2026-07-02T14:30:00.000Z',
+      updated_at: '2026-07-03T10:10:00.000Z',
+      profiles: { name: '이서연', email: 'seoyeon.lee@example.com' },
+      review_feedback: [
+        {
+          id: 'feedback-01',
+          review_request_id: 'review-02',
+          leader_id: previewLeader.id,
+          comment: '정산 실패 케이스 문구를 한 번 더 보겠습니다.',
+          created_at: '2026-07-03T10:10:00.000Z',
+          profiles: { name: previewLeader.name },
+        },
+      ],
+    },
+    {
+      id: 'review-03',
+      requester_id: 'member-04',
+      title: '모바일 알림 고도화 정책 검토',
+      description: '마감 전 알림 조건과 발송 제외 조건 검토 요청입니다.',
+      attachment_url: null,
+      due_date: '2026-07-09',
+      status: 'pending',
+      created_at: '2026-07-01T16:45:00.000Z',
+      updated_at: '2026-07-01T16:45:00.000Z',
+      profiles: { name: '최하린', email: 'harin.choi@example.com' },
+      review_feedback: [],
+    },
+  ]
+
   const allowedUsers: AllowedUser[] = previewMembers.map((member, index) => ({
     id: `allowed-${String(index + 1).padStart(2, '0')}`,
     email: member.email,
@@ -178,6 +231,42 @@ export function createPreviewData(): AppData {
     },
   ])
 
+  const activityLogs: ActivityLog[] = [
+    {
+      id: 'activity-01',
+      actor_id: 'member-03',
+      target_user_id: previewLeader.id,
+      entity_type: 'review_request',
+      entity_id: 'review-01',
+      action: 'created',
+      summary: '박도윤님이 파트너 API 전환 검토를 요청했습니다.',
+      metadata: { due_date: '2026-07-05' },
+      created_at: '2026-07-03T09:20:00.000Z',
+    },
+    {
+      id: 'activity-02',
+      actor_id: previewLeader.id,
+      target_user_id: 'member-02',
+      entity_type: 'review_feedback',
+      entity_id: 'feedback-01',
+      action: 'created',
+      summary: '미리보기 파트장님이 정산 자동화 화면 문구 확인에 피드백을 남겼습니다.',
+      metadata: { review_request_id: 'review-02' },
+      created_at: '2026-07-03T10:10:00.000Z',
+    },
+    {
+      id: 'activity-03',
+      actor_id: previewLeader.id,
+      target_user_id: 'member-01',
+      entity_type: 'project_assignment',
+      entity_id: 'project-assignment-1-1',
+      action: 'assigned',
+      summary: '미리보기 파트장님이 김민준님에게 파트너 API 전환을 배정했습니다.',
+      metadata: { project_id: 'project-03' },
+      created_at: '2026-07-02T11:00:00.000Z',
+    },
+  ]
+
   return {
     profiles: previewMembers.map((member) => ({ ...member, created_at: createdAt })),
     allowedUsers,
@@ -185,9 +274,10 @@ export function createPreviewData(): AppData {
     duties,
     productAssignments,
     dutyAssignments,
-    reviewRequests: [],
+    reviewRequests,
     projects,
     projectAssignments,
     profileNotes,
+    activityLogs,
   }
 }

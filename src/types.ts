@@ -1,6 +1,15 @@
 export type Role = 'leader' | 'member'
 export type ReviewStatus = 'pending' | 'in_review' | 'approved' | 'rejected'
 export type ProjectStatus = 'planned' | 'in_progress' | 'done'
+export type ActivityEntityType =
+  | 'review_request'
+  | 'review_feedback'
+  | 'project'
+  | 'project_assignment'
+  | 'product_assignment'
+  | 'duty_assignment'
+  | 'allowed_user'
+  | 'profile_note'
 
 export interface Profile {
   id: string
@@ -70,6 +79,7 @@ export interface ReviewRequest {
   title: string
   description: string
   attachment_url: string | null
+  due_date: string | null
   status: ReviewStatus
   created_at?: string
   updated_at?: string
@@ -107,6 +117,18 @@ export interface ProfileNote {
   created_at?: string
 }
 
+export interface ActivityLog {
+  id: string
+  actor_id: string
+  target_user_id: string | null
+  entity_type: ActivityEntityType
+  entity_id: string | null
+  action: string
+  summary: string
+  metadata?: Record<string, unknown>
+  created_at?: string
+}
+
 export interface AppData {
   profiles: Profile[]
   allowedUsers: AllowedUser[]
@@ -118,4 +140,5 @@ export interface AppData {
   projects: Project[]
   projectAssignments: ProjectAssignment[]
   profileNotes: ProfileNote[]
+  activityLogs: ActivityLog[]
 }

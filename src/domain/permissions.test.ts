@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  canAssignProjectTo,
+  canCreateProject,
   canCreateReviewFor,
   canManageTeamData,
   canViewProfile,
@@ -16,6 +18,13 @@ describe('role visibility rules mirrored by RLS', () => {
   it('allows leaders to manage team data', () => {
     expect(canManageTeamData(leader)).toBe(true)
     expect(canManageTeamData(memberA)).toBe(false)
+  })
+
+  it('keeps project creation and assignment role-specific', () => {
+    expect(canCreateProject(leader)).toBe(true)
+    expect(canCreateProject(memberA)).toBe(false)
+    expect(canAssignProjectTo(memberA)).toBe(true)
+    expect(canAssignProjectTo(leader)).toBe(false)
   })
 
   it('keeps member profile visibility scoped to self', () => {

@@ -37,6 +37,7 @@ set name = excluded.name,
 
 4. 해당 이메일로 앱에서 가입한다. `auth.users` 생성 시 trigger가 `profiles`를 만든다.
 5. 이후 초대 사용자는 앱의 `기초데이터 > 초대 사용자`에서 등록한다.
+6. 여러 사용자를 한 번에 넣어야 하면 `supabase/private_seed.example.sql`을 `supabase/private_seed.local.sql`로 복사한 뒤 실제 이메일/이름으로 바꿔 SQL Editor에서 실행한다. `.local.sql` 파일은 커밋하지 않는다.
 
 ## Cloudflare Pages
 

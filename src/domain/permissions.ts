@@ -8,6 +8,14 @@ export function canManageTeamData(profile: Pick<Profile, 'role'> | null | undefi
   return isLeader(profile)
 }
 
+export function canCreateProject(profile: Pick<Profile, 'role'> | null | undefined): boolean {
+  return isLeader(profile)
+}
+
+export function canAssignProjectTo(profile: Pick<Profile, 'role'> | null | undefined): boolean {
+  return profile?.role === 'member'
+}
+
 export function canViewProfile(current: Profile, target: Pick<Profile, 'id'>): boolean {
   return current.role === 'leader' || current.id === target.id
 }

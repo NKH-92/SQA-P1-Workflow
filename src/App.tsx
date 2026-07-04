@@ -541,6 +541,14 @@ function Shell({
     { id: 'admin', label: '기초데이터', icon: <Users size={18} />, leaderOnly: true },
     { id: 'operations', label: '운영 기준', icon: <ShieldCheck size={18} /> },
   ]
+  const tabDescriptions: Record<TabId, string> = {
+    dashboard: leaderMode ? `파트장 권한 · 대기 검토 ${pendingCount}건` : `${profile.name}님의 배정 현황`,
+    reviews: leaderMode ? `대기 검토 ${pendingCount}건` : '내가 올린 검토 요청',
+    projects: leaderMode ? '프로젝트 배정과 마감 현황' : '내게 배정된 프로젝트',
+    admin: '초대, 제품, 업무, 배정 데이터',
+    operations: '배포와 보안 운영 기준',
+  }
+  const activeTabLabel = tabs.find((tab) => tab.id === activeTab)?.label
 
   return (
     <div className="app-shell">
@@ -608,8 +616,8 @@ function Shell({
               <Menu size={22} />
             </button>
             <div>
-              <h1>{tabs.find((tab) => tab.id === activeTab)?.label}</h1>
-              <p>{leaderMode ? '전체 팀 업무를 관리합니다.' : '본인에게 배정된 업무만 확인합니다.'}</p>
+              <h1>{activeTabLabel}</h1>
+              <p>{tabDescriptions[activeTab]}</p>
             </div>
           </div>
           <div className="topbar-actions">
@@ -655,11 +663,10 @@ function Dashboard({
 
   const productAssignmentIds = new Set(data.productAssignments.map((assignment) => assignment.product_id))
   const unassignedProducts = data.products.filter((product) => !productAssignmentIds.has(product.id))
-  const membersWithoutProducts = teamMembers.filter(
-    (member) => !data.productAssignments.some((assignment) => assignment.user_id === member.id),
-  )
-  const membersWithoutDuties = teamMembers.filter(
-    (member) => !data.dutyAssignments.some((assignment) => assignment.user_id === member.id),
+  const membersWithAssignmentGaps = teamMembers.filter(
+    (member) =>
+      !data.productAssignments.some((assignment) => assignment.user_id === member.id) ||
+      !data.dutyAssignments.some((assignment) => assignment.user_id === member.id),
   )
   const dueSoonProjects = data.projectAssignments.filter((assignment) => {
     const deadline = assignment.projects?.deadline ?? data.projects.find((project) => project.id === assignment.project_id)?.deadline
@@ -750,55 +757,70 @@ function Dashboard({
 
   if (profile.role === 'member') {
     return (
-      <div className="grid two">
-        <Section title="담당제품" icon={<Package size={18} />}>
-          <Rows
-            empty="담당제품이 없습니다."
-            rows={ownProducts.map((assignment) => ({
-              title: assignment.products?.name ?? assignment.product_id,
-              meta: assignment.products?.code ?? '제품코드 없음',
-              aside: assignment.status ?? '-',
-            }))}
-          />
-        </Section>
-        <Section title="담당업무" icon={<ClipboardList size={18} />}>
-          <Rows
-            empty="담당업무가 없습니다."
-            rows={ownDuties.map((assignment) => ({
-              title: assignment.duties?.name ?? assignment.duty_id,
-              meta: '사전 정의 업무',
-            }))}
-          />
-        </Section>
-        <Section title="배정 프로젝트" icon={<FolderKanban size={18} />}>
-          <Rows
-            empty="배정 프로젝트가 없습니다."
-            rows={ownProjects.map((assignment) => ({
-              title: assignment.projects?.name ?? assignment.project_id,
-              meta: assignment.projects?.deadline ? `마감 ${formatDate(assignment.projects.deadline)}` : '마감일 없음',
-              aside: assignment.projects?.status ? projectStatusLabels[assignment.projects.status] : '-',
-            }))}
-          />
-        </Section>
-        <Section title="내 검토요청" icon={<Check size={18} />}>
-          <Rows
-            empty="검토요청이 없습니다."
-            rows={ownReviews.map((request) => ({
-              title: request.title,
-              meta: formatDate(request.created_at),
-              aside: reviewStatusLabels[request.status],
-            }))}
-          />
-        </Section>
-        <Section title="파트장 메모" icon={<StickyNote size={18} />}>
-          <Rows
-            empty="공유된 관리 메모가 없습니다."
-            rows={ownNotes.map((note) => ({
-              title: note.note,
-              meta: formatDate(note.created_at),
-            }))}
-          />
-        </Section>
+      <div className="stack">
+        <div className="member-overview">
+          <div>
+            <span>{profile.name}</span>
+            <strong>내 업무 현황</strong>
+            <p>{ownProjects.length > 0 ? `진행 프로젝트 ${ownProjects.length}건` : '배정된 프로젝트 없음'}</p>
+          </div>
+          <div className="overview-metrics">
+            <Badge>제품 {ownProducts.length}</Badge>
+            <Badge>업무 {ownDuties.length}</Badge>
+            <Badge>검토 {ownReviews.length}</Badge>
+            <Badge>메모 {ownNotes.length}</Badge>
+          </div>
+        </div>
+        <div className="grid two">
+          <Section title="담당제품" icon={<Package size={18} />}>
+            <Rows
+              empty="담당제품이 없습니다."
+              rows={ownProducts.map((assignment) => ({
+                title: assignment.products?.name ?? assignment.product_id,
+                meta: assignment.products?.code ?? '제품코드 없음',
+                aside: assignment.status ?? '-',
+              }))}
+            />
+          </Section>
+          <Section title="담당업무" icon={<ClipboardList size={18} />}>
+            <Rows
+              empty="담당업무가 없습니다."
+              rows={ownDuties.map((assignment) => ({
+                title: assignment.duties?.name ?? assignment.duty_id,
+                meta: '사전 정의 업무',
+              }))}
+            />
+          </Section>
+          <Section title="배정 프로젝트" icon={<FolderKanban size={18} />}>
+            <Rows
+              empty="배정 프로젝트가 없습니다."
+              rows={ownProjects.map((assignment) => ({
+                title: assignment.projects?.name ?? assignment.project_id,
+                meta: assignment.projects?.deadline ? `마감 ${formatDate(assignment.projects.deadline)}` : '마감일 없음',
+                aside: assignment.projects?.status ? projectStatusLabels[assignment.projects.status] : '-',
+              }))}
+            />
+          </Section>
+          <Section title="내 검토요청" icon={<Check size={18} />}>
+            <Rows
+              empty="검토요청이 없습니다."
+              rows={ownReviews.map((request) => ({
+                title: request.title,
+                meta: formatDate(request.created_at),
+                aside: reviewStatusLabels[request.status],
+              }))}
+            />
+          </Section>
+          <Section title="파트장 메모" icon={<StickyNote size={18} />}>
+            <Rows
+              empty="공유된 관리 메모가 없습니다."
+              rows={ownNotes.map((note) => ({
+                title: note.note,
+                meta: formatDate(note.created_at),
+              }))}
+            />
+          </Section>
+        </div>
       </div>
     )
   }
@@ -830,8 +852,22 @@ function Dashboard({
         <button className="action-card" onClick={() => setActiveTab('admin')} type="button">
           <ListFilter size={20} />
           <span>배정 누락</span>
-          <strong>{membersWithoutProducts.length + membersWithoutDuties.length}명</strong>
+          <strong>{membersWithAssignmentGaps.length}명</strong>
         </button>
+      </div>
+      <div className="priority-strip">
+        <div>
+          <span>우선 확인</span>
+          <strong>{pendingReviews.length + dueSoonProjects.length + unassignedProducts.length + membersWithAssignmentGaps.length}</strong>
+        </div>
+        <ul>
+          <li className={pendingReviews.length > 0 ? 'attention' : ''}>검토 대기 {pendingReviews.length}건</li>
+          <li className={dueSoonProjects.length > 0 ? 'warning' : ''}>14일 내 마감 {dueSoonProjects.length}건</li>
+          <li className={unassignedProducts.length > 0 ? 'attention' : ''}>미배정 제품 {unassignedProducts.length}개</li>
+          <li className={membersWithAssignmentGaps.length > 0 ? 'warning' : ''}>
+            배정 누락 {membersWithAssignmentGaps.length}명
+          </li>
+        </ul>
       </div>
       <Section title="팀 대시보드" icon={<Users size={18} />}>
         <div className="section-toolbar">
@@ -919,38 +955,50 @@ function Dashboard({
               <div className="detail-columns">
                 <div>
                   <h3>제품</h3>
-                  <ul className="detail-list">
-                    {selectedSummary.products.map((assignment) => (
-                      <li key={assignment.id}>
-                        <strong>{assignment.products?.name ?? assignment.product_id}</strong>
-                        <span>{assignment.status ?? assignment.products?.code ?? '-'}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  {selectedSummary.products.length === 0 ? (
+                    <p className="empty compact">담당제품 없음</p>
+                  ) : (
+                    <ul className="detail-list">
+                      {selectedSummary.products.map((assignment) => (
+                        <li key={assignment.id}>
+                          <strong>{assignment.products?.name ?? assignment.product_id}</strong>
+                          <span>{assignment.status ?? assignment.products?.code ?? '-'}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
                 <div>
                   <h3>업무</h3>
-                  <ul className="detail-list">
-                    {selectedSummary.duties.map((assignment) => (
-                      <li key={assignment.id}>
-                        <strong>{assignment.duties?.name ?? assignment.duty_id}</strong>
-                        <span>정기 담당</span>
-                      </li>
-                    ))}
-                  </ul>
+                  {selectedSummary.duties.length === 0 ? (
+                    <p className="empty compact">담당업무 없음</p>
+                  ) : (
+                    <ul className="detail-list">
+                      {selectedSummary.duties.map((assignment) => (
+                        <li key={assignment.id}>
+                          <strong>{assignment.duties?.name ?? assignment.duty_id}</strong>
+                          <span>정기 담당</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
                 <div>
                   <h3>프로젝트</h3>
-                  <ul className="detail-list">
-                    {selectedSummary.projects.map((assignment) => (
-                      <li key={assignment.id}>
-                        <strong>{assignment.projects?.name ?? assignment.project_id}</strong>
-                        <span>
-                          {assignment.projects?.deadline ? `마감 ${formatDate(assignment.projects.deadline)}` : '마감일 없음'}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+                  {selectedSummary.projects.length === 0 ? (
+                    <p className="empty compact">배정 프로젝트 없음</p>
+                  ) : (
+                    <ul className="detail-list">
+                      {selectedSummary.projects.map((assignment) => (
+                        <li key={assignment.id}>
+                          <strong>{assignment.projects?.name ?? assignment.project_id}</strong>
+                          <span>
+                            {assignment.projects?.deadline ? `마감 ${formatDate(assignment.projects.deadline)}` : '마감일 없음'}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
             </div>

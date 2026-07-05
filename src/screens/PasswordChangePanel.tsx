@@ -1,35 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { Dispatch, SetStateAction } from 'react'
-import { Badge, FormGrid, IconAction, Kpi, Rows, Section } from '../components/ui'
+import { useState } from 'react'
 import type { Profile } from '../types'
 import { PASSWORD_MIN_LENGTH } from '../app/constants'
 import { toUserMessage } from '../lib/errors'
 import { supabase } from '../lib/supabase'
 import {
-  Bell,
-  BriefcaseBusiness,
-  CalendarClock,
-  Check,
-  ClipboardList,
-  Download,
-  FolderKanban,
-  ListFilter,
   LogOut,
-  Menu,
-  MessageSquare,
-  Package,
-  Pencil,
-  Plus,
-  RefreshCw,
   Save,
-  Search,
-  Send,
   ShieldCheck,
-  StickyNote,
-  Trash2,
-  Upload,
-  Users,
-  X,
 } from 'lucide-react'
 
 type PasswordChangePanelProps = {

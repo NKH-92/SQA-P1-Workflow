@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import { Badge, FormGrid, IconAction, Kpi, Rows, Section } from '../components/ui'
+import { Badge, Rows, Section } from '../components/ui'
 import type { AppData, Profile, Project, ProjectStatus } from '../types'
 import { downloadCsv } from '../lib/csv'
 import {
@@ -12,30 +12,17 @@ import {
 } from '../data'
 import { formatDate, projectStatusLabels } from '../lib/format'
 import { canAssignProjectTo } from '../domain/permissions'
-import { ageInDays, dueDateLabel, dueDateStatus, daysUntil } from '../lib/dates'
+import { dueDateLabel } from '../lib/dates'
 import {
-  Bell,
   BriefcaseBusiness,
-  CalendarClock,
   Check,
-  ClipboardList,
   Download,
   FolderKanban,
-  ListFilter,
-  LogOut,
-  Menu,
-  MessageSquare,
-  Package,
   Pencil,
   Plus,
-  RefreshCw,
   Save,
   Search,
-  Send,
-  ShieldCheck,
-  StickyNote,
   Trash2,
-  Upload,
   Users,
   X,
 } from 'lucide-react'

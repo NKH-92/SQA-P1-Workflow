@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import { Badge, FormGrid, IconAction, Kpi, Rows, Section } from '../components/ui'
+import { Badge, FormGrid, IconAction, Section } from '../components/ui'
 import type { AppData, Profile, Role } from '../types'
 import type { AdminDeleteTable, MasterTabId, TabId } from '../app/types'
 import { downloadCsv } from '../lib/csv'
@@ -23,30 +23,15 @@ import { roleLabels } from '../lib/format'
 import { deleteWarnings } from '../app/constants'
 import { parseCsvRows, parseInviteImportRows, parseProductImportRows } from '../lib/csvImport'
 import {
-  Bell,
-  BriefcaseBusiness,
-  CalendarClock,
-  Check,
   ClipboardList,
   Download,
-  FolderKanban,
-  ListFilter,
-  LogOut,
-  Menu,
-  MessageSquare,
   Package,
   Pencil,
-  Plus,
-  RefreshCw,
   Save,
   Search,
-  Send,
-  ShieldCheck,
-  StickyNote,
   Trash2,
   Upload,
   Users,
-  X,
 } from 'lucide-react'
 
 export function MasterPanel({

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import { Badge, FormGrid, IconAction, Kpi, Rows, Section } from '../components/ui'
+import { Badge, Rows } from '../components/ui'
 import type { AppData, Profile } from '../types'
 import type { TabId } from '../app/types'
 import { downloadCsv } from '../lib/csv'
@@ -8,30 +8,11 @@ import { addProfileNote as addProfileNoteMutation, createRepositoryContext } fro
 import { formatDate, projectStatusLabels, roleLabels } from '../lib/format'
 import { useTeamSummaries } from '../hooks/useTeamSummaries'
 import {
-  Bell,
-  BriefcaseBusiness,
-  CalendarClock,
-  Check,
-  ClipboardList,
   Download,
-  FolderKanban,
-  ListFilter,
-  LogOut,
-  Menu,
-  MessageSquare,
   Package,
-  Pencil,
-  Plus,
-  RefreshCw,
   Save,
   Search,
-  Send,
-  ShieldCheck,
   StickyNote,
-  Trash2,
-  Upload,
-  Users,
-  X,
 } from 'lucide-react'
 
 export function TeamPanel({

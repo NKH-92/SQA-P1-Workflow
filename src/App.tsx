@@ -53,10 +53,10 @@ function App() {
 
   const leaderMode = canManageTeamData(profile)
   const pendingCount = data.reviewRequests.filter((request) => request.status === 'pending').length
-  const unreadReviewsCount = useMemo(
-    () => (profile ? countUnreadReviews(profile, data, leaderMode) : 0),
-    [profile, data, leaderMode, readTick],
-  )
+  const unreadReviewsCount = useMemo(() => {
+    void readTick
+    return profile ? countUnreadReviews(profile, data, leaderMode) : 0
+  }, [profile, data, leaderMode, readTick])
 
   useEffect(() => {
     if (!profile || activeTab !== 'reviews') return

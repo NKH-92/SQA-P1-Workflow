@@ -1,31 +1,18 @@
 import { useState } from 'react'
-import { Badge, Rows, Section } from '../components/ui'
 import type { AppData, Profile, Role } from '../types'
 import type { TabId, ToastMessage } from '../app/types'
-import { formatDate, roleLabels } from '../lib/format'
+import { roleLabels } from '../lib/format'
 import {
-  Bell,
   BriefcaseBusiness,
-  CalendarClock,
   Check,
   ClipboardList,
-  Download,
   FolderKanban,
-  ListFilter,
   LogOut,
   Menu,
   MessageSquare,
   Package,
-  Pencil,
-  Plus,
   RefreshCw,
-  Save,
-  Search,
-  Send,
   ShieldCheck,
-  StickyNote,
-  Trash2,
-  Upload,
   Users,
   X,
 } from 'lucide-react'

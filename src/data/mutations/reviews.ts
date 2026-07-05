@@ -1,3 +1,4 @@
+import { validateStorageAttachmentOwnership } from '../../lib/attachments'
 import { recordActivityLog } from '../../lib/activityLog'
 import { makeId, reviewStatusLabels } from '../../lib/format'
 import { supabase } from '../../lib/supabase'
@@ -21,6 +22,9 @@ export async function saveReviewRequest(
   const { profile, setData } = ctx
   const { editingReviewId, payload } = input
   const { title, due_date: dueDate } = payload
+
+  const attachmentError = validateStorageAttachmentOwnership(profile.id, payload.attachment_url)
+  if (attachmentError) throw new Error(attachmentError)
 
   if (editingReviewId) {
     if (ctx.isRemote) {
@@ -130,14 +134,11 @@ export async function rejectReviewRequest(
   const request = data.reviewRequests.find((item) => item.id === requestId)
 
   if (ctx.isRemote) {
-    const { error: feedbackError } = await supabase!.from('review_feedback').insert({
-      review_request_id: requestId,
-      leader_id: profile.id,
-      comment,
+    const { error } = await supabase!.rpc('reject_review_request', {
+      p_review_request_id: requestId,
+      p_comment: comment,
     })
-    if (feedbackError) throw feedbackError
-    const { error: statusError } = await supabase!.from('review_requests').update({ status: 'rejected' }).eq('id', requestId)
-    if (statusError) throw statusError
+    if (error) throw error
   } else {
     const item: ReviewFeedback = {
       id: makeId('feedback'),
@@ -207,17 +208,12 @@ export async function addReviewFeedback(
   let feedbackId: string | null
 
   if (ctx.isRemote) {
-    const { data: created, error } = await supabase!.from('review_feedback').insert({
-      review_request_id: requestId,
-      leader_id: profile.id,
-      comment,
-    }).select('id').single()
+    const { data: createdId, error } = await supabase!.rpc('add_review_feedback', {
+      p_review_request_id: requestId,
+      p_comment: comment,
+    })
     if (error) throw error
-    feedbackId = created?.id ?? null
-    if (request?.status === 'pending') {
-      const { error: statusError } = await supabase!.from('review_requests').update({ status: 'in_review' }).eq('id', requestId)
-      if (statusError) throw statusError
-    }
+    feedbackId = typeof createdId === 'string' ? createdId : null
   } else {
     feedbackId = makeId('feedback')
     const item: ReviewFeedback = {

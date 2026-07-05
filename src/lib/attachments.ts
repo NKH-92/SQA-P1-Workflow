@@ -17,6 +17,15 @@ export function storagePathFromAttachment(value: string) {
   return value.slice(STORAGE_ATTACHMENT_PREFIX.length)
 }
 
+export function validateStorageAttachmentOwnership(userId: string, value?: string | null) {
+  if (!value || !isStorageAttachment(value)) return null
+  const ownerId = storagePathFromAttachment(value).split('/')[0]
+  if (ownerId !== userId) {
+    return '본인이 업로드한 파일만 첨부할 수 있습니다.'
+  }
+  return null
+}
+
 export function validateReviewAttachmentFile(file: File) {
   const lower = file.name.toLowerCase()
   if (!ALLOWED_REVIEW_EXTENSIONS.some((ext) => lower.endsWith(ext))) {

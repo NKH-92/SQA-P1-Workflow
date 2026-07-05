@@ -24,25 +24,15 @@ export async function createProject(
   let projectId: string | null = null
 
   if (ctx.isRemote) {
-    const { data: created, error } = await supabase!.from('projects').insert({
-      name: project.name,
-      description: project.description,
-      deadline: project.deadline,
-      status: project.status,
-      created_by: profile.id,
-    }).select('id').single()
+    const { data: createdId, error } = await supabase!.rpc('create_project_with_assignments', {
+      p_name: project.name,
+      p_description: project.description,
+      p_deadline: project.deadline,
+      p_status: project.status,
+      p_member_ids: memberIds,
+    })
     if (error) throw error
-    projectId = created?.id ?? null
-    if (projectId && memberIds.length > 0) {
-      const { error: assignmentError } = await supabase!.from('project_assignments').insert(
-        memberIds.map((memberId) => ({
-          project_id: projectId,
-          user_id: memberId,
-          notes: null,
-        })),
-      )
-      if (assignmentError) throw assignmentError
-    }
+    projectId = typeof createdId === 'string' ? createdId : null
   } else {
     const newProjectId = makeId('project')
     projectId = newProjectId

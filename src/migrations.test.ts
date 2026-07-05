@@ -61,4 +61,26 @@ describe('Supabase migrations', () => {
     expect(migration).toContain('is_active_self')
     expect(migration).toContain('can_use_app')
   })
+
+  it('applies active access guards across member-facing and leader policies', () => {
+    const migration = readMigration('202607050004_harden_active_access_rls.sql')
+
+    expect(migration).toContain('is_active_leader')
+    expect(migration).toContain("select public.is_active_self()")
+    expect(migration).toContain('products_select_assigned_or_leader')
+    expect(migration).toContain('projects_select_assigned_or_leader')
+    expect(migration).toContain('review_feedback_select_requester_or_leader')
+    expect(migration).toContain('activity_logs_insert_actor')
+    expect(migration).toContain('review_attachments_insert_self')
+  })
+
+  it('adds atomic review/project RPCs and attachment ownership guard', () => {
+    const migration = readMigration('202607050005_atomic_mutations_and_attachment_guard.sql')
+
+    expect(migration).toContain('reject_review_request')
+    expect(migration).toContain('add_review_feedback')
+    expect(migration).toContain('create_project_with_assignments')
+    expect(migration).toContain('validate_review_attachment_url')
+    expect(migration).toContain('attachment path must belong to the current user')
+  })
 })

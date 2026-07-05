@@ -52,6 +52,7 @@ Supabase에 최소 3명(`leader`, `member A`, `member B`)을 등록한 뒤 각 �
 - `member`는 `review-attachments` 버킷에 본인 경로(`{user_id}/...`)로만 업로드할 수 있고, 다른 사용자 파일은 조회·삭제할 수 없어야 한다.
 - `leader`는 `review-attachments` 버킷의 모든 파일을 조회할 수 있어야 한다.
 - `member` 계정을 `profiles.is_active = false`로 설정하면 본인 데이터 조회·쓰기가 RLS에서 거부되어야 한다.
+- `leader` 계정을 `profiles.is_active = false`로 설정해도 API로 제품·프로젝트·검토요청을 조회·수정할 수 없어야 한다.
 - `leader`는 `profiles.is_active`를 변경할 수 있어야 한다.
 
 ## 로컬 검증 명령

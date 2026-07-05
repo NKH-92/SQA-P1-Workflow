@@ -11,7 +11,7 @@ React + Vite + Supabase 기반의 파트 업무관리 MVP입니다.
 - 초대 이메일 기반 `profiles` 생성
 - Supabase RLS 기반 leader/member 권한 분리
 - `review_requests.due_date`와 `activity_logs` 기반 운영 리마인더/활동 피드
-- Cloudflare Pages 정적 SPA 배포 구조
+- Cloudflare Workers 정적 SPA 배포 구조 (GitHub Actions)
 
 ## 시작하기
 
@@ -26,7 +26,7 @@ npm run dev
 ## Supabase 설정
 
 마이그레이션은 `supabase/migrations` 아래 SQL 파일을 번호 순서대로 적용합니다.
-첫 파트장 등록과 Cloudflare Pages 배포 절차는 `docs/DEPLOYMENT.md`를 확인하세요.
+첫 파트장 등록, Workers 배포, 운영 런북은 `docs/DEPLOYMENT.md`와 `docs/OPERATIONS.md`를 확인하세요.
 
 ## 검증
 

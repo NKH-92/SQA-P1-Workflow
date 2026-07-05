@@ -14,7 +14,7 @@ export const reviewStatusLabels: Record<ReviewStatus, string> = {
 
 export const projectStatusLabels: Record<ProjectStatus, string> = {
   planned: '예정',
-  in_progress: '진행중',
+  in_progress: '진행 중',
   done: '완료',
 }
 

@@ -37,4 +37,28 @@ describe('Supabase migrations', () => {
     expect(queueMigration).toContain('actor_id = auth.uid()')
     expect(queueMigration).toContain('or target_user_id is null')
   })
+
+  it('allows members to update or withdraw pending review requests', () => {
+    const migration = readMigration('202607050001_member_review_update_delete.sql')
+
+    expect(migration).toContain('review_requests_update_self_pending')
+    expect(migration).toContain('review_requests_delete_self_pending')
+    expect(migration).toContain("requester_id = auth.uid() and status = 'pending'")
+  })
+
+  it('creates review attachment storage bucket with scoped upload policies', () => {
+    const migration = readMigration('202607050002_review_attachments_storage.sql')
+
+    expect(migration).toContain('review-attachments')
+    expect(migration).toContain('storage.objects')
+    expect(migration).toContain('auth.uid()')
+  })
+
+  it('adds profile is_active and can_use_app guard for member access', () => {
+    const migration = readMigration('202607050003_profile_is_active.sql')
+
+    expect(migration).toContain('is_active boolean')
+    expect(migration).toContain('is_active_self')
+    expect(migration).toContain('can_use_app')
+  })
 })

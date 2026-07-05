@@ -8,6 +8,7 @@ vite.config.d.ts
 .env.local
 .env.*.local
 supabase/*private*.local.sql
+backup/*.sql
 
 .DS_Store
 Thumbs.db

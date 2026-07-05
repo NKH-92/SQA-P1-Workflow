@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createPreviewData, previewLeader, previewMember } from '../../demoData'
 import { toStorageAttachmentUrl } from '../../lib/attachments'
-import { rejectReviewRequest, saveReviewRequest, withdrawReviewRequest } from './reviews'
+import { rejectReviewRequest, saveReviewRequest, updateReviewStatus, withdrawReviewRequest } from './reviews'
 import type { RepositoryContext } from '../repositoryContext'
 
 describe('withdrawReviewRequest (demo)', () => {
@@ -92,5 +92,32 @@ describe('saveReviewRequest (demo)', () => {
     ).rejects.toThrow('본인이 업로드한 파일만 첨부할 수 있습니다.')
 
     expect(next.reviewRequests).toHaveLength(data.reviewRequests.length)
+  })
+})
+
+describe('updateReviewStatus (demo)', () => {
+  it('updates review status in local data', async () => {
+    const data = createPreviewData()
+    const reviewId = data.reviewRequests[0]?.id
+    expect(reviewId).toBeTruthy()
+
+    let next = data
+    const ctx: RepositoryContext = {
+      isRemote: false,
+      profile: previewLeader,
+      data,
+      setData: (updater) => {
+        next = typeof updater === 'function' ? updater(next) : updater
+      },
+    }
+
+    await updateReviewStatus(ctx, reviewId!, 'approved')
+    const updated = next.reviewRequests.find((item) => item.id === reviewId)
+    expect(updated?.status).toBe('approved')
+    expect(
+      next.activityLogs.some(
+        (log) => log.entity_id === reviewId && log.action === 'status_changed' && log.metadata?.status === 'approved',
+      ),
+    ).toBe(true)
   })
 })

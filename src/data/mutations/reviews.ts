@@ -177,7 +177,10 @@ export async function updateReviewStatus(
   const request = data.reviewRequests.find((item) => item.id === requestId)
 
   if (ctx.isRemote) {
-    const { error } = await supabase!.from('review_requests').update({ status }).eq('id', requestId)
+    const { error } = await supabase!.rpc('update_review_request_status', {
+      p_review_request_id: requestId,
+      p_status: status,
+    })
     if (error) throw error
   } else {
     setData((current) => ({

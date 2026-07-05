@@ -116,4 +116,34 @@ describe('Supabase migrations', () => {
     expect(migration).toContain('major_category_id uuid references public.duty_major_categories')
     expect(migration).toContain('duties_major_category_name_key unique (major_category_id, name)')
   })
+
+  it('adds duty allocation metadata for assignee labels and notes', () => {
+    const migration = readMigration('202607050010_duty_allocation_metadata.sql')
+
+    expect(migration).toContain('assignee_label text')
+    expect(migration).toContain('notes text')
+  })
+
+  it('adds atomic assignment replace, review status RPC, and active-user guards', () => {
+    const migration = readMigration('202607060001_p0_atomic_assignments_and_review_status.sql')
+
+    expect(migration).toContain('replace_project_assignments')
+    expect(migration).toContain('update_review_request_status')
+    expect(migration).toContain('profile_is_active')
+    expect(migration).toContain('project_assignments.user_id must reference an active profile')
+    expect(migration).toContain('product_assignments_validate_active')
+    expect(migration).toContain('duty_assignments_validate_active')
+    expect(migration).toContain('use reject_review_request for rejected status')
+    expect(migration).toContain('set search_path = public')
+  })
+
+  it('adds product name uniqueness and atomic product/duty assignment RPCs', () => {
+    const migration = readMigration('202607060002_p1_product_unique_and_assignment_rpcs.sql')
+
+    expect(migration).toContain('products_name_key unique (name)')
+    expect(migration).toContain('replace_product_assignments')
+    expect(migration).toContain('replace_duty_assignments')
+    expect(migration).toContain('is_active_leader')
+    expect(migration).toContain('set search_path = public')
+  })
 })

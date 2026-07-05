@@ -40,7 +40,7 @@ export function AuthPanel() {
     <main className="auth-layout">
       <section className="auth-copy">
         <ShieldCheck size={40} />
-        <h1>파트 업무관리 시스템</h1>
+        <h1>SQA P1 Workflow</h1>
         <p>우리 팀의 업무 배정, 검토 요청, 프로젝트 현황을 한 곳에서 관리하세요.</p>
         <ul>
           <li>팀 전체의 담당제품·업무를 한눈에 확인</li>

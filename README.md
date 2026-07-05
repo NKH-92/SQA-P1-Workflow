@@ -1,6 +1,6 @@
-# 파트 업무관리 시스템
+# SQA P1 Workflow
 
-React + Vite + Supabase 기반의 파트 업무관리 MVP입니다.
+React + Vite + Supabase 기반의 SQA 1파트 업무관리 MVP입니다.
 
 ## 포함 범위
 

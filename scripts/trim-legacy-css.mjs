@@ -10,7 +10,7 @@ const v2Index = lines.findIndex((line) => line.includes('V2 Warm Paper Theme'))
 if (v2Index < 0) throw new Error('V2 theme section not found')
 
 const preamble = `/* ==========================================================================
-   Part Ops – Warm Paper Theme
+   SQA P1 Workflow – Warm Paper Theme
    ========================================================================== */
 
 * {

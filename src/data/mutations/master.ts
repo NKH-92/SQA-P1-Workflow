@@ -181,17 +181,123 @@ export async function addDuty(
   }
 }
 
+export async function saveProductAssignments(
+  ctx: RepositoryContext,
+  input: {
+    productId: string
+    nextMemberIds: string[]
+    product?: Product | null
+    memberOptions?: Array<{ id: string; name: string; email: string }>
+  },
+): Promise<void> {
+  const { data, setData } = ctx
+  const { productId, nextMemberIds, product, memberOptions } = input
+  const currentIds = data.productAssignments
+    .filter((assignment) => assignment.product_id === productId)
+    .map((assignment) => assignment.user_id)
+  const toAdd = nextMemberIds.filter((id) => !currentIds.includes(id))
+  const toRemove = data.productAssignments.filter(
+    (assignment) => assignment.product_id === productId && !nextMemberIds.includes(assignment.user_id),
+  )
+
+  if (ctx.isRemote) {
+    const { error } = await supabase!.rpc('replace_product_assignments', {
+      p_product_id: productId,
+      p_member_ids: nextMemberIds,
+    })
+    if (error) throw error
+  } else {
+    const resolvedProduct = product ?? data.products.find((item) => item.id === productId) ?? null
+    setData((current) => ({
+      ...current,
+      productAssignments: [
+        ...current.productAssignments.filter((assignment) => !toRemove.some((item) => item.id === assignment.id)),
+        ...toAdd.map((memberId) => {
+          const member = memberOptions?.find((item) => item.id === memberId)
+            ?? data.profiles.find((item) => item.id === memberId)
+          return {
+            id: makeId('product-assignment'),
+            user_id: memberId,
+            product_id: productId,
+            profiles: member ? { name: member.name, email: member.email } : null,
+            products: resolvedProduct ? productRelation(resolvedProduct) : null,
+          }
+        }),
+      ],
+    }))
+  }
+}
+
+export async function saveDutyAssignments(
+  ctx: RepositoryContext,
+  input: {
+    dutyId: string
+    nextMemberIds: string[]
+    duty?: { name: string; major_category_id: string; duty_major_categories?: DutyMajorCategory | Pick<DutyMajorCategory, 'name' | 'sort_order'> | null } | null
+    memberOptions?: Array<{ id: string; name: string; email: string }>
+  },
+): Promise<void> {
+  const { data, setData } = ctx
+  const { dutyId, nextMemberIds, duty, memberOptions } = input
+  const currentIds = data.dutyAssignments
+    .filter((assignment) => assignment.duty_id === dutyId)
+    .map((assignment) => assignment.user_id)
+  const toAdd = nextMemberIds.filter((id) => !currentIds.includes(id))
+  const toRemove = data.dutyAssignments.filter(
+    (assignment) => assignment.duty_id === dutyId && !nextMemberIds.includes(assignment.user_id),
+  )
+
+  if (ctx.isRemote) {
+    const { error } = await supabase!.rpc('replace_duty_assignments', {
+      p_duty_id: dutyId,
+      p_member_ids: nextMemberIds,
+    })
+    if (error) throw error
+  } else {
+    const resolvedDuty = duty ?? data.duties.find((item) => item.id === dutyId) ?? null
+    setData((current) => ({
+      ...current,
+      dutyAssignments: [
+        ...current.dutyAssignments.filter((assignment) => !toRemove.some((item) => item.id === assignment.id)),
+        ...toAdd.map((memberId) => {
+          const member = memberOptions?.find((item) => item.id === memberId)
+            ?? data.profiles.find((item) => item.id === memberId)
+          return {
+            id: makeId('duty-assignment'),
+            user_id: memberId,
+            duty_id: dutyId,
+            profiles: member ? { name: member.name, email: member.email } : null,
+            duties: resolvedDuty
+              ? dutyRelation({
+                  ...resolvedDuty,
+                  duty_major_categories: resolvedDuty.duty_major_categories
+                    ?? data.dutyMajorCategories.find((item) => item.id === resolvedDuty.major_category_id)
+                    ?? null,
+                })
+              : null,
+          }
+        }),
+      ],
+    }))
+  }
+}
+
 export async function assignProduct(
   ctx: RepositoryContext,
   input: { userId: string; productId: string },
 ): Promise<void> {
   const { data, setData } = ctx
+  const currentIds = data.productAssignments
+    .filter((assignment) => assignment.product_id === input.productId)
+    .map((assignment) => assignment.user_id)
+  if (currentIds.includes(input.userId)) return
+
   if (ctx.isRemote) {
-    const { error } = await supabase!.from('product_assignments').insert({
-      user_id: input.userId,
-      product_id: input.productId,
+    await saveProductAssignments(ctx, {
+      productId: input.productId,
+      nextMemberIds: [...currentIds, input.userId],
     })
-    if (error) throw error
+    return
   } else {
     const member = data.profiles.find((item) => item.id === input.userId)
     const product = data.products.find((item) => item.id === input.productId)
@@ -216,9 +322,17 @@ export async function assignDuty(
   input: { userId: string; dutyId: string },
 ): Promise<void> {
   const { data, setData } = ctx
+  const currentIds = data.dutyAssignments
+    .filter((assignment) => assignment.duty_id === input.dutyId)
+    .map((assignment) => assignment.user_id)
+  if (currentIds.includes(input.userId)) return
+
   if (ctx.isRemote) {
-    const { error } = await supabase!.from('duty_assignments').insert({ user_id: input.userId, duty_id: input.dutyId })
-    if (error) throw error
+    await saveDutyAssignments(ctx, {
+      dutyId: input.dutyId,
+      nextMemberIds: [...currentIds, input.userId],
+    })
+    return
   } else {
     const member = data.profiles.find((item) => item.id === input.userId)
     const duty = data.duties.find((item) => item.id === input.dutyId)

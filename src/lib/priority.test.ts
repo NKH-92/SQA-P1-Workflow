@@ -39,4 +39,10 @@ describe('reviewPriorityScore', () => {
     const newer = makeRequest({ id: 'new', created_at: '2026-07-04T00:00:00.000Z' })
     expect(compareReviewRequests(newer, older, true)).toBeLessThan(0)
   })
+
+  it('treats missing created_at as oldest in member view', () => {
+    const dated = makeRequest({ id: 'dated', created_at: '2026-07-04T00:00:00.000Z' })
+    const missing = makeRequest({ id: 'missing', created_at: undefined })
+    expect(compareReviewRequests(dated, missing, true)).toBeLessThan(0)
+  })
 })

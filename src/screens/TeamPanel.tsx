@@ -275,8 +275,9 @@ export function TeamPanel({
                 void addProfileNote()
               }}
             >
+              <small>이 메모는 해당 파트원에게도 표시됩니다.</small>
               <textarea
-                placeholder="배정 조정, 인수인계, 리스크 메모"
+                placeholder="배정 조정, 인수인계, 공유 메모"
                 value={profileNote}
                 onChange={(event) => setProfileNote(event.target.value)}
               />

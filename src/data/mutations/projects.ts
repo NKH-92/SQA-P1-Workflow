@@ -152,16 +152,11 @@ export async function saveProjectAssignments(
   )
 
   if (ctx.isRemote) {
-    if (toRemove.length > 0) {
-      const { error } = await supabase!.from('project_assignments').delete().in('id', toRemove.map((item) => item.id))
-      if (error) throw error
-    }
-    if (toAdd.length > 0) {
-      const { error } = await supabase!.from('project_assignments').insert(
-        toAdd.map((memberId) => ({ project_id: project.id, user_id: memberId, notes: null })),
-      )
-      if (error) throw error
-    }
+    const { error } = await supabase!.rpc('replace_project_assignments', {
+      p_project_id: project.id,
+      p_member_ids: nextMemberIds,
+    })
+    if (error) throw error
   } else {
     setData((current) => ({
       ...current,

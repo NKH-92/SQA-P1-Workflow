@@ -12,6 +12,7 @@ import {
   withdrawReviewRequest,
 } from '../data'
 import { normalizeHttpUrl } from '../lib/urls'
+import { UserFacingError } from '../lib/errors'
 import { formatDate, reviewStatusLabels } from '../lib/format'
 import { uploadReviewAttachment } from '../lib/attachments'
 import { compareReviewRequests } from '../lib/priority'
@@ -29,6 +30,20 @@ const emptyReviewForm = {
   attachment_url: '',
   deadlineMode: 'none' as DeadlineMode,
   due_date: '',
+}
+
+type ReviewFormState = typeof emptyReviewForm
+
+function isReviewDraft(value: unknown): value is ReviewFormState {
+  if (typeof value !== 'object' || value === null) return false
+  const draft = value as Partial<ReviewFormState>
+  return (
+    typeof draft.title === 'string' &&
+    typeof draft.description === 'string' &&
+    typeof draft.attachment_url === 'string' &&
+    (draft.deadlineMode === 'none' || draft.deadlineMode === 'date') &&
+    typeof draft.due_date === 'string'
+  )
 }
 
 export function ReviewsPanel({
@@ -50,6 +65,7 @@ export function ReviewsPanel({
   const [editingReviewId, setEditingReviewId] = useState<string | null>(null)
   const [pendingWithdrawId, setPendingWithdrawId] = useState<string | null>(null)
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
+  const [existingStorageAttachment, setExistingStorageAttachment] = useState<string | null>(null)
   const [isReviewComposerOpen, setReviewComposerOpen] = useState(false)
   const [draftNotice, setDraftNotice] = useState<string | null>(null)
   const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null)
@@ -107,16 +123,24 @@ export function ReviewsPanel({
   const openReviewComposer = () => {
     setEditingReviewId(null)
     setAttachmentFile(null)
+    setExistingStorageAttachment(null)
     setDraftSavedAt(null)
     if (typeof localStorage !== 'undefined') {
       const raw = localStorage.getItem(reviewDraftKey)
       if (raw) {
         try {
-          setForm(JSON.parse(raw) as typeof form)
-          setDraftNotice('이 기기에 저장된 초안을 불러왔습니다.')
+          const parsed: unknown = JSON.parse(raw)
+          if (isReviewDraft(parsed)) {
+            setForm(parsed)
+            setDraftNotice('이 기기에 저장된 초안을 불러왔습니다.')
+          } else {
+            localStorage.removeItem(reviewDraftKey)
+            setForm(emptyReviewForm)
+            setDraftNotice('저장된 초안 형식이 달라 초기화했습니다.')
+          }
         } catch {
           setForm(emptyReviewForm)
-          setDraftNotice(null)
+          setDraftNotice('저장된 초안을 읽지 못해 초기화했습니다.')
         }
       } else {
         setForm(emptyReviewForm)
@@ -132,10 +156,12 @@ export function ReviewsPanel({
   const openReviewEditor = (request: ReviewRequest) => {
     setEditingReviewId(request.id)
     setAttachmentFile(null)
+    const storageAttachment = request.attachment_url?.startsWith('storage://') ? request.attachment_url : null
+    setExistingStorageAttachment(storageAttachment)
     setForm({
       title: request.title,
       description: request.description,
-      attachment_url: request.attachment_url ?? '',
+      attachment_url: storageAttachment ? '' : request.attachment_url ?? '',
       deadlineMode: request.due_date ? 'date' : 'none',
       due_date: request.due_date?.slice(0, 10) ?? '',
     })
@@ -149,6 +175,7 @@ export function ReviewsPanel({
       setReviewComposerOpen(false)
       setEditingReviewId(null)
       setAttachmentFile(null)
+      setExistingStorageAttachment(null)
     },
     [editingReviewId, saveReviewDraft],
   )
@@ -201,21 +228,23 @@ export function ReviewsPanel({
       const title = form.title.trim()
       const description = form.description.trim()
       if (!title || !description) {
-        throw new Error('제목과 설명을 입력해 주세요.')
+        throw new UserFacingError('제목과 설명을 입력해 주세요.')
       }
       const attachmentUrl = attachmentFile
         ? ctx.isRemote
           ? await uploadReviewAttachment(profile.id, attachmentFile)
           : (() => {
-              throw new Error('파일 첨부는 Supabase 연결 환경에서만 사용할 수 있습니다.')
+              throw new UserFacingError('파일 첨부는 Supabase 연결 환경에서만 사용할 수 있습니다.')
             })()
-        : normalizeHttpUrl(form.attachment_url)
+        : form.attachment_url.trim()
+          ? normalizeHttpUrl(form.attachment_url)
+          : existingStorageAttachment
       if (!attachmentFile && form.attachment_url.trim() && !attachmentUrl) {
-        throw new Error('첨부 링크는 http 또는 https URL만 사용할 수 있습니다.')
+        throw new UserFacingError('첨부 링크는 http 또는 https URL만 사용할 수 있습니다.')
       }
       const dueDate = form.deadlineMode === 'date' ? form.due_date : null
       if (form.deadlineMode === 'date' && !dueDate) {
-        throw new Error('검토 기한 날짜를 선택해 주세요.')
+        throw new UserFacingError('검토 기한 날짜를 선택해 주세요.')
       }
       const { isUpdate } = await saveReviewRequest(ctx, {
         editingReviewId,
@@ -250,7 +279,7 @@ export function ReviewsPanel({
   const rejectReview = (requestId: string) =>
     mutate(async () => {
       const comment = feedback[requestId]?.trim()
-      if (!comment) throw new Error('반려 사유를 피드백에 입력해 주세요.')
+      if (!comment) throw new UserFacingError('반려 사유를 피드백에 입력해 주세요.')
       await rejectReviewRequest(createRepositoryContext(profile, data, setData), requestId, comment)
       setFeedback((current) => ({ ...current, [requestId]: '' }))
     }, '검토요청을 반려했습니다.')

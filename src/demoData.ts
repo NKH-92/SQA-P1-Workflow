@@ -15,6 +15,12 @@ import type {
   ActivityLog,
 } from './types'
 import { p1ProductAllocationRows } from './data/p1ProductAllocation'
+import {
+  isP1DirectDutyAssignee,
+  listP1DutyMajorCategories,
+  p1DutyAllocationRows,
+  resolveP1DutyAssigneeLabel,
+} from './data/p1DutyAllocation'
 
 const createdAt = '2026-07-02T00:00:00.000Z'
 
@@ -36,12 +42,43 @@ const previewMembers: Profile[] = p1AssigneeNames.map((name, index) => ({
   role: 'member',
 }))
 
-export const previewMember: Profile = previewMembers[0]
-const dutyMajorCategorySeed: Array<{ id: string; name: string; sort_order: number; duties: string[] }> = [
-  { id: 'duty-major-01', name: '기획', sort_order: 1, duties: ['요구사항 정리', '화면 정책 정의'] },
-  { id: 'duty-major-02', name: '개발', sort_order: 2, duties: ['API 검토', '데이터 정합성 확인', '배포 검증'] },
-  { id: 'duty-major-03', name: '운영', sort_order: 3, duties: ['운영 이슈 대응', '사용자 문의 분석', '권한 정책 점검', '성능 모니터링', '릴리스 노트 작성'] },
+const extraPreviewProfiles: Profile[] = [
+  {
+    id: 'profile-leader-nkh',
+    email: 'nkh@preview.local',
+    name: '남광현',
+    role: 'leader',
+  },
+  {
+    id: 'member-extra-01',
+    email: 'pjs@preview.local',
+    name: '박지수',
+    role: 'member',
+  },
+  {
+    id: 'member-extra-02',
+    email: 'jyj@preview.local',
+    name: '정영주',
+    role: 'member',
+  },
+  {
+    id: 'member-extra-03',
+    email: 'jsy@preview.local',
+    name: '조소연',
+    role: 'member',
+  },
 ]
+
+const previewProfiles = [...previewMembers, ...extraPreviewProfiles].filter(
+  (profile, index, profiles) => profiles.findIndex((item) => item.name === profile.name) === index,
+)
+
+function previewProfileByName(name: string) {
+  return previewProfiles.find((profile) => profile.name === name)
+}
+
+export const previewMember: Profile = previewMembers[0]
+
 const projectNames = [
   '고객 포털 개편',
   '정산 자동화',
@@ -92,25 +129,32 @@ export function createPreviewData(): AppData {
     updated_at: createdAt,
   }))
 
-  const dutyMajorCategories: DutyMajorCategory[] = dutyMajorCategorySeed.map((category) => ({
-    id: category.id,
-    name: category.name,
-    sort_order: category.sort_order,
+  const dutyMajorCategories: DutyMajorCategory[] = listP1DutyMajorCategories().map((name, index) => ({
+    id: `duty-major-${String(index + 1).padStart(2, '0')}`,
+    name,
+    sort_order: index + 1,
     created_at: createdAt,
     updated_at: createdAt,
   }))
 
-  const duties: Duty[] = dutyMajorCategorySeed.flatMap((category, categoryIndex) =>
-    category.duties.map((name, dutyIndex) => ({
-      id: `duty-${String(categoryIndex * 10 + dutyIndex + 1).padStart(2, '0')}`,
-      name,
-      major_category_id: category.id,
-      sort_order: dutyIndex + 1,
+  const majorCategoryIdByName = Object.fromEntries(dutyMajorCategories.map((category) => [category.name, category.id]))
+
+  const duties: Duty[] = p1DutyAllocationRows.map((row, index) => {
+    const majorCategory = dutyMajorCategories.find((category) => category.name === row.majorCategory)
+    return {
+      id: `duty-${String(index + 1).padStart(2, '0')}`,
+      name: row.dutyName,
+      major_category_id: majorCategoryIdByName[row.majorCategory],
+      sort_order: index + 1,
+      assignee_label: resolveP1DutyAssigneeLabel(row.assigneeName),
+      notes: row.notes,
       created_at: createdAt,
       updated_at: createdAt,
-      duty_major_categories: { name: category.name, sort_order: category.sort_order },
-    })),
-  )
+      duty_major_categories: majorCategory
+        ? { name: majorCategory.name, sort_order: majorCategory.sort_order ?? null }
+        : null,
+    }
+  })
 
   const projects: Project[] = projectNames.map((name, index) => ({
     id: `project-${String(index + 1).padStart(2, '0')}`,
@@ -124,7 +168,7 @@ export function createPreviewData(): AppData {
   }))
 
   const productAssignments: ProductAssignment[] = p1ProductAllocationRows.flatMap((row, index) => {
-    const member = previewMembers.find((item) => item.name === row.assigneeName)
+    const member = previewProfileByName(row.assigneeName)
     const product = products[index]
     if (!member || !product) return []
     return [
@@ -145,20 +189,26 @@ export function createPreviewData(): AppData {
     ]
   })
 
-  const dutyAssignments: DutyAssignment[] = previewMembers.flatMap((member, memberIndex) =>
-    pickUnique(duties, 2, random).map((duty, dutyIndex) => ({
-      id: `duty-assignment-${memberIndex + 1}-${dutyIndex + 1}`,
-      user_id: member.id,
-      duty_id: duty.id,
-      created_at: createdAt,
-      profiles: { name: member.name, email: member.email },
-      duties: {
-        name: duty.name,
-        major_category_id: duty.major_category_id,
-        duty_major_categories: { name: duty.duty_major_categories?.name ?? '' },
+  const dutyAssignments: DutyAssignment[] = p1DutyAllocationRows.flatMap((row, index) => {
+    if (!isP1DirectDutyAssignee(row.assigneeName)) return []
+    const member = previewProfileByName(row.assigneeName)
+    const duty = duties[index]
+    if (!member || !duty) return []
+    return [
+      {
+        id: `duty-assignment-${String(index + 1).padStart(2, '0')}`,
+        user_id: member.id,
+        duty_id: duty.id,
+        created_at: createdAt,
+        profiles: { name: member.name, email: member.email },
+        duties: {
+          name: duty.name,
+          major_category_id: duty.major_category_id,
+          duty_major_categories: { name: duty.duty_major_categories?.name ?? row.majorCategory },
+        },
       },
-    })),
-  )
+    ]
+  })
 
   const projectAssignments: ProjectAssignment[] = previewMembers.flatMap((member, memberIndex) =>
     pickUnique(projects, 2, random).map((project, projectIndex) => ({
@@ -276,7 +326,7 @@ export function createPreviewData(): AppData {
   ]
 
   return {
-    profiles: previewMembers.map((member) => ({ ...member, created_at: createdAt })),
+    profiles: previewProfiles.map((profile) => ({ ...profile, created_at: createdAt })),
     allowedUsers,
     products,
     dutyMajorCategories,

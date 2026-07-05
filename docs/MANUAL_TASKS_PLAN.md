@@ -80,7 +80,7 @@ GitHub 저장소 → **Settings → Secrets and variables → Actions**
 | 이름 | 값 출처 | 비고 |
 |------|---------|------|
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare Dashboard 우측 Account ID | |
-| `WORKER_NAME` | 배포할 Worker 이름 (예: `part-ops`) | |
+| `WORKER_NAME` | 배포할 Worker 이름 (예: `sqa-p1-workflow`) | |
 | `VITE_SUPABASE_URL` | Supabase → Settings → API → Project URL | `https://xxxx.supabase.co` |
 
 ### Secrets (민감)
@@ -204,7 +204,7 @@ Supabase → **Authentication → URL Configuration**
 
 | 항목 | 값 |
 |------|-----|
-| Site URL | Workers 배포 URL (예: `https://part-ops.<account>.workers.dev`) |
+| Site URL | Workers 배포 URL (예: `https://sqa-p1-workflow.<account>.workers.dev`) |
 | Redirect URLs | 위 URL + 로컬 dev `http://localhost:5173` (개발 시) |
 
 ### 5.4 첫 로그인
@@ -348,7 +348,7 @@ cd "E:\99.Codex Project\P1 Work"
 또는 Supabase CLI:
 
 ```bash
-supabase db dump --db-url "<DATABASE_URL>" -f backup/part-ops-YYYY-MM-DD.sql
+supabase db dump --db-url "<DATABASE_URL>" -f backup/sqa-p1-workflow-YYYY-MM-DD.sql
 ```
 
 #### 보관 규칙
@@ -362,9 +362,9 @@ supabase db dump --db-url "<DATABASE_URL>" -f backup/part-ops-YYYY-MM-DD.sql
 ### G-2. 복구 리허설 (분기 1회)
 
 1. **스테이징** Supabase 프로젝트(또는 로컬 Postgres) 준비
-2. 최신 `backup/part-ops-YYYY-MM-DD.sql` 복원
+2. 최신 `backup/sqa-p1-workflow-YYYY-MM-DD.sql` 복원
    ```bash
-   psql "<STAGING_DATABASE_URL>" -f backup/part-ops-YYYY-MM-DD.sql
+   psql "<STAGING_DATABASE_URL>" -f backup/sqa-p1-workflow-YYYY-MM-DD.sql
    ```
 3. 행 수 대조 (운영 vs 스테이징):
    ```sql
@@ -378,7 +378,7 @@ supabase db dump --db-url "<DATABASE_URL>" -f backup/part-ops-YYYY-MM-DD.sql
 
 | 날짜 | 담당 | 백업 파일 | 크기 | 복구 리허설 |
 |------|------|-----------|------|:-----------:|
-| YYYY-MM-DD | | backup/part-ops-....sql | MB | ☐ 성공 / ☐ 실패 |
+| YYYY-MM-DD | | backup/sqa-p1-workflow-....sql | MB | ☐ 성공 / ☐ 실패 |
 
 ### 완료 기준
 - [ ] 백업 파일 1개 이상 보관

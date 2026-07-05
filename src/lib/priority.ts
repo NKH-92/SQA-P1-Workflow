@@ -14,9 +14,14 @@ export function reviewPriorityScore(request: ReviewRequest, now = new Date()) {
   return statusWeight + dueWeight
 }
 
+function createdAtMs(value: string | null | undefined) {
+  const parsed = Date.parse(value ?? '')
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
 export function compareReviewRequests(left: ReviewRequest, right: ReviewRequest, memberView = false) {
   if (memberView) {
-    return Date.parse(right.created_at ?? '') - Date.parse(left.created_at ?? '')
+    return createdAtMs(right.created_at) - createdAtMs(left.created_at)
   }
   return reviewPriorityScore(left) - reviewPriorityScore(right)
 }

@@ -2,8 +2,8 @@ import { LogOut, ShieldCheck } from 'lucide-react'
 
 export function BlockedProfile({ onSignOut, inactive }: { onSignOut?: () => void; inactive?: boolean }) {
   return (
-    <main className="center-screen">
-      <ShieldCheck size={32} />
+    <main className="center-screen" role="alert">
+      <ShieldCheck size={32} aria-hidden="true" />
       <h1>{inactive ? '계정이 비활성화되었습니다' : '초대 등록이 필요합니다'}</h1>
       <p>
         {inactive

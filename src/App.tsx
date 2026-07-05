@@ -6,7 +6,7 @@ import type { TabId, ToastMessage } from './app/types'
 import { canManageTeamData } from './domain/permissions'
 import { fetchAppData } from './data/fetchAppData'
 import { toUserMessage } from './lib/errors'
-import { buildAppHash, isLeaderTab, parseAppHash } from './lib/navigation'
+import { buildAppHash, isLeaderTab, parseAppHash, sanitizeTabForRole } from './lib/navigation'
 import { countUnreadReviews, markReviewsSeen } from './lib/readState'
 import { hasSupabaseConfig, supabase } from './lib/supabase'
 import type { AppData, Profile } from './types'
@@ -77,17 +77,28 @@ function App() {
     if (typeof window === 'undefined') return
     const syncFromHash = () => {
       const { tab, entityId } = parseAppHash()
-      setActiveTabState(tab)
+      const safeTab = sanitizeTabForRole(tab, leaderMode)
+      setActiveTabState(safeTab)
       setNavEntityId(entityId)
+      if (safeTab !== tab) {
+        const hash = buildAppHash(safeTab, entityId)
+        if (window.location.hash !== hash) window.location.hash = hash
+      }
     }
     window.addEventListener('hashchange', syncFromHash)
     return () => window.removeEventListener('hashchange', syncFromHash)
-  }, [])
+  }, [leaderMode])
+
+  useEffect(() => {
+    if (!profile) return
+    const safeTab = sanitizeTabForRole(activeTab, leaderMode)
+    if (safeTab !== activeTab) setActiveTab(safeTab)
+  }, [activeTab, leaderMode, profile, setActiveTab])
 
   useEffect(() => {
     if (!profile || leaderMode) return
-    if (isLeaderTab(activeTab)) setActiveTabState('dashboard')
-  }, [activeTab, leaderMode, profile])
+    if (isLeaderTab(activeTab)) setActiveTab('dashboard')
+  }, [activeTab, leaderMode, profile, setActiveTab])
 
   useEffect(() => {
     if (!message) return
@@ -265,9 +276,9 @@ function App() {
       {(activeTab === 'dashboard' || activeTab === 'work') &&
         (leaderMode && activeTab === 'dashboard' ? (
           <LeaderDashboard profile={profile} data={data} setActiveTab={setActiveTab} />
-        ) : (
+        ) : !leaderMode ? (
           <Dashboard profile={profile} data={data} mutate={mutate} setData={setData} setActiveTab={setActiveTab} />
-        ))}
+        ) : null)}
       {activeTab === 'reviews' && (
         <ReviewsPanel
           profile={profile}

@@ -130,8 +130,8 @@ export function Shell({
           <div className="brand">
             <BriefcaseBusiness size={28} />
             <div>
-              <strong>Part Ops</strong>
-              <span>업무관리</span>
+              <strong>SQA P1</strong>
+              <span>Workflow</span>
             </div>
           </div>
           <button className="sidebar-close" onClick={() => setSidebarOpen(false)} type="button">
@@ -200,19 +200,23 @@ export function Shell({
           </div>
           <div className="topbar-actions">
             {message && (
-              <span className="toast" data-tone={message.tone}>
+              <span className="toast" data-tone={message.tone} role="status" aria-live="polite">
                 {message.text}
               </span>
             )}
             {syncLabel && <span className="sync-label">{syncLabel}</span>}
             {refreshing && (
-              <span className="saving">
-                <RefreshCw className="spin" size={14} />
+              <span className="saving" role="status" aria-live="polite">
+                <RefreshCw className="spin" size={14} aria-hidden="true" />
                 갱신 중
               </span>
             )}
-            {saving && <span className="saving">저장 중</span>}
-            <button className="icon-button" title="새로고침" onClick={onRefresh} type="button">
+            {saving && (
+              <span className="saving" role="status" aria-live="polite">
+                저장 중
+              </span>
+            )}
+            <button className="icon-button" title="새로고침" onClick={onRefresh} type="button" disabled={refreshing || saving}>
               <RefreshCw className={refreshing ? 'spin' : undefined} size={18} />
             </button>
             <button className="icon-button" title="로그아웃" onClick={onSignOut} type="button">

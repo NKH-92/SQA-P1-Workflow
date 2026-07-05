@@ -7,15 +7,23 @@ param(
 
 $ErrorActionPreference = "Stop"
 $date = Get-Date -Format "yyyy-MM-dd"
-$outFile = Join-Path $OutputDir "part-ops-$date.sql"
+$schemaFile = Join-Path $OutputDir "sqa-p1-workflow-$date-schema.sql"
+$dataFile = Join-Path $OutputDir "sqa-p1-workflow-$date-data.sql"
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
-Write-Host "Dumping to $outFile ..."
-supabase db dump --db-url $DatabaseUrl -f $outFile
+Write-Host "Dumping schema to $schemaFile ..."
+supabase db dump --db-url $DatabaseUrl -f $schemaFile
 
-if (-not (Test-Path $outFile) -or (Get-Item $outFile).Length -eq 0) {
-  throw "Backup file missing or empty."
+Write-Host "Dumping data to $dataFile ..."
+supabase db dump --db-url $DatabaseUrl --data-only -f $dataFile
+
+foreach ($file in @($schemaFile, $dataFile)) {
+  if (-not (Test-Path $file) -or (Get-Item $file).Length -eq 0) {
+    throw "Backup file missing or empty: $file"
+  }
 }
 
-Write-Host "Backup OK: $outFile ($((Get-Item $outFile).Length) bytes)"
+Write-Host "Backup OK:"
+Write-Host "  schema: $schemaFile ($((Get-Item $schemaFile).Length) bytes)"
+Write-Host "  data:   $dataFile ($((Get-Item $dataFile).Length) bytes)"

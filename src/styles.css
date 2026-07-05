@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Part Ops · V2 Warm Paper
+   SQA P1 Workflow · V2 Warm Paper
    Notion-inspired warm stone neutrals + sepia accent.
    Sources: v2-tokens.jsx · v2-warmpaper.jsx · v2-modals.jsx · v2-interactive.jsx
    ========================================================================== */
@@ -355,6 +355,17 @@ select {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.delete-confirm.expanded {
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 320px;
+}
+
+.delete-confirm.expanded p {
+  margin: 0;
+  line-height: 1.45;
 }
 
 .inline-actions {
@@ -3661,6 +3672,11 @@ button.review-preview-row:hover {
   gap: 8px;
 }
 
+.note-form small {
+  color: var(--paper-faint);
+  font-size: 11px;
+}
+
 .note-form textarea {
   min-height: 76px;
 }
@@ -4189,21 +4205,6 @@ button.review-preview-row:hover {
   to {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
-  }
-}
-
-.toast {
-  animation-name: toast-chip-in;
-}
-
-@keyframes toast-chip-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
   }
 }
 

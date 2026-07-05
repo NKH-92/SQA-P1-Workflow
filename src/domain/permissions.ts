@@ -12,8 +12,12 @@ export function canCreateProject(profile: Pick<Profile, 'role'> | null | undefin
   return isLeader(profile)
 }
 
-export function canAssignProjectTo(profile: Pick<Profile, 'role'> | null | undefined): boolean {
-  return profile?.role === 'member'
+export function canAssignProjectTo(profile: Pick<Profile, 'role' | 'is_active'> | null | undefined): boolean {
+  return profile?.role === 'member' && profile.is_active !== false
+}
+
+export function canReceiveAssignment(profile: Pick<Profile, 'role' | 'is_active'> | null | undefined): boolean {
+  return canAssignProjectTo(profile)
 }
 
 export function canViewProfile(current: Profile, target: Pick<Profile, 'id'>): boolean {

@@ -54,6 +54,8 @@ export interface Duty {
   name: string
   major_category_id: string
   sort_order?: number | null
+  assignee_label?: string | null
+  notes?: string | null
   created_at?: string
   updated_at?: string
   duty_major_categories?: Pick<DutyMajorCategory, 'name' | 'sort_order'> | null

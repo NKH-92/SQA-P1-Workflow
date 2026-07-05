@@ -24,4 +24,12 @@ describe('migration scripts', () => {
     expect(script).toContain('db query')
     expect(script).not.toContain('db execute')
   })
+
+  it('backup-db.ps1 dumps schema and data separately', () => {
+    const script = readScript('backup-db.ps1')
+
+    expect(script).toContain('-schema.sql')
+    expect(script).toContain('-data.sql')
+    expect(script).toContain('--data-only')
+  })
 })

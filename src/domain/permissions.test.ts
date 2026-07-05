@@ -25,6 +25,7 @@ describe('role visibility rules mirrored by RLS', () => {
     expect(canCreateProject(memberA)).toBe(false)
     expect(canAssignProjectTo(memberA)).toBe(true)
     expect(canAssignProjectTo(leader)).toBe(false)
+    expect(canAssignProjectTo({ ...memberA, is_active: false })).toBe(false)
   })
 
   it('keeps member profile visibility scoped to self', () => {

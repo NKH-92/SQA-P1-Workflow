@@ -1,5 +1,13 @@
 import type { Role } from '../types'
 
+export function normalizeCsvImportedValue(value: string) {
+  const trimmed = value.trim()
+  if (trimmed.startsWith("'") && trimmed.length > 1 && /^[=+\-@]/.test(trimmed.slice(1))) {
+    return trimmed.slice(1)
+  }
+  return trimmed
+}
+
 export function parseCsvRows(text: string): string[][] {
   const normalized = text.replace(/^\uFEFF/, '')
   const rows: string[][] = []
@@ -28,12 +36,12 @@ export function parseCsvRows(text: string): string[][] {
       continue
     }
     if (char === ',') {
-      row.push(cell.trim())
+      row.push(normalizeCsvImportedValue(cell))
       cell = ''
       continue
     }
     if (char === '\n' || (char === '\r' && next === '\n')) {
-      row.push(cell.trim())
+      row.push(normalizeCsvImportedValue(cell))
       if (row.some((value) => value.length > 0)) rows.push(row)
       row = []
       cell = ''
@@ -43,7 +51,7 @@ export function parseCsvRows(text: string): string[][] {
     cell += char
   }
 
-  row.push(cell.trim())
+  row.push(normalizeCsvImportedValue(cell))
   if (row.some((value) => value.length > 0)) rows.push(row)
   return rows
 }

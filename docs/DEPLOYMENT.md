@@ -7,7 +7,7 @@
 ```bash
 git init
 git add .
-git commit -m "Initial part work management app"
+git commit -m "Initial SQA P1 Workflow app"
 ```
 
 2. GitHub에서 새 저장소를 만든다. 운영 전까지는 private 저장소를 권장한다.
@@ -54,7 +54,7 @@ Repository Settings > Secrets and variables > Actions에 다음을 등록한다.
 | 종류 | 이름 | 설명 |
 |---|---|---|
 | Variable | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 계정 ID |
-| Variable | `WORKER_NAME` | Worker 이름 (예: `part-ops`) |
+| Variable | `WORKER_NAME` | Worker 이름 (예: `sqa-p1-workflow`) |
 | Variable | `VITE_SUPABASE_URL` | Supabase 프로젝트 URL |
 | Secret | `VITE_SUPABASE_ANON_KEY` | Supabase anon(publishable) key |
 | Secret | `CLOUDFLARE_API_TOKEN` | Workers 배포 권한이 있는 API 토큰 |

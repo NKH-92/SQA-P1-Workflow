@@ -24,6 +24,7 @@ import {
 } from '../data'
 import { roleLabels } from '../lib/format'
 import { deleteWarnings } from '../app/constants'
+import { canReceiveAssignment } from '../domain/permissions'
 import { parseCsvRows, parseInviteImportRows, parseProductImportRows } from '../lib/csvImport'
 import {
   ClipboardList,
@@ -60,6 +61,7 @@ export function MasterPanel({
   const [dutyAssignment, setDutyAssignment] = useState({ user_id: '', duty_id: '' })
   const [adminSearch, setAdminSearch] = useState('')
   const [pendingDelete, setPendingDelete] = useState<{ table: AdminDeleteTable; id: string } | null>(null)
+  const [pendingProfileToggle, setPendingProfileToggle] = useState<{ email: string; nextActive: boolean } | null>(null)
   const [productEdits, setProductEdits] = useState<Record<string, { name: string; category: ProductCategory | string; companyName: string }>>({})
   const [dutyEdits, setDutyEdits] = useState<Record<string, { major_category_id: string; name: string }>>({})
   const [majorCategoryEdits, setMajorCategoryEdits] = useState<Record<string, { name: string }>>({})
@@ -73,7 +75,7 @@ export function MasterPanel({
 
   const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-  const memberOptions = data.profiles.filter((member) => member.role === 'member')
+  const memberOptions = data.profiles.filter(canReceiveAssignment)
   const query = adminSearch.trim().toLowerCase()
   const matchesAdminSearch = (...values: Array<string | null | undefined>) =>
     !query || values.filter(Boolean).join(' ').toLowerCase().includes(query)
@@ -120,7 +122,9 @@ export function MasterPanel({
   const unassignedProducts = data.products.filter(
     (product) => !data.productAssignments.some((assignment) => assignment.product_id === product.id),
   )
-  const unassignedDuties = data.duties.filter((duty) => !data.dutyAssignments.some((assignment) => assignment.duty_id === duty.id))
+  const unassignedDuties = data.duties.filter(
+    (duty) => !duty.assignee_label && !data.dutyAssignments.some((assignment) => assignment.duty_id === duty.id),
+  )
   const viewMeta: Record<MasterTabId, { title: string; eyebrow: string; note: string }> = {
     products: {
       title: '제품 마스터',
@@ -366,6 +370,7 @@ export function MasterPanel({
       const memberProfile = data.profiles.find((item) => item.email.toLowerCase() === email.toLowerCase())
       if (!memberProfile) throw new Error('아직 가입하지 않은 사용자입니다. Supabase에서 계정을 만든 뒤 비활성화할 수 있습니다.')
       await toggleProfileActiveMutation(createRepositoryContext(profile, data, setData), memberProfile.id, nextActive)
+      setPendingProfileToggle(null)
     }, nextActive ? '계정을 활성화했습니다.' : '계정을 비활성화했습니다.')
 
   const deleteRow = (table: AdminDeleteTable, id: string, label: string) =>
@@ -385,14 +390,19 @@ export function MasterPanel({
     }
 
     return (
-      <div className="delete-confirm" title={warning ?? deleteWarnings[table]}>
-        <button className="danger compact" onClick={() => void deleteRow(table, id, label)} type="button">
-          삭제 확인
-        </button>
-        <button className="ghost compact" onClick={() => setPendingDelete(null)} type="button">
-          취소
-        </button>
-        <span className="sr-only">{itemName}</span>
+      <div className="delete-confirm expanded">
+        <p className="draft-notice">{warning ?? deleteWarnings[table]}</p>
+        <p>
+          <strong>{itemName}</strong>
+        </p>
+        <div className="inline-actions">
+          <button className="danger compact" onClick={() => void deleteRow(table, id, label)} type="button">
+            삭제 확인
+          </button>
+          <button className="ghost compact" onClick={() => setPendingDelete(null)} type="button">
+            취소
+          </button>
+        </div>
       </div>
     )
   }
@@ -609,6 +619,7 @@ export function MasterPanel({
                 <th scope="col">대분류</th>
                 <th scope="col">업무</th>
                 <th scope="col">담당</th>
+                <th scope="col">비고</th>
                 <th scope="col">관리</th>
               </tr>
             </thead>
@@ -650,7 +661,7 @@ export function MasterPanel({
                           </div>
                         )}
                       </td>
-                      <td colSpan={3} className="duty-empty-cell">
+                      <td colSpan={4} className="duty-empty-cell">
                         등록된 업무 없음
                       </td>
                     </tr>
@@ -660,8 +671,9 @@ export function MasterPanel({
                 return categoryDuties.map((duty, index) => {
                   const assignments = data.dutyAssignments.filter((assignment) => assignment.duty_id === duty.id)
                   const edit = dutyEdits[duty.id]
+                  const isUnassigned = assignments.length === 0 && !duty.assignee_label
                   return (
-                    <tr className={assignments.length === 0 ? 'unassigned-row' : undefined} key={duty.id}>
+                    <tr className={isUnassigned ? 'unassigned-row' : undefined} key={duty.id}>
                       {index === 0 && (
                         <td className="major-category-cell" rowSpan={categoryDuties.length}>
                           {majorEdit ? (
@@ -732,9 +744,11 @@ export function MasterPanel({
                           {assignments.map((assignment) => (
                             <span key={assignment.id}>{assignment.profiles?.name ?? assignment.user_id}</span>
                           ))}
-                          {assignments.length === 0 && <span className="pill-warn">배정 필요</span>}
+                          {assignments.length === 0 && duty.assignee_label && <span>{duty.assignee_label}</span>}
+                          {isUnassigned && <span className="pill-warn">배정 필요</span>}
                         </div>
                       </td>
+                      <td>{duty.notes || '-'}</td>
                       <td>
                         {!edit && (
                           <div className="group-actions">
@@ -816,22 +830,43 @@ export function MasterPanel({
                           >
                             <Pencil size={16} />
                           </button>
-                          {deleteAction('allowed_users', item.id, '초대', item.email)}
+                          {deleteAction('allowed_users', item.id, '초대', item.email, deleteWarnings.allowed_users)}
                         </div>
                       </div>
                       <div className="inline-actions">
                         <Badge status={linkedProfile ? (isActive ? 'approved' : 'rejected') : 'pending'}>
                           {linkedProfile ? (isActive ? '활성' : '비활성') : '미가입'}
                         </Badge>
-                        {linkedProfile && (
-                          <button
-                            className="ghost compact"
-                            onClick={() => void toggleProfileActive(item.email, !isActive)}
-                            type="button"
-                          >
-                            {isActive ? '비활성화' : '활성화'}
-                          </button>
-                        )}
+                        {linkedProfile &&
+                          (pendingProfileToggle?.email === item.email ? (
+                            <div className="delete-confirm expanded">
+                              <p className="draft-notice">
+                                {pendingProfileToggle.nextActive
+                                  ? '활성화하면 이 사용자가 다시 앱 데이터에 접근할 수 있습니다.'
+                                  : '비활성화하면 이 사용자는 로그인 후 앱 데이터에 접근할 수 없습니다. 기존 배정은 유지됩니다.'}
+                              </p>
+                              <div className="inline-actions">
+                                <button
+                                  className="danger compact"
+                                  onClick={() => void toggleProfileActive(item.email, pendingProfileToggle.nextActive)}
+                                  type="button"
+                                >
+                                  {pendingProfileToggle.nextActive ? '활성화 확인' : '비활성화 확인'}
+                                </button>
+                                <button className="ghost compact" onClick={() => setPendingProfileToggle(null)} type="button">
+                                  취소
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              className="ghost compact"
+                              onClick={() => setPendingProfileToggle({ email: item.email, nextActive: !isActive })}
+                              type="button"
+                            >
+                              {isActive ? '비활성화' : '활성화'}
+                            </button>
+                          ))}
                       </div>
                       <Badge>{roleLabels[item.role]}</Badge>
                     </>

@@ -3,6 +3,13 @@ type PostgrestErrorLike = {
   message?: string
 }
 
+export class UserFacingError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'UserFacingError'
+  }
+}
+
 function isPostgrestError(error: unknown): error is PostgrestErrorLike {
   return typeof error === 'object' && error !== null && ('code' in error || 'message' in error)
 }
@@ -19,13 +26,19 @@ function isNetworkError(error: unknown) {
 }
 
 const codeMessages: Record<string, string> = {
+  '22P02': '입력 형식이 올바르지 않습니다.',
   '23505': '이미 등록된 항목입니다.',
   '23503': '연결된 데이터가 있어 처리할 수 없습니다.',
+  '23514': '입력값이 조건을 만족하지 않습니다.',
   '42501': '권한이 없습니다.',
   PGRST301: '권한이 없습니다.',
 }
 
 export function toUserMessage(error: unknown): string {
+  if (error instanceof UserFacingError) {
+    return error.message
+  }
+
   if (isNetworkError(error)) {
     console.error(error)
     return '서버에 연결하지 못했습니다. 잠시 후 다시 시도하세요.'
@@ -64,7 +77,7 @@ export function toUserMessage(error: unknown): string {
       return '이메일 인증이 필요합니다. 받은 메일의 링크를 확인해 주세요.'
     }
     console.error(error)
-    return message || '작업을 완료하지 못했습니다. 문제가 반복되면 관리자에게 문의하세요.'
+    return '작업을 완료하지 못했습니다. 문제가 반복되면 관리자에게 문의하세요.'
   }
 
   console.error(error)

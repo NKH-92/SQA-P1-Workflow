@@ -11,6 +11,7 @@ supabase/*private*.local.sql
 scripts/.seed-batches/
 scripts/seed-p1-products.sql
 scripts/.seed-query.json
+src/data/p1DutyAllocation.ts
 backup/*.sql
 
 .DS_Store

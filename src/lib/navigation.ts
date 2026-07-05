@@ -28,3 +28,9 @@ export function buildAppHash(tab: AppTabId, entityId?: string | null) {
 export function isLeaderTab(tab: AppTabId) {
   return tab === 'team' || tab === 'products' || tab === 'duties' || tab === 'invites' || tab === 'activity'
 }
+
+export function sanitizeTabForRole(tab: AppTabId, leaderMode: boolean): AppTabId {
+  if (leaderMode && tab === 'work') return 'dashboard'
+  if (!leaderMode && isLeaderTab(tab)) return 'dashboard'
+  return tab
+}

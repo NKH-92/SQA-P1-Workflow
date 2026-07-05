@@ -9,6 +9,8 @@ Phase 2~4에서 추가된 마이그레이션:
 | `202607050003_profile_is_active.sql` | `is_active` 비활성화 |
 | `202607050004_harden_active_access_rls.sql` | 비활성 계정 RLS 전면 적용 |
 | `202607050005_atomic_mutations_and_attachment_guard.sql` | RPC 트랜잭션 + 첨부 경로 검증 |
+| `202607060001_p0_atomic_assignments_and_review_status.sql` | 프로젝트 배정 RPC + 검토 상태 RPC + active guard |
+| `202607060002_p1_product_unique_and_assignment_rpcs.sql` | 제품명 unique + product/duty 배정 RPC |
 
 ## Supabase CLI (권장)
 
@@ -35,7 +37,15 @@ select id from storage.buckets where id = 'review-attachments';
 
 select proname from pg_proc
 where pronamespace = 'public'::regnamespace
-  and proname in ('reject_review_request', 'add_review_feedback', 'create_project_with_assignments');
+  and proname in (
+    'reject_review_request',
+    'add_review_feedback',
+    'create_project_with_assignments',
+    'replace_project_assignments',
+    'replace_product_assignments',
+    'replace_duty_assignments',
+    'update_review_request_status'
+  );
 ```
 
 ## 로컬 검증

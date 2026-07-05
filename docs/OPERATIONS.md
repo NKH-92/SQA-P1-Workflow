@@ -1,6 +1,6 @@
 # 운영 런북
 
-파트 업무관리 시스템(Part Ops)의 일상 운영·백업·장애 대응 절차입니다.
+SQA P1 Workflow의 일상 운영·백업·장애 대응 절차입니다.
 
 운영 URL·Supabase project ref는 팀 위키 또는 이 문서 하단에 `<WORKER_URL>`, `<PROJECT_REF>` 형태로만 기록하고, 저장소에는 커밋하지 않습니다.
 
@@ -23,9 +23,9 @@
 |---|---|
 | 담당 | 파트장 또는 지정 운영자 |
 | 주기 | 주 1회 이상 (권장: 일요일) |
-| 명령 | `supabase db dump --db-url "<DATABASE_URL>" -f backup/part-ops-YYYY-MM-DD.sql` |
+| 명령 | `powershell -File scripts/backup-db.ps1 -DatabaseUrl "<DATABASE_URL>"` (스키마·데이터 각각 덤프) |
 | 보관 | 사내 접근 통제된 저장소(로컬 NAS, 암호화 드라이브). **공개 저장소·이메일 첨부 금지** |
-| 확인 | 덤프 파일 크기 > 0, SQL 헤더에 `PostgreSQL` 포함 |
+| 확인 | `*-schema.sql`·`*-data.sql` 모두 크기 > 0, schema 파일에 `CREATE TABLE`, data 파일에 `COPY` 또는 `INSERT` 포함 |
 
 `DATABASE_URL`은 Supabase Dashboard > Project Settings > Database > Connection string (URI)에서 확인합니다.
 

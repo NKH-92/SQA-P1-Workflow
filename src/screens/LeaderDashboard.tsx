@@ -195,6 +195,7 @@ export function LeaderDashboard({
                   <div>
                     <p>{log.summary}</p>
                     <small>
+                      {name ? `${name} · ` : ''}
                       {formatDate(log.created_at)} · {log.action}
                     </small>
                   </div>

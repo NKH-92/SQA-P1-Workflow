@@ -1,4 +1,4 @@
-# 파트 업무관리 시스템 개선 계획서
+# SQA P1 Workflow 개선 계획서
 
 - 작성일: 2026-07-05
 - 검토 대상: 저장소 전체 (README, `team_task_management_requirements.md`, `src/`, `supabase/migrations/`, `docs/`, `.github/workflows/`, 설정 파일)
@@ -11,7 +11,7 @@
 
 ### 1.1 시스템 이름 및 목적
 
-**파트 업무관리 시스템** (`package.json`의 `part-work-management`, UI 브랜딩 "Part Ops").
+**SQA P1 Workflow** (`package.json`의 `sqa-p1-workflow`).
 
 약 10명 규모 파트(파트장 1명 + 파트원 다수)에서 발생하는 다음 업무 문제를 해결하기 위한 내부용 웹 시스템이다.
 

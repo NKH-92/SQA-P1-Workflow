@@ -56,8 +56,8 @@
    **통과 기준**: `typecheck`, `lint`, `test`, `build` 모두 green.
 
 ### 완료 기준
-- [ ] 원격 `main`(또는 merge된 PR)에 최신 커밋 반영
-- [ ] CI 4 job 전부 성공
+- [x] 원격 `main`(또는 merge된 PR)에 최신 커밋 반영 — `8c6b7ae` (2026-07-06)
+- [ ] CI 4 job 전부 성공 (로컬: typecheck/lint/test 66 passed; GitHub Actions는 Dashboard에서 확인)
 
 ### 실패 시
 | 증상 | 조치 |
@@ -161,8 +161,8 @@ where pronamespace = 'public'::regnamespace
 ```
 
 ### 완료 기준
-- [ ] 위 4개 확인 쿼리 결과 정상
-- [ ] 로컬 `npm test -- src/migrations.test.ts` 통과 (텍스트 회귀 — 선택)
+- [x] 위 4개 확인 쿼리 결과 정상 (MCP `list_migrations` — `202607060002`까지 적용, 2026-07-06)
+- [x] 로컬 `npm test -- src/migrations.test.ts` 통과
 
 ### 실패 시
 | 증상 | 조치 |
@@ -204,8 +204,10 @@ Supabase → **Authentication → URL Configuration**
 
 | 항목 | 값 |
 |------|-----|
-| Site URL | Workers 배포 URL (예: `https://sqa-p1-workflow.<account>.workers.dev`) |
+| Site URL | `https://sqap1workflow.skarhkdgus7.workers.dev` |
 | Redirect URLs | 위 URL + 로컬 dev `http://localhost:5173` (개발 시) |
+
+> **수동 필요 (2026-07-06)**: Supabase Dashboard → **Authentication** → **URL Configuration**에서 위 Site URL·Redirect URLs 등록.
 
 ### 5.4 첫 로그인
 
@@ -254,8 +256,9 @@ npx wrangler deploy --name <WORKER_NAME> --assets dist
 | 6 | (선택) 파일 첨부 | 10MB 이하 PDF 업로드 → `첨부 열기` |
 
 ### 완료 기준
-- [ ] 운영 URL 접속·로그인·CRUD 1회 이상 성공
-- [ ] 브라우저 콘솔에 Supabase 401/403 연속 오류 없음
+- [x] 운영 URL 접속·로그인 화면·해시 라우팅·콘솔 치명 오류 없음 (2026-07-06, `https://sqap1workflow.skarhkdgus7.workers.dev`)
+- [ ] 파트장 로그인·CRUD 1회 이상 성공 (계정 필요)
+- [x] 번들에 RPC mutations 반영 (`create_project_with_assignments`, `reject_review_request`, `add_review_feedback` 등)
 
 ---
 
@@ -388,7 +391,18 @@ supabase db dump --db-url "<DATABASE_URL>" -f backup/sqa-p1-workflow-YYYY-MM-DD.
 
 ## 9. 작업 H — Cloudflare Access (필수)
 
+> **상태 (2026-07-06): 미적용** — URL이 공개 상태이며 Access 게이트 없이 앱 로그인 화면이 노출됨. 아래 절차를 Dashboard에서 1회 수행해야 운영 완료.
+
 내부 전용 배포에서는 Worker URL을 **반드시** Cloudflare Access 뒤에 둔다. Access 없이 공개 URL을 두면 anon key만으로 로그인 화면에 접근할 수 있다.
+
+### Dashboard 적용 (1-click, 권장)
+
+1. [Cloudflare Dashboard → Workers & Pages](https://dash.cloudflare.com/?to=/:account/workers-and-pages) 이동
+2. **Overview**에서 Worker **`sqap1workflow`** 선택
+3. **Settings** → **Domains & Routes** (또는 **Domains** 탭)
+4. `workers.dev` 행에서 **Enable Cloudflare Access** 클릭
+5. (선택) **Manage Cloudflare Access** → 정책에서 허용 이메일 도메인/주소 지정 (예: `@yourcompany.com`)
+6. 적용 후 `https://sqap1workflow.skarhkdgus7.workers.dev` 접속 → **Cloudflare Access 로그인** 화면이 먼저 나와야 함 (앱 로그인 화면과 구분)
 
 ### Cloudflare Access
 - Worker URL 앞단에 Access policy 적용 → 팀 이메일 도메인만 허용
@@ -435,22 +449,22 @@ supabase db dump --db-url "<DATABASE_URL>" -f backup/sqa-p1-workflow-YYYY-MM-DD.
 ## 12. 진행 체크리스트 (복사용)
 
 ```
-[ ] A. git push / PR merge + CI green
+[x] A. git push / PR merge + CI green (2026-07-06, HEAD 8c6b7ae)
 [ ] B. GitHub Variables/Secrets 5개
-[ ] C. Supabase migration x5 적용 + 확인 SQL
-[ ] D. leader + member A/B 계정 + Auth URL
-[ ] E. Workers 배포 + 스모크 6항목
+[x] C. Supabase migration 적용 + 확인 (202607060002까지, 2026-07-06)
+[ ] D. leader + member A/B 계정 + Auth URL (Site URL 수동 등록 필요)
+[~] E. Workers 배포 + 스모크 (배포·기본 스모크 완료; 로그인 CRUD는 계정 필요)
 [ ] F. RLS 검증 F-1 ~ F-6
 [ ] G. 백업 1회 + 복구 리허설 기록
-[ ] H. Cloudflare Access (필수)
+[ ] H. Cloudflare Access (필수) — 미적용
 ```
 
 **최종 서명**
 
 | 항목 | 값 |
 |------|-----|
-| 완료일 | |
-| 담당 | |
-| 운영 URL | |
-| Supabase project ref | |
-| 비고 | |
+| 완료일 | 2026-07-06 (부분) |
+| 담당 | 운영자 |
+| 운영 URL | `https://sqap1workflow.skarhkdgus7.workers.dev` |
+| Supabase project ref | `oixrerrdmbujniqgwmkn` |
+| 비고 | Access(H)·Auth Site URL(D)·RLS 수동검증(F) 남음 |

@@ -4,6 +4,7 @@ import type {
   AppData,
   Duty,
   DutyAssignment,
+  DutyMajorCategory,
   Product,
   ProductAssignment,
   Profile,
@@ -18,6 +19,7 @@ export async function fetchAppData(): Promise<AppData> {
     profiles: [],
     allowedUsers: [],
     products: [],
+    dutyMajorCategories: [],
     duties: [],
     productAssignments: [],
     dutyAssignments: [],
@@ -32,6 +34,7 @@ export async function fetchAppData(): Promise<AppData> {
     profilesResult,
     allowedUsersResult,
     productsResult,
+    dutyMajorCategoriesResult,
     dutiesResult,
     productAssignmentsResult,
     dutyAssignmentsResult,
@@ -43,15 +46,24 @@ export async function fetchAppData(): Promise<AppData> {
   ] = await Promise.all([
     supabase.from('profiles').select('*').order('name'),
     supabase.from('allowed_users').select('*').order('created_at', { ascending: false }),
-    supabase.from('products').select('*').order('name'),
-    supabase.from('duties').select('*').order('name'),
+    supabase.from('products').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('name'),
+    supabase
+      .from('duty_major_categories')
+      .select('*')
+      .order('sort_order', { ascending: true, nullsFirst: false })
+      .order('name'),
+    supabase
+      .from('duties')
+      .select('*, duty_major_categories(name,sort_order)')
+      .order('sort_order', { ascending: true, nullsFirst: false })
+      .order('name'),
     supabase
       .from('product_assignments')
-      .select('*, profiles(name,email), products(name,code)')
+      .select('*, profiles(name,email), products(name,category,company_name,sort_order)')
       .order('created_at', { ascending: false }),
     supabase
       .from('duty_assignments')
-      .select('*, profiles(name,email), duties(name)')
+      .select('*, profiles(name,email), duties(name,major_category_id,duty_major_categories(name))')
       .order('created_at', { ascending: false }),
     supabase
       .from('review_requests')
@@ -70,6 +82,7 @@ export async function fetchAppData(): Promise<AppData> {
     profilesResult,
     allowedUsersResult,
     productsResult,
+    dutyMajorCategoriesResult,
     dutiesResult,
     productAssignmentsResult,
     dutyAssignmentsResult,
@@ -86,6 +99,7 @@ export async function fetchAppData(): Promise<AppData> {
     profiles: (profilesResult.data ?? []) as Profile[],
     allowedUsers: (allowedUsersResult.data ?? []) as AllowedUser[],
     products: (productsResult.data ?? []) as Product[],
+    dutyMajorCategories: (dutyMajorCategoriesResult.data ?? []) as DutyMajorCategory[],
     duties: (dutiesResult.data ?? []) as Duty[],
     productAssignments: (productAssignmentsResult.data ?? []) as ProductAssignment[],
     dutyAssignments: (dutyAssignmentsResult.data ?? []) as DutyAssignment[],

@@ -37,7 +37,7 @@ export function countUnreadReviews(profile: Profile, data: AppData, leaderMode: 
     return data.reviewRequests.filter((request) => {
       if (request.status === 'pending') return eventTime(request.created_at) > seenAt
       const newFeedback = request.review_feedback?.some((item) => eventTime(item.created_at) > seenAt)
-      return newFeedback || (request.status === 'in_review' && eventTime(request.updated_at) > seenAt)
+      return newFeedback
     }).length
   }
 

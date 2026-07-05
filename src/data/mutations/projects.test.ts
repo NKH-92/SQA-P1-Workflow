@@ -22,6 +22,7 @@ describe('createProject (demo)', () => {
       allowedUsers: [],
       products: [],
       duties: [],
+      dutyMajorCategories: [],
       productAssignments: [],
       dutyAssignments: [],
       reviewRequests: [],

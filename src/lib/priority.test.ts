@@ -20,22 +20,16 @@ function makeRequest(overrides: Partial<ReviewRequest>): ReviewRequest {
 describe('reviewPriorityScore', () => {
   const now = new Date('2026-07-05T12:00:00')
 
-  it('ranks pending before in_review', () => {
+  it('ranks pending before rejected and approved', () => {
     const pending = makeRequest({ status: 'pending' })
-    const inReview = makeRequest({ status: 'in_review' })
-    expect(reviewPriorityScore(pending, now)).toBeLessThan(reviewPriorityScore(inReview, now))
-  })
-
-  it('ranks in_review before rejected and approved', () => {
-    const inReview = makeRequest({ status: 'in_review' })
     const rejected = makeRequest({ status: 'rejected' })
     const approved = makeRequest({ status: 'approved' })
-    expect(reviewPriorityScore(inReview, now)).toBeLessThan(reviewPriorityScore(rejected, now))
+    expect(reviewPriorityScore(pending, now)).toBeLessThan(reviewPriorityScore(rejected, now))
     expect(reviewPriorityScore(rejected, now)).toBeLessThan(reviewPriorityScore(approved, now))
   })
 
   it('sorts closed requests after active ones in leader view', () => {
-    const active = makeRequest({ id: 'a', status: 'in_review' })
+    const active = makeRequest({ id: 'a', status: 'pending' })
     const closed = makeRequest({ id: 'b', status: 'approved' })
     expect(compareReviewRequests(active, closed)).toBeLessThan(0)
   })

@@ -300,12 +300,6 @@ export function ProjectsPanel({
                     <p className="project-card-meta">
                       {activeCount}명 배정 · {deadlineMeta}
                     </p>
-                    <div className="avatar-stack">
-                      {assignments.slice(0, 4).map((assignment) => (
-                        <span key={assignment.id}>{(assignment.profiles?.name ?? assignment.user_id).slice(0, 1)}</span>
-                      ))}
-                      {assignments.length === 0 && <small>담당자 없음</small>}
-                    </div>
                   </article>
                 )
               })}
@@ -409,7 +403,6 @@ export function ProjectsPanel({
                       .filter((member) => selectedProjectMemberIds.includes(member.id))
                       .map((member) => (
                         <button key={member.id} onClick={() => toggleProjectMember(member.id)} type="button">
-                          <span className="target-avatar">{member.name.slice(0, 1)}</span>
                           {member.name}
                           <X size={13} />
                         </button>
@@ -428,7 +421,6 @@ export function ProjectsPanel({
                           type="button"
                         >
                           <span className="check-mark">{selected && <Check size={13} />}</span>
-                          <span className="target-avatar">{member.name.slice(0, 1)}</span>
                           <span>
                             <strong>{member.name}</strong>
                             <small>현재 과제 {currentLoad}개 · 담당 제품 {data.productAssignments.filter((assignment) => assignment.user_id === member.id).length}개</small>
@@ -453,7 +445,6 @@ export function ProjectsPanel({
                       return (
                         <article key={member.id}>
                           <header>
-                            <span className="target-avatar">{member.name.slice(0, 1)}</span>
                             <strong>{member.name}</strong>
                             <Badge status={overloaded ? 'due_soon' : 'approved'}>{overloaded ? '부하 주의' : '여유'}</Badge>
                           </header>
@@ -528,7 +519,6 @@ export function ProjectsPanel({
                   data.projectAssignments.filter((a) => a.user_id === member.id).length
                 return (
                   <button className={selected ? 'assignee-option selected' : 'assignee-option'} key={member.id} onClick={() => toggleAssignmentEditMember(member.id)} type="button">
-                    <span className="target-avatar">{member.name.slice(0, 1)}</span>
                     <span>
                       <strong>{member.name}</strong>
                       <small>현재 배정 {load}건</small>

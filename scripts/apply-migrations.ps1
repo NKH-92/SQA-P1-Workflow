@@ -1,5 +1,5 @@
 #Requires -Version 5.1
-# Includes 202607050004 and 202607050005 when present under supabase/migrations/
+# Includes 20260705* migrations when present under supabase/migrations/
 $root = Split-Path $PSScriptRoot -Parent
 $migrationsDir = Join-Path $root 'supabase\migrations'
 $pending = @()

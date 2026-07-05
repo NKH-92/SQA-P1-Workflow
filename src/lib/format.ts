@@ -7,7 +7,6 @@ export const roleLabels: Record<Role, string> = {
 
 export const reviewStatusLabels: Record<ReviewStatus, string> = {
   pending: '대기중',
-  in_review: '검토중',
   approved: '완료',
   rejected: '반려',
 }

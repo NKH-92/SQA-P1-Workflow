@@ -10,14 +10,38 @@ import {
   Pencil,
   Send,
   Trash2,
+  X,
 } from 'lucide-react'
 
 const statusActions: Array<{ status: ReviewStatus; label: string; variant: string }> = [
   { status: 'pending', label: '대기중', variant: '' },
-  { status: 'in_review', label: '검토 시작', variant: 'review' },
   { status: 'rejected', label: '반려', variant: 'reject' },
   { status: 'approved', label: '완료 처리', variant: 'approve' },
 ]
+
+type TimelineStepState = 'complete' | 'current' | 'waiting'
+
+function getTimelineSteps(status: ReviewStatus) {
+  return [
+    { key: 'pending', label: reviewStatusLabels.pending },
+    {
+      key: 'outcome',
+      label: status === 'rejected' ? reviewStatusLabels.rejected : reviewStatusLabels.approved,
+    },
+  ] as const
+}
+
+function getTimelineStepState(index: number, status: ReviewStatus): TimelineStepState {
+  if (status === 'pending') return index === 0 ? 'current' : 'waiting'
+  if (status === 'approved') return 'complete'
+  return index === 0 ? 'complete' : 'current'
+}
+
+function renderTimelineStepIcon(index: number, status: ReviewStatus, state: TimelineStepState) {
+  if (state === 'complete') return <Check size={12} />
+  if (status === 'rejected' && index === 1) return <X size={12} />
+  return index + 1
+}
 
 export function ReviewRequestItem({
   addFeedback,
@@ -48,8 +72,7 @@ export function ReviewRequestItem({
   const [transitionNotice, setTransitionNotice] = useState<{ text: string; tone: ReviewStatus; previousStatus?: ReviewStatus } | null>(null)
   const [rejectNotice, setRejectNotice] = useState(false)
   const [celebrate, setCelebrate] = useState(false)
-  const statusFlow: ReviewStatus[] = ['pending', 'in_review', 'approved']
-  const currentStatusIndex = statusFlow.indexOf(request.status === 'rejected' ? 'in_review' : request.status)
+  const timelineSteps = getTimelineSteps(request.status)
   const requestFeedback = request.review_feedback ?? []
   const canEditOwn = profile.id === request.requester_id && request.status === 'pending'
   const dueStatus = dueDateStatus(request.due_date)
@@ -163,7 +186,6 @@ export function ReviewRequestItem({
         <div>
           <span>요청자</span>
           <strong>
-            <span className="avatar-mark">{(request.profiles?.name ?? '요').slice(0, 1)}</span>
             {request.profiles?.name ?? '요청자'}
           </strong>
         </div>
@@ -193,12 +215,12 @@ export function ReviewRequestItem({
       </div>
 
       <div className="status-timeline" data-status={request.status} aria-label="검토 상태 흐름">
-        {statusFlow.map((status, index) => {
-          const state = index < currentStatusIndex ? 'complete' : index === currentStatusIndex ? 'current' : 'waiting'
+        {timelineSteps.map((step, index) => {
+          const state = getTimelineStepState(index, request.status)
           return (
-            <div className={`status-step ${state}`} key={status}>
-              <span>{index < currentStatusIndex || request.status === 'approved' ? <Check size={12} /> : index + 1}</span>
-              <small>{reviewStatusLabels[status]}</small>
+            <div className={`status-step ${state}`} key={step.key}>
+              <span>{renderTimelineStepIcon(index, request.status, state)}</span>
+              <small>{step.label}</small>
             </div>
           )
         })}
@@ -227,7 +249,6 @@ export function ReviewRequestItem({
         {profile.role === 'leader' && (
           <div className="feedback-composer">
             <div className="feedback-composer-head">
-              <span className="avatar-mark">{profile.name.slice(0, 1)}</span>
               <strong>{profile.name}</strong>
             </div>
             <textarea

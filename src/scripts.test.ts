@@ -11,12 +11,11 @@ function readScript(name: string) {
 }
 
 describe('migration scripts', () => {
-  it('apply-migrations.ps1 lists 202607050004 and 202607050005', () => {
+  it('apply-migrations.ps1 lists 20260705 pending migrations', () => {
     const script = readScript('apply-migrations.ps1')
 
-    expect(script).toContain('202607050004')
-    expect(script).toContain('202607050005')
     expect(script).toContain('20260705*.sql')
+    expect(script).toContain('Sort-Object Name')
   })
 
   it('apply-pending-migrations.ps1 uses db query not db execute', () => {

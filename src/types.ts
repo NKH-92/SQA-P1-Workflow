@@ -1,6 +1,7 @@
 export type Role = 'leader' | 'member'
-export type ReviewStatus = 'pending' | 'in_review' | 'approved' | 'rejected'
+export type ReviewStatus = 'pending' | 'approved' | 'rejected'
 export type ProjectStatus = 'planned' | 'in_progress' | 'done'
+export type ProductCategory = '자사' | '위탁'
 export type ActivityEntityType =
   | 'review_request'
   | 'review_feedback'
@@ -33,7 +34,17 @@ export interface AllowedUser {
 export interface Product {
   id: string
   name: string
-  code: string | null
+  category?: ProductCategory | string | null
+  company_name?: string | null
+  sort_order?: number | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface DutyMajorCategory {
+  id: string
+  name: string
+  sort_order?: number | null
   created_at?: string
   updated_at?: string
 }
@@ -41,19 +52,21 @@ export interface Product {
 export interface Duty {
   id: string
   name: string
+  major_category_id: string
+  sort_order?: number | null
   created_at?: string
   updated_at?: string
+  duty_major_categories?: Pick<DutyMajorCategory, 'name' | 'sort_order'> | null
 }
 
 export interface ProductAssignment {
   id: string
   user_id: string
   product_id: string
-  status: string | null
   created_at?: string
   updated_at?: string
   profiles?: Pick<Profile, 'name' | 'email'> | null
-  products?: Pick<Product, 'name' | 'code'> | null
+  products?: Pick<Product, 'name' | 'category' | 'company_name' | 'sort_order'> | null
 }
 
 export interface DutyAssignment {
@@ -62,7 +75,9 @@ export interface DutyAssignment {
   duty_id: string
   created_at?: string
   profiles?: Pick<Profile, 'name' | 'email'> | null
-  duties?: Pick<Duty, 'name'> | null
+  duties?: Pick<Duty, 'name' | 'major_category_id'> & {
+    duty_major_categories?: Pick<DutyMajorCategory, 'name'> | null
+  } | null
 }
 
 export interface ReviewFeedback {
@@ -134,6 +149,7 @@ export interface AppData {
   profiles: Profile[]
   allowedUsers: AllowedUser[]
   products: Product[]
+  dutyMajorCategories: DutyMajorCategory[]
   duties: Duty[]
   productAssignments: ProductAssignment[]
   dutyAssignments: DutyAssignment[]

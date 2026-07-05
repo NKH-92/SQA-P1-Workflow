@@ -34,7 +34,7 @@ export function LeaderDashboard({
       !data.dutyAssignments.some((assignment) => assignment.user_id === member.id),
   )
   const openReviewRequests = data.reviewRequests
-    .filter((request) => request.status === 'pending' || request.status === 'in_review')
+    .filter((request) => request.status === 'pending')
     .sort((left, right) => reviewPriorityScore(left) - reviewPriorityScore(right))
   const projectReminderItems = data.projectAssignments
     .map((assignment) => {
@@ -161,11 +161,6 @@ export function LeaderDashboard({
                 <small>{item.meta}</small>
               </span>
               <Badge status={item.status}>{item.due}</Badge>
-              {item.who ? (
-                <span className="avatar-mark">{item.who.slice(0, 1)}</span>
-              ) : (
-                <span className="avatar-mark ghost-slot" aria-hidden="true" />
-              )}
             </button>
           ))}
         </div>
@@ -176,7 +171,6 @@ export function LeaderDashboard({
           <div className="workload-list">
             {workloadSummaries.map((summary) => (
               <button className="workload-row" key={summary.member.id} onClick={() => setActiveTab('team')} type="button">
-                <span className="avatar-mark">{summary.member.name.slice(0, 1)}</span>
                 <span>
                   <strong>{summary.member.name}</strong>
                   <small>
@@ -198,7 +192,6 @@ export function LeaderDashboard({
               const name = actorName(log.actor_id)
               return (
                 <div className="activity-feed-row" key={log.id}>
-                  <span className="avatar-mark">{(name ?? '팀').slice(0, 1)}</span>
                   <div>
                     <p>{log.summary}</p>
                     <small>

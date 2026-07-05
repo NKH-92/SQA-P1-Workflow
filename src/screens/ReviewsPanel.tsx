@@ -64,7 +64,7 @@ export function ReviewsPanel({
       ...counts,
       [request.status]: counts[request.status] + 1,
     }),
-    { pending: 0, in_review: 0, approved: 0, rejected: 0 } satisfies Record<ReviewStatus, number>,
+    { pending: 0, approved: 0, rejected: 0 } satisfies Record<ReviewStatus, number>,
   )
   const visibleReviewRequests = (
     statusFilter === 'all' ? scopedReviewRequests : scopedReviewRequests.filter((request) => request.status === statusFilter)
@@ -441,7 +441,6 @@ export function ReviewsPanel({
                 <div className="modal-field-row">
                   <span className="modal-label">요청 대상</span>
                   <div className="review-target">
-                    <span className="target-avatar">{(reviewTarget?.name ?? '파').slice(0, 1)}</span>
                     <div>
                       <strong>{reviewTarget?.name ?? '파트장 자동 지정'}</strong>
                       <p>등록 즉시 파트장 우선처리 목록에 반영됩니다.</p>

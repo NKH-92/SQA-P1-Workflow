@@ -233,14 +233,6 @@ export async function addReviewFeedback(
       ),
     }))
   }
-  if (request?.status === 'pending') {
-    setData((current) => ({
-      ...current,
-      reviewRequests: current.reviewRequests.map((row) =>
-        row.id === requestId ? { ...row, status: 'in_review' } : row,
-      ),
-    }))
-  }
   await recordActivityLog(setData, {
     actor: profile,
     targetUserId: request?.requester_id ?? null,

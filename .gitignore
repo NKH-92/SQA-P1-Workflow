@@ -8,6 +8,9 @@ vite.config.d.ts
 .env.local
 .env.*.local
 supabase/*private*.local.sql
+scripts/.seed-batches/
+scripts/seed-p1-products.sql
+scripts/.seed-query.json
 backup/*.sql
 
 .DS_Store

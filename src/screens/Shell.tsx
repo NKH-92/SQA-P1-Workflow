@@ -163,7 +163,6 @@ export function Shell({
           ))}
         </nav>
         <div className="sidebar-footer" title={profile.email}>
-          <span className="avatar-mark">{profile.name.slice(0, 1)}</span>
           <div>
             <strong>{profile.name}</strong>
             <small>{roleLabels[profile.role]}</small>

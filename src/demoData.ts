@@ -3,6 +3,7 @@ import type {
   AppData,
   Duty,
   DutyAssignment,
+  DutyMajorCategory,
   Product,
   ProductAssignment,
   Profile,
@@ -13,6 +14,7 @@ import type {
   ReviewRequest,
   ActivityLog,
 } from './types'
+import { p1ProductAllocationRows } from './data/p1ProductAllocation'
 
 const createdAt = '2026-07-02T00:00:00.000Z'
 
@@ -23,34 +25,22 @@ export const previewLeader: Profile = {
   role: 'leader',
 }
 
-export const previewMember: Profile = {
-  id: 'member-01',
-  email: 'minjun.kim@example.com',
-  name: '김민준',
+const p1AssigneeNames = Array.from(
+  new Set(p1ProductAllocationRows.map((row) => row.assigneeName.trim()).filter(Boolean)),
+)
+
+const previewMembers: Profile[] = p1AssigneeNames.map((name, index) => ({
+  id: `member-${String(index + 1).padStart(2, '0')}`,
+  email: `member-${String(index + 1).padStart(2, '0')}@example.com`,
+  name,
   role: 'member',
-}
+}))
 
-const previewMembers: Profile[] = [
-  previewMember,
-  { id: 'member-02', email: 'seoyeon.lee@example.com', name: '이서연', role: 'member' },
-  { id: 'member-03', email: 'doyun.park@example.com', name: '박도윤', role: 'member' },
-  { id: 'member-04', email: 'harin.choi@example.com', name: '최하린', role: 'member' },
-  { id: 'member-05', email: 'jihu.jeong@example.com', name: '정지후', role: 'member' },
-]
-
-const productDomains = ['계약', '정산', '청구', '고객', '파트너', '물류', '재고', '주문', '인증', '리포트']
-const productTypes = ['관리', '조회', '승인', '알림', '배치']
-const dutyNames = [
-  '요구사항 정리',
-  '화면 정책 정의',
-  'API 검토',
-  '데이터 정합성 확인',
-  '운영 이슈 대응',
-  '배포 검증',
-  '사용자 문의 분석',
-  '권한 정책 점검',
-  '성능 모니터링',
-  '릴리스 노트 작성',
+export const previewMember: Profile = previewMembers[0]
+const dutyMajorCategorySeed: Array<{ id: string; name: string; sort_order: number; duties: string[] }> = [
+  { id: 'duty-major-01', name: '기획', sort_order: 1, duties: ['요구사항 정리', '화면 정책 정의'] },
+  { id: 'duty-major-02', name: '개발', sort_order: 2, duties: ['API 검토', '데이터 정합성 확인', '배포 검증'] },
+  { id: 'duty-major-03', name: '운영', sort_order: 3, duties: ['운영 이슈 대응', '사용자 문의 분석', '권한 정책 점검', '성능 모니터링', '릴리스 노트 작성'] },
 ]
 const projectNames = [
   '고객 포털 개편',
@@ -63,7 +53,6 @@ const projectNames = [
   '데이터 품질 점검',
 ]
 const projectStatuses: ProjectStatus[] = ['planned', 'in_progress', 'done']
-const productStatuses = ['운영중', '개선 예정', '신규 인수']
 
 function seededRandom(seed: number) {
   let value = seed
@@ -93,20 +82,35 @@ function pickUnique<T>(items: T[], count: number, random: () => number): T[] {
 export function createPreviewData(): AppData {
   const random = seededRandom(20260702)
 
-  const products: Product[] = Array.from({ length: 50 }, (_, index) => ({
-    id: `product-${String(index + 1).padStart(2, '0')}`,
-    name: `${productDomains[index % productDomains.length]} ${productTypes[Math.floor(index / productDomains.length)]}`,
-    code: `PRD-${String(index + 1).padStart(3, '0')}`,
+  const products: Product[] = p1ProductAllocationRows.map((row, index) => ({
+    id: `product-${String(index + 1).padStart(3, '0')}`,
+    name: row.productName,
+    category: row.category,
+    company_name: row.companyName,
+    sort_order: index + 1,
     created_at: createdAt,
     updated_at: createdAt,
   }))
 
-  const duties: Duty[] = dutyNames.map((name, index) => ({
-    id: `duty-${String(index + 1).padStart(2, '0')}`,
-    name,
+  const dutyMajorCategories: DutyMajorCategory[] = dutyMajorCategorySeed.map((category) => ({
+    id: category.id,
+    name: category.name,
+    sort_order: category.sort_order,
     created_at: createdAt,
     updated_at: createdAt,
   }))
+
+  const duties: Duty[] = dutyMajorCategorySeed.flatMap((category, categoryIndex) =>
+    category.duties.map((name, dutyIndex) => ({
+      id: `duty-${String(categoryIndex * 10 + dutyIndex + 1).padStart(2, '0')}`,
+      name,
+      major_category_id: category.id,
+      sort_order: dutyIndex + 1,
+      created_at: createdAt,
+      updated_at: createdAt,
+      duty_major_categories: { name: category.name, sort_order: category.sort_order },
+    })),
+  )
 
   const projects: Project[] = projectNames.map((name, index) => ({
     id: `project-${String(index + 1).padStart(2, '0')}`,
@@ -119,19 +123,27 @@ export function createPreviewData(): AppData {
     updated_at: createdAt,
   }))
 
-  const shuffledProducts = shuffle(products, random)
-  const productAssignments: ProductAssignment[] = previewMembers.flatMap((member, memberIndex) =>
-    shuffledProducts.slice(memberIndex * 10, memberIndex * 10 + 10).map((product, productIndex) => ({
-      id: `product-assignment-${memberIndex + 1}-${productIndex + 1}`,
-      user_id: member.id,
-      product_id: product.id,
-      status: productStatuses[(memberIndex + productIndex) % productStatuses.length],
-      created_at: createdAt,
-      updated_at: createdAt,
-      profiles: { name: member.name, email: member.email },
-      products: { name: product.name, code: product.code },
-    })),
-  )
+  const productAssignments: ProductAssignment[] = p1ProductAllocationRows.flatMap((row, index) => {
+    const member = previewMembers.find((item) => item.name === row.assigneeName)
+    const product = products[index]
+    if (!member || !product) return []
+    return [
+      {
+        id: `product-assignment-${String(index + 1).padStart(3, '0')}`,
+        user_id: member.id,
+        product_id: product.id,
+        created_at: createdAt,
+        updated_at: createdAt,
+        profiles: { name: member.name, email: member.email },
+        products: {
+          name: product.name,
+          category: product.category,
+          company_name: product.company_name,
+          sort_order: product.sort_order,
+        },
+      },
+    ]
+  })
 
   const dutyAssignments: DutyAssignment[] = previewMembers.flatMap((member, memberIndex) =>
     pickUnique(duties, 2, random).map((duty, dutyIndex) => ({
@@ -140,7 +152,11 @@ export function createPreviewData(): AppData {
       duty_id: duty.id,
       created_at: createdAt,
       profiles: { name: member.name, email: member.email },
-      duties: { name: duty.name },
+      duties: {
+        name: duty.name,
+        major_category_id: duty.major_category_id,
+        duty_major_categories: { name: duty.duty_major_categories?.name ?? '' },
+      },
     })),
   )
 
@@ -183,7 +199,7 @@ export function createPreviewData(): AppData {
       description: '파트너 안내 문구와 예외 케이스를 확인해 주세요.',
       attachment_url: null,
       due_date: null,
-      status: 'in_review',
+      status: 'pending',
       created_at: '2026-07-02T14:30:00.000Z',
       updated_at: '2026-07-03T10:10:00.000Z',
       profiles: { name: '이서연', email: 'seoyeon.lee@example.com' },
@@ -221,15 +237,7 @@ export function createPreviewData(): AppData {
     created_at: createdAt,
   }))
 
-  const profileNotes: ProfileNote[] = previewMembers.flatMap((member, index) => [
-    {
-      id: `profile-note-${index + 1}-1`,
-      profile_id: member.id,
-      leader_id: previewLeader.id,
-      note: `${member.name} 담당 제품 10개, 정기 업무 2개 기준으로 현재 배정 균형 확인 필요`,
-      created_at: `2026-07-0${(index % 5) + 1}T09:00:00.000Z`,
-    },
-  ])
+  const profileNotes: ProfileNote[] = []
 
   const activityLogs: ActivityLog[] = [
     {
@@ -271,6 +279,7 @@ export function createPreviewData(): AppData {
     profiles: previewMembers.map((member) => ({ ...member, created_at: createdAt })),
     allowedUsers,
     products,
+    dutyMajorCategories,
     duties,
     productAssignments,
     dutyAssignments,

@@ -34,7 +34,7 @@ export function Dashboard({
   const ownReviews = data.reviewRequests
     .filter((request) => request.requester_id === profile.id)
     .sort((left, right) => (right.created_at ?? '').localeCompare(left.created_at ?? ''))
-  const openReviews = ownReviews.filter((request) => request.status === 'pending' || request.status === 'in_review')
+  const openReviews = ownReviews.filter((request) => request.status === 'pending')
   const latestNote = data.profileNotes
     .filter((note) => note.profile_id === profile.id)
     .sort((left, right) => (right.created_at ?? '').localeCompare(left.created_at ?? ''))[0]
@@ -67,7 +67,6 @@ export function Dashboard({
 
       {latestNote && (
         <div className="leader-memo">
-          <span className="avatar-mark">{(leaderProfile?.name ?? '파').slice(0, 1)}</span>
           <div>
             <span>파트장 메모</span>
             <p>“{latestNote.note}”</p>
@@ -103,12 +102,11 @@ export function Dashboard({
                   </span>
                   {latestFeedback ? (
                     <span className="feedback-quote">
-                      <span className="avatar-mark">{(latestFeedback.profiles?.name ?? '파').slice(0, 1)}</span>
                       <em>“{latestFeedback.comment}”</em>
                     </span>
                   ) : (
                     <span className="no-feedback">
-                      아직 피드백이 없어요 · {request.status === 'pending' ? '파트장 확인 대기 중' : '검토 진행 중'}
+                      아직 피드백이 없어요 · {request.status === 'pending' ? '파트장 확인 대기 중' : reviewStatusLabels[request.status]}
                     </span>
                   )}
                 </button>
@@ -145,13 +143,12 @@ export function Dashboard({
           <div className="product-tile-grid">
             {ownProducts.map((assignment) => {
               const name = assignment.products?.name ?? assignment.product_id
-              const code = assignment.products?.code ?? null
+              const companyName = assignment.products?.company_name ?? (assignment.products?.category === '자사' ? '자사' : null)
               return (
                 <div className="product-tile" key={assignment.id}>
-                  <span className="code-mark">{(code ?? name).slice(0, 3)}</span>
                   <div>
                     <strong>{name}</strong>
-                    <small>{code ?? assignment.status ?? '코드 없음'}</small>
+                    <small>{companyName ?? '회사명 없음'}</small>
                   </div>
                 </div>
               )
@@ -163,7 +160,12 @@ export function Dashboard({
           {ownDuties.length === 0 && <p className="empty">담당업무가 없습니다.</p>}
           <ul className="duty-list">
             {ownDuties.map((assignment) => (
-              <li key={assignment.id}>{assignment.duties?.name ?? assignment.duty_id}</li>
+              <li key={assignment.id}>
+                <strong>{assignment.duties?.name ?? assignment.duty_id}</strong>
+                {assignment.duties?.duty_major_categories?.name && (
+                  <small>{assignment.duties.duty_major_categories.name}</small>
+                )}
+              </li>
             ))}
           </ul>
         </Section>

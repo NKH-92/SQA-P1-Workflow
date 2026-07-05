@@ -3,7 +3,6 @@ import { ageInDays, daysUntil } from './dates'
 
 const statusWeights: Record<ReviewStatus, number> = {
   pending: 0,
-  in_review: 2000,
   rejected: 4000,
   approved: 5000,
 }

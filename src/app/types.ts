@@ -15,7 +15,13 @@ export type TabId =
 export type MasterTabId = 'products' | 'duties' | 'invites'
 export type ReviewStatusFilter = 'all' | ReviewStatus
 export type ToastMessage = { text: string; tone: 'success' | 'error' }
-export type AdminDeleteTable = 'allowed_users' | 'products' | 'duties' | 'product_assignments' | 'duty_assignments'
+export type AdminDeleteTable =
+  | 'allowed_users'
+  | 'products'
+  | 'duties'
+  | 'duty_major_categories'
+  | 'product_assignments'
+  | 'duty_assignments'
 export type DeadlineMode = 'date' | 'none'
 
 export type MutateFn = (operation: () => Promise<void>, success: string) => Promise<void>

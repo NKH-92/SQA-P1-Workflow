@@ -4,6 +4,7 @@ import { Badge, Rows } from '../components/ui'
 import type { AppData, Profile } from '../types'
 import type { TabId } from '../app/types'
 import { downloadCsv } from '../lib/csv'
+import { buildProductAllocationCsvRows } from '../lib/productAllocationCsv'
 import { addProfileNote as addProfileNoteMutation, createRepositoryContext } from '../data'
 import { formatDate, projectStatusLabels, roleLabels } from '../lib/format'
 import { useTeamSummaries } from '../hooks/useTeamSummaries'
@@ -12,8 +13,43 @@ import {
   Package,
   Save,
   Search,
+  SlidersHorizontal,
   StickyNote,
+  X,
 } from 'lucide-react'
+
+type ProductSortKey = 'source' | 'name' | 'company'
+type ProductAssignment = AppData['productAssignments'][number]
+
+function productName(assignment: ProductAssignment) {
+  return assignment.products?.name ?? assignment.product_id
+}
+
+function productCompanyName(assignment: ProductAssignment) {
+  return assignment.products?.company_name ?? (assignment.products?.category === '자사' ? '자사' : '')
+}
+
+function productCategory(assignment: ProductAssignment) {
+  return assignment.products?.category === '위탁' ? '위탁' : '자사'
+}
+
+function productSortValue(assignment: ProductAssignment) {
+  return assignment.products?.sort_order ?? Number.MAX_SAFE_INTEGER
+}
+
+function compareText(left: string, right: string) {
+  return left.localeCompare(right, 'ko-KR', { numeric: true, sensitivity: 'base' })
+}
+
+function compareProducts(left: ProductAssignment, right: ProductAssignment, sortKey: ProductSortKey) {
+  if (sortKey === 'source') {
+    return productSortValue(left) - productSortValue(right) || compareText(productName(left), productName(right))
+  }
+  if (sortKey === 'company') {
+    return compareText(productCompanyName(left), productCompanyName(right)) || compareText(productName(left), productName(right))
+  }
+  return compareText(productName(left), productName(right))
+}
 
 export function TeamPanel({
   profile,
@@ -32,6 +68,8 @@ export function TeamPanel({
   const [memberSearch, setMemberSearch] = useState('')
   const [selectedMemberId, setSelectedMemberId] = useState(teamMembers[0]?.id ?? '')
   const [profileNote, setProfileNote] = useState('')
+  const [productSortKey, setProductSortKey] = useState<ProductSortKey>('source')
+  const [noteModalOpen, setNoteModalOpen] = useState(false)
 
   useEffect(() => {
     if (!teamSummaries.length) return
@@ -46,7 +84,7 @@ export function TeamPanel({
     const target = [
       summary.member.name,
       summary.member.email,
-      ...summary.products.map((assignment) => `${assignment.products?.name ?? assignment.product_id} ${assignment.products?.code ?? ''}`),
+      ...summary.products.map((assignment) => assignment.products?.name ?? assignment.product_id),
       ...summary.duties.map((assignment) => assignment.duties?.name ?? assignment.duty_id),
       ...summary.projects.map((assignment) => assignment.projects?.name ?? assignment.project_id),
     ]
@@ -55,18 +93,16 @@ export function TeamPanel({
     return target.includes(query)
   })
   const selectedSummary = teamSummaries.find((summary) => summary.member.id === selectedMemberId) ?? teamSummaries[0]
+  const selectedProducts = selectedSummary
+    ? [...selectedSummary.products].sort((left, right) => compareProducts(left, right, productSortKey))
+    : []
+  const ownCompanyProducts = selectedProducts.filter((assignment) => productCategory(assignment) === '자사')
+  const consignedProducts = selectedProducts.filter((assignment) => productCategory(assignment) === '위탁')
 
   const exportTeamCsv = () =>
     downloadCsv(
-      'team-dashboard.csv',
-      teamSummaries.map((summary) => ({
-        member: summary.member.name,
-        email: summary.member.email,
-        products: summary.products.map((assignment) => assignment.products?.name ?? assignment.product_id).join('; '),
-        duties: summary.duties.map((assignment) => assignment.duties?.name ?? assignment.duty_id).join('; '),
-        projects: summary.projects.map((assignment) => assignment.projects?.name ?? assignment.project_id).join('; '),
-        notes: summary.notes.map((note) => note.note).join('; '),
-      })),
+      'product-allocations.csv',
+      buildProductAllocationCsvRows(data),
     )
 
   const addProfileNote = () =>
@@ -109,7 +145,7 @@ export function TeamPanel({
       <div className="v2-team-grid">
         {filteredSummaries.map((summary) => {
           const selected = selectedSummary?.member.id === summary.member.id
-          const openReviews = summary.reviews.filter((request) => request.status === 'pending' || request.status === 'in_review')
+          const openReviews = summary.reviews.filter((request) => request.status === 'pending')
           return (
             <button
               className={selected ? 'v2-team-card selected' : 'v2-team-card'}
@@ -118,7 +154,6 @@ export function TeamPanel({
               type="button"
             >
               <div className="v2-team-head">
-                <span className="avatar-mark">{summary.member.name.slice(0, 1)}</span>
                 <span>
                   <strong>{summary.member.name}</strong>
                   <small>{summary.member.email}</small>
@@ -131,13 +166,6 @@ export function TeamPanel({
                 <span>과제 <strong>{summary.projects.length}</strong></span>
                 <span>대기 <strong>{openReviews.length}</strong></span>
               </div>
-              <div className="pill-row">
-                {summary.products.slice(0, 3).map((assignment) => (
-                  <span key={assignment.id}>{assignment.products?.name ?? assignment.product_id}</span>
-                ))}
-                {summary.products.length === 0 && <span className="pill-warn">제품 배정 필요</span>}
-              </div>
-              {summary.notes[0] && <p className="leader-note">{summary.notes[0].note}</p>}
             </button>
           )
         })}
@@ -145,62 +173,103 @@ export function TeamPanel({
       {filteredSummaries.length === 0 && <p className="empty">검색 조건에 맞는 파트원이 없습니다.</p>}
 
       {selectedSummary && (
-        <div className="detail-layout">
-          <div className="detail-panel summary-panel">
-            <div className="detail-header">
-              <div>
-                <span>선택 파트원</span>
+        <div className="detail-panel summary-panel team-member-detail">
+          <div className="detail-header">
+            <div>
+              <span>선택 파트원</span>
+              <div className="detail-header-title-row">
                 <strong>{selectedSummary.member.name}</strong>
-                <p>{selectedSummary.member.email}</p>
+                <button className="ghost compact" onClick={() => setNoteModalOpen(true)} type="button">
+                  <StickyNote size={15} />
+                  관리 메모
+                  {selectedSummary.notes.length > 0 && <span className="memo-count">{selectedSummary.notes.length}</span>}
+                </button>
               </div>
+              <p>{selectedSummary.member.email}</p>
+            </div>
+            <div className="detail-header-actions">
+              <label className="sort-select">
+                <SlidersHorizontal size={14} />
+                <select value={productSortKey} onChange={(event) => setProductSortKey(event.target.value as ProductSortKey)}>
+                  <option value="source">원본순</option>
+                  <option value="name">제품명순</option>
+                  <option value="company">위탁사명순</option>
+                </select>
+              </label>
               <button className="ghost" onClick={() => setActiveTab('products')} type="button">
                 배정 관리
               </button>
             </div>
-            <div className="detail-columns">
-              <div>
-                <h3>제품</h3>
-                <Rows
-                  empty="담당 제품이 없습니다."
-                  rows={selectedSummary.products.map((assignment) => ({
-                    title: assignment.products?.name ?? assignment.product_id,
-                    meta: assignment.status ?? assignment.products?.code ?? '-',
-                  }))}
-                />
-              </div>
-              <div>
-                <h3>업무</h3>
-                <Rows
-                  empty="담당 업무가 없습니다."
-                  rows={selectedSummary.duties.map((assignment) => ({
-                    title: assignment.duties?.name ?? assignment.duty_id,
-                    meta: '정기 담당',
-                  }))}
-                />
-              </div>
-              <div>
-                <h3>프로젝트</h3>
-                <Rows
-                  empty="배정 프로젝트가 없습니다."
-                  rows={selectedSummary.projects.map((assignment) => ({
-                    title: assignment.projects?.name ?? assignment.project_id,
-                    meta: assignment.projects?.deadline ? `마감 ${formatDate(assignment.projects.deadline)}` : '마감 없음',
-                    aside: assignment.projects?.status ? projectStatusLabels[assignment.projects.status] : undefined,
-                  }))}
-                />
-              </div>
+          </div>
+          <div className="team-member-quad">
+            <div>
+              <h4>자사제품</h4>
+              <Rows
+                empty="자사제품 배정이 없습니다."
+                rows={ownCompanyProducts.map((assignment) => ({
+                  title: productName(assignment),
+                  meta: productCompanyName(assignment) || '-',
+                }))}
+              />
+            </div>
+            <div>
+              <h4>위탁제품</h4>
+              <Rows
+                empty="위탁제품 배정이 없습니다."
+                rows={consignedProducts.map((assignment) => ({
+                  title: productName(assignment),
+                  meta: productCompanyName(assignment) || '-',
+                }))}
+              />
+            </div>
+            <div>
+              <h4>업무</h4>
+              <Rows
+                empty="담당 업무가 없습니다."
+                rows={selectedSummary.duties.map((assignment) => ({
+                  title: assignment.duties?.name ?? assignment.duty_id,
+                  meta: assignment.duties?.duty_major_categories?.name ?? '-',
+                }))}
+              />
+            </div>
+            <div>
+              <h4>프로젝트</h4>
+              <Rows
+                empty="배정 프로젝트가 없습니다."
+                rows={selectedSummary.projects.map((assignment) => ({
+                  title: assignment.projects?.name ?? assignment.project_id,
+                  meta: assignment.projects?.deadline ? `마감 ${formatDate(assignment.projects.deadline)}` : '마감 없음',
+                  aside: assignment.projects?.status ? projectStatusLabels[assignment.projects.status] : undefined,
+                }))}
+              />
             </div>
           </div>
-          <div className="detail-panel note-panel">
-            <div className="detail-header compact">
+        </div>
+      )}
+
+      {noteModalOpen && selectedSummary && (
+        <div className="modal-backdrop" onMouseDown={() => setNoteModalOpen(false)} role="presentation">
+          <section
+            aria-labelledby="team-note-modal-title"
+            aria-modal="true"
+            className="modal-card team-note-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <header className="modal-header">
+              <div className="modal-mark" aria-hidden="true">
+                <StickyNote size={18} />
+              </div>
               <div>
                 <span>관리 메모</span>
-                <strong>{selectedSummary.notes.length}건</strong>
+                <h2 id="team-note-modal-title">{selectedSummary.member.name}</h2>
               </div>
-              <StickyNote size={18} />
-            </div>
+              <button aria-label="관리 메모 닫기" className="icon-button modal-close" onClick={() => setNoteModalOpen(false)} type="button">
+                <X size={18} />
+              </button>
+            </header>
             <form
-              className="note-form"
+              className="note-form team-note-form"
               onSubmit={(event) => {
                 event.preventDefault()
                 void addProfileNote()
@@ -225,7 +294,7 @@ export function TeamPanel({
                 </article>
               ))}
             </div>
-          </div>
+          </section>
         </div>
       )}
     </div>

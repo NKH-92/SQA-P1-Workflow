@@ -1,24 +1,49 @@
 import { makeId } from '../../lib/format'
 import { supabase } from '../../lib/supabase'
 import type { AdminDeleteTable } from '../../app/types'
-import type { Role } from '../../types'
+import type { Product, ProductCategory, Role, DutyMajorCategory } from '../../types'
 import type { RepositoryContext } from '../repositoryContext'
+
+type ProductInput = {
+  name: string
+  category?: ProductCategory | string
+  companyName?: string
+  sortOrder?: number | null
+}
+
+function normalizeProductInput(input: ProductInput) {
+  const category = input.category?.trim() || '자사'
+  return {
+    name: input.name.trim(),
+    category,
+    company_name: input.companyName?.trim() || (category === '자사' ? '자사' : ''),
+    sort_order: input.sortOrder ?? null,
+  }
+}
+
+function productRelation(product: Product) {
+  return {
+    name: product.name,
+    category: product.category,
+    company_name: product.company_name,
+    sort_order: product.sort_order,
+  }
+}
 
 export async function importProducts(
   ctx: RepositoryContext,
-  rows: Array<{ name: string; code: string }>,
+  rows: ProductInput[],
 ): Promise<void> {
   const { setData } = ctx
+  const products = rows.map(normalizeProductInput)
   if (ctx.isRemote) {
-    const { error } = await supabase!
-      .from('products')
-      .insert(rows.map((row) => ({ name: row.name.trim(), code: row.code.trim() || null })))
+    const { error } = await supabase!.from('products').insert(products)
     if (error) throw error
   } else {
     setData((current) => ({
       ...current,
       products: [
-        ...rows.map((row) => ({ id: makeId('product'), name: row.name.trim(), code: row.code.trim() || null })),
+        ...products.map((product) => ({ id: makeId('product'), ...product })),
         ...current.products,
       ],
     }))
@@ -84,43 +109,87 @@ export async function addAllowedUser(
 
 export async function addProduct(
   ctx: RepositoryContext,
-  input: { name: string; code: string },
+  input: ProductInput,
 ): Promise<void> {
   const { setData } = ctx
+  const product = normalizeProductInput(input)
   if (ctx.isRemote) {
-    const { error } = await supabase!.from('products').insert({ name: input.name, code: input.code || null })
+    const { error } = await supabase!.from('products').insert(product)
     if (error) throw error
   } else {
     setData((current) => ({
       ...current,
-      products: [{ id: makeId('product'), name: input.name, code: input.code || null }, ...current.products],
+      products: [{ id: makeId('product'), ...product }, ...current.products],
     }))
   }
 }
 
-export async function addDuty(ctx: RepositoryContext, name: string): Promise<void> {
+export async function addDutyMajorCategory(
+  ctx: RepositoryContext,
+  input: { name: string; sortOrder?: number | null },
+): Promise<void> {
   const { setData } = ctx
+  const payload = {
+    name: input.name.trim(),
+    sort_order: input.sortOrder ?? null,
+  }
   if (ctx.isRemote) {
-    const { error } = await supabase!.from('duties').insert({ name })
+    const { error } = await supabase!.from('duty_major_categories').insert(payload)
     if (error) throw error
   } else {
     setData((current) => ({
       ...current,
-      duties: [{ id: makeId('duty'), name }, ...current.duties],
+      dutyMajorCategories: [{ id: makeId('duty-major'), ...payload }, ...current.dutyMajorCategories],
+    }))
+  }
+}
+
+function dutyRelation(duty: { name: string; major_category_id: string; duty_major_categories?: DutyMajorCategory | Pick<DutyMajorCategory, 'name' | 'sort_order'> | null }) {
+  return {
+    name: duty.name,
+    major_category_id: duty.major_category_id,
+    duty_major_categories: duty.duty_major_categories ?? null,
+  }
+}
+
+export async function addDuty(
+  ctx: RepositoryContext,
+  input: { majorCategoryId: string; name: string; sortOrder?: number | null },
+): Promise<void> {
+  const { data, setData } = ctx
+  const payload = {
+    major_category_id: input.majorCategoryId,
+    name: input.name.trim(),
+    sort_order: input.sortOrder ?? null,
+  }
+  const majorCategory = data.dutyMajorCategories.find((item) => item.id === input.majorCategoryId)
+  if (ctx.isRemote) {
+    const { error } = await supabase!.from('duties').insert(payload)
+    if (error) throw error
+  } else {
+    setData((current) => ({
+      ...current,
+      duties: [
+        {
+          id: makeId('duty'),
+          ...payload,
+          duty_major_categories: majorCategory ? { name: majorCategory.name, sort_order: majorCategory.sort_order ?? null } : null,
+        },
+        ...current.duties,
+      ],
     }))
   }
 }
 
 export async function assignProduct(
   ctx: RepositoryContext,
-  input: { userId: string; productId: string; status: string },
+  input: { userId: string; productId: string },
 ): Promise<void> {
   const { data, setData } = ctx
   if (ctx.isRemote) {
     const { error } = await supabase!.from('product_assignments').insert({
       user_id: input.userId,
       product_id: input.productId,
-      status: input.status || null,
     })
     if (error) throw error
   } else {
@@ -133,9 +202,8 @@ export async function assignProduct(
           id: makeId('product-assignment'),
           user_id: input.userId,
           product_id: input.productId,
-          status: input.status || null,
           profiles: member ? { name: member.name, email: member.email } : null,
-          products: product ? { name: product.name, code: product.code } : null,
+          products: product ? productRelation(product) : null,
         },
         ...current.productAssignments,
       ],
@@ -162,7 +230,7 @@ export async function assignDuty(
           user_id: input.userId,
           duty_id: input.dutyId,
           profiles: member ? { name: member.name, email: member.email } : null,
-          duties: duty ? { name: duty.name } : null,
+          duties: duty ? dutyRelation({ ...duty, duty_major_categories: data.dutyMajorCategories.find((item) => item.id === duty.major_category_id) ?? null }) : null,
         },
         ...current.dutyAssignments,
       ],
@@ -173,7 +241,7 @@ export async function assignDuty(
 export async function updateProduct(
   ctx: RepositoryContext,
   productId: string,
-  payload: { name: string; code: string | null },
+  payload: { name: string; category?: ProductCategory | string | null; company_name?: string | null; sort_order?: number | null },
 ): Promise<void> {
   const { setData } = ctx
   if (ctx.isRemote) {
@@ -185,24 +253,89 @@ export async function updateProduct(
       products: current.products.map((item) => (item.id === productId ? { ...item, ...payload } : item)),
       productAssignments: current.productAssignments.map((assignment) =>
         assignment.product_id === productId
-          ? { ...assignment, products: { name: payload.name, code: payload.code } }
+          ? { ...assignment, products: { ...(assignment.products ?? {}), ...payload } }
           : assignment,
       ),
     }))
   }
 }
 
-export async function updateDuty(ctx: RepositoryContext, dutyId: string, name: string): Promise<void> {
+export async function updateDutyMajorCategory(
+  ctx: RepositoryContext,
+  majorCategoryId: string,
+  payload: { name: string; sort_order?: number | null },
+): Promise<void> {
   const { setData } = ctx
   if (ctx.isRemote) {
-    const { error } = await supabase!.from('duties').update({ name }).eq('id', dutyId)
+    const { error } = await supabase!.from('duty_major_categories').update(payload).eq('id', majorCategoryId)
     if (error) throw error
   } else {
     setData((current) => ({
       ...current,
-      duties: current.duties.map((item) => (item.id === dutyId ? { ...item, name } : item)),
+      dutyMajorCategories: current.dutyMajorCategories.map((item) =>
+        item.id === majorCategoryId ? { ...item, ...payload } : item,
+      ),
+      duties: current.duties.map((item) =>
+        item.major_category_id === majorCategoryId
+          ? {
+              ...item,
+              duty_major_categories: {
+                name: payload.name,
+                sort_order: payload.sort_order ?? item.duty_major_categories?.sort_order ?? null,
+              },
+            }
+          : item,
+      ),
       dutyAssignments: current.dutyAssignments.map((assignment) =>
-        assignment.duty_id === dutyId ? { ...assignment, duties: { name } } : assignment,
+        assignment.duties?.major_category_id === majorCategoryId
+          ? {
+              ...assignment,
+              duties: {
+                ...(assignment.duties ?? { name: '', major_category_id: majorCategoryId }),
+                duty_major_categories: { name: payload.name },
+              },
+            }
+          : assignment,
+      ),
+    }))
+  }
+}
+
+export async function updateDuty(
+  ctx: RepositoryContext,
+  dutyId: string,
+  payload: { name: string; major_category_id: string; sort_order?: number | null },
+): Promise<void> {
+  const { data, setData } = ctx
+  const majorCategory = data.dutyMajorCategories.find((item) => item.id === payload.major_category_id)
+  if (ctx.isRemote) {
+    const { error } = await supabase!.from('duties').update(payload).eq('id', dutyId)
+    if (error) throw error
+  } else {
+    setData((current) => ({
+      ...current,
+      duties: current.duties.map((item) =>
+        item.id === dutyId
+          ? {
+              ...item,
+              ...payload,
+              duty_major_categories: majorCategory
+                ? { name: majorCategory.name, sort_order: majorCategory.sort_order ?? null }
+                : item.duty_major_categories,
+            }
+          : item,
+      ),
+      dutyAssignments: current.dutyAssignments.map((assignment) =>
+        assignment.duty_id === dutyId
+          ? {
+              ...assignment,
+              duties: dutyRelation({
+                name: payload.name,
+                major_category_id: payload.major_category_id,
+                duty_major_categories: majorCategory ?? null,
+              }),
+            }
+          : assignment,
       ),
     }))
   }
@@ -254,6 +387,10 @@ export async function deleteMasterRow(ctx: RepositoryContext, table: AdminDelete
       ...current,
       allowedUsers: table === 'allowed_users' ? current.allowedUsers.filter((item) => item.id !== id) : current.allowedUsers,
       products: table === 'products' ? current.products.filter((item) => item.id !== id) : current.products,
+      dutyMajorCategories:
+        table === 'duty_major_categories'
+          ? current.dutyMajorCategories.filter((item) => item.id !== id)
+          : current.dutyMajorCategories,
       duties: table === 'duties' ? current.duties.filter((item) => item.id !== id) : current.duties,
       productAssignments:
         table === 'products'

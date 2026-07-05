@@ -56,16 +56,18 @@ export function parseProductImportRows(rows: string[][]) {
   if (rows.length === 0) return []
   const [header, ...body] = rows
   const indexes = {
+    category: header.findIndex((value) => ['category', 'type', '구분'].includes(normalizeHeader(value))),
     name: header.findIndex((value) => ['name', '제품명', 'product'].includes(normalizeHeader(value))),
-    code: header.findIndex((value) => ['code', '제품코드', 'product_code'].includes(normalizeHeader(value))),
+    companyName: header.findIndex((value) => ['company', 'company_name', '회사명', '위탁사명'].includes(normalizeHeader(value))),
   }
   if (indexes.name < 0) {
-    return body.map((cells) => ({ name: cells[0]?.trim() ?? '', code: cells[1]?.trim() ?? '' })).filter((item) => item.name)
+    return body.map((cells) => ({ name: cells[0]?.trim() ?? '' })).filter((item) => item.name)
   }
   return body
     .map((cells) => ({
       name: cells[indexes.name]?.trim() ?? '',
-      code: indexes.code >= 0 ? cells[indexes.code]?.trim() ?? '' : '',
+      category: indexes.category >= 0 ? cells[indexes.category]?.trim() ?? '' : undefined,
+      companyName: indexes.companyName >= 0 ? cells[indexes.companyName]?.trim() ?? '' : undefined,
     }))
     .filter((item) => item.name)
 }

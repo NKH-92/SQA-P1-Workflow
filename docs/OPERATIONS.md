@@ -2,6 +2,12 @@
 
 파트 업무관리 시스템(Part Ops)의 일상 운영·백업·장애 대응 절차입니다.
 
+운영 URL·Supabase project ref는 팀 위키 또는 이 문서 하단에 `<WORKER_URL>`, `<PROJECT_REF>` 형태로만 기록하고, 저장소에는 커밋하지 않습니다.
+
+## Cloudflare Access (필수)
+
+내부 전용 배포에서는 Workers URL을 Cloudflare Access 뒤에 두어야 합니다. Access 없이 공개 URL을 두면 로그인 화면·anon key 노출 위험이 있습니다. 설정 절차는 [MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md) 작업 H를 참고하세요.
+
 ## 장애 확인 순서
 
 | 순서 | 확인 대상 | 방법 | 정상 기준 |
@@ -62,6 +68,8 @@
 
 자세한 CI/CD 설정은 [DEPLOYMENT.md](./DEPLOYMENT.md)를 참고하세요.  
 **직접 수행 작업 전체 계획**은 [MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md)를 참고하세요.
+
+Windows에서 `npm ci`가 `EPERM`으로 실패하면, 다른 터미널·에디터에서 `node_modules`를 잠그고 있지 않은지 확인한 뒤 해당 폴더를 삭제하고 다시 실행하세요.
 
 ## 복구 리허설 기록
 

@@ -2,7 +2,7 @@
 
 > **대상**: 파트장 또는 지정 운영자  
 > **목적**: 코드·CI 작업(Phase 1~4) 완료 후, **운영 환경에 반영하고 검증**하기 위해 사람이 직접 해야 하는 작업을 순서대로 정리한다.  
-> **전제**: 로컬 커밋 `d118b39` 이후 — `npm test` 33 passed, `npm run build` 성공 상태.
+> **전제**: 브랜치 `main`, HEAD `572bcfb`(또는 이후) — `npm test` 42 passed, `npm run build` 성공 상태.
 
 ---
 
@@ -17,10 +17,10 @@
 | **E** | Workers 배포 + 앱 스모크 | 운영자 | 20분 | B, C, D 이후 |
 | **F** | RLS·기능 수동 검증 | 파트장 | 60~90분 | C, D, E 이후 |
 | **G** | 주간 백업 1회 + 복구 리허설 | 운영자 | 45~60분 | C 이후 (E와 병렬 가능) |
-| **H** | 운영 공개 전 Access(선택) | 운영자 | 30분 | E 이후 |
+| **H** | Cloudflare Access (필수) | 운영자 | 30분 | E 이후 |
 
 **권장 일정 (1일 집중)**  
-오전: A → B → C → D → E / 오후: F → G / (선택) H
+오전: A → B → C → D → E → H / 오후: F → G
 
 ---
 
@@ -111,6 +111,8 @@ Phase 2~4에서 추가된 DB·Storage·RLS 변경을 **운영(또는 스테이�
 | `202607050001_...` | 파트원 검토요청 수정·회수 → RLS 오류 |
 | `202607050002_...` | 파일 첨부 업로드/다운로드 실패 |
 | `202607050003_...` | `is_active` 비활성화 UI·RLS 미동작 |
+| `202607050004_...` | 비활성 계정이 기존 데이터·Storage에 접근 가능 |
+| `202607050005_...` | RPC 트랜잭션·첨부 경로 검증 미적용 → 부분 실패·경로 우회 위험 |
 
 ### 방법 1 — Supabase CLI (권장)
 
@@ -132,6 +134,8 @@ Dashboard → **SQL Editor**에서 아래 파일 내용을 **번호 순서대로
 1. `supabase/migrations/202607050001_member_review_update_delete.sql`
 2. `supabase/migrations/202607050002_review_attachments_storage.sql`
 3. `supabase/migrations/202607050003_profile_is_active.sql`
+4. `supabase/migrations/202607050004_harden_active_access_rls.sql`
+5. `supabase/migrations/202607050005_atomic_mutations_and_attachment_guard.sql`
 
 > 이미 적용된 초기 마이그레이션(`20260702*`, `20260704*`)은 **다시 실행하지 않는다.**
 
@@ -149,10 +153,15 @@ select id, file_size_limit from storage.buckets where id = 'review-attachments';
 -- member pending 수정 정책 존재 여부 (pg_policies)
 select policyname from pg_policies
 where tablename = 'review_requests' and policyname like '%self_pending%';
+
+-- RPC 트랜잭션 함수 (005)
+select proname from pg_proc
+where pronamespace = 'public'::regnamespace
+  and proname in ('reject_review_request', 'add_review_feedback', 'create_project_with_assignments');
 ```
 
 ### 완료 기준
-- [ ] 위 3개 확인 쿼리 결과 정상
+- [ ] 위 4개 확인 쿼리 결과 정상
 - [ ] 로컬 `npm test -- src/migrations.test.ts` 통과 (텍스트 회귀 — 선택)
 
 ### 실패 시
@@ -377,7 +386,9 @@ supabase db dump --db-url "<DATABASE_URL>" -f backup/part-ops-YYYY-MM-DD.sql
 
 ---
 
-## 9. 작업 H — 운영 공개 전 보안 (선택)
+## 9. 작업 H — Cloudflare Access (필수)
+
+내부 전용 배포에서는 Worker URL을 **반드시** Cloudflare Access 뒤에 둔다. Access 없이 공개 URL을 두면 anon key만으로 로그인 화면에 접근할 수 있다.
 
 ### Cloudflare Access
 - Worker URL 앞단에 Access policy 적용 → 팀 이메일 도메인만 허용
@@ -426,12 +437,12 @@ supabase db dump --db-url "<DATABASE_URL>" -f backup/part-ops-YYYY-MM-DD.sql
 ```
 [ ] A. git push / PR merge + CI green
 [ ] B. GitHub Variables/Secrets 5개
-[ ] C. Supabase migration x3 적용 + 확인 SQL
+[ ] C. Supabase migration x5 적용 + 확인 SQL
 [ ] D. leader + member A/B 계정 + Auth URL
 [ ] E. Workers 배포 + 스모크 6항목
 [ ] F. RLS 검증 F-1 ~ F-6
 [ ] G. 백업 1회 + 복구 리허설 기록
-[ ] H. (선택) Cloudflare Access
+[ ] H. Cloudflare Access (필수)
 ```
 
 **최종 서명**

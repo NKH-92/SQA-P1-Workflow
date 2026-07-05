@@ -162,10 +162,12 @@ export function Shell({
             </div>
           ))}
         </nav>
-        <div className="sidebar-footer">
-          <span>{roleLabels[profile.role]}</span>
-          <strong>{profile.name}</strong>
-          <small>{profile.email}</small>
+        <div className="sidebar-footer" title={profile.email}>
+          <span className="avatar-mark">{profile.name.slice(0, 1)}</span>
+          <div>
+            <strong>{profile.name}</strong>
+            <small>{roleLabels[profile.role]}</small>
+          </div>
           {onPreviewRoleChange && (
             <div className="segmented">
               <button

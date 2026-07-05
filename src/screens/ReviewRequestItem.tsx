@@ -6,10 +6,18 @@ import { ageInDays, dueDateLabel, dueDateStatus } from '../lib/dates'
 import { formatDate, reviewStatusLabels } from '../lib/format'
 import {
   Check,
+  Paperclip,
   Pencil,
-  Save,
+  Send,
   Trash2,
 } from 'lucide-react'
+
+const statusActions: Array<{ status: ReviewStatus; label: string; variant: string }> = [
+  { status: 'pending', label: '대기중', variant: '' },
+  { status: 'in_review', label: '검토 시작', variant: 'review' },
+  { status: 'rejected', label: '반려', variant: 'reject' },
+  { status: 'approved', label: '완료 처리', variant: 'approve' },
+]
 
 export function ReviewRequestItem({
   addFeedback,
@@ -43,8 +51,9 @@ export function ReviewRequestItem({
   const statusFlow: ReviewStatus[] = ['pending', 'in_review', 'approved']
   const currentStatusIndex = statusFlow.indexOf(request.status === 'rejected' ? 'in_review' : request.status)
   const requestFeedback = request.review_feedback ?? []
-  const statusButtons = Object.entries(reviewStatusLabels) as Array<[ReviewStatus, string]>
   const canEditOwn = profile.id === request.requester_id && request.status === 'pending'
+  const dueStatus = dueDateStatus(request.due_date)
+  const dueUrgent = dueStatus === 'overdue' || dueStatus === 'due_now'
 
   useEffect(() => {
     let active = true
@@ -102,15 +111,87 @@ export function ReviewRequestItem({
           ))}
         </div>
       )}
-      <div className="request-main">
-        <div>
-          <strong>{request.title}</strong>
-          <span>
-            {request.profiles?.name ?? '요청자'} · {formatDate(request.created_at)} · 접수 {ageInDays(request.created_at)}일
-          </span>
-        </div>
+
+      <div className="request-topline">
         <Badge status={request.status}>{reviewStatusLabels[request.status]}</Badge>
+        <span className="request-id">#{request.id.slice(0, 8).toUpperCase()}</span>
+        <span className="request-age">접수 {ageInDays(request.created_at)}일</span>
+        {profile.role === 'leader' && (
+          <div className="request-actions" aria-label="검토 상태 전환">
+            {statusActions.map(({ status, label, variant }) => (
+              <button
+                className={variant ? `status-btn ${variant}` : 'status-btn'}
+                disabled={request.status === status}
+                key={status}
+                onClick={() => handleStatusTransition(status)}
+                type="button"
+              >
+                {request.status === status && <Check size={13} />}
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        {canEditOwn && (
+          <div className="request-actions">
+            <button className="ghost compact" onClick={() => onEdit(request)} type="button">
+              <Pencil size={14} />
+              수정
+            </button>
+            {pendingWithdraw ? (
+              <>
+                <button className="danger compact" onClick={() => void withdrawReview(request.id)} type="button">
+                  회수 확인
+                </button>
+                <button className="ghost compact" onClick={() => onWithdraw(null)} type="button">
+                  취소
+                </button>
+              </>
+            ) : (
+              <button className="ghost compact" onClick={() => onWithdraw(request.id)} type="button">
+                <Trash2 size={14} />
+                회수
+              </button>
+            )}
+          </div>
+        )}
       </div>
+
+      <h1 className="request-title">{request.title}</h1>
+
+      <div className="request-meta-grid">
+        <div>
+          <span>요청자</span>
+          <strong>
+            <span className="avatar-mark">{(request.profiles?.name ?? '요').slice(0, 1)}</span>
+            {request.profiles?.name ?? '요청자'}
+          </strong>
+        </div>
+        <div>
+          <span>요청일</span>
+          <strong>{formatDate(request.created_at)}</strong>
+        </div>
+        <div>
+          <span>마감</span>
+          <strong className={dueUrgent ? 'urgent' : undefined}>
+            {request.due_date ? `${formatDate(request.due_date)} · ${dueDateLabel(request.due_date)}` : '기한 없음'}
+          </strong>
+        </div>
+        <div>
+          <span>첨부</span>
+          <strong>
+            {attachmentHref ? (
+              <a href={attachmentHref} rel="noreferrer" target="_blank">
+                <Paperclip size={13} />
+                첨부 열기
+              </a>
+            ) : (
+              '없음'
+            )}
+          </strong>
+        </div>
+      </div>
+
       <div className="status-timeline" data-status={request.status} aria-label="검토 상태 흐름">
         {statusFlow.map((status, index) => {
           const state = index < currentStatusIndex ? 'complete' : index === currentStatusIndex ? 'current' : 'waiting'
@@ -122,87 +203,68 @@ export function ReviewRequestItem({
           )
         })}
       </div>
-      {profile.role === 'leader' && (
-        <div className="status-action-group" aria-label="검토 상태 전환">
-          {statusButtons.map(([status, label]) => (
-            <button
-              className={request.status === status ? 'selected' : ''}
-              disabled={request.status === status}
-              key={status}
-              onClick={() => handleStatusTransition(status)}
-              type="button"
-            >
-              {request.status === status && <Check size={13} />}
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-      {canEditOwn && (
-        <div className="inline-actions">
-          <button className="ghost compact" onClick={() => onEdit(request)} type="button">
-            <Pencil size={16} />
-            수정
-          </button>
-          {pendingWithdraw ? (
-            <div className="delete-confirm">
-              <button className="danger compact" onClick={() => void withdrawReview(request.id)} type="button">
-                회수 확인
-              </button>
-              <button className="ghost compact" onClick={() => onWithdraw(null)} type="button">
-                취소
+
+      <p className="request-description">{request.description}</p>
+
+      <div className="feedback-block">
+        <header>
+          <h2>피드백</h2>
+          <span>{requestFeedback.length}개</span>
+        </header>
+        {requestFeedback.length === 0 && <div className="feedback-empty">아직 피드백이 없습니다.</div>}
+        {requestFeedback.length > 0 && (
+          <div className="feedback-list">
+            {requestFeedback.map((item, index) => (
+              <div className={index === requestFeedback.length - 1 ? 'feedback feedback-new' : 'feedback'} key={item.id}>
+                <span>
+                  {item.profiles?.name ?? '파트장'} · {formatDate(item.created_at)}
+                </span>
+                <p>{item.comment}</p>
+              </div>
+            ))}
+          </div>
+        )}
+        {profile.role === 'leader' && (
+          <div className="feedback-composer">
+            <div className="feedback-composer-head">
+              <span className="avatar-mark">{profile.name.slice(0, 1)}</span>
+              <strong>{profile.name}</strong>
+            </div>
+            <textarea
+              placeholder="이 검토요청에 대해 어떻게 생각하시나요?"
+              value={feedback[request.id] ?? ''}
+              onChange={(event) => {
+                setFeedback({ ...feedback, [request.id]: event.target.value })
+                if (rejectNotice) setRejectNotice(false)
+              }}
+              onKeyDown={(event) => {
+                if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                  event.preventDefault()
+                  void addFeedback(request.id)
+                }
+              }}
+            />
+            <div className="feedback-composer-foot">
+              <span className="modal-shortcut">
+                <kbd>Ctrl</kbd>
+                <kbd>Enter</kbd>
+                저장
+              </span>
+              <button
+                className="primary compact"
+                disabled={!(feedback[request.id]?.trim())}
+                onClick={() => void addFeedback(request.id)}
+                type="button"
+              >
+                <Send size={14} />
+                피드백 남기기
               </button>
             </div>
-          ) : (
-            <button className="ghost compact" onClick={() => onWithdraw(request.id)} type="button">
-              <Trash2 size={16} />
-              회수
-            </button>
-          )}
-        </div>
-      )}
-      <div className="request-meta-row">
-        <Badge status={dueDateStatus(request.due_date)}>
-          {request.due_date ? `${dueDateLabel(request.due_date)} · ${formatDate(request.due_date)}` : '기한 없음'}
-        </Badge>
-      </div>
-      <p>{request.description}</p>
-      {attachmentHref && (
-        <a href={attachmentHref} target="_blank" rel="noreferrer">
-          첨부 열기
-        </a>
-      )}
-      <div className="feedback-list">
-        {requestFeedback.map((item, index) => (
-          <div className={index === requestFeedback.length - 1 ? 'feedback feedback-new' : 'feedback'} key={item.id}>
-            <span>{item.profiles?.name ?? '파트장'} · {formatDate(item.created_at)}</span>
-            <p>{item.comment}</p>
           </div>
-        ))}
+        )}
+        {rejectNotice && <p className="notice error">반려하려면 피드백에 사유를 먼저 입력해 주세요.</p>}
       </div>
-      {profile.role === 'leader' && (
-        <div className="inline-form">
-          <input
-            placeholder="피드백 작성"
-            value={feedback[request.id] ?? ''}
-            onChange={(event) => {
-              setFeedback({ ...feedback, [request.id]: event.target.value })
-              if (rejectNotice) setRejectNotice(false)
-            }}
-            onKeyDown={(event) => {
-              if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-                event.preventDefault()
-                void addFeedback(request.id)
-              }
-            }}
-          />
-          <button className="primary compact" onClick={() => void addFeedback(request.id)} type="button">
-            <Save size={16} />
-            저장
-          </button>
-        </div>
-      )}
-      {rejectNotice && <p className="notice error">반려하려면 피드백에 사유를 먼저 입력해 주세요.</p>}
+
       {transitionNotice && (
         <div className="interaction-toast" data-tone={transitionNotice.tone} role="status">
           <span />
@@ -223,4 +285,3 @@ export function ReviewRequestItem({
     </article>
   )
 }
-

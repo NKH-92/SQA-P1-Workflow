@@ -135,7 +135,7 @@ export function TeamPanel({
                 {summary.products.slice(0, 3).map((assignment) => (
                   <span key={assignment.id}>{assignment.products?.name ?? assignment.product_id}</span>
                 ))}
-                {summary.products.length === 0 && <span>제품 배정 필요</span>}
+                {summary.products.length === 0 && <span className="pill-warn">제품 배정 필요</span>}
               </div>
               {summary.notes[0] && <p className="leader-note">{summary.notes[0].note}</p>}
             </button>

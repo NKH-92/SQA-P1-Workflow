@@ -21,7 +21,7 @@ export async function createProject(
 ): Promise<string | null> {
   const { profile, setData } = ctx
   const { project, memberIds, memberOptions } = input
-  let projectId: string | null = null
+  let projectId: string | null
 
   if (ctx.isRemote) {
     const { data: createdId, error } = await supabase!.rpc('create_project_with_assignments', {

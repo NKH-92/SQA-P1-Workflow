@@ -1,22 +1,20 @@
 import type { Dispatch, SetStateAction } from 'react'
-import { Badge, Rows, Section } from '../components/ui'
+import { Badge, Section } from '../components/ui'
 import type { AppData, Profile } from '../types'
 import type { TabId } from '../app/types'
-import { formatDate, projectStatusLabels, reviewStatusLabels } from '../lib/format'
-import { dueDateLabel } from '../lib/dates'
-import { reviewPriorityScore } from '../lib/priority'
+import { formatDate, reviewStatusLabels } from '../lib/format'
+import { daysUntil, dueDateLabel } from '../lib/dates'
 import {
-  Bell,
   Check,
   ClipboardList,
   FolderKanban,
   Package,
-  StickyNote,
 } from 'lucide-react'
 
 export function Dashboard({
   profile,
   data,
+  setActiveTab,
 }: {
   profile: Profile
   data: AppData
@@ -24,113 +22,152 @@ export function Dashboard({
   setData: Dispatch<SetStateAction<AppData>>
   setActiveTab: (tab: TabId, entityId?: string) => void
 }) {
+  const leaderProfile = data.profiles.find((item) => item.role === 'leader')
   const ownProducts = data.productAssignments.filter((assignment) => assignment.user_id === profile.id)
   const ownDuties = data.dutyAssignments.filter((assignment) => assignment.user_id === profile.id)
-  const ownProjects = data.projectAssignments.filter((assignment) => assignment.user_id === profile.id)
-  const ownReviews = data.reviewRequests.filter((request) => request.requester_id === profile.id)
-  const ownNotes = data.profileNotes.filter((note) => note.profile_id === profile.id)
-  const ownReminders = [
-    ...ownReviews
-      .filter((request) => request.status === 'pending' || request.status === 'in_review')
-      .sort((left, right) => reviewPriorityScore(left) - reviewPriorityScore(right))
-      .map((request) => ({
-        title: request.title,
-        meta: `검토요청 · ${reviewStatusLabels[request.status]}`,
-        aside: dueDateLabel(request.due_date),
-      })),
-    ...ownProjects
-      .map((assignment) => {
-        const project = assignment.projects ?? data.projects.find((item) => item.id === assignment.project_id)
-        return {
-          title: project?.name ?? assignment.project_id,
-          meta: `배정 업무 · ${project?.deadline ? formatDate(project.deadline) : '마감일 없음'}`,
-          aside: project?.deadline ? dueDateLabel(project.deadline) : undefined,
-          done: project?.status === 'done',
-        }
-      })
-      .filter((item) => !item.done && item.aside && item.aside !== '기한 없음'),
-  ]
+  const ownProjects = data.projectAssignments
+    .map((assignment) => ({
+      assignment,
+      project: assignment.projects ?? data.projects.find((item) => item.id === assignment.project_id) ?? null,
+    }))
+    .filter(({ assignment }) => assignment.user_id === profile.id)
+  const ownReviews = data.reviewRequests
+    .filter((request) => request.requester_id === profile.id)
+    .sort((left, right) => (right.created_at ?? '').localeCompare(left.created_at ?? ''))
+  const openReviews = ownReviews.filter((request) => request.status === 'pending' || request.status === 'in_review')
+  const latestNote = data.profileNotes
+    .filter((note) => note.profile_id === profile.id)
+    .sort((left, right) => (right.created_at ?? '').localeCompare(left.created_at ?? ''))[0]
+  const urgentProjects = ownProjects.filter(({ project }) => {
+    if (!project || project.status === 'done') return false
+    const days = daysUntil(project.deadline)
+    return days != null && days <= 3
+  })
+  const introMessage =
+    urgentProjects.length > 0 ? (
+      <>
+        오늘 <strong>{urgentProjects.length}개의 프로젝트</strong>가 마감 임박이에요.
+      </>
+    ) : openReviews.length > 0 ? (
+      <>
+        답변을 기다리는 검토요청이 <strong>{openReviews.length}건</strong> 있어요.
+      </>
+    ) : (
+      <>오늘은 확인할 급한 항목이 없어요.</>
+    )
   const todayLabel = new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }).format(new Date())
 
   return (
-      <div className="stack">
-        <div className="page-intro">
-          <span>{todayLabel}</span>
-          <h1>좋은 아침이에요, {profile.name}님.</h1>
-          <p>
-            오늘 확인할 리마인더가 <strong>{ownReminders.length}건</strong> 있어요.
-          </p>
-        </div>
-        <div className="member-overview">
-          <div>
-            <span>{profile.name}</span>
-            <strong>내 업무 현황</strong>
-            <p>{ownProjects.length > 0 ? `진행 프로젝트 ${ownProjects.length}건` : '배정된 프로젝트 없음'}</p>
-          </div>
-          <div className="overview-metrics">
-            <Badge>제품 {ownProducts.length}</Badge>
-            <Badge>업무 {ownDuties.length}</Badge>
-            <Badge>검토 {ownReviews.length}</Badge>
-            <Badge>메모 {ownNotes.length}</Badge>
-          </div>
-        </div>
-        <Section title="내 알림/리마인더" icon={<Bell size={18} />}>
-          <Rows
-            empty="확인할 검토요청이나 마감 리마인더가 없습니다."
-            rows={ownReminders.slice(0, 6)}
-          />
-        </Section>
-        <div className="grid two">
-          <Section title="담당제품" icon={<Package size={18} />}>
-            <Rows
-              empty="담당제품이 없습니다."
-              rows={ownProducts.map((assignment) => ({
-                title: assignment.products?.name ?? assignment.product_id,
-                meta: assignment.products?.code ?? '제품코드 없음',
-                aside: assignment.status ?? '-',
-              }))}
-            />
-          </Section>
-          <Section title="담당업무" icon={<ClipboardList size={18} />}>
-            <Rows
-              empty="담당업무가 없습니다."
-              rows={ownDuties.map((assignment) => ({
-                title: assignment.duties?.name ?? assignment.duty_id,
-                meta: '사전 정의 업무',
-              }))}
-            />
-          </Section>
-          <Section title="배정 프로젝트" icon={<FolderKanban size={18} />}>
-            <Rows
-              empty="배정 프로젝트가 없습니다."
-              rows={ownProjects.map((assignment) => ({
-                title: assignment.projects?.name ?? assignment.project_id,
-                meta: assignment.projects?.deadline ? `마감 ${formatDate(assignment.projects.deadline)}` : '마감일 없음',
-                aside: assignment.projects?.status ? projectStatusLabels[assignment.projects.status] : '-',
-              }))}
-            />
-          </Section>
-          <Section title="내 검토요청" icon={<Check size={18} />}>
-            <Rows
-              empty="검토요청이 없습니다."
-              rows={ownReviews.map((request) => ({
-                title: request.title,
-                meta: formatDate(request.created_at),
-                aside: reviewStatusLabels[request.status],
-              }))}
-            />
-          </Section>
-          <Section title="파트장 메모" icon={<StickyNote size={18} />}>
-            <Rows
-              empty="공유된 관리 메모가 없습니다."
-              rows={ownNotes.map((note) => ({
-                title: note.note,
-                meta: formatDate(note.created_at),
-              }))}
-            />
-          </Section>
-        </div>
+    <div className="stack">
+      <div className="page-intro">
+        <span>{todayLabel}</span>
+        <h1>좋은 아침이에요, {profile.name}님.</h1>
+        <p>{introMessage}</p>
       </div>
-    )
-}
 
+      {latestNote && (
+        <div className="leader-memo">
+          <span className="avatar-mark">{(leaderProfile?.name ?? '파').slice(0, 1)}</span>
+          <div>
+            <span>파트장 메모</span>
+            <p>“{latestNote.note}”</p>
+            <small>
+              {leaderProfile?.name ?? '파트장'} · {formatDate(latestNote.created_at)}
+            </small>
+          </div>
+        </div>
+      )}
+
+      <div className="grid split-wide">
+        <Section
+          title="내 검토요청"
+          icon={<Check size={18} />}
+          aside={`대기 ${openReviews.length} / 전체 ${ownReviews.length}`}
+          flush
+        >
+          {ownReviews.length === 0 && <p className="empty">아직 보낸 검토요청이 없습니다.</p>}
+          <div className="flush-list">
+            {ownReviews.slice(0, 4).map((request) => {
+              const latestFeedback = request.review_feedback?.[request.review_feedback.length - 1]
+              return (
+                <button
+                  className="review-preview-row"
+                  key={request.id}
+                  onClick={() => setActiveTab('reviews', request.id)}
+                  type="button"
+                >
+                  <span className="review-preview-head">
+                    <Badge status={request.status}>{reviewStatusLabels[request.status]}</Badge>
+                    <strong>{request.title}</strong>
+                    <time>{formatDate(request.created_at)}</time>
+                  </span>
+                  {latestFeedback ? (
+                    <span className="feedback-quote">
+                      <span className="avatar-mark">{(latestFeedback.profiles?.name ?? '파').slice(0, 1)}</span>
+                      <em>“{latestFeedback.comment}”</em>
+                    </span>
+                  ) : (
+                    <span className="no-feedback">
+                      아직 피드백이 없어요 · {request.status === 'pending' ? '파트장 확인 대기 중' : '검토 진행 중'}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </Section>
+
+        <Section title="배정된 프로젝트" icon={<FolderKanban size={18} />} aside={`${ownProjects.length}개`} flush>
+          {ownProjects.length === 0 && <p className="empty">배정된 프로젝트가 없습니다.</p>}
+          <div className="flush-list">
+            {ownProjects.map(({ assignment, project }) => {
+              const days = daysUntil(project?.deadline)
+              const urgent = project?.status !== 'done' && days != null && days <= 3
+              return (
+                <div className="project-preview-row" key={assignment.id}>
+                  <div className="project-preview-head">
+                    <strong>{project?.name ?? assignment.project_id}</strong>
+                    <span className={urgent ? 'due urgent' : 'due'}>
+                      {project?.deadline ? dueDateLabel(project.deadline) : '기한 없음'}
+                    </span>
+                  </div>
+                  <small>{project?.description || '설명 없음'}</small>
+                </div>
+              )
+            })}
+          </div>
+        </Section>
+      </div>
+
+      <div className="grid split-narrow">
+        <Section title="담당제품" icon={<Package size={18} />} aside={`${ownProducts.length}개`}>
+          {ownProducts.length === 0 && <p className="empty">담당제품이 없습니다.</p>}
+          <div className="product-tile-grid">
+            {ownProducts.map((assignment) => {
+              const name = assignment.products?.name ?? assignment.product_id
+              const code = assignment.products?.code ?? null
+              return (
+                <div className="product-tile" key={assignment.id}>
+                  <span className="code-mark">{(code ?? name).slice(0, 3)}</span>
+                  <div>
+                    <strong>{name}</strong>
+                    <small>{code ?? assignment.status ?? '코드 없음'}</small>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </Section>
+
+        <Section title="담당업무" icon={<ClipboardList size={18} />} aside="정기 업무">
+          {ownDuties.length === 0 && <p className="empty">담당업무가 없습니다.</p>}
+          <ul className="duty-list">
+            {ownDuties.map((assignment) => (
+              <li key={assignment.id}>{assignment.duties?.name ?? assignment.duty_id}</li>
+            ))}
+          </ul>
+        </Section>
+      </div>
+    </div>
+  )
+}

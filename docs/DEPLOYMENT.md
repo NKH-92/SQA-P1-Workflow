@@ -92,8 +92,9 @@ Pages URL을 Supabase Auth의 Site URL 및 Redirect URLs에 추가한다.
 
 ## 운영 전 보호
 
-- 운영 공개 전 Cloudflare Access를 Worker(또는 Pages) 도메인 앞단에 적용한다.
+- **내부 전용 배포에서는 Cloudflare Access가 필수**이다. Worker(또는 Pages) 도메인 앞단에 Access policy를 적용해 팀 이메일 도메인만 허용한다.
 - Access는 URL 접근 보호이고, 앱 내부 권한은 Supabase RLS가 계속 담당한다.
+- 운영 URL·Supabase project ref는 저장소에 커밋하지 않는다. GitHub Variables/Secrets와 [MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md) 체크리스트 하단에 `<WORKER_URL>`, `<PROJECT_REF>` 플레이스홀더로 기록한다.
 - 백업·복구·장애 대응은 [OPERATIONS.md](./OPERATIONS.md)를 참고한다.
 - Supabase Pro 전환 기준:
   - 실제 업무에서 매일 사용하기 시작함

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import { Badge, Section } from '../components/ui'
+import { Badge } from '../components/ui'
 import type { AppData, Profile, ReviewRequest, ReviewStatus } from '../types'
 import type { DeadlineMode, ReviewStatusFilter } from '../app/types'
 import {
@@ -15,10 +15,10 @@ import { normalizeHttpUrl } from '../lib/urls'
 import { formatDate, reviewStatusLabels } from '../lib/format'
 import { uploadReviewAttachment } from '../lib/attachments'
 import { compareReviewRequests } from '../lib/priority'
-import { ageInDays, dueDateLabel } from '../lib/dates'
+import { ageInDays, dueDateLabel, dueDateStatus } from '../lib/dates'
 import { ReviewRequestItem } from './ReviewRequestItem'
 import {
-  Check,
+  Paperclip,
   Send,
   X,
 } from 'lucide-react'
@@ -50,6 +50,7 @@ export function ReviewsPanel({
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
   const [isReviewComposerOpen, setReviewComposerOpen] = useState(false)
   const [draftNotice, setDraftNotice] = useState<string | null>(null)
+  const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null)
   const [feedback, setFeedback] = useState<Record<string, string>>({})
   const [statusFilter, setStatusFilter] = useState<ReviewStatusFilter>('all')
   const [selectedReviewId, setSelectedReviewId] = useState<string | null>(null)
@@ -98,10 +99,12 @@ export function ReviewsPanel({
   const saveReviewDraft = useCallback(() => {
     if (typeof localStorage === 'undefined') return
     localStorage.setItem(reviewDraftKey, JSON.stringify(form))
+    setDraftSavedAt(new Date())
   }, [form, reviewDraftKey])
 
   const openReviewComposer = () => {
     setEditingReviewId(null)
+    setDraftSavedAt(null)
     if (typeof localStorage !== 'undefined') {
       const raw = localStorage.getItem(reviewDraftKey)
       if (raw) {
@@ -253,23 +256,21 @@ export function ReviewsPanel({
     }, '피드백을 남겼습니다.')
 
   return (
-    <div className="stack">
+    <div className="stack review-stack">
       {profile.role === 'member' && (
-        <Section title="검토요청 작성" icon={<Send size={18} />}>
-          <div className="composer-callout">
-            <div>
-              <span>파트장에게 보낼 검토요청을 준비합니다.</span>
-              <strong>{form.title || '새 검토요청'}</strong>
-              <p>
-                제목과 검토 포인트를 먼저 적고, 필요하면 첨부 링크와 기한을 더하세요. 기한은 날짜 또는 기한없음 중 하나로 정리됩니다.
-              </p>
-            </div>
-            <button className="primary" onClick={() => openReviewComposer()} type="button">
-              <Send size={16} />
-              검토요청 작성
-            </button>
+        <div className="composer-callout">
+          <div>
+            <span>새 검토요청</span>
+            <strong>{form.title || '무엇을 검토받고 싶으세요?'}</strong>
+            <p>
+              제목과 검토 포인트를 먼저 적고, 필요하면 첨부 링크와 기한을 더하세요. 보내는 즉시 파트장 우선처리 목록에 올라갑니다.
+            </p>
           </div>
-        </Section>
+          <button className="primary" onClick={() => openReviewComposer()} type="button">
+            <Send size={16} />
+            검토요청 작성
+          </button>
+        </div>
       )}
       {profile.role === 'member' && isReviewComposerOpen && (
         <div className="modal-backdrop" onMouseDown={() => closeReviewComposer(true)} role="presentation">
@@ -292,6 +293,13 @@ export function ReviewsPanel({
                   {editingReviewId ? '요청 내용을 수정하세요' : '무엇을 검토받고 싶으세요?'}
                 </h2>
               </div>
+              {!editingReviewId && (
+                <span className="autosave-chip" data-saved={draftSavedAt ? 'true' : 'false'}>
+                  {draftSavedAt
+                    ? `${draftSavedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 자동저장됨`
+                    : '초안 · 저장되지 않음'}
+                </span>
+              )}
               <button
                 aria-label="검토요청 작성 닫기"
                 className="icon-button modal-close"
@@ -347,23 +355,31 @@ export function ReviewsPanel({
                   </div>
                 </div>
                 <div className="modal-field-row">
-                  <label htmlFor="review-attachment-v2">첨부 링크(URL)</label>
+                  <label htmlFor="review-attachment-v2">첨부</label>
                   <div>
-                    <input
-                      id="review-attachment-v2"
-                      placeholder="https://"
-                      value={form.attachment_url}
-                      onChange={(event) => setForm({ ...form, attachment_url: event.target.value })}
-                    />
-                    <p>공유 드라이브나 문서 링크를 붙여넣거나 파일을 선택하세요.</p>
-                    <label className="file-upload">
+                    <label className="attachment-dropzone">
                       <input
                         accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt,.zip"
+                        hidden
                         onChange={(event) => setAttachmentFile(event.target.files?.[0] ?? null)}
                         type="file"
                       />
-                      {attachmentFile ? attachmentFile.name : '파일 선택 (10MB 이하)'}
+                      <span className="attachment-icon" aria-hidden="true">
+                        <Paperclip size={16} />
+                      </span>
+                      <span className="attachment-copy">
+                        <strong>{attachmentFile ? attachmentFile.name : '파일을 선택하거나 아래에 링크를 붙여넣으세요'}</strong>
+                        <small>{attachmentFile ? '선택됨 · 다시 클릭하면 변경' : 'PDF, 문서, 이미지 · 10MB 이하'}</small>
+                      </span>
+                      <span className="ghost compact attachment-pick">파일 선택</span>
                     </label>
+                    <input
+                      aria-label="첨부 링크(URL)"
+                      id="review-attachment-v2"
+                      placeholder="https:// 링크 첨부"
+                      value={form.attachment_url}
+                      onChange={(event) => setForm({ ...form, attachment_url: event.target.value })}
+                    />
                   </div>
                 </div>
                 <div className="modal-field-row">
@@ -445,73 +461,81 @@ export function ReviewsPanel({
           </section>
         </div>
       )}
-      <Section title={profile.role === 'leader' ? '전체 검토요청' : '내 검토요청'} icon={<Check size={18} />}>
-        <div className="section-toolbar">
-          <select
-            className="compact-select"
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value as ReviewStatusFilter)}
-          >
-            <option value="all">전체 {scopedReviewRequests.length}건</option>
-            {Object.entries(reviewStatusLabels).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label} {statusCounts[value as ReviewStatus]}건
-              </option>
-            ))}
-          </select>
-          <div className="status-summary" aria-label="검토요청 상태별 건수">
-            {Object.entries(reviewStatusLabels).map(([value, label]) => (
-              <Badge key={value} status={value}>
-                {label} {statusCounts[value as ReviewStatus]}
-              </Badge>
+      <section className="review-workspace">
+        <aside className="review-list-pane" aria-label="검토요청 목록">
+          <div className="review-list-head">
+            <h2>{profile.role === 'leader' ? '검토요청' : '내 검토요청'}</h2>
+            <span>{visibleReviewRequests.length}건</span>
+          </div>
+          <div className="review-filter-row" role="group" aria-label="검토요청 상태 필터">
+            <button
+              className={statusFilter === 'all' ? 'filter-chip selected' : 'filter-chip'}
+              onClick={() => setStatusFilter('all')}
+              type="button"
+            >
+              전체 {scopedReviewRequests.length}
+            </button>
+            {(Object.entries(reviewStatusLabels) as Array<[ReviewStatus, string]>).map(([value, label]) => (
+              <button
+                className={statusFilter === value ? 'filter-chip selected' : 'filter-chip'}
+                key={value}
+                onClick={() => setStatusFilter(value)}
+                type="button"
+              >
+                {label} {statusCounts[value]}
+              </button>
             ))}
           </div>
-        </div>
-        <div className="review-workspace">
-          <aside className="review-list-pane" aria-label="검토요청 목록">
-            {visibleReviewRequests.length === 0 && <p className="empty">검토요청이 없습니다.</p>}
-            {visibleReviewRequests.map((request) => (
+          {visibleReviewRequests.length === 0 && <p className="empty">검토요청이 없습니다.</p>}
+          {visibleReviewRequests.map((request) => {
+            const dueStatus = dueDateStatus(request.due_date)
+            const dueHot = dueStatus === 'overdue' || dueStatus === 'due_now'
+            return (
               <button
                 className={selectedReview?.id === request.id ? 'review-list-item selected' : 'review-list-item'}
                 key={request.id}
                 onClick={() => setSelectedReviewId(request.id)}
                 type="button"
               >
-                <span className="review-list-item-head">
-                  <strong>{request.title}</strong>
+                <span className="review-list-top">
                   <Badge status={request.status}>{reviewStatusLabels[request.status]}</Badge>
+                  <time>{formatDate(request.created_at)}</time>
                 </span>
+                <strong>{request.title}</strong>
                 <span className="review-list-meta">
                   {request.profiles?.name ?? '요청자'} · 접수 {ageInDays(request.created_at)}일
-                </span>
-                <span className="review-list-due">
-                  {request.due_date ? `${dueDateLabel(request.due_date)} · ${formatDate(request.due_date)}` : '기한 없음'}
+                  {request.due_date && (
+                    <>
+                      {' · '}
+                      <span className={dueHot ? 'due-hot' : undefined}>{dueDateLabel(request.due_date)}</span>
+                    </>
+                  )}
                 </span>
               </button>
-            ))}
-          </aside>
-          <div className="review-detail-pane" aria-live="polite">
-            {selectedReview ? (
-              <ReviewRequestItem
-                addFeedback={addFeedback}
-                feedback={feedback}
-                key={selectedReview.id}
-                onEdit={openReviewEditor}
-                onWithdraw={(id) => setPendingWithdrawId(id)}
-                pendingWithdraw={pendingWithdrawId === selectedReview.id}
-                profile={profile}
-                rejectReview={rejectReview}
-                request={selectedReview}
-                setFeedback={setFeedback}
-                updateStatus={updateStatus}
-                withdrawReview={withdrawReview}
-              />
-            ) : (
-              <p className="empty">왼쪽 목록에서 검토요청을 선택하세요.</p>
-            )}
-          </div>
+            )
+          })}
+        </aside>
+        <div className="review-detail-pane" aria-live="polite">
+          {selectedReview ? (
+            <ReviewRequestItem
+              addFeedback={addFeedback}
+              feedback={feedback}
+              key={selectedReview.id}
+              onEdit={openReviewEditor}
+              onWithdraw={(id) => setPendingWithdrawId(id)}
+              pendingWithdraw={pendingWithdrawId === selectedReview.id}
+              profile={profile}
+              rejectReview={rejectReview}
+              request={selectedReview}
+              setFeedback={setFeedback}
+              updateStatus={updateStatus}
+              withdrawReview={withdrawReview}
+            />
+          ) : (
+            <p className="empty">왼쪽 목록에서 검토요청을 선택하세요.</p>
+          )}
         </div>
-      </Section>
+      </section>
     </div>
   )
 }

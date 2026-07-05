@@ -164,7 +164,7 @@ Supabase 사용 시 위 규칙을 Row Level Security 정책으로 구현하면 �
 |---|---|---|
 | 프론트엔드 | React + Vite (SPA) | 대시보드형 서비스라 SSR 불필요 |
 | 백엔드/DB/인증 | Supabase (Postgres + Auth) | 무료 티어, RLS로 권한 분리 |
-| 호스팅 | Cloudflare Pages | 무료, 사내(상업적) 사용 명시적으로 허용 |
+| 호스팅 | Cloudflare Workers | 무료, 사내(상업적) 사용 명시적으로 허용 (`wrangler deploy --assets`) |
 | 대안 호스팅 | Vercel | 더 흔한 조합이지만 Hobby(무료) 플랜은 비상업적 개인용도로 제한 – 사내 시스템이면 Pro($20/월) 권장 |
 | 인증 방식 | 이메일 + 비밀번호 | 10인 규모라 SSO 불필요 |
 

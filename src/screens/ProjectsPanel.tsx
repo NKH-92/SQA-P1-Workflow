@@ -457,9 +457,9 @@ export function ProjectsPanel({
                             <strong>{member.name}</strong>
                             <Badge status={overloaded ? 'due_soon' : 'approved'}>{overloaded ? '부하 주의' : '여유'}</Badge>
                           </header>
-                          <div className="load-transition">
+                          <div className={overloaded ? 'load-transition warning' : 'load-transition'}>
                             <span>{currentLoad}<small>과제</small></span>
-                            <span>→</span>
+                            <span className="arrow">→</span>
                             <span className={overloaded ? 'warning' : 'good'}>{nextLoad}<small>과제</small></span>
                             <strong>+1</strong>
                           </div>

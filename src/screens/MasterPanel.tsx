@@ -443,7 +443,7 @@ export function MasterPanel({
               const assignments = data.productAssignments.filter((assignment) => assignment.product_id === product.id)
               const edit = productEdits[product.id]
               return (
-                <article className="master-card" key={product.id}>
+                <article className={assignments.length === 0 ? 'master-card unassigned' : 'master-card'} key={product.id}>
                   {edit ? (
                     <div className="project-edit-form">
                       <label>
@@ -494,7 +494,7 @@ export function MasterPanel({
                         {assignments.map((assignment) => (
                           <span key={assignment.id}>{assignment.profiles?.name ?? assignment.user_id}</span>
                         ))}
-                        {assignments.length === 0 && <span>배정 필요</span>}
+                        {assignments.length === 0 && <span className="pill-warn">배정 필요</span>}
                       </div>
                     </>
                   )}
@@ -566,7 +566,7 @@ export function MasterPanel({
               const assignments = data.dutyAssignments.filter((assignment) => assignment.duty_id === duty.id)
               const edit = dutyEdits[duty.id]
               return (
-                <article className="master-card" key={duty.id}>
+                <article className={assignments.length === 0 ? 'master-card unassigned' : 'master-card'} key={duty.id}>
                   {edit ? (
                     <div className="project-edit-form">
                       <label>
@@ -602,7 +602,7 @@ export function MasterPanel({
                         {assignments.map((assignment) => (
                           <span key={assignment.id}>{assignment.profiles?.name ?? assignment.user_id}</span>
                         ))}
-                        {assignments.length === 0 && <span>배정 필요</span>}
+                        {assignments.length === 0 && <span className="pill-warn">배정 필요</span>}
                       </div>
                     </>
                   )}

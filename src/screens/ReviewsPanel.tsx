@@ -23,6 +23,14 @@ import {
   X,
 } from 'lucide-react'
 
+const emptyReviewForm = {
+  title: '',
+  description: '',
+  attachment_url: '',
+  deadlineMode: 'none' as DeadlineMode,
+  due_date: '',
+}
+
 export function ReviewsPanel({
   profile,
   data,
@@ -38,13 +46,7 @@ export function ReviewsPanel({
   initialSelectedId?: string | null
   onInitialSelectionApplied?: () => void
 }) {
-  const [form, setForm] = useState({
-    title: '',
-    description: '',
-    attachment_url: '',
-    deadlineMode: 'none' as DeadlineMode,
-    due_date: '',
-  })
+  const [form, setForm] = useState(emptyReviewForm)
   const [editingReviewId, setEditingReviewId] = useState<string | null>(null)
   const [pendingWithdrawId, setPendingWithdrawId] = useState<string | null>(null)
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
@@ -104,6 +106,7 @@ export function ReviewsPanel({
 
   const openReviewComposer = () => {
     setEditingReviewId(null)
+    setAttachmentFile(null)
     setDraftSavedAt(null)
     if (typeof localStorage !== 'undefined') {
       const raw = localStorage.getItem(reviewDraftKey)
@@ -112,15 +115,23 @@ export function ReviewsPanel({
           setForm(JSON.parse(raw) as typeof form)
           setDraftNotice('이 기기에 저장된 초안을 불러왔습니다.')
         } catch {
+          setForm(emptyReviewForm)
           setDraftNotice(null)
         }
+      } else {
+        setForm(emptyReviewForm)
+        setDraftNotice(null)
       }
+    } else {
+      setForm(emptyReviewForm)
+      setDraftNotice(null)
     }
     setReviewComposerOpen(true)
   }
 
   const openReviewEditor = (request: ReviewRequest) => {
     setEditingReviewId(request.id)
+    setAttachmentFile(null)
     setForm({
       title: request.title,
       description: request.description,
@@ -217,10 +228,12 @@ export function ReviewsPanel({
       })
       if (isUpdate) {
         setEditingReviewId(null)
+        setForm(emptyReviewForm)
+        setAttachmentFile(null)
         setReviewComposerOpen(false)
         return
       }
-      setForm({ title: '', description: '', attachment_url: '', deadlineMode: 'none', due_date: '' })
+      setForm(emptyReviewForm)
       setAttachmentFile(null)
       if (typeof localStorage !== 'undefined') localStorage.removeItem(reviewDraftKey)
       setDraftNotice(null)

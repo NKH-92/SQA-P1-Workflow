@@ -1,4 +1,19 @@
 #Requires -Version 5.1
+# Includes 202607050004 and 202607050005 when present under supabase/migrations/
+$root = Split-Path $PSScriptRoot -Parent
+$migrationsDir = Join-Path $root 'supabase\migrations'
+$pending = @()
+if (Test-Path $migrationsDir) {
+  $pending = Get-ChildItem -Path $migrationsDir -Filter '20260705*.sql' -File |
+    Sort-Object Name |
+    ForEach-Object { "  - $($_.Name)" }
+}
+$pendingBlock = if ($pending.Count -gt 0) {
+  ($pending -join [Environment]::NewLine)
+} else {
+  '  (none found under supabase/migrations/20260705*.sql)'
+}
+
 Write-Host @"
 Supabase migration apply helper
 ================================
@@ -11,7 +26,5 @@ Supabase migration apply helper
 Or paste SQL from supabase/migrations/ into Supabase SQL Editor (see docs/SUPABASE_MIGRATIONS.md).
 
 Pending migrations (20260705*):
-  - 202607050001_member_review_update_delete.sql
-  - 202607050002_review_attachments_storage.sql
-  - 202607050003_profile_is_active.sql
+$pendingBlock
 "@

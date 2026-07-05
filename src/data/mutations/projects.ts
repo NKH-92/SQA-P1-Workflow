@@ -86,7 +86,7 @@ export async function createProject(
     action: 'created',
     summary: `${project.name} 프로젝트를 생성했습니다.`,
     metadata: { deadline: project.deadline, status: project.status, assigned_user_ids: memberIds },
-  })
+  }, { isRemote: ctx.isRemote })
 
   return projectId
 }
@@ -130,7 +130,7 @@ export async function updateProject(
     action: 'updated',
     summary: `${updated.name} 프로젝트 정보를 수정했습니다.`,
     metadata: updated,
-  })
+  }, { isRemote: ctx.isRemote })
 }
 
 export async function saveProjectAssignments(
@@ -195,7 +195,7 @@ export async function saveProjectAssignments(
     action: 'updated',
     summary: `${project.name} 프로젝트 배정을 ${nextMemberIds.length}명으로 조정했습니다.`,
     metadata: { assigned_user_ids: nextMemberIds },
-  })
+  }, { isRemote: ctx.isRemote })
 }
 
 export async function deleteProject(ctx: RepositoryContext, project: Project): Promise<void> {
@@ -218,5 +218,5 @@ export async function deleteProject(ctx: RepositoryContext, project: Project): P
     entityId: project.id,
     action: 'deleted',
     summary: `${project.name} 프로젝트를 삭제했습니다.`,
-  })
+  }, { isRemote: ctx.isRemote })
 }

@@ -14,6 +14,7 @@ export async function recordActivityLog(
     summary: string
     metadata?: Record<string, unknown>
   },
+  options: { isRemote?: boolean } = {},
 ) {
   const row = {
     actor_id: input.actor.id,
@@ -25,7 +26,7 @@ export async function recordActivityLog(
     metadata: input.metadata ?? {},
   }
 
-  if (supabase) {
+  if (options.isRemote && supabase) {
     const { error } = await supabase.from('activity_logs').insert(row)
     if (error) {
       console.warn('활동 로그 저장 실패', error)

@@ -47,7 +47,7 @@ export async function saveReviewRequest(
       action: 'updated',
       summary: `${profile.name}님이 ${title} 검토요청을 수정했습니다.`,
       metadata: { due_date: dueDate },
-    })
+    }, { isRemote: ctx.isRemote })
     return { reviewId: editingReviewId, isUpdate: true }
   }
 
@@ -67,7 +67,7 @@ export async function saveReviewRequest(
       action: 'created',
       summary: `${profile.name}님이 ${title} 검토를 요청했습니다.`,
       metadata: { due_date: dueDate },
-    })
+    }, { isRemote: ctx.isRemote })
   } else {
     reviewId = makeId('review')
     setData((current) => ({
@@ -96,7 +96,7 @@ export async function saveReviewRequest(
       action: 'created',
       summary: `${profile.name}님이 ${title} 검토를 요청했습니다.`,
       metadata: { due_date: dueDate },
-    })
+    }, { isRemote: ctx.isRemote })
   }
 
   return { reviewId, isUpdate: false }
@@ -122,7 +122,7 @@ export async function withdrawReviewRequest(ctx: RepositoryContext, requestId: s
     entityId: requestId,
     action: 'withdrawn',
     summary: `${profile.name}님이 ${request.title} 검토요청을 회수했습니다.`,
-  })
+  }, { isRemote: ctx.isRemote })
 }
 
 export async function rejectReviewRequest(
@@ -165,7 +165,7 @@ export async function rejectReviewRequest(
     action: 'status_changed',
     summary: `${request?.title ?? '검토요청'}을 반려했습니다.`,
     metadata: { status: 'rejected' },
-  })
+  }, { isRemote: ctx.isRemote })
 }
 
 export async function updateReviewStatus(
@@ -195,7 +195,7 @@ export async function updateReviewStatus(
     action: 'status_changed',
     summary: `${request?.title ?? '검토요청'} 상태를 ${reviewStatusLabels[status]}로 변경했습니다.`,
     metadata: { status },
-  })
+  }, { isRemote: ctx.isRemote })
 }
 
 export async function addReviewFeedback(
@@ -249,5 +249,5 @@ export async function addReviewFeedback(
     action: 'created',
     summary: `${request?.title ?? '검토요청'}에 피드백을 남겼습니다.`,
     metadata: { review_request_id: requestId },
-  })
+  }, { isRemote: ctx.isRemote })
 }

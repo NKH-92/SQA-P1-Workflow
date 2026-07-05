@@ -99,3 +99,7 @@ Pages URL을 Supabase Auth의 Site URL 및 Redirect URLs에 추가한다.
   - 실제 업무에서 매일 사용하기 시작함
   - DB가 350-400MB에 접근함
   - 백업, 복구, 운영 안정성, 다중 관리자 운영이 필요함
+
+## 운영자 직접 수행 계획
+
+배포·마이그레이션·RLS·백업 등 **사람이 직접 해야 하는 작업**의 순서와 체크리스트는 [MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md)를 참고한다.

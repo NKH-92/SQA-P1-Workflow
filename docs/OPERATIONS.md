@@ -48,18 +48,6 @@
 3. 임시 비밀번호 발급 시 **최소 4자**(로그인 폼)이며, 첫 로그인 후 8자 이상으로 변경해야 합니다(`must_change_password`).
 4. `'1234'` 등 너무 단순한 비밀번호는 앱에서 거부됩니다.
 
-| 2026-07-05 | Phase 4 | `docs/OPERATIONS.md` 절차 + `scripts/backup-db.ps1` | 로컬/스테이징에서 1회 실행 후 이 표에 파일명·행 수 기록 |
-
-## RLS 스모크 체크리스트 (배포 전)
-
-`docs/TEST_PLAN.md` RLS 섹션을 Supabase에 leader / member A / member B 계정으로 확인한다.
-
-- [ ] member A → member B 데이터 접근 불가
-- [ ] member → master 테이블 쓰기 불가
-- [ ] member 본인 pending 검토요청 수정·회수
-- [ ] member 비활성화 후 데이터 접근 불가
-- [ ] Storage: 본인 경로 업로드만 허용
-
 ## 사용자 비활성화 (is_active)
 
 | 단계 | 작업 | 확인 |
@@ -68,9 +56,12 @@
 | 2 | 대상 계정으로 로그인 | "계정이 비활성화되었습니다" 안내 |
 | 3 | 재활성화 후 로그인 | 정상 홈 진입 |
 
+상세 RLS·Storage 검증은 [MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md) 작업 F를 참고한다.
+
 ## 배포
 
-자세한 CI/CD 설정은 [DEPLOYMENT.md](./DEPLOYMENT.md)를 참고하세요.
+자세한 CI/CD 설정은 [DEPLOYMENT.md](./DEPLOYMENT.md)를 참고하세요.  
+**직접 수행 작업 전체 계획**은 [MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md)를 참고하세요.
 
 ## 복구 리허설 기록
 

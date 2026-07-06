@@ -22,11 +22,14 @@
 | `202607050009_duty_major_categories.sql` | 업무 대분류 |
 | `202607050010_duty_allocation_metadata.sql` | 업무 배정 메타데이터 |
 | `202607060001_p0_atomic_assignments_and_review_status.sql` | 프로젝트 배정 RPC + 검토 상태 RPC |
-| `202607060002_p1_product_unique_and_assignment_rpcs.sql` | 제품명 unique(중복 자동 삭제 포함) + product/duty 배정 RPC |
-| `202607060003_audit_product_duplicates.sql` | 중복 제품 감사 + fail-fast unique constraint |
+| `202607060002_p1_product_unique_and_assignment_rpcs.sql` | 제품명 unique(fail-fast) + product/duty 배정 RPC |
+| `202607060003_audit_product_duplicates.sql` | 중복 제품 감사 기록 + fail-fast unique constraint |
 | `202607060004_review_status_transitions.sql` | 검토 상태 전이 RPC 강제 (`pending` → `approved`/`rejected`만) |
 | `202607060005_storage_only_attachments.sql` | 검토 첨부 Storage URL만 허용 |
 | `202607060006_public_leader_profiles.sql` | 파트원용 파트장 이름 view |
+| `202607070001_harden_audit_rls_and_revoke_anon_rpc.sql` | audit RLS + view invoker + anon RPC revoke |
+| `202607070002_revoke_public_execute_on_internal_helpers.sql` | PUBLIC execute revoke on internal helper RPCs |
+| `202607070003_revoke_public_execute_on_mutation_rpcs.sql` | PUBLIC execute revoke on mutation RPCs (authenticated only) |
 
 ## Supabase CLI (권장)
 
@@ -42,7 +45,30 @@ npx supabase db push
 ## SQL Editor (수동)
 
 Dashboard > SQL Editor에서 위 **전체 migration 파일** 내용을 **순서대로** 실행합니다.  
-`202607060002`는 중복 제품을 자동 삭제할 수 있으므로, 운영 DB 적용 전 [OPERATIONS.md](./OPERATIONS.md)의 제품명 중복 정리 절차를 확인하세요.
+`202607060002` 적용 전 [OPERATIONS.md](./OPERATIONS.md)의 제품명 중복 정리 절차를 따라 중복을 수동 병합하세요. 중복이 남아 있으면 migration이 실패합니다.
+
+## 적용 전 DB 상태 확인
+
+```sql
+-- migration 적용 이력 확인
+select * from supabase_migrations.schema_migrations
+where version in ('202607060002', '202607060003');
+
+-- 현재 중복 제품 확인
+select name, count(*) from public.products group by name having count(*) > 1;
+
+-- audit 테이블 존재 여부
+select exists (
+  select 1 from information_schema.tables
+  where table_schema = 'public' and table_name = 'product_dedup_audit'
+);
+```
+
+| DB 상태 | 조치 |
+|---|---|
+| 060002 **미적용** | 중복 병합 후 `db push` — 정상 경로 |
+| 060002 **적용됨**(구버전 delete 포함), 060003 미적용 | delete가 이미 실행됐을 수 있음 → 백업·audit 확인 후 060003 적용 |
+| 둘 다 적용됨 | forward-fix 불필요. audit 테이블로 영향 조사 |
 
 ## 적용 확인
 

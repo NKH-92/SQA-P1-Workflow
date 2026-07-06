@@ -227,7 +227,7 @@ export function ReviewsPanel({
             <span>새 검토요청</span>
             <strong>{form.title || '무엇을 검토받고 싶으세요?'}</strong>
             <p>
-              제목과 검토 포인트를 먼저 적고, 필요하면 첨부 링크와 기한을 더하세요. 보내는 즉시 파트장 우선처리 목록에 올라갑니다.
+              제목과 검토 포인트를 먼저 적고, 필요하면 첨부 파일과 기한을 더하세요. 보내는 즉시 파트장 우선처리 목록에 올라갑니다.
             </p>
           </div>
           <button className="primary" onClick={() => openReviewComposer()} type="button">

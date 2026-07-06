@@ -20,10 +20,14 @@ function App() {
   useEffect(() => {
     reportWarningsRef.current = (warnings) => setMessage({ text: warnings.join(' '), tone: 'warning' })
   }, [setMessage])
-  const auth = useAuthProfile(refreshData, setData, setMessage, () => {})
+  const resetNavigationRef = useRef<() => void>(() => {})
+  const auth = useAuthProfile(refreshData, setData, setMessage, () => resetNavigationRef.current())
   const { profile, setProfile, authReady, sessionWithoutProfile, initialLoading, sessionUser, signOut } = auth
   const leaderMode = canManageTeamData(profile)
   const navigation = useHashNavigation(leaderMode, Boolean(profile))
+  useEffect(() => {
+    resetNavigationRef.current = navigation.resetNavigation
+  }, [navigation.resetNavigation])
   const previewRoleChange = usePreviewRoleChange(setProfile, navigation.setActiveTab)
 
   const pendingCount = data.reviewRequests.filter((request) => request.status === 'pending').length

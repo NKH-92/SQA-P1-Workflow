@@ -147,6 +147,13 @@ describe('Supabase migrations', () => {
     expect(migration).toContain('set search_path = public')
   })
 
+  it('does not delete duplicate products in uniqueness migration', () => {
+    const migration = readMigration('202607060002_p1_product_unique_and_assignment_rpcs.sql')
+
+    expect(migration).not.toContain('delete from public.products')
+    expect(migration).toContain('duplicate products exist')
+  })
+
   it('audits duplicate product names without deleting data', () => {
     const migration = readMigration('202607060003_audit_product_duplicates.sql')
 
@@ -189,5 +196,22 @@ describe('Supabase migrations', () => {
     expect(migration).toContain('create or replace view public.public_leader_profiles')
     expect(migration).toContain("role = 'leader'")
     expect(migration).toContain('grant select on public.public_leader_profiles to authenticated')
+  })
+
+  it('hardens audit RLS and revokes anon execute on security definer RPCs', () => {
+    const migration = readMigration('202607070001_harden_audit_rls_and_revoke_anon_rpc.sql')
+
+    expect(migration).toContain('product_dedup_audit enable row level security')
+    expect(migration).toContain('security_invoker = true')
+    expect(migration).toContain('revoke execute on function public.mark_password_changed() from anon')
+    expect(migration).toContain('revoke execute on function public.replace_product_assignments(uuid, uuid[]) from anon')
+  })
+
+  it('revokes PUBLIC execute on internal helper RPCs', () => {
+    const migration = readMigration('202607070002_revoke_public_execute_on_internal_helpers.sql')
+
+    expect(migration).toContain('revoke all on function public.can_use_app() from public')
+    expect(migration).toContain('grant execute on function public.can_use_app() to authenticated')
+    expect(migration).toContain('revoke all on function public.handle_new_user() from public')
   })
 })

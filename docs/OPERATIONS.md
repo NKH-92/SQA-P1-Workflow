@@ -33,6 +33,13 @@ SQA P1 Workflow의 일상 운영·백업·장애 대응 절차입니다.
 
 앱에는 **로그인 화면만** 있습니다. 공개 sign-up UI는 제공하지 않습니다.
 
+| 설정 | 권장 | 확인 위치 |
+|---|---|---|
+| Enable email signup | **OFF** | Authentication → Providers → Email |
+
+> **2026-07-07 MCP 검증**: 1차 probe 가입 성공(ON). 재probe는 email rate limit(429). `signup_disabled` 미수신 → **Dashboard에서 Enable email signup OFF 필요** (MCP로 Auth 설정 변경 불가).
+| 계정 생성 | Dashboard **Add user**만 | Authentication → Users |
+
 | 단계 | 작업 |
 |---|---|
 | 1 | 파트장이 마스터 > 초대 관리에서 `allowed_users`에 이메일·이름·역할 등록 |
@@ -96,16 +103,18 @@ Windows에서 `npm ci`가 `EPERM`으로 실패하면, 다른 터미널·에디�
 
 ## 제품명 중복 정리 (products_name_key)
 
-`202607060002` migration이 이미 적용된 DB에서는 중복 제품이 **UUID가 큰 행 기준으로 자동 삭제**되었을 수 있습니다. 이후 `202607060003_audit_product_duplicates.sql`은 남은 중복을 감사 테이블에 기록하고, unique constraint 적용 전 중복이 있으면 migration을 실패시킵니다.
+`202607060002` migration은 **중복 제품을 삭제하지 않습니다**. 중복이 있으면 migration이 실패하므로, 적용 전 반드시 수동 병합하세요. `202607060003_audit_product_duplicates.sql`은 중복을 감사 테이블에 기록하고 unique constraint를 idempotent하게 재적용합니다.
 
 | 단계 | 작업 | 확인 |
 |---|---|---|
-| 1 | `select duplicate_name, duplicate_count from public.product_dedup_audit order by checked_at desc;` | 중복 제품명·건수 확인 |
+| 0 | DB 백업 수행 | `scripts/backup-db.ps1` |
+| 1 | `select name, count(*) from public.products group by name having count(*) > 1;` | 중복 제품명·건수 확인 |
 | 2 | 중복이 있으면 **업무 기준으로 수동 병합** (배정·활동 로그·검토 참조 확인) | `product_assignments`가 올바른 `product_id`를 가리키는지 |
 | 3 | 병합 후 중복 행 삭제 | `group by name having count(*) > 1` 결과 0건 |
-| 4 | 미적용 환경이면 `202607060003` migration 적용 | `products_name_key` 존재 |
+| 4 | `202607060002` migration 적용 | `products_name_key` 존재, RPC 생성 |
+| 5 | `202607060003` migration 적용 (선택 감사) | `product_dedup_audit`에 기록 확인 |
 
-**주의:** 자동 삭제 migration을 운영 DB에 적용하기 전, 반드시 백업을 수행하세요.
+**주의:** 구버전 060002(delete 포함)가 이미 적용된 DB에서는 데이터가 삭제되었을 수 있습니다. `product_dedup_audit`과 백업으로 영향을 조사하세요.
 
 ## 복구 리허설 기록
 

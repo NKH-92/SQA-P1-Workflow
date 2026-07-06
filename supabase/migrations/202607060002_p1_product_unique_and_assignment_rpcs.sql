@@ -1,9 +1,17 @@
 -- P1: product name uniqueness and atomic product/duty assignment replace RPCs.
 
-delete from public.products p1
-using public.products p2
-where p1.name = p2.name
-  and p1.id > p2.id;
+-- 삭제 금지. 중복이 있으면 migration을 실패시킨다.
+do $$
+begin
+  if exists (
+    select 1
+    from public.products
+    group by name
+    having count(*) > 1
+  ) then
+    raise exception 'duplicate products exist. resolve duplicates manually before adding products_name_key';
+  end if;
+end $$;
 
 alter table public.products
   drop constraint if exists products_name_key;

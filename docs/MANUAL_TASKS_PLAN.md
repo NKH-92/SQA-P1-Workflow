@@ -2,7 +2,7 @@
 
 > **대상**: 파트장 또는 지정 운영자  
 > **목적**: 코드·CI 작업(Phase 1~4) 완료 후, **운영 환경에 반영하고 검증**하기 위해 사람이 직접 해야 하는 작업을 순서대로 정리한다.  
-> **전제**: 브랜치 `main`, HEAD `572bcfb`(또는 이후) — `npm test` 42 passed, `npm run build` 성공 상태.
+> **전제**: 브랜치 `main`, HEAD `20db373` — `npm test` 120 passed, `npm run build` 성공 상태.
 
 ---
 
@@ -56,8 +56,8 @@
    **통과 기준**: `typecheck`, `lint`, `test`, `build` 모두 green.
 
 ### 완료 기준
-- [x] 원격 `main`(또는 merge된 PR)에 최신 커밋 반영 — `8c6b7ae` (2026-07-06)
-- [ ] CI 4 job 전부 성공 (로컬: typecheck/lint/test 66 passed; GitHub Actions는 Dashboard에서 확인)
+- [x] 원격 `main`(또는 merge된 PR)에 최신 커밋 반영 — `20db373` (2026-07-07)
+- [x] CI + Deploy Worker green (`20db373` push, Actions run #28800841819 / #28800841709)
 
 ### 실패 시
 | 증상 | 조치 |
@@ -95,7 +95,7 @@ GitHub 저장소 → **Settings → Secrets and variables → Actions**
 - [ ] `git grep`으로 저장소에 URL/키/계정 ID가 **없음** (이미 D-1 완료 상태 유지)
 
 ### 완료 기준
-- [ ] `workflow_dispatch` 또는 main push 후 deploy 워크플로가 **skip 없이** 실행됨 (Secrets 미설정 시 deploy는 스킵됨)
+- [ ] `workflow_dispatch` 또는 main push 후 deploy 워크플로가 **skip 없이** 실행됨 (Secrets 미설정 시 **test만** 통과, build/deploy는 스킵)
 
 ---
 
@@ -161,7 +161,7 @@ where pronamespace = 'public'::regnamespace
 ```
 
 ### 완료 기준
-- [x] 위 4개 확인 쿼리 결과 정상 (MCP `list_migrations` — `202607060002`까지 적용, 2026-07-06)
+- [x] 위 4개 확인 쿼리 결과 정상 (MCP `list_migrations` — `202607060006`까지 적용, 2026-07-07)
 - [x] 로컬 `npm test -- src/migrations.test.ts` 통과
 
 ### 실패 시
@@ -202,23 +202,38 @@ set name = excluded.name, role = excluded.role;
 
 Supabase → **Authentication → URL Configuration**
 
-| 항목 | 값 |
-|------|-----|
-| Site URL | `https://sqap1workflow.skarhkdgus7.workers.dev` |
-| Redirect URLs | 위 URL + 로컬 dev `http://localhost:5173` (개발 시) |
+| 항목 | 값 (권장) | 현재 Dashboard (2026-07-07 확인) |
+|------|-----------|----------------------------------|
+| Site URL | `https://sqap1workflow.skarhkdgus7.workers.dev` | `https://part-ops.skarhkdgus7.workers.dev` |
+| Redirect URLs | 위 URL + `http://localhost:5173` | `http://localhost:5173` 만 등록됨 |
 
-> **수동 필요 (2026-07-06)**: Supabase Dashboard → **Authentication** → **URL Configuration**에서 위 Site URL·Redirect URLs 등록.
+Supabase → **Authentication → Providers → Email**
+
+| 항목 | 권장 값 | 확인 |
+|------|---------|------|
+| Enable email signup (Allow new users to sign up) | **OFF** | 앱 외 API 경로 가입 차단 |
+| Confirm email | OFF (내부 앱, Dashboard Add user만) | 선택 |
+
+> **검증 (2026-07-07 MCP)**: 1차 probe에서 `/auth/v1/signup` **가입 성공** → public sign-up **ON** 확인. probe 계정 삭제 완료.  
+> **재검증 (2026-07-07 MCP)**: `over_email_send_rate_limit` (429) — 이메일 발송 한도로 재probe 불가. `signup_disabled` 응답이 아니므로 **아직 OFF로 바뀌지 않았을 가능성이 큼**. Dashboard → Authentication → Providers → Email → **Enable email signup OFF** 후 1시간 뒤 재probe 또는 Dashboard에서 직접 확인.
+
+> **검증 (2026-07-07)**: 운영 Worker에서 Supabase password 로그인 API 응답 확인 (잘못된 비밀번호 → "이메일 또는 비밀번호가 올바르지 않습니다."). 빌드 env·CSP(`connect-src` → `*.supabase.co`) 정상.
+>
+> **주의**: `part-ops`와 `sqap1workflow`는 **서로 다른 번들**(ETag 불일치)입니다. GitHub Actions `Deploy Worker`는 `WORKER_NAME` 변수 기준으로 배포하며, 최신 `20db373` 번들은 **`sqap1workflow`** 쪽입니다. Site URL이 `part-ops`로 남아 있으면 이메일 인증·리다이렉트가 구버전 Worker로 갈 수 있습니다.
+>
+> **권장 조치 (Dashboard 1회)**: Authentication → URL Configuration에서 Site URL을 `https://sqap1workflow.skarhkdgus7.workers.dev`로 변경하고, Redirect URLs에 `https://sqap1workflow.skarhkdgus7.workers.dev`와 `http://localhost:5173`를 모두 등록하세요. `part-ops`를 계속 쓸 계획이면 GitHub `WORKER_NAME`도 `part-ops`로 통일한 뒤 재배포하세요.
 
 ### 5.4 첫 로그인
 
-1. 임시 비밀번호로 로그인 (최소 4자, `'1234'`는 앱에서 거부)
-2. `must_change_password` 화면에서 **8자 이상**으로 변경
+1. 임시 비밀번호 `1234`로 로그인 (최소 4자)
+2. `must_change_password` 화면에서 **8자 이상**으로 변경 (`1234` 재사용 불가)
 3. 파트장 홈·마스터 탭 진입 확인
 
 ### 완료 기준
 - [ ] `profiles`에 leader 1명, member 2명 존재
 - [ ] 파트장 `canManageTeamData` 화면(마스터 탭) 접근 가능
 - [ ] 파트원은 leader 전용 탭 접근 불가
+- [ ] public sign-up 비활성화 확인 (앱 외 경로 가입 차단)
 
 ---
 
@@ -256,8 +271,10 @@ npx wrangler deploy --name <WORKER_NAME> --assets dist
 | 6 | (선택) 파일 첨부 | 10MB 이하 PDF 업로드 → `첨부 열기` |
 
 ### 완료 기준
-- [x] 운영 URL 접속·로그인 화면·해시 라우팅·콘솔 치명 오류 없음 (2026-07-06, `https://sqap1workflow.skarhkdgus7.workers.dev`)
-- [ ] 파트장 로그인·CRUD 1회 이상 성공 (계정 필요)
+- [x] 운영 URL 접속·로그인 화면·해시 라우팅·콘솔 치명 오류 없음 (2026-07-07, `https://sqap1workflow.skarhkdgus7.workers.dev`)
+- [x] 미로그인 시 `#/products` 등 deep link에서 leader 화면 우회 없음 (AuthPanel 유지)
+- [x] Supabase 연결 스모크: 로그인 API 오류 메시지 정상 표시
+- [ ] 파트장 로그인·CRUD 1회 이상 성공 (파트장 본인 비밀번호 입력 필요)
 - [x] 번들에 RPC mutations 반영 (`create_project_with_assignments`, `reject_review_request`, `add_review_feedback` 등)
 
 ---
@@ -391,7 +408,7 @@ supabase db dump --db-url "<DATABASE_URL>" -f backup/sqa-p1-workflow-YYYY-MM-DD.
 
 ## 9. 작업 H — Cloudflare Access (필수)
 
-> **상태 (2026-07-06): 미적용** — URL이 공개 상태이며 Access 게이트 없이 앱 로그인 화면이 노출됨. 아래 절차를 Dashboard에서 1회 수행해야 운영 완료.
+> **상태 (2026-07-07): 미적용** — Worker URL 접속 시 Cloudflare Access 게이트 없이 앱 AuthPanel이 바로 노출됨 (HTTP 헤더에 Access 리다이렉트 없음). 내부 전용 운영 시 아래 절차를 Dashboard에서 1회 수행해야 함.
 
 내부 전용 배포에서는 Worker URL을 **반드시** Cloudflare Access 뒤에 둔다. Access 없이 공개 URL을 두면 anon key만으로 로그인 화면에 접근할 수 있다.
 
@@ -449,22 +466,24 @@ supabase db dump --db-url "<DATABASE_URL>" -f backup/sqa-p1-workflow-YYYY-MM-DD.
 ## 12. 진행 체크리스트 (복사용)
 
 ```
-[x] A. git push / PR merge + CI green (2026-07-06, HEAD 8c6b7ae)
-[ ] B. GitHub Variables/Secrets 5개
-[x] C. Supabase migration 적용 + 확인 (202607060002까지, 2026-07-06)
-[ ] D. leader + member A/B 계정 + Auth URL (Site URL 수동 등록 필요)
-[~] E. Workers 배포 + 스모크 (배포·기본 스모크 완료; 로그인 CRUD는 계정 필요)
+[x] A. git push / PR merge + CI green (2026-07-07, HEAD 20db373)
+[~] B. GitHub Variables/Secrets 5개 (Deploy Worker success → 배포용 env 등록됨)
+[x] C. Supabase migration 적용 + 확인 (202607060006까지, 2026-07-07)
+[~] D. leader 계정 존재 + Auth API 스모크 OK; **Site URL이 part-ops로 설정됨 → sqap1workflow로 정렬 권장**
+[~] E. Workers 배포 + 스모크 (배포·AuthPanel·Supabase 연결 확인; 로그인 CRUD는 파트장 비밀번호 필요)
 [ ] F. RLS 검증 F-1 ~ F-6
 [ ] G. 백업 1회 + 복구 리허설 기록
-[ ] H. Cloudflare Access (필수) — 미적용
+[ ] H. Cloudflare Access (필수) — 미적용, Dashboard 수동 설정 필요
 ```
 
 **최종 서명**
 
 | 항목 | 값 |
 |------|-----|
-| 완료일 | 2026-07-06 (부분) |
+| 완료일 | 2026-07-07 (호스팅 동기화·검증) |
 | 담당 | 운영자 |
 | 운영 URL | `https://sqap1workflow.skarhkdgus7.workers.dev` |
 | Supabase project ref | `oixrerrdmbujniqgwmkn` |
-| 비고 | Access(H)·Auth Site URL(D)·RLS 수동검증(F) 남음 |
+| GitHub HEAD | `20db373` |
+| Actions | CI success · Deploy Worker success (run 28800841819 / 28800841709) |
+| 비고 | Access(H) Dashboard 적용 · Auth Site URL Dashboard 확인 · RLS(F) · 백업(G) · 파트장 E2E 로그인 남음 |

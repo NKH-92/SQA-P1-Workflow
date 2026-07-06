@@ -72,7 +72,7 @@ jobs:
                 echo "**Result:** this \`main\` push workflow **failed** — build ran, but deployment did not occur."
                 echo "Register the missing Variables/Secrets under Repository Settings > Secrets and variables > Actions, then push again."
               else
-                echo "**Result:** deployment was **skipped** (build-only). This is allowed for \`workflow_dispatch\`."
+                echo "**Result:** deployment was **skipped** (test-only). This is allowed for \`workflow_dispatch\`."
                 echo "Register the missing Variables/Secrets before expecting an automatic deploy on \`main\` push."
               fi
             } >> "$GITHUB_STEP_SUMMARY"
@@ -83,7 +83,7 @@ jobs:
             fi
 
             echo "DEPLOY_SKIP=true" >> "$GITHUB_ENV"
-            echo "::warning::Build will run, but deployment will be skipped until variables/secrets are configured."
+            echo "::warning::Tests will run, but build and deployment will be skipped until variables/secrets are configured."
           fi
 
       - name: Build

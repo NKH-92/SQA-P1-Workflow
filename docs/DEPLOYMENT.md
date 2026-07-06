@@ -66,10 +66,10 @@ Repository Settings > Secrets and variables > Actions에 다음을 등록한다.
 | 트리거 | Variables/Secrets 미설정 시 | green check 의미 |
 |---|---|---|
 | `push` → `main` | 워크플로 **실패** (exit 1). Job Summary에 누락 항목 표시 | 빌드·테스트는 통과했지만 **배포되지 않음** |
-| `workflow_dispatch` | 빌드·테스트만 수행, 배포 **스킵** (warning). Job Summary에 스킵 사유 표시 | 수동 build-only 실행 성공. 배포는 아님 |
+| `workflow_dispatch` | **테스트만** 수행, build/deploy **스킵** (warning). Job Summary에 스킵 사유 표시 | 수동 test-only 실행 성공. 배포·빌드는 아님 |
 | 위 설정 모두 등록됨 | Wrangler deploy 실행 | Job Summary에 **Deploy succeeded** — 실제 배포 완료 |
 
-**주의:** `main` push 후 Actions가 green이어도, 예전에는 deploy env가 없을 때 배포 없이 성공처럼 보일 수 있었다. 현재는 `main` push에서 deploy env가 없으면 워크플로가 **실패**한다. 수동으로 빌드만 확인하려면 Actions에서 **Deploy Worker** 워크플로를 `workflow_dispatch`로 실행한다.
+**주의:** `main` push 후 Actions가 green이어도, 예전에는 deploy env가 없을 때 배포 없이 성공처럼 보일 수 있었다. 현재는 `main` push에서 deploy env가 없으면 워크플로가 **실패**한다. CI 테스트만 확인하려면 Actions에서 **Deploy Worker** 워크플로를 `workflow_dispatch`로 실행한다 (env 미설정 시 test만 통과, build/deploy는 스킵).
 
 ### 수동 배포
 

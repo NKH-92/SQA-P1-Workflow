@@ -53,6 +53,15 @@ export function useAuthProfile(
   const [sessionWithoutProfile, setSessionWithoutProfile] = useState(false)
   const [initialLoading, setInitialLoading] = useState(hasSupabaseConfig)
   const bootstrapDoneRef = useRef(false)
+  const profileLoadGenerationRef = useRef(0)
+  const refreshDataRef = useRef(refreshData)
+
+  useEffect(() => {
+    refreshDataRef.current = refreshData
+  }, [refreshData])
+
+  const profileEffectKey =
+    sessionUser === undefined ? 'auth-pending' : (sessionUser?.id ?? 'signed-out')
 
   useEffect(() => {
     const client = supabase
@@ -66,6 +75,7 @@ export function useAuthProfile(
       window.clearTimeout(timeoutId)
       setSessionUser(user)
       setAuthReady(true)
+      if (!user) setInitialLoading(false)
     }
 
     const timeoutId = window.setTimeout(() => {
@@ -126,11 +136,12 @@ export function useAuthProfile(
     }
 
     let cancelled = false
+    const generation = ++profileLoadGenerationRef.current
     void (async () => {
       setInitialLoading(true)
       try {
         const result = await loadProfileForSession()
-        if (cancelled) return
+        if (cancelled || profileLoadGenerationRef.current !== generation) return
 
         if (result.invalidSession) {
           await supabase.auth.signOut()
@@ -150,26 +161,28 @@ export function useAuthProfile(
         if (result.profile) {
           setProfile(result.profile)
           setSessionWithoutProfile(false)
-          await refreshData({ initial: true })
+          await refreshDataRef.current({ initial: true })
         } else {
           setProfile(null)
           setSessionWithoutProfile(true)
         }
       } catch (error) {
-        if (!cancelled) {
+        if (!cancelled && profileLoadGenerationRef.current === generation) {
           setMessage({ text: toUserMessage(error), tone: 'error' })
           setProfile(null)
           setSessionWithoutProfile(false)
         }
       } finally {
-        if (!cancelled) setInitialLoading(false)
+        if (!cancelled && profileLoadGenerationRef.current === generation) {
+          setInitialLoading(false)
+        }
       }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [sessionUser, refreshData, setData, setMessage])
+  }, [profileEffectKey, setData, setMessage])
 
   const signOut = useCallback(async () => {
     const profileId = profile?.id

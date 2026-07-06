@@ -1,0 +1,136 @@
+import { describe, expect, it } from 'vitest'
+import { createPreviewData, previewLeader, previewMember } from '../../demoData'
+import {
+  createReviewRequest,
+  removeProduct,
+  removeReviewRequest,
+  replaceProjectAssignments,
+  setReviewStatus,
+  updateProject,
+} from './appDataReducers'
+
+describe('appDataReducers', () => {
+  it('creates a review request in local app data', () => {
+    const data = createPreviewData()
+    const next = createReviewRequest(data, previewMember, 'review-new', {
+      title: 'New review',
+      description: 'Details',
+      attachment_url: null,
+      due_date: '2026-08-01',
+    })
+
+    expect(next.reviewRequests).toHaveLength(data.reviewRequests.length + 1)
+    expect(next.reviewRequests[0]?.id).toBe('review-new')
+    expect(next.reviewRequests[0]?.status).toBe('pending')
+  })
+
+  it('removes a review request without mutating the source', () => {
+    const data = createPreviewData()
+    const reviewId = data.reviewRequests[0]?.id
+    expect(reviewId).toBeTruthy()
+
+    const next = removeReviewRequest(data, reviewId!)
+    expect(next.reviewRequests.some((item) => item.id === reviewId)).toBe(false)
+    expect(data.reviewRequests.some((item) => item.id === reviewId)).toBe(true)
+  })
+
+  it('updates review status immutably', () => {
+    const data = createPreviewData()
+    const reviewId = data.reviewRequests[0]?.id
+    expect(reviewId).toBeTruthy()
+
+    const next = setReviewStatus(data, reviewId!, 'approved')
+    expect(next.reviewRequests.find((item) => item.id === reviewId)?.status).toBe('approved')
+    expect(data.reviewRequests.find((item) => item.id === reviewId)?.status).not.toBe('approved')
+  })
+
+  it('updates a project and related assignment snapshots', () => {
+    const data = createPreviewData()
+    const project = data.projects[0]
+    expect(project).toBeTruthy()
+
+    const next = updateProject(data, project!.id, {
+      name: 'Renamed project',
+      description: 'Updated',
+      deadline: '2026-09-01',
+      status: 'in_progress',
+    })
+
+    expect(next.projects.find((item) => item.id === project!.id)?.name).toBe('Renamed project')
+    expect(
+      next.projectAssignments
+        .filter((item) => item.project_id === project!.id)
+        .every((item) => item.projects?.name === 'Renamed project'),
+    ).toBe(true)
+  })
+
+  it('replaces project assignments for selected members', () => {
+    const data = createPreviewData()
+    const project = data.projects[0]
+    expect(project).toBeTruthy()
+
+    const next = replaceProjectAssignments(data, project!, [previewMember.id], [previewMember])
+    const assigned = next.projectAssignments.filter((item) => item.project_id === project!.id)
+    expect(assigned.some((item) => item.user_id === previewMember.id)).toBe(true)
+  })
+
+  it('removes a product and its assignments', () => {
+    const data = createPreviewData()
+    const product = data.products[0]
+    expect(product).toBeTruthy()
+
+    const next = removeProduct(data, product!.id)
+    expect(next.products.some((item) => item.id === product!.id)).toBe(false)
+    expect(next.productAssignments.some((item) => item.product_id === product!.id)).toBe(false)
+  })
+})
+
+describe('master delete activity logging (demo)', () => {
+  it('records activity when deleting a product locally', async () => {
+    const data = createPreviewData()
+    const product = data.products[0]
+    expect(product).toBeTruthy()
+
+    let next = data
+    const { deleteProduct } = await import('../mutations/master')
+
+    await deleteProduct(
+      {
+        isRemote: false,
+        profile: previewLeader,
+        data,
+        setData: (updater) => {
+          next = typeof updater === 'function' ? updater(next) : updater
+        },
+      },
+      product!.id,
+    )
+
+    expect(next.products.some((item) => item.id === product!.id)).toBe(false)
+    expect(next.activityLogs.some((log) => log.entity_type === 'product' && log.action === 'deleted')).toBe(true)
+  })
+
+  it('records activity when deleting an allowed user locally', async () => {
+    const data = createPreviewData()
+    const invite = data.allowedUsers[0]
+    expect(invite).toBeTruthy()
+
+    let next = data
+    const { deleteAllowedUser } = await import('../mutations/master')
+
+    await deleteAllowedUser(
+      {
+        isRemote: false,
+        profile: previewLeader,
+        data,
+        setData: (updater) => {
+          next = typeof updater === 'function' ? updater(next) : updater
+        },
+      },
+      invite!.id,
+    )
+
+    expect(next.allowedUsers.some((item) => item.id === invite!.id)).toBe(false)
+    expect(next.activityLogs.some((log) => log.entity_type === 'allowed_user' && log.action === 'deleted')).toBe(true)
+  })
+})

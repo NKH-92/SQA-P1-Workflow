@@ -1,11 +1,15 @@
 #Requires -Version 5.1
 param(
-  [Parameter(Mandatory = $true)]
-  [string]$DatabaseUrl,
+  [string]$DatabaseUrl = $env:DATABASE_URL,
   [string]$OutputDir = "backup"
 )
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($DatabaseUrl)) {
+  throw "DATABASE_URL environment variable is required. Example: `$env:DATABASE_URL = '<connection-string>'"
+}
+
 $date = Get-Date -Format "yyyy-MM-dd"
 $schemaFile = Join-Path $OutputDir "sqa-p1-workflow-$date-schema.sql"
 $dataFile = Join-Path $OutputDir "sqa-p1-workflow-$date-data.sql"

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { Badge } from '../components/ui'
 import type { AppData, Profile, ReviewRequest, ReviewStatus } from '../types'
-import type { DeadlineMode, ReviewStatusFilter } from '../app/types'
+import type { ReviewStatusFilter } from '../app/types'
 import {
   addReviewFeedback,
   createRepositoryContext,
@@ -11,40 +11,19 @@ import {
   updateReviewStatus,
   withdrawReviewRequest,
 } from '../data'
-import { normalizeHttpUrl } from '../lib/urls'
 import { UserFacingError } from '../lib/errors'
-import { formatDate, reviewStatusLabels } from '../lib/format'
+import { formatDate } from '../lib/format'
 import { uploadReviewAttachment } from '../lib/attachments'
-import { compareReviewRequests } from '../lib/priority'
-import { ageInDays, dueDateLabel, dueDateStatus } from '../lib/dates'
-import { ReviewRequestItem } from './ReviewRequestItem'
 import {
-  Paperclip,
-  Send,
-  X,
-} from 'lucide-react'
-
-const emptyReviewForm = {
-  title: '',
-  description: '',
-  attachment_url: '',
-  deadlineMode: 'none' as DeadlineMode,
-  due_date: '',
-}
-
-type ReviewFormState = typeof emptyReviewForm
-
-function isReviewDraft(value: unknown): value is ReviewFormState {
-  if (typeof value !== 'object' || value === null) return false
-  const draft = value as Partial<ReviewFormState>
-  return (
-    typeof draft.title === 'string' &&
-    typeof draft.description === 'string' &&
-    typeof draft.attachment_url === 'string' &&
-    (draft.deadlineMode === 'none' || draft.deadlineMode === 'date') &&
-    typeof draft.due_date === 'string'
-  )
-}
+  selectReviewStatusCounts,
+  selectScopedReviewRequests,
+  selectVisibleReviewRequests,
+} from '../features/reviews/review.selectors'
+import { ReviewDetail } from '../features/reviews/components/ReviewDetail'
+import { ReviewList } from '../features/reviews/components/ReviewList'
+import { emptyReviewForm, useReviewDraft } from '../features/reviews/useReviewDraft'
+import { useReviewSelection } from '../features/reviews/useReviewSelection'
+import { Paperclip, Send, X } from 'lucide-react'
 
 export function ReviewsPanel({
   profile,
@@ -61,34 +40,40 @@ export function ReviewsPanel({
   initialSelectedId?: string | null
   onInitialSelectionApplied?: () => void
 }) {
-  const [form, setForm] = useState(emptyReviewForm)
   const [editingReviewId, setEditingReviewId] = useState<string | null>(null)
   const [pendingWithdrawId, setPendingWithdrawId] = useState<string | null>(null)
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
   const [existingStorageAttachment, setExistingStorageAttachment] = useState<string | null>(null)
   const [isReviewComposerOpen, setReviewComposerOpen] = useState(false)
-  const [draftNotice, setDraftNotice] = useState<string | null>(null)
-  const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null)
   const [feedback, setFeedback] = useState<Record<string, string>>({})
   const [statusFilter, setStatusFilter] = useState<ReviewStatusFilter>('all')
-  const [selectedReviewId, setSelectedReviewId] = useState<string | null>(null)
-  const scopedReviewRequests =
-    profile.role === 'leader' ? data.reviewRequests : data.reviewRequests.filter((request) => request.requester_id === profile.id)
+
+  const scopedReviewRequests = selectScopedReviewRequests(data, profile)
   const reviewTarget = data.profiles.find((item) => item.role === 'leader')
-  const statusCounts = scopedReviewRequests.reduce(
-    (counts, request) => ({
-      ...counts,
-      [request.status]: counts[request.status] + 1,
-    }),
-    { pending: 0, approved: 0, rejected: 0 } satisfies Record<ReviewStatus, number>,
+  const statusCounts = selectReviewStatusCounts(scopedReviewRequests)
+  const visibleReviewRequests = selectVisibleReviewRequests(data, profile, statusFilter)
+  const { selectedReviewId, setSelectedReviewId, selectedReview } = useReviewSelection(
+    visibleReviewRequests,
+    scopedReviewRequests,
+    initialSelectedId,
+    onInitialSelectionApplied,
   )
-  const visibleReviewRequests = (
-    statusFilter === 'all' ? scopedReviewRequests : scopedReviewRequests.filter((request) => request.status === statusFilter)
-  ).sort((left, right) => compareReviewRequests(left, right, profile.role === 'member'))
-  const firstVisibleReviewId = visibleReviewRequests[0]?.id ?? null
-  const visibleReviewKey = visibleReviewRequests.map((request) => request.id).join('|')
-  const selectedReview = visibleReviewRequests.find((request) => request.id === selectedReviewId) ?? visibleReviewRequests[0] ?? null
-  const isReviewSubmitDisabled = !form.title.trim() || !form.description.trim() || (form.deadlineMode === 'date' && !form.due_date)
+
+  const {
+    form,
+    setForm,
+    draftNotice,
+    setDraftNotice,
+    draftSavedAt,
+    saveReviewDraft,
+    openComposerDraft,
+    clearDraftStorage,
+    resetForm,
+  } = useReviewDraft(profile.id, editingReviewId, isReviewComposerOpen)
+
+  const isReviewSubmitDisabled =
+    !form.title.trim() || !form.description.trim() || (form.deadlineMode === 'date' && !form.due_date)
+
   const deadlineQuickOptions = useMemo(() => {
     const today = new Date()
     const toInputDate = (date: Date) => {
@@ -109,47 +94,15 @@ export function ReviewsPanel({
       { label: '다음 주', value: addDays(7) },
     ]
   }, [])
+
   const applyQuickDeadline = (value: string) =>
     setForm((current) => ({ ...current, deadlineMode: 'date', due_date: value }))
-
-  const reviewDraftKey = `draft:review:${profile.id}`
-
-  const saveReviewDraft = useCallback(() => {
-    if (typeof localStorage === 'undefined') return
-    localStorage.setItem(reviewDraftKey, JSON.stringify(form))
-    setDraftSavedAt(new Date())
-  }, [form, reviewDraftKey])
 
   const openReviewComposer = () => {
     setEditingReviewId(null)
     setAttachmentFile(null)
     setExistingStorageAttachment(null)
-    setDraftSavedAt(null)
-    if (typeof localStorage !== 'undefined') {
-      const raw = localStorage.getItem(reviewDraftKey)
-      if (raw) {
-        try {
-          const parsed: unknown = JSON.parse(raw)
-          if (isReviewDraft(parsed)) {
-            setForm(parsed)
-            setDraftNotice('이 기기에 저장된 초안을 불러왔습니다.')
-          } else {
-            localStorage.removeItem(reviewDraftKey)
-            setForm(emptyReviewForm)
-            setDraftNotice('저장된 초안 형식이 달라 초기화했습니다.')
-          }
-        } catch {
-          setForm(emptyReviewForm)
-          setDraftNotice('저장된 초안을 읽지 못해 초기화했습니다.')
-        }
-      } else {
-        setForm(emptyReviewForm)
-        setDraftNotice(null)
-      }
-    } else {
-      setForm(emptyReviewForm)
-      setDraftNotice(null)
-    }
+    openComposerDraft()
     setReviewComposerOpen(true)
   }
 
@@ -161,7 +114,7 @@ export function ReviewsPanel({
     setForm({
       title: request.title,
       description: request.description,
-      attachment_url: storageAttachment ? '' : request.attachment_url ?? '',
+      attachment_url: '',
       deadlineMode: request.due_date ? 'date' : 'none',
       due_date: request.due_date?.slice(0, 10) ?? '',
     })
@@ -169,22 +122,20 @@ export function ReviewsPanel({
     setReviewComposerOpen(true)
   }
 
-  const closeReviewComposer = useCallback(
-    (saveDraft = false) => {
-      if (saveDraft && !editingReviewId) saveReviewDraft()
+  const closeReviewComposer = useCallback(() => {
       setReviewComposerOpen(false)
       setEditingReviewId(null)
       setAttachmentFile(null)
       setExistingStorageAttachment(null)
     },
-    [editingReviewId, saveReviewDraft],
+    [],
   )
 
   useEffect(() => {
     if (!isReviewComposerOpen || typeof document === 'undefined') return
     const previousOverflow = document.body.style.overflow
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeReviewComposer(true)
+      if (event.key === 'Escape') closeReviewComposer()
     }
     document.body.style.overflow = 'hidden'
     document.addEventListener('keydown', closeOnEscape)
@@ -193,29 +144,6 @@ export function ReviewsPanel({
       document.removeEventListener('keydown', closeOnEscape)
     }
   }, [isReviewComposerOpen, closeReviewComposer])
-
-  useEffect(() => {
-    if (!firstVisibleReviewId) {
-      if (selectedReviewId !== null) setSelectedReviewId(null)
-      return
-    }
-    if (!visibleReviewRequests.some((request) => request.id === selectedReviewId)) {
-      setSelectedReviewId(firstVisibleReviewId)
-    }
-  }, [firstVisibleReviewId, selectedReviewId, visibleReviewKey, visibleReviewRequests])
-
-  useEffect(() => {
-    if (!initialSelectedId) return
-    if (!scopedReviewRequests.some((request) => request.id === initialSelectedId)) return
-    setSelectedReviewId(initialSelectedId)
-    onInitialSelectionApplied?.()
-  }, [initialSelectedId, onInitialSelectionApplied, scopedReviewRequests])
-
-  useEffect(() => {
-    if (!isReviewComposerOpen || editingReviewId) return
-    const timer = setTimeout(() => saveReviewDraft(), 1000)
-    return () => clearTimeout(timer)
-  }, [form, isReviewComposerOpen, editingReviewId, saveReviewDraft])
 
   const preventModalFileDrop = (event: React.DragEvent) => {
     event.preventDefault()
@@ -236,12 +164,7 @@ export function ReviewsPanel({
           : (() => {
               throw new UserFacingError('파일 첨부는 Supabase 연결 환경에서만 사용할 수 있습니다.')
             })()
-        : form.attachment_url.trim()
-          ? normalizeHttpUrl(form.attachment_url)
-          : existingStorageAttachment
-      if (!attachmentFile && form.attachment_url.trim() && !attachmentUrl) {
-        throw new UserFacingError('첨부 링크는 http 또는 https URL만 사용할 수 있습니다.')
-      }
+        : existingStorageAttachment
       const dueDate = form.deadlineMode === 'date' ? form.due_date : null
       if (form.deadlineMode === 'date' && !dueDate) {
         throw new UserFacingError('검토 기한 날짜를 선택해 주세요.')
@@ -257,15 +180,14 @@ export function ReviewsPanel({
       })
       if (isUpdate) {
         setEditingReviewId(null)
-        setForm(emptyReviewForm)
+        resetForm()
         setAttachmentFile(null)
         setReviewComposerOpen(false)
         return
       }
-      setForm(emptyReviewForm)
+      resetForm()
       setAttachmentFile(null)
-      if (typeof localStorage !== 'undefined') localStorage.removeItem(reviewDraftKey)
-      setDraftNotice(null)
+      clearDraftStorage()
       setReviewComposerOpen(false)
     }, editingReviewId ? '검토요청을 수정했습니다.' : '검토요청을 등록했습니다.')
 
@@ -315,7 +237,7 @@ export function ReviewsPanel({
         </div>
       )}
       {profile.role === 'member' && isReviewComposerOpen && (
-        <div className="modal-backdrop" onMouseDown={() => closeReviewComposer(true)} role="presentation">
+        <div className="modal-backdrop" onMouseDown={() => closeReviewComposer()} role="presentation">
           <section
             aria-labelledby="review-composer-title-v2"
             aria-modal="true"
@@ -338,14 +260,14 @@ export function ReviewsPanel({
               {!editingReviewId && (
                 <span className="autosave-chip" data-saved={draftSavedAt ? 'true' : 'false'}>
                   {draftSavedAt
-                    ? `${draftSavedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 자동저장됨`
+                    ? `${draftSavedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 저장됨`
                     : '초안 · 저장되지 않음'}
                 </span>
               )}
               <button
                 aria-label="검토요청 작성 닫기"
                 className="icon-button modal-close"
-                onClick={() => closeReviewComposer(true)}
+                onClick={() => closeReviewComposer()}
                 type="button"
               >
                 <X size={18} />
@@ -410,18 +332,14 @@ export function ReviewsPanel({
                         <Paperclip size={16} />
                       </span>
                       <span className="attachment-copy">
-                        <strong>{attachmentFile ? attachmentFile.name : '파일을 선택하거나 아래에 링크를 붙여넣으세요'}</strong>
+                        <strong>{attachmentFile ? attachmentFile.name : '파일을 선택하세요'}</strong>
                         <small>{attachmentFile ? '선택됨 · 다시 클릭하면 변경' : 'PDF, 문서, 이미지 · 10MB 이하'}</small>
                       </span>
                       <span className="ghost compact attachment-pick">파일 선택</span>
                     </label>
-                    <input
-                      aria-label="첨부 링크(URL)"
-                      id="review-attachment-v2"
-                      placeholder="https:// 링크 첨부"
-                      value={form.attachment_url}
-                      onChange={(event) => setForm({ ...form, attachment_url: event.target.value })}
-                    />
+                    {existingStorageAttachment && !attachmentFile && (
+                      <p className="draft-notice">기존 첨부 파일이 유지됩니다.</p>
+                    )}
                   </div>
                 </div>
                 <div className="modal-field-row">
@@ -489,8 +407,17 @@ export function ReviewsPanel({
                   닫기
                 </span>
                 <div>
-                  <button className="ghost" onClick={() => closeReviewComposer(true)} type="button">
-                    초안 저장
+                  {!editingReviewId && (
+                    <button
+                      className="ghost"
+                      onClick={() => saveReviewDraft()}
+                      type="button"
+                    >
+                      초안 저장
+                    </button>
+                  )}
+                  <button className="ghost" onClick={() => closeReviewComposer()} type="button">
+                    닫기
                   </button>
                   <button className="primary" disabled={isReviewSubmitDisabled} type="submit">
                     <Send size={16} />
@@ -503,81 +430,32 @@ export function ReviewsPanel({
         </div>
       )}
       <section className="review-workspace">
-        <aside className="review-list-pane" aria-label="검토요청 목록">
-          <div className="review-list-head">
-            <h2>{profile.role === 'leader' ? '검토요청' : '내 검토요청'}</h2>
-            <span>{visibleReviewRequests.length}건</span>
-          </div>
-          <div className="review-filter-row" role="group" aria-label="검토요청 상태 필터">
-            <button
-              className={statusFilter === 'all' ? 'filter-chip selected' : 'filter-chip'}
-              onClick={() => setStatusFilter('all')}
-              type="button"
-            >
-              전체 {scopedReviewRequests.length}
-            </button>
-            {(Object.entries(reviewStatusLabels) as Array<[ReviewStatus, string]>).map(([value, label]) => (
-              <button
-                className={statusFilter === value ? 'filter-chip selected' : 'filter-chip'}
-                key={value}
-                onClick={() => setStatusFilter(value)}
-                type="button"
-              >
-                {label} {statusCounts[value]}
-              </button>
-            ))}
-          </div>
-          {visibleReviewRequests.length === 0 && <p className="empty">검토요청이 없습니다.</p>}
-          {visibleReviewRequests.map((request) => {
-            const dueStatus = dueDateStatus(request.due_date)
-            const dueHot = dueStatus === 'overdue' || dueStatus === 'due_now'
-            return (
-              <button
-                className={selectedReview?.id === request.id ? 'review-list-item selected' : 'review-list-item'}
-                key={request.id}
-                onClick={() => setSelectedReviewId(request.id)}
-                type="button"
-              >
-                <span className="review-list-top">
-                  <Badge status={request.status}>{reviewStatusLabels[request.status]}</Badge>
-                  <time>{formatDate(request.created_at)}</time>
-                </span>
-                <strong>{request.title}</strong>
-                <span className="review-list-meta">
-                  {request.profiles?.name ?? '요청자'} · 접수 {ageInDays(request.created_at)}일
-                  {request.due_date && (
-                    <>
-                      {' · '}
-                      <span className={dueHot ? 'due-hot' : undefined}>{dueDateLabel(request.due_date)}</span>
-                    </>
-                  )}
-                </span>
-              </button>
-            )
-          })}
-        </aside>
-        <div className="review-detail-pane" aria-live="polite">
-          {selectedReview ? (
-            <ReviewRequestItem
-              addFeedback={addFeedback}
-              feedback={feedback}
-              key={selectedReview.id}
-              onEdit={openReviewEditor}
-              onWithdraw={(id) => setPendingWithdrawId(id)}
-              pendingWithdraw={pendingWithdrawId === selectedReview.id}
-              profile={profile}
-              rejectReview={rejectReview}
-              request={selectedReview}
-              setFeedback={setFeedback}
-              updateStatus={updateStatus}
-              withdrawReview={withdrawReview}
-            />
-          ) : (
-            <p className="empty">왼쪽 목록에서 검토요청을 선택하세요.</p>
-          )}
-        </div>
+        <ReviewList
+          onSelectReview={setSelectedReviewId}
+          onStatusFilterChange={setStatusFilter}
+          profile={profile}
+          scopedReviewRequests={scopedReviewRequests}
+          selectedReviewId={selectedReview?.id ?? null}
+          statusCounts={statusCounts}
+          statusFilter={statusFilter}
+          visibleReviewRequests={visibleReviewRequests}
+        />
+        <ReviewDetail
+          addFeedback={addFeedback}
+          feedback={feedback}
+          onEdit={openReviewEditor}
+          onWithdraw={(id) => setPendingWithdrawId(id)}
+          pendingWithdrawId={pendingWithdrawId}
+          profile={profile}
+          rejectReview={rejectReview}
+          selectedReview={selectedReview}
+          setFeedback={setFeedback}
+          updateStatus={updateStatus}
+          withdrawReview={withdrawReview}
+        />
       </section>
     </div>
   )
 }
 
+export { emptyReviewForm }

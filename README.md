@@ -1,38 +1,48 @@
 # SQA P1 Workflow
 
-React + Vite + Supabase 기반의 SQA 1파트 업무관리 MVP입니다.
+팀 업무 배정, 검토 요청, 프로젝트 현황을 관리하는 SPA입니다.
 
-## 포함 범위
+## 환경 변수
 
-- 파트장: 초대 사용자, 제품/업무 마스터, 담당제품/담당업무 배정, 검토요청 상태/피드백, 프로젝트 배정 관리
-- 파트장: 검토 기한과 대기일 기반 우선처리 큐, 프로젝트 상태/마감/설명 수정, 최근 활동 확인
-- 파트원: 본인 담당제품/담당업무, 검토 기한이 포함된 본인 검토요청, 본인 프로젝트 배정과 리마인더 확인
-- Supabase Auth 이메일/비밀번호 로그인
-- 초대 이메일 기반 `profiles` 생성
-- Supabase RLS 기반 leader/member 권한 분리
-- `review_requests.due_date`와 `activity_logs` 기반 운영 리마인더/활동 피드
-- Cloudflare Workers 정적 SPA 배포 구조 (GitHub Actions)
+`.env.example`을 `.env.local`로 복사한 뒤 값을 채웁니다.
 
-## 시작하기
+| 변수 | 설명 |
+|---|---|
+| `VITE_APP_MODE` | `development`, `preview`, `production` 중 하나 |
+| `VITE_SUPABASE_URL` | Supabase 프로젝트 URL |
+| `VITE_SUPABASE_ANON_KEY` | Supabase anon key |
+
+### 모드별 동작
+
+- **production** — Supabase env가 필수입니다. 누락 시 로그인 우회 없이 설정 오류 화면만 표시됩니다.
+- **development** — 로컬 개발용입니다. Supabase env 없으면 설정 오류 화면이 표시됩니다.
+- **preview** — Supabase env 없이 데모 데이터로 UI를 미리볼 수 있습니다. `VITE_APP_MODE=preview`와 빈 Supabase env를 사용하세요.
+
+### 로컬 실행
 
 ```bash
-npm install
+npm ci
 cp .env.example .env.local
+# 운영/개발: Supabase URL·key 입력
+# 데모 미리보기: VITE_APP_MODE=preview, Supabase 값은 비워 둠
 npm run dev
 ```
 
-환경변수가 없으면 빈 미리보기 모드로 실행됩니다. 실제 데이터 연동은 `.env.local`에 Supabase URL과 anon key를 넣은 뒤 사용합니다.
+### 로그인
 
-## Supabase 설정
+계정은 파트장이 Supabase Dashboard에서 생성합니다. 앱에서는 로그인만 가능합니다.
 
-마이그레이션은 `supabase/migrations` 아래 SQL 파일을 번호 순서대로 적용합니다.
-첫 파트장 등록, Workers 배포, 운영 런북은 `docs/DEPLOYMENT.md`와 `docs/OPERATIONS.md`를 확인하세요.
+- 파트장이 등록한 이메일만 사용할 수 있습니다.
+- 최초 비밀번호는 `1234`이며, 로그인 후 비밀번호 변경이 필요합니다.
 
-## 검증
+## 스크립트
 
 ```bash
-npm test
-npm run build
+npm run dev        # 개발 서버
+npm run build      # production 빌드
+npm test           # 단위 테스트
+npm run typecheck  # TypeScript 검사
+npm run lint       # ESLint
 ```
 
-RLS 수동 검증 시나리오는 `docs/TEST_PLAN.md`에 정리되어 있습니다.
+배포 절차는 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)를 참고하세요.

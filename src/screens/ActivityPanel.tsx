@@ -18,13 +18,14 @@ export function ActivityPanel({ data }: { data: AppData }) {
       <div className="page-intro">
         <span>Workspace / Activity</span>
         <h1>활동 로그</h1>
-        <p>팀 전체 활동 이력 {data.activityLogs.length}건</p>
+        <p>팀 활동 이력 최근 {data.activityLogs.length}건 (최대 100건)</p>
       </div>
       <label className="search-field">
         <Search size={16} />
         <input placeholder="요약, 액션, 유형 검색" value={query} onChange={(event) => setQuery(event.target.value)} />
       </label>
-      <Section title="전체 기록" icon={<MessageSquare size={18} />}>
+      <Section title="최근 100건" icon={<MessageSquare size={18} />}>
+        <p className="empty-copy">더 오래된 기록은 Supabase Dashboard 또는 백업에서 확인하세요.</p>
         <div className="activity-list">
           {visibleLogs.length === 0 ? (
             <p className="empty-copy">표시할 활동이 없습니다.</p>

@@ -290,7 +290,7 @@ Dashboard SQL Editor에서 member JWT로 테스트하거나, 앱 네트워크 �
 | 역할 | 동작 | 기대 |
 |------|------|------|
 | member A | 본인 `pending` 요청 수정·회수 | 성공 |
-| member A | `in_review` 요청 수정 | UI 버튼 없음 / RLS 거부 |
+| member A | `approved`/`rejected` 요청 수정 | UI 버튼 없음 / RLS 거부 |
 | member A | member B `pending` 수정 | 거부 |
 | leader | 반려 시 사유 없이 반려 | UI 차단 |
 | leader | 반려 + 피드백 | member A 화면에 표시 |

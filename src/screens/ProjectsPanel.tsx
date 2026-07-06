@@ -12,7 +12,14 @@ import {
 } from '../data'
 import { formatDate, projectStatusLabels } from '../lib/format'
 import { canAssignProjectTo } from '../domain/permissions'
-import { dueDateLabel } from '../lib/dates'
+import { ProjectBoard } from '../features/projects/components/ProjectBoard'
+import {
+  selectFilteredProjectAssignments,
+  selectMemberProjectGroups,
+  selectProjectGroups,
+  selectProjectStatusGroups,
+  selectVisibleProjectAssignments,
+} from '../features/projects/project.selectors'
 import {
   BriefcaseBusiness,
   Check,
@@ -50,9 +57,12 @@ export function ProjectsPanel({
   const [pendingProjectDeleteId, setPendingProjectDeleteId] = useState<string | null>(null)
   const leaderMode = profile.role === 'leader'
   const memberOptions = data.profiles.filter(canAssignProjectTo)
-  const visibleProjectAssignments = leaderMode
-    ? data.projectAssignments
-    : data.projectAssignments.filter((assignment) => assignment.user_id === profile.id)
+  const visibleProjectAssignments = selectVisibleProjectAssignments(data, profile, leaderMode)
+  const projectFilter = { query: projectQuery, status: statusFilter }
+  const filteredProjectAssignments = selectFilteredProjectAssignments(data, visibleProjectAssignments, projectFilter)
+  const projectGroups = selectProjectGroups(data, profile, leaderMode, projectFilter, filteredProjectAssignments)
+  const memberGroups = selectMemberProjectGroups(memberOptions, profile, leaderMode, filteredProjectAssignments)
+  const projectStatusGroups = selectProjectStatusGroups(projectGroups)
 
   useEffect(() => {
     if (!leaderMode || !isProjectComposerOpen || selectedProjectMemberIds.length > 0) return
@@ -77,67 +87,6 @@ export function ProjectsPanel({
     setSelectedProjectMemberIds((current) =>
       current.includes(memberId) ? current.filter((id) => id !== memberId) : [...current, memberId],
     )
-
-  const filteredProjectAssignments = visibleProjectAssignments.filter((assignment) => {
-    const project = assignment.projects ?? data.projects.find((item) => item.id === assignment.project_id)
-    const member = assignment.profiles ?? data.profiles.find((item) => item.id === assignment.user_id)
-    const status = project?.status
-    if (statusFilter !== 'all' && status !== statusFilter) return false
-    const query = projectQuery.trim().toLowerCase()
-    if (!query) return true
-    return [
-      project?.name,
-      project?.description,
-      project?.deadline,
-      status ? projectStatusLabels[status] : '',
-      member?.name,
-      member?.email,
-      assignment.notes,
-    ]
-      .join(' ')
-      .toLowerCase()
-      .includes(query)
-  })
-
-  const projectGroups = data.projects
-    .filter((project) => leaderMode || filteredProjectAssignments.some((assignment) => assignment.project_id === project.id))
-    .filter((project) => statusFilter === 'all' || project.status === statusFilter)
-    .map((project) => ({
-      project,
-      assignments: filteredProjectAssignments.filter((assignment) => assignment.project_id === project.id),
-    }))
-    .filter((group) => {
-      const query = projectQuery.trim().toLowerCase()
-      if (!query) return leaderMode || group.assignments.length > 0
-      const target = [
-        group.project.name,
-        group.project.description,
-        group.project.deadline,
-        projectStatusLabels[group.project.status],
-        ...group.assignments.flatMap((assignment) => [
-          assignment.profiles?.name,
-          assignment.profiles?.email,
-          assignment.notes,
-        ]),
-      ]
-        .join(' ')
-        .toLowerCase()
-      return target.includes(query) && (leaderMode || group.assignments.length > 0)
-    })
-
-  const memberGroups = (leaderMode ? memberOptions : [profile])
-    .map((member) => ({
-      member,
-      assignments: filteredProjectAssignments.filter((assignment) => assignment.user_id === member.id),
-    }))
-    .filter((group) => group.assignments.length > 0)
-  const statusOrder: ProjectStatus[] = ['in_progress', 'planned', 'done']
-  const projectStatusGroups = statusOrder
-    .map((status) => ({
-      status,
-      projects: projectGroups.filter((group) => group.project.status === status),
-    }))
-    .filter((group) => group.projects.length > 0)
 
   const exportProjectCsv = () =>
     downloadCsv(
@@ -275,38 +224,7 @@ export function ProjectsPanel({
           </button>
         )}
       </div>
-      <div className="project-status-board">
-        {projectStatusGroups.length === 0 && <p className="empty">조건에 맞는 프로젝트가 없습니다.</p>}
-        {projectStatusGroups.map((group) => (
-          <section className="project-status-section" key={group.status}>
-            <header>
-              <div>
-                <span>{projectStatusLabels[group.status]}</span>
-                <strong>{group.projects.length}개</strong>
-              </div>
-            </header>
-            <div className="project-card-grid">
-              {group.projects.map(({ project, assignments }) => {
-                const activeCount = assignments.length
-                const deadlineMeta = project.deadline ? dueDateLabel(project.deadline) : '기한 없음'
-                return (
-                  <article className="project-card" key={project.id}>
-                    <div className="project-card-head">
-                      <Badge status={project.status}>{projectStatusLabels[project.status]}</Badge>
-                      <span>{project.deadline ? formatDate(project.deadline) : '기한 없음'}</span>
-                    </div>
-                    <h3>{project.name}</h3>
-                    <p>{project.description || '설명 없음'}</p>
-                    <p className="project-card-meta">
-                      {activeCount}명 배정 · {deadlineMeta}
-                    </p>
-                  </article>
-                )
-              })}
-            </div>
-          </section>
-        ))}
-      </div>
+      <ProjectBoard groups={projectStatusGroups} />
       {leaderMode && isProjectComposerOpen && (
         <div className="modal-backdrop" onMouseDown={() => setProjectComposerOpen(false)} role="presentation">
           <section

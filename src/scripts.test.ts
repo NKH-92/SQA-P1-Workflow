@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-const scripts = import.meta.glob('../scripts/*.ps1', {
+const scripts = import.meta.glob('../scripts/*.{ps1,mjs}', {
   query: '?raw',
   import: 'default',
   eager: true,
@@ -31,5 +31,21 @@ describe('migration scripts', () => {
     expect(script).toContain('-schema.sql')
     expect(script).toContain('-data.sql')
     expect(script).toContain('--data-only')
+  })
+
+  it('generate-p1-product-seed.mjs reads CSV/JSON inputs instead of src/data', () => {
+    const script = readScript('generate-p1-product-seed.mjs')
+    expect(script).toContain('readCsvRows')
+    expect(script).toContain('readProfileMap')
+    expect(script).not.toContain('src/data/p1ProductAllocation.ts')
+    expect(script).not.toContain('Function(')
+  })
+
+  it('generate-p1-duty-seed.mjs reads CSV/JSON inputs instead of src/data', () => {
+    const script = readScript('generate-p1-duty-seed.mjs')
+    expect(script).toContain('readCsvRows')
+    expect(script).toContain('readProfileMap')
+    expect(script).not.toContain('src/data/p1DutyAllocation.ts')
+    expect(script).not.toContain('Function(')
   })
 })

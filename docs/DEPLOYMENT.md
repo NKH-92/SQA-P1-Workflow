@@ -35,8 +35,8 @@ set name = excluded.name,
     role = excluded.role;
 ```
 
-4. 해당 이메일로 앱에서 가입한다. `auth.users` 생성 시 trigger가 `profiles`를 만든다.
-5. 이후 초대 사용자는 앱의 `마스터 > 초대 관리`에서 등록한다.
+4. Supabase Dashboard > Authentication > Users > **Add user** 로 첫 파트장 계정을 만든 뒤 앱에서 로그인한다. `auth.users` 생성 시 trigger가 `profiles`를 만든다.
+5. 이후 초대 사용자는 `allowed_users` 등록 후 Dashboard에서 사용자를 생성한다 (앱 가입 UI 없음).
 6. 여러 사용자를 한 번에 넣어야 하면 `supabase/private_seed.example.sql`을 `supabase/private_seed.local.sql`로 복사한 뒤 실제 이메일/이름으로 바꿔 SQL Editor에서 실행한다. `.local.sql` 파일은 커밋하지 않는다.
 
 ### 사용자 제거
@@ -59,16 +59,36 @@ Repository Settings > Secrets and variables > Actions에 다음을 등록한다.
 | Secret | `VITE_SUPABASE_ANON_KEY` | Supabase anon(publishable) key |
 | Secret | `CLOUDFLARE_API_TOKEN` | Workers 배포 권한이 있는 API 토큰 |
 
-Variables/Secrets가 하나라도 비어 있으면 CI는 **빌드·테스트만 수행**하고 배포는 스킵한다.
+빌드 시 `VITE_APP_MODE=production`이 GitHub Actions Build 단계에 주입된다. Supabase env 없이 production 빌드가 배포되면 앱은 로그인 우회 없이 **설정 오류 화면**만 표시한다. 로컬 데모 미리보기는 `VITE_APP_MODE=preview`와 빈 Supabase env로 실행한다.
+
+### 배포 성공 vs 스킵 구분
+
+| 트리거 | Variables/Secrets 미설정 시 | green check 의미 |
+|---|---|---|
+| `push` → `main` | 워크플로 **실패** (exit 1). Job Summary에 누락 항목 표시 | 빌드·테스트는 통과했지만 **배포되지 않음** |
+| `workflow_dispatch` | 빌드·테스트만 수행, 배포 **스킵** (warning). Job Summary에 스킵 사유 표시 | 수동 build-only 실행 성공. 배포는 아님 |
+| 위 설정 모두 등록됨 | Wrangler deploy 실행 | Job Summary에 **Deploy succeeded** — 실제 배포 완료 |
+
+**주의:** `main` push 후 Actions가 green이어도, 예전에는 deploy env가 없을 때 배포 없이 성공처럼 보일 수 있었다. 현재는 `main` push에서 deploy env가 없으면 워크플로가 **실패**한다. 수동으로 빌드만 확인하려면 Actions에서 **Deploy Worker** 워크플로를 `workflow_dispatch`로 실행한다.
 
 ### 수동 배포
 
 ```bash
 npm ci
 npm test
-VITE_SUPABASE_URL=... VITE_SUPABASE_ANON_KEY=... npm run build
+VITE_APP_MODE=production VITE_SUPABASE_URL=... VITE_SUPABASE_ANON_KEY=... npm run build
 npx wrangler deploy --name <WORKER_NAME> --assets dist --keep-vars
 ```
+
+### 보안 헤더 (CSP)
+
+`public/_headers`가 Vite 빌드 시 `dist/_headers`로 복사되어 Cloudflare Workers static assets에 적용됩니다.
+
+- `Content-Security-Policy`: `connect-src`에 Supabase(`https://*.supabase.co`, `wss://*.supabase.co`)만 허용
+- `frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`
+- Google Fonts CDN은 사용하지 않습니다 (시스템 폰트 스택)
+
+배포 후 브라우저 DevTools Console에서 CSP violation이 없는지, 로그인·Storage signed URL이 동작하는지 확인하세요. Cloudflare Access는 URL 앞단 접근 제어용이며 CSP와 별개입니다.
 
 ### 롤백
 

@@ -1,6 +1,7 @@
 export { ActivityPanel } from './ActivityPanel'
 export { AuthPanel } from './AuthPanel'
 export { BlockedProfile } from './BlockedProfile'
+export { ConfigErrorScreen } from './ConfigErrorScreen'
 export { Dashboard } from './Dashboard'
 export { LeaderDashboard } from './LeaderDashboard'
 export { LoadingScreen } from './LoadingScreen'

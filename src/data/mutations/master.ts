@@ -3,6 +3,15 @@ import { supabase } from '../../lib/supabase'
 import type { AdminDeleteTable } from '../../app/types'
 import type { Product, ProductCategory, Role, DutyMajorCategory } from '../../types'
 import type { RepositoryContext } from '../repositoryContext'
+import {
+  appendDutyAssignment,
+  appendProductAssignment,
+  replaceDutyAssignments,
+  replaceProductAssignments,
+  updateProductRow,
+} from '../local/appDataReducers'
+import { createLocalMasterRepository } from '../local/localMasterRepository'
+import { createSupabaseMasterRepository } from '../remote/supabaseMasterRepository'
 
 type ProductInput = {
   name: string
@@ -192,13 +201,6 @@ export async function saveProductAssignments(
 ): Promise<void> {
   const { data, setData } = ctx
   const { productId, nextMemberIds, product, memberOptions } = input
-  const currentIds = data.productAssignments
-    .filter((assignment) => assignment.product_id === productId)
-    .map((assignment) => assignment.user_id)
-  const toAdd = nextMemberIds.filter((id) => !currentIds.includes(id))
-  const toRemove = data.productAssignments.filter(
-    (assignment) => assignment.product_id === productId && !nextMemberIds.includes(assignment.user_id),
-  )
 
   if (ctx.isRemote) {
     const { error } = await supabase!.rpc('replace_product_assignments', {
@@ -208,23 +210,12 @@ export async function saveProductAssignments(
     if (error) throw error
   } else {
     const resolvedProduct = product ?? data.products.find((item) => item.id === productId) ?? null
-    setData((current) => ({
-      ...current,
-      productAssignments: [
-        ...current.productAssignments.filter((assignment) => !toRemove.some((item) => item.id === assignment.id)),
-        ...toAdd.map((memberId) => {
-          const member = memberOptions?.find((item) => item.id === memberId)
-            ?? data.profiles.find((item) => item.id === memberId)
-          return {
-            id: makeId('product-assignment'),
-            user_id: memberId,
-            product_id: productId,
-            profiles: member ? { name: member.name, email: member.email } : null,
-            products: resolvedProduct ? productRelation(resolvedProduct) : null,
-          }
-        }),
-      ],
-    }))
+    const members =
+      memberOptions?.map((item) => item) ??
+      data.profiles.map((item) => ({ id: item.id, name: item.name, email: item.email }))
+    setData((current) =>
+      replaceProductAssignments(current, productId, nextMemberIds, resolvedProduct, members),
+    )
   }
 }
 
@@ -239,13 +230,6 @@ export async function saveDutyAssignments(
 ): Promise<void> {
   const { data, setData } = ctx
   const { dutyId, nextMemberIds, duty, memberOptions } = input
-  const currentIds = data.dutyAssignments
-    .filter((assignment) => assignment.duty_id === dutyId)
-    .map((assignment) => assignment.user_id)
-  const toAdd = nextMemberIds.filter((id) => !currentIds.includes(id))
-  const toRemove = data.dutyAssignments.filter(
-    (assignment) => assignment.duty_id === dutyId && !nextMemberIds.includes(assignment.user_id),
-  )
 
   if (ctx.isRemote) {
     const { error } = await supabase!.rpc('replace_duty_assignments', {
@@ -255,30 +239,19 @@ export async function saveDutyAssignments(
     if (error) throw error
   } else {
     const resolvedDuty = duty ?? data.duties.find((item) => item.id === dutyId) ?? null
-    setData((current) => ({
-      ...current,
-      dutyAssignments: [
-        ...current.dutyAssignments.filter((assignment) => !toRemove.some((item) => item.id === assignment.id)),
-        ...toAdd.map((memberId) => {
-          const member = memberOptions?.find((item) => item.id === memberId)
-            ?? data.profiles.find((item) => item.id === memberId)
-          return {
-            id: makeId('duty-assignment'),
-            user_id: memberId,
-            duty_id: dutyId,
-            profiles: member ? { name: member.name, email: member.email } : null,
-            duties: resolvedDuty
-              ? dutyRelation({
-                  ...resolvedDuty,
-                  duty_major_categories: resolvedDuty.duty_major_categories
-                    ?? data.dutyMajorCategories.find((item) => item.id === resolvedDuty.major_category_id)
-                    ?? null,
-                })
-              : null,
-          }
-        }),
-      ],
-    }))
+    const members =
+      memberOptions?.map((item) => item) ??
+      data.profiles.map((item) => ({ id: item.id, name: item.name, email: item.email }))
+    const dutyForReducer = resolvedDuty
+      ? {
+          ...resolvedDuty,
+          duty_major_categories:
+            resolvedDuty.duty_major_categories ??
+            data.dutyMajorCategories.find((item) => item.id === resolvedDuty.major_category_id) ??
+            null,
+        }
+      : null
+    setData((current) => replaceDutyAssignments(current, dutyId, nextMemberIds, dutyForReducer, members))
   }
 }
 
@@ -301,19 +274,7 @@ export async function assignProduct(
   } else {
     const member = data.profiles.find((item) => item.id === input.userId)
     const product = data.products.find((item) => item.id === input.productId)
-    setData((current) => ({
-      ...current,
-      productAssignments: [
-        {
-          id: makeId('product-assignment'),
-          user_id: input.userId,
-          product_id: input.productId,
-          profiles: member ? { name: member.name, email: member.email } : null,
-          products: product ? productRelation(product) : null,
-        },
-        ...current.productAssignments,
-      ],
-    }))
+    setData((current) => appendProductAssignment(current, input.userId, input.productId, member, product))
   }
 }
 
@@ -336,19 +297,13 @@ export async function assignDuty(
   } else {
     const member = data.profiles.find((item) => item.id === input.userId)
     const duty = data.duties.find((item) => item.id === input.dutyId)
-    setData((current) => ({
-      ...current,
-      dutyAssignments: [
-        {
-          id: makeId('duty-assignment'),
-          user_id: input.userId,
-          duty_id: input.dutyId,
-          profiles: member ? { name: member.name, email: member.email } : null,
-          duties: duty ? dutyRelation({ ...duty, duty_major_categories: data.dutyMajorCategories.find((item) => item.id === duty.major_category_id) ?? null }) : null,
-        },
-        ...current.dutyAssignments,
-      ],
-    }))
+    const dutySnapshot = duty
+      ? dutyRelation({
+          ...duty,
+          duty_major_categories: data.dutyMajorCategories.find((item) => item.id === duty.major_category_id) ?? null,
+        })
+      : null
+    setData((current) => appendDutyAssignment(current, input.userId, input.dutyId, member, dutySnapshot))
   }
 }
 
@@ -362,15 +317,7 @@ export async function updateProduct(
     const { error } = await supabase!.from('products').update(payload).eq('id', productId)
     if (error) throw error
   } else {
-    setData((current) => ({
-      ...current,
-      products: current.products.map((item) => (item.id === productId ? { ...item, ...payload } : item)),
-      productAssignments: current.productAssignments.map((assignment) =>
-        assignment.product_id === productId
-          ? { ...assignment, products: { ...(assignment.products ?? {}), ...payload } }
-          : assignment,
-      ),
-    }))
+    setData((current) => updateProductRow(current, productId, payload))
   }
 }
 
@@ -491,33 +438,52 @@ export async function toggleProfileActive(
   }
 }
 
-export async function deleteMasterRow(ctx: RepositoryContext, table: AdminDeleteTable, id: string): Promise<void> {
-  const { setData } = ctx
-  if (ctx.isRemote) {
-    const { error } = await supabase!.from(table).delete().eq('id', id)
-    if (error) throw error
-  } else {
-    setData((current) => ({
-      ...current,
-      allowedUsers: table === 'allowed_users' ? current.allowedUsers.filter((item) => item.id !== id) : current.allowedUsers,
-      products: table === 'products' ? current.products.filter((item) => item.id !== id) : current.products,
-      dutyMajorCategories:
-        table === 'duty_major_categories'
-          ? current.dutyMajorCategories.filter((item) => item.id !== id)
-          : current.dutyMajorCategories,
-      duties: table === 'duties' ? current.duties.filter((item) => item.id !== id) : current.duties,
-      productAssignments:
-        table === 'products'
-          ? current.productAssignments.filter((item) => item.product_id !== id)
-          : table === 'product_assignments'
-            ? current.productAssignments.filter((item) => item.id !== id)
-            : current.productAssignments,
-      dutyAssignments:
-        table === 'duties'
-          ? current.dutyAssignments.filter((item) => item.duty_id !== id)
-          : table === 'duty_assignments'
-            ? current.dutyAssignments.filter((item) => item.id !== id)
-            : current.dutyAssignments,
-    }))
+function masterRepository(ctx: RepositoryContext) {
+  return ctx.isRemote ? createSupabaseMasterRepository(ctx) : createLocalMasterRepository(ctx)
+}
+
+export async function deleteAllowedUser(ctx: RepositoryContext, id: string): Promise<void> {
+  return masterRepository(ctx).deleteAllowedUser(id)
+}
+
+export async function deleteProduct(ctx: RepositoryContext, id: string): Promise<void> {
+  return masterRepository(ctx).deleteProduct(id)
+}
+
+export async function deleteDuty(ctx: RepositoryContext, id: string): Promise<void> {
+  return masterRepository(ctx).deleteDuty(id)
+}
+
+export async function deleteDutyMajorCategory(ctx: RepositoryContext, id: string): Promise<void> {
+  return masterRepository(ctx).deleteDutyMajorCategory(id)
+}
+
+export async function deleteProductAssignment(ctx: RepositoryContext, id: string): Promise<void> {
+  return masterRepository(ctx).deleteProductAssignment(id)
+}
+
+export async function deleteDutyAssignment(ctx: RepositoryContext, id: string): Promise<void> {
+  return masterRepository(ctx).deleteDutyAssignment(id)
+}
+
+export async function deleteMasterEntity(ctx: RepositoryContext, table: AdminDeleteTable, id: string): Promise<void> {
+  const repo = masterRepository(ctx)
+  switch (table) {
+    case 'allowed_users':
+      return repo.deleteAllowedUser(id)
+    case 'products':
+      return repo.deleteProduct(id)
+    case 'duties':
+      return repo.deleteDuty(id)
+    case 'duty_major_categories':
+      return repo.deleteDutyMajorCategory(id)
+    case 'product_assignments':
+      return repo.deleteProductAssignment(id)
+    case 'duty_assignments':
+      return repo.deleteDutyAssignment(id)
+    default: {
+      const exhaustive: never = table
+      throw new Error(`Unsupported delete table: ${exhaustive}`)
+    }
   }
 }

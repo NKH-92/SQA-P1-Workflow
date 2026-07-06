@@ -146,4 +146,48 @@ describe('Supabase migrations', () => {
     expect(migration).toContain('is_active_leader')
     expect(migration).toContain('set search_path = public')
   })
+
+  it('audits duplicate product names without deleting data', () => {
+    const migration = readMigration('202607060003_audit_product_duplicates.sql')
+
+    expect(migration).toContain('create table if not exists public.product_dedup_audit')
+    expect(migration).toContain('duplicate_name text not null')
+    expect(migration).toContain('duplicate_count integer not null')
+    expect(migration).toContain('group by name')
+    expect(migration).toContain('having count(*) > 1')
+    expect(migration).toContain('duplicate products exist. resolve duplicates manually')
+    expect(migration).toContain('products_name_key unique (name)')
+    expect(migration).not.toContain('delete from public.products')
+  })
+
+  it('adds password change completion RPC', () => {
+    const migration = readMigration('202607040001_require_password_change.sql')
+
+    expect(migration).toContain('mark_password_changed')
+    expect(migration).toContain('must_change_password = false')
+  })
+
+  it('enforces review status transitions in RPC functions', () => {
+    const migration = readMigration('202607060004_review_status_transitions.sql')
+
+    expect(migration).toContain('for update')
+    expect(migration).toContain('only pending review requests can be approved')
+    expect(migration).toContain('only pending review requests can be rejected')
+    expect(migration).toContain('use reject_review_request for rejected status')
+  })
+
+  it('requires storage uploads for review attachments', () => {
+    const migration = readMigration('202607060005_storage_only_attachments.sql')
+
+    expect(migration).toContain('attachment must use storage upload')
+    expect(migration).toContain('storage://review-attachments/')
+  })
+
+  it('exposes minimal leader profiles for members', () => {
+    const migration = readMigration('202607060006_public_leader_profiles.sql')
+
+    expect(migration).toContain('create or replace view public.public_leader_profiles')
+    expect(migration).toContain("role = 'leader'")
+    expect(migration).toContain('grant select on public.public_leader_profiles to authenticated')
+  })
 })

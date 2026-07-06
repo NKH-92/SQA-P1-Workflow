@@ -17,7 +17,7 @@ function memberDataWithPendingReview(): AppData {
         requester_id: previewMember.id,
         title: '수정 테스트 제목',
         description: '수정 테스트 설명',
-        attachment_url: 'https://example.com/attachment',
+        attachment_url: 'storage://review-attachments/user/file.pdf',
         due_date: '2026-07-10',
         status: 'pending',
         created_at: '2026-07-04T09:00:00.000Z',
@@ -90,18 +90,20 @@ describe('ReviewsPanel', () => {
     const newDialog = composerDialog()
     expect(within(newDialog).getByLabelText(/^제목/)).toHaveValue('')
     expect(within(newDialog).getByLabelText(/^설명/)).toHaveValue('')
-    expect(within(newDialog).getByLabelText('첨부 링크(URL)')).toHaveValue('')
   })
 
   it('restores a saved draft when opening the composer', async () => {
     const user = userEvent.setup()
     const data = createPreviewData()
+    const now = new Date('2026-07-06T12:00:00.000Z')
     const draft = {
       title: '초안 제목',
       description: '초안 설명',
-      attachment_url: 'https://example.com/draft',
+      attachment_url: '',
       deadlineMode: 'date',
       due_date: '2026-07-12',
+      saved_at: now.toISOString(),
+      expires_at: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     }
     localStorage.setItem(`draft:review:${previewMember.id}`, JSON.stringify(draft))
 
@@ -114,8 +116,25 @@ describe('ReviewsPanel', () => {
     const dialog = composerDialog()
     expect(within(dialog).getByLabelText(/^제목/)).toHaveValue('초안 제목')
     expect(within(dialog).getByLabelText(/^설명/)).toHaveValue('초안 설명')
-    expect(within(dialog).getByLabelText('첨부 링크(URL)')).toHaveValue('https://example.com/draft')
     expect(within(dialog).getByText('이 기기에 저장된 초안을 불러왔습니다.')).toBeInTheDocument()
+  })
+
+  it('saves draft only when the user clicks 초안 저장', async () => {
+    const user = userEvent.setup()
+    const data = createPreviewData()
+
+    render(
+      <ReviewsPanel profile={previewMember} data={data} mutate={vi.fn()} setData={() => undefined} />,
+    )
+
+    await user.click(screen.getByRole('button', { name: '검토요청 작성', exact: true }))
+    const dialog = composerDialog()
+    await user.type(within(dialog).getByLabelText(/^제목/), '수동 초안')
+    await user.click(within(dialog).getByRole('button', { name: '초안 저장' }))
+
+    const raw = localStorage.getItem(`draft:review:${previewMember.id}`)
+    expect(raw).toContain('수동 초안')
+    expect(raw).toContain('expires_at')
   })
 
   it('shows reject feedback notice without calling rejectReviewRequest when feedback is empty', async () => {

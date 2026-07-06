@@ -69,7 +69,7 @@ export function ReviewRequestItem({
   withdrawReview: (requestId: string) => void
 }) {
   const [attachmentHref, setAttachmentHref] = useState<string | null>(null)
-  const [transitionNotice, setTransitionNotice] = useState<{ text: string; tone: ReviewStatus; previousStatus?: ReviewStatus } | null>(null)
+  const [transitionNotice, setTransitionNotice] = useState<{ text: string; tone: ReviewStatus } | null>(null)
   const [rejectNotice, setRejectNotice] = useState(false)
   const [celebrate, setCelebrate] = useState(false)
   const timelineSteps = getTimelineSteps(request.status)
@@ -102,13 +102,12 @@ export function ReviewRequestItem({
       }
       setRejectNotice(false)
       void rejectReview(request.id)
-      setTransitionNotice({ text: '반려 상태로 전환했습니다.', tone: status, previousStatus: request.status })
+      setTransitionNotice({ text: '반려 상태로 전환했습니다.', tone: status })
       window.setTimeout(() => setTransitionNotice(null), 2600)
       return
     }
-    const previousStatus = request.status
     void updateStatus(request.id, status)
-    setTransitionNotice({ text: `${reviewStatusLabels[status]} 상태로 전환했습니다.`, tone: status, previousStatus })
+    setTransitionNotice({ text: `${reviewStatusLabels[status]} 상태로 전환했습니다.`, tone: status })
     if (status === 'approved') {
       setCelebrate(true)
       window.setTimeout(() => setCelebrate(false), 1400)
@@ -139,7 +138,7 @@ export function ReviewRequestItem({
         <Badge status={request.status}>{reviewStatusLabels[request.status]}</Badge>
         <span className="request-id">#{request.id.slice(0, 8).toUpperCase()}</span>
         <span className="request-age">접수 {ageInDays(request.created_at)}일</span>
-        {profile.role === 'leader' && (
+        {profile.role === 'leader' && request.status === 'pending' && (
           <div className="request-actions" aria-label="검토 상태 전환">
             {statusActions.map(({ status, label, variant }) => (
               <button
@@ -290,17 +289,6 @@ export function ReviewRequestItem({
         <div className="interaction-toast" data-tone={transitionNotice.tone} role="status">
           <span />
           {transitionNotice.text}
-          <button
-            onClick={() => {
-              if (transitionNotice.previousStatus) {
-                void updateStatus(request.id, transitionNotice.previousStatus)
-              }
-              setTransitionNotice(null)
-            }}
-            type="button"
-          >
-            되돌리기
-          </button>
         </div>
       )}
     </article>

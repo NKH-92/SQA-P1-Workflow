@@ -1,3 +1,4 @@
+import { UserFacingError } from './errors'
 import { supabase } from './supabase'
 
 export const REVIEW_ATTACHMENTS_BUCKET = 'review-attachments'
@@ -38,9 +39,9 @@ export function validateReviewAttachmentFile(file: File) {
 }
 
 export async function uploadReviewAttachment(userId: string, file: File) {
-  if (!supabase) throw new Error('Supabase 설정이 필요합니다.')
+  if (!supabase) throw new UserFacingError('Supabase 설정이 필요합니다.')
   const validation = validateReviewAttachmentFile(file)
-  if (validation) throw new Error(validation)
+  if (validation) throw new UserFacingError(validation)
 
   const safeName = file.name.replace(/[^\w.\-()가-힣]/g, '_')
   const path = `${userId}/${crypto.randomUUID()}-${safeName}`

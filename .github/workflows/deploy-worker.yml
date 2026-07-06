@@ -41,38 +41,65 @@ jobs:
 
       - name: Check deploy configuration
         run: |
-          missing=0
+          missing=()
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "::warning::GitHub secret CLOUDFLARE_API_TOKEN is not set."
-            missing=1
+            missing+=("CLOUDFLARE_API_TOKEN (secret)")
           fi
           if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "::warning::GitHub variable CLOUDFLARE_ACCOUNT_ID is not set."
-            missing=1
+            missing+=("CLOUDFLARE_ACCOUNT_ID (variable)")
           fi
           if [ -z "$WORKER_NAME" ]; then
-            echo "::warning::GitHub variable WORKER_NAME is not set."
-            missing=1
+            missing+=("WORKER_NAME (variable)")
           fi
           if [ -z "$VITE_SUPABASE_URL" ]; then
-            echo "::warning::GitHub variable VITE_SUPABASE_URL is not set."
-            missing=1
+            missing+=("VITE_SUPABASE_URL (variable)")
           fi
           if [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
-            echo "::warning::GitHub secret VITE_SUPABASE_ANON_KEY is not set."
-            missing=1
+            missing+=("VITE_SUPABASE_ANON_KEY (secret)")
           fi
-          if [ "$missing" -eq 1 ]; then
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            {
+              echo "## Deploy configuration incomplete"
+              echo ""
+              echo "The following GitHub Actions settings are missing:"
+              echo ""
+              for item in "${missing[@]}"; do
+                echo "- \`$item\`"
+              done
+              echo ""
+              if [ "${{ github.event_name }}" = "push" ]; then
+                echo "**Result:** this \`main\` push workflow **failed** — build ran, but deployment did not occur."
+                echo "Register the missing Variables/Secrets under Repository Settings > Secrets and variables > Actions, then push again."
+              else
+                echo "**Result:** deployment was **skipped** (build-only). This is allowed for \`workflow_dispatch\`."
+                echo "Register the missing Variables/Secrets before expecting an automatic deploy on \`main\` push."
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            if [ "${{ github.event_name }}" = "push" ]; then
+              echo "::error::Deploy configuration missing on main push. See job summary."
+              exit 1
+            fi
+
             echo "DEPLOY_SKIP=true" >> "$GITHUB_ENV"
             echo "::warning::Build will run, but deployment will be skipped until variables/secrets are configured."
           fi
 
       - name: Build
+        if: ${{ env.DEPLOY_SKIP != 'true' }}
         run: npm run build
         env:
+          VITE_APP_MODE: production
           VITE_SUPABASE_URL: ${{ env.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ env.VITE_SUPABASE_ANON_KEY }}
 
       - name: Deploy to Cloudflare Workers
         if: ${{ env.DEPLOY_SKIP != 'true' }}
-        run: npx --yes wrangler@4 deploy --name "$WORKER_NAME" --assets dist --keep-vars --compatibility-date 2026-07-04
+        run: |
+          npx --yes wrangler@4 deploy --name "$WORKER_NAME" --assets dist --keep-vars --compatibility-date 2026-07-04
+          {
+            echo "## Deploy succeeded"
+            echo ""
+            echo "Worker \`$WORKER_NAME\` was deployed to Cloudflare."
+          } >> "$GITHUB_STEP_SUMMARY"

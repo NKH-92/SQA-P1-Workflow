@@ -1,0 +1,21 @@
+-- RLS smoke test setup (Supabase local)
+--
+-- Prerequisites:
+--   1. supabase start
+--   2. Apply all migrations: supabase db reset (or scripts/apply-migrations.ps1)
+--   3. Export env for vitest:
+--        SUPABASE_URL=http://127.0.0.1:54321
+--        SUPABASE_ANON_KEY=<anon key from supabase status>
+--        SUPABASE_SERVICE_ROLE_KEY=<service role key from supabase status>
+--
+-- Seed test users (leader, member A, member B) via Auth Admin API or Dashboard,
+-- then insert allowed_users / profiles rows matching auth.users ids.
+--
+-- Minimal smoke data (adjust uuids after creating auth users):
+--   insert into public.allowed_users (email, name, role) values
+--     ('rls-leader@example.test', 'RLS Leader', 'leader'),
+--     ('rls-member-a@example.test', 'RLS Member A', 'member'),
+--     ('rls-member-b@example.test', 'RLS Member B', 'member');
+--
+-- Create at least one review_request for member A; verify member B cannot select it.
+-- See docs/TEST_PLAN.md "RLS 수동 검증" for the full scenario list mirrored by tests/rls/*.test.ts.

@@ -14,7 +14,7 @@ export type TabId =
 
 export type MasterTabId = 'products' | 'duties' | 'invites'
 export type ReviewStatusFilter = 'all' | ReviewStatus
-export type ToastMessage = { text: string; tone: 'success' | 'error' }
+export type ToastMessage = { text: string; tone: 'success' | 'error' | 'warning' }
 export type AdminDeleteTable =
   | 'allowed_users'
   | 'products'

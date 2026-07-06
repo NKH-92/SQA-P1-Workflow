@@ -14,8 +14,12 @@ import type {
 } from '../types'
 import { supabase } from '../lib/supabase'
 
-export async function fetchAppData(): Promise<AppData> {
-  if (!supabase) return {
+export type FetchAppDataResult = AppData & {
+  optionalWarnings: string[]
+}
+
+function emptyAppData(): AppData {
+  return {
     profiles: [],
     allowedUsers: [],
     products: [],
@@ -29,10 +33,21 @@ export async function fetchAppData(): Promise<AppData> {
     profileNotes: [],
     activityLogs: [],
   }
+}
+
+function settledData<T>(result: PromiseSettledResult<{ data: T | null; error: unknown }>, label: string, warnings: string[]): T {
+  if (result.status === 'rejected' || result.value.error) {
+    warnings.push(`${label} 조회에 실패했습니다.`)
+    return [] as T
+  }
+  return (result.value.data ?? []) as T
+}
+
+export async function fetchAppData(): Promise<FetchAppDataResult> {
+  if (!supabase) return { ...emptyAppData(), optionalWarnings: [] }
 
   const [
     profilesResult,
-    allowedUsersResult,
     productsResult,
     dutyMajorCategoriesResult,
     dutiesResult,
@@ -41,11 +56,8 @@ export async function fetchAppData(): Promise<AppData> {
     reviewRequestsResult,
     projectsResult,
     projectAssignmentsResult,
-    profileNotesResult,
-    activityLogsResult,
   ] = await Promise.all([
     supabase.from('profiles').select('*').order('name'),
-    supabase.from('allowed_users').select('*').order('created_at', { ascending: false }),
     supabase.from('products').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('name'),
     supabase
       .from('duty_major_categories')
@@ -74,13 +86,10 @@ export async function fetchAppData(): Promise<AppData> {
       .from('project_assignments')
       .select('*, profiles(name,email), projects(name,description,deadline,status)')
       .order('created_at', { ascending: false }),
-    supabase.from('profile_notes').select('*').order('created_at', { ascending: false }),
-    supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(100),
   ])
 
-  const results = [
+  const coreResults = [
     profilesResult,
-    allowedUsersResult,
     productsResult,
     dutyMajorCategoriesResult,
     dutiesResult,
@@ -89,15 +98,47 @@ export async function fetchAppData(): Promise<AppData> {
     reviewRequestsResult,
     projectsResult,
     projectAssignmentsResult,
-    profileNotesResult,
-    activityLogsResult,
   ]
-  const failed = results.find((result) => result.error)
-  if (failed?.error) throw failed.error
+  const failedCore = coreResults.find((result) => result.error)
+  if (failedCore?.error) throw failedCore.error
+
+  const optionalWarnings: string[] = []
+  const optionalResults = await Promise.allSettled([
+    supabase.from('allowed_users').select('*').order('created_at', { ascending: false }),
+    supabase.from('profile_notes').select('*').order('created_at', { ascending: false }),
+    supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(100),
+    supabase.from('public_leader_profiles').select('id,name'),
+  ])
+
+  let profiles = (profilesResult.data ?? []) as Profile[]
+  const leaderProfiles = settledData(
+    optionalResults[3] as PromiseSettledResult<{ data: Array<Pick<Profile, 'id' | 'name'>> | null; error: unknown }>,
+    '파트장 프로필',
+    optionalWarnings,
+  )
+  if (leaderProfiles.length > 0) {
+    const knownIds = new Set(profiles.map((item) => item.id))
+    profiles = [
+      ...profiles,
+      ...leaderProfiles
+        .filter((leader) => !knownIds.has(leader.id))
+        .map((leader) => ({
+          id: leader.id,
+          name: leader.name,
+          email: '',
+          role: 'leader' as const,
+          is_active: true,
+        })),
+    ]
+  }
 
   return {
-    profiles: (profilesResult.data ?? []) as Profile[],
-    allowedUsers: (allowedUsersResult.data ?? []) as AllowedUser[],
+    profiles,
+    allowedUsers: settledData(
+      optionalResults[0] as PromiseSettledResult<{ data: AllowedUser[] | null; error: unknown }>,
+      '초대 목록',
+      optionalWarnings,
+    ),
     products: (productsResult.data ?? []) as Product[],
     dutyMajorCategories: (dutyMajorCategoriesResult.data ?? []) as DutyMajorCategory[],
     duties: (dutiesResult.data ?? []) as Duty[],
@@ -106,7 +147,16 @@ export async function fetchAppData(): Promise<AppData> {
     reviewRequests: (reviewRequestsResult.data ?? []) as ReviewRequest[],
     projects: (projectsResult.data ?? []) as Project[],
     projectAssignments: (projectAssignmentsResult.data ?? []) as ProjectAssignment[],
-    profileNotes: (profileNotesResult.data ?? []) as AppData['profileNotes'],
-    activityLogs: (activityLogsResult.data ?? []) as ActivityLog[],
+    profileNotes: settledData(
+      optionalResults[1] as PromiseSettledResult<{ data: AppData['profileNotes'] | null; error: unknown }>,
+      '프로필 메모',
+      optionalWarnings,
+    ),
+    activityLogs: settledData(
+      optionalResults[2] as PromiseSettledResult<{ data: ActivityLog[] | null; error: unknown }>,
+      '활동 로그',
+      optionalWarnings,
+    ),
+    optionalWarnings,
   }
 }

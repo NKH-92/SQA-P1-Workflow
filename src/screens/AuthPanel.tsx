@@ -1,39 +1,27 @@
 import { useState } from 'react'
-import { PASSWORD_MIN_LENGTH, TEMP_PASSWORD_MIN_LENGTH } from '../app/constants'
+import { TEMP_PASSWORD_MIN_LENGTH } from '../app/constants'
 import { toUserMessage } from '../lib/errors'
 import { supabase } from '../lib/supabase'
-import {
-  Send,
-  ShieldCheck,
-} from 'lucide-react'
+import { Send, ShieldCheck } from 'lucide-react'
 
 export function AuthPanel() {
-  const [mode, setMode] = useState<'signIn' | 'signUp'>('signIn')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [notice, setNotice] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
-  const passwordMinLength = mode === 'signIn' ? TEMP_PASSWORD_MIN_LENGTH : PASSWORD_MIN_LENGTH
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!supabase) return
     setPending(true)
     setNotice(null)
-    const result =
-      mode === 'signIn'
-        ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ email, password })
+    const result = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password })
     setPending(false)
     if (result.error) {
       setNotice(toUserMessage(result.error))
       return
     }
-    setNotice(
-      mode === 'signUp'
-        ? '가입 요청이 접수되었습니다. 허용 이메일인 경우 확인 후 사용할 수 있습니다.'
-        : '로그인했습니다.',
-    )
+    setNotice('로그인했습니다.')
   }
 
   return (
@@ -50,8 +38,11 @@ export function AuthPanel() {
       </section>
       <form className="auth-form" onSubmit={submit}>
         <div>
-          <h2>{mode === 'signIn' ? '로그인' : '초대 이메일로 가입'}</h2>
-          <p>파트장이 등록한 이메일만 프로필이 생성됩니다.</p>
+          <h2>로그인</h2>
+          <p>
+            계정은 파트장 초대 후 Supabase에서 생성됩니다. 로그인만 가능합니다. 파트장이 등록한 이메일만 사용할
+            수 있습니다. 최초 비밀번호는 1234이며, 로그인 후 비밀번호 변경이 필요합니다.
+          </p>
         </div>
         <label>
           이메일
@@ -62,7 +53,7 @@ export function AuthPanel() {
           <input
             type="password"
             value={password}
-            minLength={passwordMinLength}
+            minLength={TEMP_PASSWORD_MIN_LENGTH}
             onChange={(event) => setPassword(event.target.value)}
             required
           />
@@ -70,13 +61,9 @@ export function AuthPanel() {
         {notice && <p className="notice">{notice}</p>}
         <button className="primary" disabled={pending} type="submit">
           <Send size={16} />
-          {mode === 'signIn' ? '로그인' : '가입 요청'}
-        </button>
-        <button className="ghost" type="button" onClick={() => setMode(mode === 'signIn' ? 'signUp' : 'signIn')}>
-          {mode === 'signIn' ? '가입 화면으로 전환' : '로그인 화면으로 전환'}
+          로그인
         </button>
       </form>
     </main>
   )
 }
-

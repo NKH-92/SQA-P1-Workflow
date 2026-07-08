@@ -91,7 +91,7 @@ npx wrangler deploy --name <WORKER_NAME> --assets dist --keep-vars
 - `frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`
 - Google Fonts CDN은 사용하지 않습니다 (시스템 폰트 스택)
 
-배포 후 브라우저 DevTools Console에서 CSP violation이 없는지, 로그인·Storage signed URL이 동작하는지 확인하세요. Cloudflare Access는 URL 앞단 접근 제어용이며 CSP와 별개입니다.
+배포 후 브라우저 DevTools Console에서 CSP violation이 없는지, 로그인·Storage signed URL이 동작하는지 확인하세요.
 
 ### 롤백
 
@@ -115,8 +115,7 @@ Pages URL을 Supabase Auth의 Site URL 및 Redirect URLs에 추가한다.
 
 ## 운영 전 보호
 
-- **내부 전용 배포에서는 Cloudflare Access가 필수**이다. Worker(또는 Pages) 도메인 앞단에 Access policy를 적용해 팀 이메일 도메인만 허용한다.
-- Access는 URL 접근 보호이고, 앱 내부 권한은 Supabase RLS가 계속 담당한다.
+- 앱 내부 권한은 Supabase Auth와 RLS가 담당한다. Supabase Dashboard에서 public sign-up을 비활성화하고, 초대 사용자만 Dashboard에서 생성한다.
 - 운영 URL·Supabase project ref는 저장소에 커밋하지 않는다. GitHub Variables/Secrets와 [MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md) 체크리스트 하단에 `<WORKER_URL>`, `<PROJECT_REF>` 플레이스홀더로 기록한다.
 - 백업·복구·장애 대응은 [OPERATIONS.md](./OPERATIONS.md)를 참고한다.
 - Supabase Pro 전환 기준:

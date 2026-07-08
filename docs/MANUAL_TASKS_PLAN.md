@@ -17,10 +17,9 @@
 | **E** | Workers 배포 + 앱 스모크 | 운영자 | 20분 | B, C, D 이후 |
 | **F** | RLS·기능 수동 검증 | 파트장 | 60~90분 | C, D, E 이후 |
 | **G** | 주간 백업 1회 + 복구 리허설 | 운영자 | 45~60분 | C 이후 (E와 병렬 가능) |
-| **H** | Cloudflare Access (필수) | 운영자 | 30분 | E 이후 |
 
 **권장 일정 (1일 집중)**  
-오전: A → B → C → D → E → H / 오후: F → G
+오전: A → B → C → D → E / 오후: F → G
 
 ---
 
@@ -254,25 +253,7 @@ Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy confi
 
 ---
 
-## 9. 작업 H — Cloudflare Access (필수)
-
-내부 전용 배포에서는 Worker URL을 **반드시** Cloudflare Access 뒤에 둔다.
-
-### Dashboard 적용
-
-1. Cloudflare Dashboard → Workers & Pages
-2. `<WORKER_NAME>` Worker 선택
-3. Settings → Domains → **Enable Cloudflare Access**
-4. 허용 이메일 도메인/주소 지정
-5. `<WORKER_URL>` 접속 → **Cloudflare Access 로그인** 화면이 먼저 표시되는지 확인
-
-### 완료 기준
-- [ ] Access policy 적용 완료
-- [ ] 미인증 접근 시 앱 AuthPanel 대신 Access 게이트 표시
-
----
-
-## 10. 진행 체크리스트 (복사용)
+## 9. 진행 체크리스트 (복사용)
 
 ```
 [ ] A. git push / PR merge + CI green
@@ -282,7 +263,6 @@ Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy confi
 [ ] E. Workers 배포 + 스모크
 [ ] F. RLS 검증 (TEST_PLAN.md)
 [ ] G. 백업 1회 + 복구 리허설 기록
-[ ] H. Cloudflare Access (필수)
 ```
 
 **최종 서명**
@@ -299,7 +279,7 @@ Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy confi
 
 ---
 
-## 11. 관련 문서
+## 10. 관련 문서
 
 | 문서 | 용도 |
 |------|------|

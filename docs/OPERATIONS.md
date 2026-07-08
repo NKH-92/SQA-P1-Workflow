@@ -4,10 +4,6 @@ SQA P1 Workflow의 일상 운영·백업·장애 대응 절차입니다.
 
 운영 URL·Supabase project ref는 팀 위키 또는 이 문서 하단에 `<WORKER_URL>`, `<PROJECT_REF>` 형태로만 기록하고, 저장소에는 커밋하지 않습니다.
 
-## Cloudflare Access (필수)
-
-내부 전용 배포에서는 Workers URL을 Cloudflare Access 뒤에 두어야 합니다. Access 없이 공개 URL을 두면 로그인 화면·anon key 노출 위험이 있습니다. 설정 절차는 [MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md) 작업 H를 참고하세요.
-
 ## 장애 확인 순서
 
 | 순서 | 확인 대상 | 방법 | 정상 기준 |

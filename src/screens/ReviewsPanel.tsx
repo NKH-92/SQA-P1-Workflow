@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { Badge } from '../components/ui'
 import type { AppData, Profile, ReviewRequest, ReviewStatus } from '../types'
-import type { ReviewStatusFilter } from '../app/types'
+import type { ReviewStatusFilter, MutateFn } from '../app/types'
 import {
   addReviewFeedback,
   createRepositoryContext,
@@ -35,7 +35,7 @@ export function ReviewsPanel({
 }: {
   profile: Profile
   data: AppData
-  mutate: (operation: () => Promise<void>, success: string) => Promise<void>
+  mutate: MutateFn
   setData: Dispatch<SetStateAction<AppData>>
   initialSelectedId?: string | null
   onInitialSelectionApplied?: () => void
@@ -198,7 +198,7 @@ export function ReviewsPanel({
       if (selectedReviewId === requestId) setSelectedReviewId(null)
     }, '검토요청을 회수했습니다.')
 
-  const rejectReview = (requestId: string) =>
+  const rejectReview = async (requestId: string): Promise<boolean> =>
     mutate(async () => {
       const comment = feedback[requestId]?.trim()
       if (!comment) throw new UserFacingError('반려 사유를 피드백에 입력해 주세요.')
@@ -206,7 +206,7 @@ export function ReviewsPanel({
       setFeedback((current) => ({ ...current, [requestId]: '' }))
     }, '검토요청을 반려했습니다.')
 
-  const updateStatus = (id: string, status: ReviewStatus) =>
+  const updateStatus = async (id: string, status: ReviewStatus): Promise<boolean> =>
     mutate(async () => {
       await updateReviewStatus(createRepositoryContext(profile, data, setData), id, status)
     }, '검토요청 상태를 변경했습니다.')

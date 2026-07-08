@@ -10,6 +10,7 @@ import {
   saveProjectAssignments,
   updateProject as updateProjectMutation,
 } from '../data'
+import type { MutateFn } from '../app/types'
 import { formatDate, projectStatusLabels } from '../lib/format'
 import { canAssignProjectTo } from '../domain/permissions'
 import { ProjectBoard } from '../features/projects/components/ProjectBoard'
@@ -42,7 +43,7 @@ export function ProjectsPanel({
 }: {
   profile: Profile
   data: AppData
-  mutate: (operation: () => Promise<void>, success: string) => Promise<void>
+  mutate: MutateFn
   setData: Dispatch<SetStateAction<AppData>>
 }) {
   const [projectForm, setProjectForm] = useState({ name: '', description: '', deadline: '', status: 'planned' as ProjectStatus })
@@ -63,11 +64,6 @@ export function ProjectsPanel({
   const projectGroups = selectProjectGroups(data, profile, leaderMode, projectFilter, filteredProjectAssignments)
   const memberGroups = selectMemberProjectGroups(memberOptions, profile, leaderMode, filteredProjectAssignments)
   const projectStatusGroups = selectProjectStatusGroups(projectGroups)
-
-  useEffect(() => {
-    if (!leaderMode || !isProjectComposerOpen || selectedProjectMemberIds.length > 0) return
-    setSelectedProjectMemberIds(memberOptions.slice(0, 2).map((member) => member.id))
-  }, [isProjectComposerOpen, leaderMode, memberOptions, selectedProjectMemberIds.length])
 
   useEffect(() => {
     if (!isProjectComposerOpen || typeof document === 'undefined') return
@@ -325,7 +321,7 @@ export function ProjectsPanel({
                           <X size={13} />
                         </button>
                       ))}
-                    {selectedProjectMemberIds.length === 0 && <span>이름으로 검색해 배정하세요</span>}
+                    {selectedProjectMemberIds.length === 0 && <span>배정 인원을 선택하세요</span>}
                   </div>
                   <div className="assignee-picker">
                     {memberOptions.map((member) => {

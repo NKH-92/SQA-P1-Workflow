@@ -62,10 +62,10 @@ export function ReviewRequestItem({
   onWithdraw: (requestId: string | null) => void
   pendingWithdraw: boolean
   profile: Profile
-  rejectReview: (requestId: string) => void
+  rejectReview: (requestId: string) => Promise<boolean>
   request: ReviewRequest
   setFeedback: React.Dispatch<React.SetStateAction<Record<string, string>>>
-  updateStatus: (id: string, status: ReviewStatus) => void
+  updateStatus: (id: string, status: ReviewStatus) => Promise<boolean>
   withdrawReview: (requestId: string) => void
 }) {
   const [attachmentHref, setAttachmentHref] = useState<string | null>(null)
@@ -93,7 +93,7 @@ export function ReviewRequestItem({
     }
   }, [request.attachment_url])
 
-  const handleStatusTransition = (status: ReviewStatus) => {
+  const handleStatusTransition = async (status: ReviewStatus) => {
     if (status === request.status) return
     if (status === 'rejected') {
       if (!(feedback[request.id]?.trim())) {
@@ -101,12 +101,14 @@ export function ReviewRequestItem({
         return
       }
       setRejectNotice(false)
-      void rejectReview(request.id)
+      const ok = await rejectReview(request.id)
+      if (!ok) return
       setTransitionNotice({ text: '반려 상태로 전환했습니다.', tone: status })
       window.setTimeout(() => setTransitionNotice(null), 2600)
       return
     }
-    void updateStatus(request.id, status)
+    const ok = await updateStatus(request.id, status)
+    if (!ok) return
     setTransitionNotice({ text: `${reviewStatusLabels[status]} 상태로 전환했습니다.`, tone: status })
     if (status === 'approved') {
       setCelebrate(true)

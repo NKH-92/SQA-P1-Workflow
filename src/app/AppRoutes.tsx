@@ -2,7 +2,7 @@ import { previewLeader as demoLeader, previewMember as demoMember } from '../dem
 import { canManageTeamData } from '../domain/permissions'
 import { isPreviewMode } from '../lib/supabase'
 import type { AppData, Profile } from '../types'
-import type { TabId, ToastMessage } from './types'
+import type { MutateFn, TabId, ToastMessage } from './types'
 import {
   ActivityPanel,
   Dashboard,
@@ -19,7 +19,7 @@ type AppRoutesProps = {
   setNavEntityId: (id: string | null) => void
   profile: Profile
   data: AppData
-  mutate: (operation: () => Promise<void>, success: string) => Promise<void>
+  mutate: MutateFn
   setData: React.Dispatch<React.SetStateAction<AppData>>
   setActiveTab: (tab: TabId, entityId?: string) => void
   setProfile: React.Dispatch<React.SetStateAction<Profile | null>>

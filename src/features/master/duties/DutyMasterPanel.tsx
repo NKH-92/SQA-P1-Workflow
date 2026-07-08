@@ -71,15 +71,17 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
     ])
   }
 
-  const addMajorCategory = () =>
-    mutate(async () => {
+  const addMajorCategory = async () => {
+    const ok = await mutate(async () => {
       const name = validateMajorCategoryCreate(data, majorCategoryForm.name)
       await addDutyMajorCategoryMutation(createRepositoryContext(profile, data, setData), { name })
       setMajorCategoryForm({ name: '' })
-    }, '대분류를 등록했습니다.').then(() => setMajorCategoryRegisterOpen(false))
+    }, '대분류를 등록했습니다.')
+    if (ok) setMajorCategoryRegisterOpen(false)
+  }
 
-  const addDuty = () =>
-    mutate(async () => {
+  const addDuty = async () => {
+    const ok = await mutate(async () => {
       const payload = validateDutyCreate(data, {
         majorCategoryId: dutyForm.major_category_id,
         name: dutyForm.name,
@@ -89,17 +91,21 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
         name: payload.name,
       })
       setDutyForm({ major_category_id: dutyForm.major_category_id, name: '' })
-    }, '업무 카테고리를 등록했습니다.').then(() => setDutyRegisterOpen(false))
+    }, '업무 카테고리를 등록했습니다.')
+    if (ok) setDutyRegisterOpen(false)
+  }
 
-  const assignDuty = () =>
-    mutate(async () => {
+  const assignDuty = async () => {
+    const ok = await mutate(async () => {
       if (!dutyAssignment.user_id) return
       await assignDutyMutation(createRepositoryContext(profile, data, setData), {
         userId: dutyAssignment.user_id,
         dutyId: dutyAssignment.duty_id,
       })
       setDutyAssignment({ user_id: dutyAssignment.user_id, duty_id: '' })
-    }, '담당 업무를 배정했습니다.').then(() => setDutyAssignOpen(false))
+    }, '담당 업무를 배정했습니다.')
+    if (ok) setDutyAssignOpen(false)
+  }
 
   const saveDutyEdit = (dutyId: string) =>
     mutate(async () => {

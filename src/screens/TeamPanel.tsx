@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { Badge, Rows } from '../components/ui'
 import type { AppData, Profile } from '../types'
-import type { TabId } from '../app/types'
+import type { MutateFn, TabId } from '../app/types'
 import { downloadCsv } from '../lib/csv'
 import { buildProductAllocationCsvRows } from '../lib/productAllocationCsv'
 import { addProfileNote as addProfileNoteMutation, createRepositoryContext } from '../data'
@@ -60,7 +60,7 @@ export function TeamPanel({
 }: {
   profile: Profile
   data: AppData
-  mutate: (operation: () => Promise<void>, success: string) => Promise<void>
+  mutate: MutateFn
   setData: Dispatch<SetStateAction<AppData>>
   setActiveTab: (tab: TabId, entityId?: string) => void
 }) {

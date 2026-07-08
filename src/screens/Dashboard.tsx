@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react'
 import { Badge, Section } from '../components/ui'
 import type { AppData, Profile } from '../types'
-import type { TabId } from '../app/types'
+import type { MutateFn, TabId } from '../app/types'
 import { formatDate, reviewStatusLabels } from '../lib/format'
 import { daysUntil, dueDateLabel } from '../lib/dates'
 import {
@@ -18,7 +18,7 @@ export function Dashboard({
 }: {
   profile: Profile
   data: AppData
-  mutate: (operation: () => Promise<void>, success: string) => Promise<void>
+  mutate: MutateFn
   setData: Dispatch<SetStateAction<AppData>>
   setActiveTab: (tab: TabId, entityId?: string) => void
 }) {

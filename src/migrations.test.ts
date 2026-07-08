@@ -214,4 +214,34 @@ describe('Supabase migrations', () => {
     expect(migration).toContain('grant execute on function public.can_use_app() to authenticated')
     expect(migration).toContain('revoke all on function public.handle_new_user() from public')
   })
+
+  it('revokes PUBLIC execute on mutation RPCs', () => {
+    const migration = readMigration('202607070003_revoke_public_execute_on_mutation_rpcs.sql')
+
+    expect(migration).toContain('revoke all on function public.mark_password_changed() from public')
+    expect(migration).toContain('grant execute on function public.mark_password_changed() to authenticated')
+    expect(migration).toContain('revoke all on function public.create_project_with_assignments')
+    expect(migration).toContain('revoke all on function public.reject_review_request')
+    expect(migration).toContain('revoke all on function public.replace_product_assignments')
+    expect(migration).toContain('revoke all on function public.update_review_request_status')
+  })
+
+  it('keeps activity log entity types aligned with app events', () => {
+    const migration = readMigration('202607070004_extend_activity_log_entity_types.sql')
+
+    expect(migration).toContain("'product'")
+    expect(migration).toContain("'duty'")
+    expect(migration).toContain("'duty_major_category'")
+    expect(migration).not.toContain('delete from public.activity_logs')
+  })
+
+  it('protects the last active leader from demotion or deactivation', () => {
+    const migration = readMigration('202607070005_protect_last_active_leader.sql')
+
+    expect(migration).toContain('cannot disable or demote the last active leader')
+    expect(migration).toContain('cannot deactivate your own account')
+    expect(migration).toContain('before update')
+    expect(migration).toContain('profiles')
+    expect(migration).toContain('allowed_users')
+  })
 })

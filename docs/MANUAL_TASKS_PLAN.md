@@ -1,8 +1,8 @@
 # 직접 수행 작업 계획서 (Manual Tasks Plan)
 
 > **대상**: 파트장 또는 지정 운영자  
-> **목적**: 코드·CI 작업(Phase 1~4) 완료 후, **운영 환경에 반영하고 검증**하기 위해 사람이 직접 해야 하는 작업을 순서대로 정리한다.  
-> **전제**: 브랜치 `main`, HEAD `20db373` — `npm test` 120 passed, `npm run build` 성공 상태.
+> **목적**: 코드·CI 작업 완료 후, **운영 환경에 반영하고 검증**하기 위해 사람이 직접 해야 하는 작업을 순서대로 정리한다.  
+> **전제**: 브랜치 `main`, 최신 HEAD 기준 — 로컬에서 `npm test`, `npm run build`, `npm run lint`, `npm run typecheck` 통과 상태를 확인한다.
 
 ---
 
@@ -33,37 +33,29 @@
 
 1. 로컬 상태 확인
    ```bash
-   git status          # clean 확인
+   git status
    git log -2 --oneline
+   npm test
+   npm run build
+   npm run lint
+   npm run typecheck
    ```
 
 2. 원격 push (`main`이 protected이면 PR 또는 관리자 승인 필요)
    ```bash
    git push origin main
    ```
-   Protected branch인 경우:
-   ```bash
-   git checkout -b release/phase-1-4
-   git push -u origin release/phase-1-4
-   gh pr create --title "Phase 1-4 improvement release" --body "See docs/MANUAL_TASKS_PLAN.md"
-   ```
 
 3. CI 결과 확인
    ```bash
    gh run list --limit 5
-   gh run watch   # 최신 run ID 지정
+   gh run watch
    ```
    **통과 기준**: `typecheck`, `lint`, `test`, `build` 모두 green.
 
 ### 완료 기준
-- [x] 원격 `main`(또는 merge된 PR)에 최신 커밋 반영 — `20db373` (2026-07-07)
-- [x] CI + Deploy Worker green (`20db373` push, Actions run #28800841819 / #28800841709)
-
-### 실패 시
-| 증상 | 조치 |
-|------|------|
-| lint/test 실패 | Actions 로그 확인 → 로컬에서 `npm run lint`, `npm test` 재현 후 수정 |
-| push 거부 | branch protection 규칙 확인 → PR 경로 사용 |
+- [ ] 원격 `main`(또는 merge된 PR)에 최신 커밋 반영
+- [ ] CI + Deploy Worker green (Actions run ID: `<ACTIONS_RUN_ID>`)
 
 ---
 
@@ -92,7 +84,7 @@ GitHub 저장소 → **Settings → Secrets and variables → Actions**
 
 ### 확인
 - [ ] Variables 3개, Secrets 2개 등록 완료
-- [ ] `git grep`으로 저장소에 URL/키/계정 ID가 **없음** (이미 D-1 완료 상태 유지)
+- [ ] `git grep`으로 저장소에 URL/키/계정 ID가 **없음**
 
 ### 완료 기준
 - [ ] `workflow_dispatch` 또는 main push 후 deploy 워크플로가 **skip 없이** 실행됨 (Secrets 미설정 시 **test만** 통과, build/deploy는 스킵)
@@ -102,26 +94,26 @@ GitHub 저장소 → **Settings → Secrets and variables → Actions**
 ## 4. 작업 C — Supabase 마이그레이션 적용
 
 ### 목표
-Phase 2~4에서 추가된 DB·Storage·RLS 변경을 **운영(또는 스테이징) Supabase**에 반영한다.
+`supabase/migrations/`의 DB·Storage·RLS 변경을 **운영(또는 스테이징) Supabase**에 반영한다.
 
-### 미적용 시 영향
+### 최신 적용 범위 (확인 필요)
 
-| 미적용 마이그레이션 | 증상 |
-|---------------------|------|
-| `202607050001_...` | 파트원 검토요청 수정·회수 → RLS 오류 |
-| `202607050002_...` | 파일 첨부 업로드/다운로드 실패 |
-| `202607050003_...` | `is_active` 비활성화 UI·RLS 미동작 |
-| `202607050004_...` | 비활성 계정이 기존 데이터·Storage에 접근 가능 |
-| `202607050005_...` | RPC 트랜잭션·첨부 경로 검증 미적용 → 부분 실패·경로 우회 위험 |
+다음 migration이 모두 적용되었는지 확인한다:
+
+- `202607070001` ~ `202607070005` (audit RLS, PUBLIC revoke, activity log entity types, last active leader 보호)
+- 그 이전 migration 전체 ([SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) 목록 참고)
+
+| 미적용 migration | 증상 |
+|------------------|------|
+| `202607070004` | 제품/업무/대분류 삭제 시 activity log insert 실패 |
+| `202607070005` | 마지막 active leader 비활성화·강등 가능 (운영 복구 불가 위험) |
+| `202607070003` | mutation RPC가 PUBLIC/anon에 노출될 수 있음 |
 
 ### 방법 1 — Supabase CLI (권장)
 
 ```bash
-# 최초 1회
 npx supabase login
-npx supabase link --project-ref <PROJECT_REF>   # Dashboard URL의 ref
-
-# 전체 마이그레이션 push (아직 안 올라간 것만 적용)
+npx supabase link --project-ref <PROJECT_REF>
 npx supabase db push
 ```
 
@@ -129,47 +121,29 @@ npx supabase db push
 
 ### 방법 2 — SQL Editor (수동)
 
-Dashboard → **SQL Editor**에서 아래 파일 내용을 **번호 순서대로** 각각 실행:
+Dashboard → **SQL Editor**에서 [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) 목록 순서대로 실행.
 
-1. `supabase/migrations/202607050001_member_review_update_delete.sql`
-2. `supabase/migrations/202607050002_review_attachments_storage.sql`
-3. `supabase/migrations/202607050003_profile_is_active.sql`
-4. `supabase/migrations/202607050004_harden_active_access_rls.sql`
-5. `supabase/migrations/202607050005_atomic_mutations_and_attachment_guard.sql`
-
-> 이미 적용된 초기 마이그레이션(`20260702*`, `20260704*`)은 **다시 실행하지 않는다.**
+> 이미 적용된 migration은 **다시 실행하지 않는다.**
 
 ### 적용 후 확인 SQL
 
 ```sql
--- is_active 컬럼
-select column_name, data_type, column_default
-from information_schema.columns
-where table_schema = 'public' and table_name = 'profiles' and column_name = 'is_active';
+select version from supabase_migrations.schema_migrations
+where version in ('202607070004', '202607070005');
 
--- Storage 버킷
-select id, file_size_limit from storage.buckets where id = 'review-attachments';
+select pg_get_constraintdef(oid)
+from pg_constraint
+where conrelid = 'public.activity_logs'::regclass
+  and conname = 'activity_logs_entity_type_check';
 
--- member pending 수정 정책 존재 여부 (pg_policies)
-select policyname from pg_policies
-where tablename = 'review_requests' and policyname like '%self_pending%';
-
--- RPC 트랜잭션 함수 (005)
-select proname from pg_proc
-where pronamespace = 'public'::regnamespace
-  and proname in ('reject_review_request', 'add_review_feedback', 'create_project_with_assignments');
+select tgname from pg_trigger
+where tgrelid in ('public.profiles'::regclass, 'public.allowed_users'::regclass)
+  and tgname like '%last_active_leader%';
 ```
 
 ### 완료 기준
-- [x] 위 4개 확인 쿼리 결과 정상 (MCP `list_migrations` — `202607060006`까지 적용, 2026-07-07)
-- [x] 로컬 `npm test -- src/migrations.test.ts` 통과
-
-### 실패 시
-| 증상 | 조치 |
-|------|------|
-| policy already exists | 해당 `create policy`만 `drop policy if exists` 후 재실행 |
-| storage bucket conflict | 마이그레이션의 `on conflict do update` 구문 확인 |
-| link 실패 | Supabase 프로젝트 권한·ref 재확인 |
+- [ ] 위 확인 쿼리 결과 정상
+- [ ] 로컬 `npm test -- src/migrations.test.ts` 통과
 
 상세: [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md)
 
@@ -191,39 +165,25 @@ on conflict (email) do update
 set name = excluded.name, role = excluded.role;
 ```
 
-### 5.2 계정 생성
-
-| 계정 | 방법 |
-|------|------|
-| 파트장 | 앱 가입 또는 Dashboard → Authentication → Add user |
-| member A, B | `allowed_users` 등록 후 각자 가입 |
-
-### 5.3 Auth 설정 확인
+### 5.2 Auth 설정 확인
 
 Supabase → **Authentication → URL Configuration**
 
-| 항목 | 값 (권장) | 현재 Dashboard (2026-07-07 확인) |
-|------|-----------|----------------------------------|
-| Site URL | `https://sqap1workflow.skarhkdgus7.workers.dev` | `https://part-ops.skarhkdgus7.workers.dev` |
-| Redirect URLs | 위 URL + `http://localhost:5173` | `http://localhost:5173` 만 등록됨 |
+| 항목 | 권장 값 |
+|------|---------|
+| Site URL | `<WORKER_URL>` |
+| Redirect URLs | `<WORKER_URL>` + `http://localhost:5173` |
 
 Supabase → **Authentication → Providers → Email**
 
-| 항목 | 권장 값 | 확인 |
-|------|---------|------|
-| Enable email signup (Allow new users to sign up) | **OFF** | 앱 외 API 경로 가입 차단 |
-| Confirm email | OFF (내부 앱, Dashboard Add user만) | 선택 |
+| 항목 | 권장 값 |
+|------|---------|
+| Enable email signup (Allow new users to sign up) | **OFF** |
+| Confirm email | OFF (내부 앱, Dashboard Add user만) |
 
-> **검증 (2026-07-07 MCP)**: 1차 probe에서 `/auth/v1/signup` **가입 성공** → public sign-up **ON** 확인. probe 계정 삭제 완료.  
-> **재검증 (2026-07-07 MCP)**: `over_email_send_rate_limit` (429) — 이메일 발송 한도로 재probe 불가. `signup_disabled` 응답이 아니므로 **아직 OFF로 바뀌지 않았을 가능성이 큼**. Dashboard → Authentication → Providers → Email → **Enable email signup OFF** 후 1시간 뒤 재probe 또는 Dashboard에서 직접 확인.
+> public sign-up이 ON이면 앱 외 경로로 가입이 가능하다. Dashboard에서 OFF 후 probe 또는 Dashboard에서 직접 확인한다.
 
-> **검증 (2026-07-07)**: 운영 Worker에서 Supabase password 로그인 API 응답 확인 (잘못된 비밀번호 → "이메일 또는 비밀번호가 올바르지 않습니다."). 빌드 env·CSP(`connect-src` → `*.supabase.co`) 정상.
->
-> **주의**: `part-ops`와 `sqap1workflow`는 **서로 다른 번들**(ETag 불일치)입니다. GitHub Actions `Deploy Worker`는 `WORKER_NAME` 변수 기준으로 배포하며, 최신 `20db373` 번들은 **`sqap1workflow`** 쪽입니다. Site URL이 `part-ops`로 남아 있으면 이메일 인증·리다이렉트가 구버전 Worker로 갈 수 있습니다.
->
-> **권장 조치 (Dashboard 1회)**: Authentication → URL Configuration에서 Site URL을 `https://sqap1workflow.skarhkdgus7.workers.dev`로 변경하고, Redirect URLs에 `https://sqap1workflow.skarhkdgus7.workers.dev`와 `http://localhost:5173`를 모두 등록하세요. `part-ops`를 계속 쓸 계획이면 GitHub `WORKER_NAME`도 `part-ops`로 통일한 뒤 재배포하세요.
-
-### 5.4 첫 로그인
+### 5.3 첫 로그인
 
 1. 임시 비밀번호 `1234`로 로그인 (최소 4자)
 2. `must_change_password` 화면에서 **8자 이상**으로 변경 (`1234` 재사용 불가)
@@ -233,49 +193,34 @@ Supabase → **Authentication → Providers → Email**
 - [ ] `profiles`에 leader 1명, member 2명 존재
 - [ ] 파트장 `canManageTeamData` 화면(마스터 탭) 접근 가능
 - [ ] 파트원은 leader 전용 탭 접근 불가
-- [ ] public sign-up 비활성화 확인 (앱 외 경로 가입 차단)
+- [ ] public sign-up 비활성화 확인
 
 ---
 
 ## 6. 작업 E — Workers 배포 및 앱 스모크
 
 ### 목표
-운영 URL에서 빌드된 앱이 Supabase와 연결되어 동작하는지 확인한다.
+`<WORKER_URL>`에서 빌드된 앱이 Supabase와 연결되어 동작하는지 확인한다.
 
 ### 자동 배포
-작업 B 완료 후 `main` push 또는 Actions → **deploy-worker** → `workflow_dispatch`
+작업 B 완료 후 `main` push 또는 Actions → **Deploy Worker** → `workflow_dispatch`
 
-### 수동 배포 (대안)
-
-```powershell
-cd "E:\99.Codex Project\P1 Work"
-npm ci
-npm test
-$env:VITE_SUPABASE_URL="https://xxxx.supabase.co"
-$env:VITE_SUPABASE_ANON_KEY="eyJ..."
-npm run build
-npx wrangler deploy --name <WORKER_NAME> --assets dist
-```
+Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy config check → `build` → deploy 순서로 실행된다.
 
 ### 스모크 체크리스트 (15분)
-
-데모 모드가 **아닌** Supabase 연결 URL에서:
 
 | # | 확인 | 기대 |
 |---|------|------|
 | 1 | 로그인 | 파트장 홈 표시 |
 | 2 | 검토요청 생성 | `pending` 상태, 목록 반영 |
 | 3 | 해시 URL | `#/reviews?id=<uuid>` 새로고침 후 동일 항목 선택 |
-| 4 | 마스터 > 제품 CSV 가져오기 | 중복 없이 등록 |
-| 5 | 활동 로그 탭 | leader만 전체 목록 |
-| 6 | (선택) 파일 첨부 | 10MB 이하 PDF 업로드 → `첨부 열기` |
+| 4 | 프로젝트 생성 | 기본 배정 0명, 명시적 선택 후만 배정 |
+| 5 | mutation 실패 | DB/validation 오류 시 모달이 닫히지 않음 |
+| 6 | 활동 로그 탭 | leader만 전체 목록 |
 
 ### 완료 기준
-- [x] 운영 URL 접속·로그인 화면·해시 라우팅·콘솔 치명 오류 없음 (2026-07-07, `https://sqap1workflow.skarhkdgus7.workers.dev`)
-- [x] 미로그인 시 `#/products` 등 deep link에서 leader 화면 우회 없음 (AuthPanel 유지)
-- [x] Supabase 연결 스모크: 로그인 API 오류 메시지 정상 표시
-- [ ] 파트장 로그인·CRUD 1회 이상 성공 (파트장 본인 비밀번호 입력 필요)
-- [x] 번들에 RPC mutations 반영 (`create_project_with_assignments`, `reject_review_request`, `add_review_feedback` 등)
+- [ ] `<WORKER_URL>` 접속·로그인·해시 라우팅·콘솔 치명 오류 없음
+- [ ] 파트장 로그인·CRUD 1회 이상 성공
 
 ---
 
@@ -284,63 +229,14 @@ npx wrangler deploy --name <WORKER_NAME> --assets dist
 ### 목표
 `docs/TEST_PLAN.md` RLS 섹션을 **3계정**으로 재현해 데이터 격리를 확인한다.
 
-### 준비
-- 브라우저 프로필 3개(또는 시크릿 창) — leader / member A / member B
-- Supabase Dashboard → Logs (API) 켜두고 거부(403) 로그 확인
+### 검증 매트릭스 (요약)
 
-### 검증 매트릭스
-
-#### F-1. Member 간 격리 (member A 세션)
-
-| 시도 | 기대 |
-|------|------|
-| member B 이름으로 검색·목록 조회 | B의 배정/검토요청 **미노출** |
-| SQL/API로 B의 `review_requests` id 직접 접근 | 불가 (앱에서는 목록에 없음으로 확인) |
-
-#### F-2. Member → Master 쓰기 금지
-
-member A로 앱에서 불가능한지 확인 (UI에 버튼 없음 = 1차 방어).  
-Dashboard SQL Editor에서 member JWT로 테스트하거나, 앱 네트워크 탭에서 403 확인.
-
-#### F-3. 검토요청 lifecycle
-
-| 역할 | 동작 | 기대 |
-|------|------|------|
-| member A | 본인 `pending` 요청 수정·회수 | 성공 |
-| member A | `approved`/`rejected` 요청 수정 | UI 버튼 없음 / RLS 거부 |
-| member A | member B `pending` 수정 | 거부 |
-| leader | 반려 시 사유 없이 반려 | UI 차단 |
-| leader | 반려 + 피드백 | member A 화면에 표시 |
-
-#### F-4. 프로젝트
-
-| 동작 | 기대 |
-|------|------|
-| leader 배정 편집·프로젝트 삭제 | 성공, member 화면 반영 |
-| member 프로젝트 수정 시도 | 불가 |
-| leader를 project_assignments에 배정 | DB trigger 거부 |
-
-#### F-5. Storage (`review-attachments`)
-
-| 동작 | 기대 |
-|------|------|
-| member A 본인 경로 업로드 | 성공 |
-| member A가 member B 파일 URL 접근 | 거부 |
-| leader 모든 첨부 조회 | 성공 |
-
-#### F-6. `is_active` 비활성화
-
-1. leader → 마스터 → 초대 관리 → member A **비활성화**
-2. member A 로그인 → **「계정이 비활성화되었습니다」** 화면
-3. leader → **활성화** → member A 정상 진입
-
-### 기록
-
-검증 완료 후 아래 표를 채운다 (`docs/OPERATIONS.md` 또는 팀 위키).
-
-| 날짜 | 검증자 | 환경(URL) | F-1~F-6 | 비고 |
-|------|--------|-----------|:-------:|------|
-| | | | ☐ / ☐ / ☐ / ☐ / ☐ / ☐ | |
+- member A는 member B 데이터 미노출
+- leader는 전체 조회·수정 가능
+- member가 다른 requester_id로 review 생성 시 RLS 거부
+- leader가 제품/업무/대분류 삭제 시 activity log 기록 확인
+- 마지막 active leader 비활성화/강등 시 DB에서 거부
+- member가 `public_leader_profiles`로 파트장 이름 조회 가능 (email 미노출)
 
 ### 완료 기준
 - [ ] TEST_PLAN RLS 항목 **전체** 통과
@@ -350,55 +246,7 @@ Dashboard SQL Editor에서 member JWT로 테스트하거나, 앱 네트워크 �
 
 ## 8. 작업 G — 백업 및 복구 리허설
 
-### 목표
-주 1회 백업 절차를 **1회 실행**하고, 분기 리허설을 **1회** 수행해 복구 가능함을 기록한다.
-
-### G-1. 백업 (주간)
-
-**담당**: 파트장 또는 지정 운영자  
-**주기**: 매주 1회 (권장: 일요일)
-
-#### PowerShell
-
-```powershell
-cd "E:\99.Codex Project\P1 Work"
-.\scripts\backup-db.ps1 -DatabaseUrl "postgresql://postgres.[ref]:[PASSWORD]@aws-0-ap-northeast-2.pooler.supabase.com:6543/postgres"
-```
-
-또는 Supabase CLI:
-
-```bash
-supabase db dump --db-url "<DATABASE_URL>" -f backup/sqa-p1-workflow-YYYY-MM-DD.sql
-```
-
-#### 보관 규칙
-- 경로: `backup/` (로컬) 또는 사내 NAS — **`.gitignore`로 `backup/*.sql` 제외됨**
-- 공개 저장소·이메일·Slack 파일 업로드 **금지** (개인정보 포함)
-
-#### 확인
-- [ ] 파일 크기 > 0
-- [ ] 파일 상단에 `PostgreSQL` / `pg_dump` 헤더 존재
-
-### G-2. 복구 리허설 (분기 1회)
-
-1. **스테이징** Supabase 프로젝트(또는 로컬 Postgres) 준비
-2. 최신 `backup/sqa-p1-workflow-YYYY-MM-DD.sql` 복원
-   ```bash
-   psql "<STAGING_DATABASE_URL>" -f backup/sqa-p1-workflow-YYYY-MM-DD.sql
-   ```
-3. 행 수 대조 (운영 vs 스테이징):
-   ```sql
-   select 'profiles' as t, count(*) from profiles
-   union all select 'review_requests', count(*) from review_requests
-   union all select 'products', count(*) from products;
-   ```
-4. 스테이징 URL 또는 로컬에서 로그인 스모크 1회
-
-### 기록 (`docs/OPERATIONS.md`)
-
-| 날짜 | 담당 | 백업 파일 | 크기 | 복구 리허설 |
-|------|------|-----------|------|:-----------:|
-| YYYY-MM-DD | | backup/sqa-p1-workflow-....sql | MB | ☐ 성공 / ☐ 실패 |
+주 1회 백업 + 분기 1회 복구 리허설. 상세: [OPERATIONS.md](./OPERATIONS.md)
 
 ### 완료 기준
 - [ ] 백업 파일 1개 이상 보관
@@ -408,46 +256,46 @@ supabase db dump --db-url "<DATABASE_URL>" -f backup/sqa-p1-workflow-YYYY-MM-DD.
 
 ## 9. 작업 H — Cloudflare Access (필수)
 
-> **상태 (2026-07-07): 미적용** — Worker URL 접속 시 Cloudflare Access 게이트 없이 앱 AuthPanel이 바로 노출됨 (HTTP 헤더에 Access 리다이렉트 없음). 내부 전용 운영 시 아래 절차를 Dashboard에서 1회 수행해야 함.
+내부 전용 배포에서는 Worker URL을 **반드시** Cloudflare Access 뒤에 둔다.
 
-내부 전용 배포에서는 Worker URL을 **반드시** Cloudflare Access 뒤에 둔다. Access 없이 공개 URL을 두면 anon key만으로 로그인 화면에 접근할 수 있다.
+### Dashboard 적용
 
-### Dashboard 적용 (1-click, 권장)
+1. Cloudflare Dashboard → Workers & Pages
+2. `<WORKER_NAME>` Worker 선택
+3. Settings → Domains → **Enable Cloudflare Access**
+4. 허용 이메일 도메인/주소 지정
+5. `<WORKER_URL>` 접속 → **Cloudflare Access 로그인** 화면이 먼저 표시되는지 확인
 
-1. [Cloudflare Dashboard → Workers & Pages](https://dash.cloudflare.com/?to=/:account/workers-and-pages) 이동
-2. **Overview**에서 Worker **`sqap1workflow`** 선택
-3. **Settings** → **Domains & Routes** (또는 **Domains** 탭)
-4. `workers.dev` 행에서 **Enable Cloudflare Access** 클릭
-5. (선택) **Manage Cloudflare Access** → 정책에서 허용 이메일 도메인/주소 지정 (예: `@yourcompany.com`)
-6. 적용 후 `https://sqap1workflow.skarhkdgus7.workers.dev` 접속 → **Cloudflare Access 로그인** 화면이 먼저 나와야 함 (앱 로그인 화면과 구분)
-
-### Cloudflare Access
-- Worker URL 앞단에 Access policy 적용 → 팀 이메일 도메인만 허용
-- Access는 **URL 게이트**; 앱 내부 권한은 Supabase RLS가 담당
-
-### Supabase 무료 티어 점검
-- Dashboard → Settings → Database → 용량
-- Storage → `review-attachments` 사용량 (무료 1GB 한도)
-- Pro 전환 검토 시점: [DEPLOYMENT.md](./DEPLOYMENT.md) 「Supabase Pro 전환 기준」
+### 완료 기준
+- [ ] Access policy 적용 완료
+- [ ] 미인증 접근 시 앱 AuthPanel 대신 Access 게이트 표시
 
 ---
 
-## 10. 일상 운영 (배포 후)
+## 10. 진행 체크리스트 (복사용)
 
-| 주기 | 작업 | 문서 |
-|------|------|------|
-| 매주 | DB 백업 | [OPERATIONS.md](./OPERATIONS.md) |
-| 분기 | 복구 리허설 | 위 G-2 |
-| 수시 | 퇴사·이동 | 초대 삭제 **또는** `is_active` 비활성화 + (필요 시) Auth Users 삭제 |
-| 수시 | 장애 | OPERATIONS 「장애 확인 순서」 |
+```
+[ ] A. git push / PR merge + CI green
+[ ] B. GitHub Variables/Secrets 5개
+[ ] C. Supabase migration 202607070001~202607070005 적용 + 확인
+[ ] D. leader 계정 + Auth Site URL/Redirect + public sign-up OFF
+[ ] E. Workers 배포 + 스모크
+[ ] F. RLS 검증 (TEST_PLAN.md)
+[ ] G. 백업 1회 + 복구 리허설 기록
+[ ] H. Cloudflare Access (필수)
+```
 
-### 사용자 제거 의사결정
+**최종 서명**
 
-| 상황 | 권장 |
-|------|------|
-| 일시 접근 차단 | 마스터 → **비활성화** |
-| 완전 삭제 | Auth Users 삭제 → profiles cascade |
-| 초대만 취소 (미가입) | `allowed_users` 삭제 |
+| 항목 | 값 |
+|------|-----|
+| 완료일 | |
+| 담당 | |
+| 운영 URL | `<WORKER_URL>` |
+| Supabase project ref | `<PROJECT_REF>` |
+| GitHub HEAD | (최신 main 커밋 SHA) |
+| Actions run ID | `<ACTIONS_RUN_ID>` |
+| 비고 | |
 
 ---
 
@@ -459,31 +307,3 @@ supabase db dump --db-url "<DATABASE_URL>" -f backup/sqa-p1-workflow-YYYY-MM-DD.
 | [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) | 마이그레이션 적용·확인 SQL |
 | [OPERATIONS.md](./OPERATIONS.md) | 백업·장애·사용자 제거 런북 |
 | [TEST_PLAN.md](./TEST_PLAN.md) | 기능·RLS 검증 시나리오 전체 |
-| [IMPROVEMENT_PLAN.md](./IMPROVEMENT_PLAN.md) | 개선 계획 배경·Phase 정의 |
-
----
-
-## 12. 진행 체크리스트 (복사용)
-
-```
-[x] A. git push / PR merge + CI green (2026-07-07, HEAD 20db373)
-[~] B. GitHub Variables/Secrets 5개 (Deploy Worker success → 배포용 env 등록됨)
-[x] C. Supabase migration 적용 + 확인 (202607060006까지, 2026-07-07)
-[~] D. leader 계정 존재 + Auth API 스모크 OK; **Site URL이 part-ops로 설정됨 → sqap1workflow로 정렬 권장**
-[~] E. Workers 배포 + 스모크 (배포·AuthPanel·Supabase 연결 확인; 로그인 CRUD는 파트장 비밀번호 필요)
-[ ] F. RLS 검증 F-1 ~ F-6
-[ ] G. 백업 1회 + 복구 리허설 기록
-[ ] H. Cloudflare Access (필수) — 미적용, Dashboard 수동 설정 필요
-```
-
-**최종 서명**
-
-| 항목 | 값 |
-|------|-----|
-| 완료일 | 2026-07-07 (호스팅 동기화·검증) |
-| 담당 | 운영자 |
-| 운영 URL | `https://sqap1workflow.skarhkdgus7.workers.dev` |
-| Supabase project ref | `oixrerrdmbujniqgwmkn` |
-| GitHub HEAD | `20db373` |
-| Actions | CI success · Deploy Worker success (run 28800841819 / 28800841709) |
-| 비고 | Access(H) Dashboard 적용 · Auth Site URL Dashboard 확인 · RLS(F) · 백업(G) · 파트장 E2E 로그인 남음 |

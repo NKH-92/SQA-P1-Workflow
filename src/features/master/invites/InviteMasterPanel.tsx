@@ -73,12 +73,14 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
       await importInvitesMutation(createRepositoryContext(profile, data, setData), incoming)
     }, '초대 CSV 가져오기를 완료했습니다.')
 
-  const addAllowedUser = () =>
-    mutate(async () => {
+  const addAllowedUser = async () => {
+    const ok = await mutate(async () => {
       const payload = validateInviteCreate(data, allowedForm)
       await addAllowedUserMutation(createRepositoryContext(profile, data, setData), payload)
       setAllowedForm({ email: '', name: '', role: 'member' })
-    }, '초대 정보를 등록했습니다.').then(() => setInviteRegisterOpen(false))
+    }, '초대 정보를 등록했습니다.')
+    if (ok) setInviteRegisterOpen(false)
+  }
 
   const saveInviteEdit = (inviteId: string) =>
     mutate(async () => {

@@ -5,6 +5,7 @@ import { toUserMessage } from '../lib/errors'
 import { supabase } from '../lib/supabase'
 import {
   LogOut,
+  RefreshCw,
   Save,
   ShieldCheck,
 } from 'lucide-react'
@@ -20,6 +21,31 @@ export function PasswordChangePanel({ profile, onComplete, onSignOut }: Password
   const [confirmation, setConfirmation] = useState('')
   const [notice, setNotice] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const [passwordChanged, setPasswordChanged] = useState(false)
+  const [retryingCompletion, setRetryingCompletion] = useState(false)
+
+  const completePasswordChange = async () => {
+    if (!supabase) return false
+
+    const { data: updatedProfile, error: profileError } = await supabase.rpc('mark_password_changed')
+    if (profileError) {
+      setNotice(
+        `비밀번호는 변경되었을 수 있으나 완료 처리에 실패했습니다. 새 비밀번호로 다시 로그인한 뒤 완료 처리를 재시도하세요. (${toUserMessage(profileError)})`,
+      )
+      return false
+    }
+
+    onComplete((updatedProfile as Profile | null) ?? { ...profile, must_change_password: false })
+    return true
+  }
+
+  const retryCompletion = async () => {
+    if (!supabase) return
+    setRetryingCompletion(true)
+    setNotice(null)
+    await completePasswordChange()
+    setRetryingCompletion(false)
+  }
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -40,6 +66,7 @@ export function PasswordChangePanel({ profile, onComplete, onSignOut }: Password
 
     setPending(true)
     setNotice(null)
+    setPasswordChanged(false)
     const { error: passwordError } = await supabase.auth.updateUser({ password })
     if (passwordError) {
       setPending(false)
@@ -47,14 +74,10 @@ export function PasswordChangePanel({ profile, onComplete, onSignOut }: Password
       return
     }
 
-    const { data: updatedProfile, error: profileError } = await supabase.rpc('mark_password_changed')
+    setPasswordChanged(true)
+    const ok = await completePasswordChange()
     setPending(false)
-    if (profileError) {
-      setNotice(toUserMessage(profileError))
-      return
-    }
-
-    onComplete((updatedProfile as Profile | null) ?? { ...profile, must_change_password: false })
+    if (!ok) return
   }
 
   return (
@@ -95,11 +118,17 @@ export function PasswordChangePanel({ profile, onComplete, onSignOut }: Password
           />
         </label>
         {notice && <p className="notice">{notice}</p>}
-        <button className="primary" disabled={pending} type="submit">
+        <button className="primary" disabled={pending || retryingCompletion} type="submit">
           <Save size={16} />
           {pending ? '저장 중...' : '비밀번호 변경'}
         </button>
-        <button className="ghost" disabled={pending} type="button" onClick={onSignOut}>
+        {passwordChanged && notice && (
+          <button className="ghost" disabled={pending || retryingCompletion} onClick={() => void retryCompletion()} type="button">
+            <RefreshCw size={16} />
+            {retryingCompletion ? '완료 처리 재시도 중...' : '완료 처리 재시도'}
+          </button>
+        )}
+        <button className="ghost" disabled={pending || retryingCompletion} type="button" onClick={onSignOut}>
           <LogOut size={16} />
           로그아웃
         </button>
@@ -107,4 +136,3 @@ export function PasswordChangePanel({ profile, onComplete, onSignOut }: Password
     </main>
   )
 }
-

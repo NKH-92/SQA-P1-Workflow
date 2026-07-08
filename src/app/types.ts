@@ -24,7 +24,7 @@ export type AdminDeleteTable =
   | 'duty_assignments'
 export type DeadlineMode = 'date' | 'none'
 
-export type MutateFn = (operation: () => Promise<void>, success: string) => Promise<void>
+export type MutateFn = (operation: () => Promise<void>, success: string) => Promise<boolean>
 
 export type ScreenProps = {
   profile: Profile

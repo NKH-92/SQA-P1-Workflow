@@ -47,6 +47,9 @@ set name = excluded.name,
 
 이 저장소는 GitHub Actions로 **Cloudflare Workers**(`wrangler deploy --assets`)에 정적 SPA를 배포한다.
 
+- **CI** (`.github/workflows/ci.yml`): push/PR 시 `typecheck`, `lint`, `test`, `build` 4 job
+- **Deploy Worker** (`.github/workflows/deploy-worker.yml`): `main` push 또는 `workflow_dispatch` 시 `typecheck` → `lint` → `test` → deploy config check → `build` → deploy
+
 ### GitHub Variables / Secrets
 
 Repository Settings > Secrets and variables > Actions에 다음을 등록한다.

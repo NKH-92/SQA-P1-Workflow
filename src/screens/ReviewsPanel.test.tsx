@@ -48,6 +48,7 @@ describe('ReviewsPanel', () => {
     const data = createPreviewData()
     const mutate = vi.fn(async (operation: () => Promise<void>) => {
       await operation()
+      return true
     })
 
     render(
@@ -73,6 +74,7 @@ describe('ReviewsPanel', () => {
     const data = memberDataWithPendingReview()
     const mutate = vi.fn(async (operation: () => Promise<void>) => {
       await operation()
+      return true
     })
 
     render(
@@ -143,6 +145,7 @@ describe('ReviewsPanel', () => {
     const rejectSpy = vi.spyOn(dataModule, 'rejectReviewRequest').mockResolvedValue(undefined as never)
     const mutate = vi.fn(async (operation: () => Promise<void>) => {
       await operation()
+      return true
     })
 
     render(

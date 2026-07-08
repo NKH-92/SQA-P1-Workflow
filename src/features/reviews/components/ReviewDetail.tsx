@@ -11,8 +11,8 @@ type ReviewDetailProps = {
   onEdit: (request: ReviewRequest) => void
   onWithdraw: (id: string | null) => void
   withdrawReview: (requestId: string) => void
-  rejectReview: (requestId: string) => void
-  updateStatus: (id: string, status: ReviewStatus) => void
+  rejectReview: (requestId: string) => Promise<boolean>
+  updateStatus: (id: string, status: ReviewStatus) => Promise<boolean>
   addFeedback: (requestId: string) => void
 }
 

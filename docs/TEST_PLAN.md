@@ -56,6 +56,8 @@ Supabase에 최소 3명(`leader`, `member A`, `member B`)을 등록한 뒤 각 �
 - `member` 계정을 `profiles.is_active = false`로 설정하면 본인 데이터 조회·쓰기가 RLS에서 거부되어야 한다.
 - `leader` 계정을 `profiles.is_active = false`로 설정해도 API로 제품·프로젝트·검토요청을 조회·수정할 수 없어야 한다.
 - `leader`는 `profiles.is_active`를 변경할 수 있어야 한다.
+- `member` 계정으로 로그인해 검토요청·대시보드에서 파트장 **이름**이 표시되는지 확인한다. `public_leader_profiles` select가 실패하지 않아야 한다.
+- `member`는 파트장의 email 등 민감 정보를 볼 수 없어야 한다.
 
 ## 로컬 검증 명령
 

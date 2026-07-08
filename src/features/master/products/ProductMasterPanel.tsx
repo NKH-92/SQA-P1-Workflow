@@ -54,15 +54,17 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
       await importProductsMutation(createRepositoryContext(profile, data, setData), incoming)
     }, '제품 CSV 가져오기를 완료했습니다.')
 
-  const addProduct = () =>
-    mutate(async () => {
+  const addProduct = async () => {
+    const ok = await mutate(async () => {
       const payload = validateProductCreate(data, productForm)
       await addProductMutation(createRepositoryContext(profile, data, setData), payload)
       setProductForm({ name: '', category: '자사', companyName: '자사' })
-    }, '제품을 등록했습니다.').then(() => setProductRegisterOpen(false))
+    }, '제품을 등록했습니다.')
+    if (ok) setProductRegisterOpen(false)
+  }
 
-  const assignProduct = () =>
-    mutate(async () => {
+  const assignProduct = async () => {
+    const ok = await mutate(async () => {
       if (!productAssignment.user_id) return
       validateProductAssignment(data, productAssignment.user_id, productAssignment.product_id)
       await assignProductMutation(createRepositoryContext(profile, data, setData), {
@@ -70,7 +72,9 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
         productId: productAssignment.product_id,
       })
       setProductAssignment({ user_id: productAssignment.user_id, product_id: '' })
-    }, '담당 제품을 배정했습니다.').then(() => setProductAssignOpen(false))
+    }, '담당 제품을 배정했습니다.')
+    if (ok) setProductAssignOpen(false)
+  }
 
   const saveProductEdit = (productId: string) =>
     mutate(async () => {

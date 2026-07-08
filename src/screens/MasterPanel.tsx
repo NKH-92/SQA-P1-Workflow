@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { AppData, Profile } from '../types'
-import type { MasterTabId, TabId } from '../app/types'
+import type { MasterTabId, MutateFn, TabId } from '../app/types'
 import { DutyMasterPanel } from '../features/master/duties/DutyMasterPanel'
 import { InviteMasterPanel } from '../features/master/invites/InviteMasterPanel'
 import { ProductMasterPanel } from '../features/master/products/ProductMasterPanel'
@@ -15,7 +15,7 @@ export function MasterPanel({
 }: {
   profile: Profile
   data: AppData
-  mutate: (operation: () => Promise<void>, success: string) => Promise<void>
+  mutate: MutateFn
   setData: Dispatch<SetStateAction<AppData>>
   masterView: MasterTabId
   setActiveTab: (tab: TabId, entityId?: string) => void

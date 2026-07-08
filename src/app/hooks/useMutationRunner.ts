@@ -14,15 +14,17 @@ export function useMutationRunner(refreshData: () => Promise<void>) {
   }, [message])
 
   const mutate = useCallback(
-    async (operation: () => Promise<void>, success: string) => {
+    async (operation: () => Promise<void>, success: string): Promise<boolean> => {
       setSaving(true)
       setMessage(null)
       try {
         await operation()
         if (supabase) await refreshData()
         setMessage({ text: success, tone: 'success' })
+        return true
       } catch (error) {
         setMessage({ text: toUserMessage(error), tone: 'error' })
+        return false
       } finally {
         setSaving(false)
       }

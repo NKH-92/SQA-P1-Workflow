@@ -1,17 +1,17 @@
 #Requires -Version 5.1
-# Includes 20260705* migrations when present under supabase/migrations/
+# Lists pending 202607* migrations under supabase/migrations/
 $root = Split-Path $PSScriptRoot -Parent
 $migrationsDir = Join-Path $root 'supabase\migrations'
 $pending = @()
 if (Test-Path $migrationsDir) {
-  $pending = Get-ChildItem -Path $migrationsDir -Filter '20260705*.sql' -File |
+  $pending = Get-ChildItem -Path $migrationsDir -Filter '202607*.sql' -File |
     Sort-Object Name |
     ForEach-Object { "  - $($_.Name)" }
 }
 $pendingBlock = if ($pending.Count -gt 0) {
   ($pending -join [Environment]::NewLine)
 } else {
-  '  (none found under supabase/migrations/20260705*.sql)'
+  '  (none found under supabase/migrations/202607*.sql)'
 }
 
 Write-Host @"
@@ -25,6 +25,6 @@ Supabase migration apply helper
 
 Or paste SQL from supabase/migrations/ into Supabase SQL Editor (see docs/SUPABASE_MIGRATIONS.md).
 
-Pending migrations (20260705*):
+Pending migrations (202607*):
 $pendingBlock
 "@

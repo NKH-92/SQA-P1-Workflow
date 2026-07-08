@@ -30,6 +30,8 @@
 | `202607070001_harden_audit_rls_and_revoke_anon_rpc.sql` | audit RLS + view invoker + anon RPC revoke |
 | `202607070002_revoke_public_execute_on_internal_helpers.sql` | PUBLIC execute revoke on internal helper RPCs |
 | `202607070003_revoke_public_execute_on_mutation_rpcs.sql` | PUBLIC execute revoke on mutation RPCs (authenticated only) |
+| `202607070004_extend_activity_log_entity_types.sql` | activity_logs entity_type check에 product/duty/duty_major_category 추가 |
+| `202607070005_protect_last_active_leader.sql` | 마지막 active leader 비활성화·강등 방지 |
 
 ## Supabase CLI (권장)
 
@@ -52,7 +54,19 @@ Dashboard > SQL Editor에서 위 **전체 migration 파일** 내용을 **순서�
 ```sql
 -- migration 적용 이력 확인
 select * from supabase_migrations.schema_migrations
-where version in ('202607060002', '202607060003');
+where version in ('202607070004', '202607070005');
+
+-- activity_logs entity_type check includes master delete types
+select pg_get_constraintdef(oid)
+from pg_constraint
+where conrelid = 'public.activity_logs'::regclass
+  and conname = 'activity_logs_entity_type_check';
+
+-- last active leader guard triggers
+select tgname
+from pg_trigger
+where tgrelid in ('public.profiles'::regclass, 'public.allowed_users'::regclass)
+  and tgname like '%last_active_leader%';
 
 -- 현재 중복 제품 확인
 select name, count(*) from public.products group by name having count(*) > 1;

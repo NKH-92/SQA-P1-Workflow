@@ -37,6 +37,7 @@ $verificationSql = @"
 select proname from pg_proc where pronamespace = 'public'::regnamespace and proname in ('reject_review_request', 'add_review_feedback', 'create_project_with_assignments', 'is_active_leader');
 select id from storage.buckets where id = 'review-attachments';
 select policyname from pg_policies where tablename = 'review_requests' and policyname in ('review_requests_update_self_pending', 'review_requests_delete_self_pending');
+select 'realtime_pub_' || tablename from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'review_requests';
 "@
 
 $tempSql = Join-Path ([System.IO.Path]::GetTempPath()) ("supabase-verify-{0}.sql" -f [Guid]::NewGuid().ToString('N'))
@@ -66,8 +67,9 @@ try {
   $missingRpc = @($expectedRpc | Where-Object { $verifyOutput -notmatch [regex]::Escape($_) })
   $missingBucket = $verifyOutput -notmatch 'review-attachments'
   $missingPolicies = @($expectedPolicies | Where-Object { $verifyOutput -notmatch [regex]::Escape($_) })
+  $missingRealtime = $verifyOutput -notmatch 'realtime_pub_review_requests'
 
-  if ($missingRpc.Count -gt 0 -or $missingBucket -or $missingPolicies.Count -gt 0) {
+  if ($missingRpc.Count -gt 0 -or $missingBucket -or $missingPolicies.Count -gt 0 -or $missingRealtime) {
     Write-Warning "Verification incomplete — check results:"
     if ($missingRpc.Count -gt 0) {
       Write-Warning "  Missing RPC: $($missingRpc -join ', ')"
@@ -77,6 +79,9 @@ try {
     }
     if ($missingPolicies.Count -gt 0) {
       Write-Warning "  Missing policies: $($missingPolicies -join ', ')"
+    }
+    if ($missingRealtime) {
+      Write-Warning "  Missing realtime publication table: review_requests (202607090001)"
     }
     Write-Host $verifyOutput
     exit 1

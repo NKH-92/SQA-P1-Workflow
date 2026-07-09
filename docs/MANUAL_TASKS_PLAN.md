@@ -118,7 +118,7 @@ GitHub 저장소 → **Settings → Secrets and variables → Actions**
 |------|---------|------|------|
 | `VITE_SUPABASE_ANON_KEY` | Supabase → Settings → API → anon public | 배포 (E) | service_role 키 **사용 금지** |
 | `CLOUDFLARE_API_TOKEN` | Cloudflare → My Profile → API Tokens (Workers Edit) | 배포 (E) | |
-| `SUPABASE_DB_URL` | Supabase → Dashboard → Connect의 **Session pooler URI** (비밀번호 포함) | 주간 자동 백업 (G) | |
+| `SUPABASE_DB_URL` | Supabase → Dashboard → Connect의 **Session pooler URI** (비밀번호 포함) | 주간 자동 백업 (G) · DB Migrate 워크플로 | |
 | `BACKUP_PASSPHRASE` | 새로 정한 백업 암호화 암구호 | 주간 자동 백업 (G) | **분실 시 백업 복원 불가** — 비밀번호 관리자에 보관 |
 
 ### 확인
@@ -137,13 +137,17 @@ GitHub 저장소 → **Settings → Secrets and variables → Actions**
 
 ### 적용 범위
 
-`supabase/migrations/`의 **총 29개** migration 파일 전체를 순서대로 적용한다 ([SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) 목록 참고). 적용 후 아래 핵심 migration이 실제 반영됐는지 확인 SQL로 검증한다.
+`supabase/migrations/`의 **총 30개** migration 파일 전체를 순서대로 적용한다 ([SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) 목록 참고). 적용 후 아래 핵심 migration이 실제 반영됐는지 확인 SQL로 검증한다.
 
+> 2026-07-09 서명 시점에는 29개였고, 30번째 `202607090001`(Realtime)은 알림 패키지와 함께 추가되었다 — 적용 기록은 하단 "추가 배포 기록" 참조.
+
+- `202607090001` — 검토요청 INSERT Realtime 발행 (파트장 즉시 알림용, RLS 불변)
 - `202607080001` — 비밀번호 변경 전 RLS 차단 + leader 이름 view + last-active-leader 카운터 잠금
 - `202607070001` ~ `202607070005` — audit RLS, PUBLIC revoke, activity log entity types, last active leader 보호
 
 | 미적용 migration | 증상 |
 |------------------|------|
+| `202607090001` | Realtime 즉시 반영이 **오류 없이 조용히** 동작하지 않음 — 5분 폴링으로만 갱신 (겉으로는 정상처럼 보이므로 publication 확인 SQL로만 판별 가능) |
 | `202607080001` | `must_change_password=true` 계정이 비밀번호 변경 전에도 REST/RPC로 데이터 접근 가능 (첫 로그인 강제가 UI에만 존재) |
 | `202607070004` | 제품/업무/대분류 삭제 시 activity log insert 실패 |
 | `202607070005` | 마지막 active leader 비활성화·강등 가능 (운영 복구 불가 위험) |
@@ -360,7 +364,7 @@ Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy confi
 [x] 0. Supabase 프로젝트(서울 ap-northeast-2) + CLI 설치 + 팀 공지 — 완료 (운영 배포됨)
 [x] A. git push / PR merge + CI green (Deploy Worker green은 B 이후) — 완료
 [x] B. GitHub Variables 3개 + Secrets 4개 (A보다 먼저 권장) — 완료 (배포·백업 워크플로 green으로 확인)
-[x] C. Supabase migration ~202607080001 적용 + 확인 (총 29개) — 완료 (운영 반영됨)
+[x] C. Supabase migration ~202607080001 적용 + 확인 (서명 시점 29개) — 완료 (운영 반영됨; 30번째 202607090001은 "추가 배포 기록" 참조)
 [x] D. leader 1명 + member 2명 계정 + Auth Site URL/Redirect + public sign-up OFF 재확인 — 완료 (파트원 온보딩, signup_disabled 라이브 확인)
 [x] E. Workers 배포 + 스모크 + 보안 헤더(CSP) 확인 — 완료 (2026-07-09 라이브 점검: CSP 실적용·service_role 미노출 확인)
 [x] F. RLS 검증 (TEST_PLAN.md) + must_change_password 차단 확인 — 2026-07-09 완료 (작업 F 검증 기록 참조)
@@ -375,9 +379,24 @@ Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy confi
 | 담당 | 파트장 |
 | 운영 URL | `<WORKER_URL>` (public 저장소 관례상 실값 미기재) |
 | Supabase project ref | `<PROJECT_REF>` (동일) |
-| GitHub HEAD | 배포 코드 기준 6943176 (이후 문서 정리 커밋은 앱 산출물에 영향 없음) |
+| GitHub HEAD | 배포 코드 기준 6943176 (0~G 서명 당시. **이후 배포 이력은 아래 "추가 배포 기록" 절에 기록** — "이후 커밋은 문서뿐"이라는 이전 문구는 3f4c02b 배포로 무효) |
 | Actions run ID | 29015812702 (Backup DB) |
 | 비고 | 0~G 전부 완료. 2026-07-09 최종 배포 점검(빌드·라이브·인증/RLS·시크릿·문서) 통과 — 상세는 F·G 검증 기록. 첨부파일(Storage) 백업 규정은 **B안(백업 제외) 확정**(OPERATIONS.md) — 사용 규정 팀 공지만 남음 |
+
+---
+
+## 10.5 추가 배포 기록 (0~G 서명 이후)
+
+### 2026-07-10 — 알림 패키지 (3f4c02b)
+
+- **앱 코드**: 딥링크 공유·백그라운드 동기화(5분 폴링+창 복귀)·검토요청 Realtime 즉시 반영·파트장 데스크톱 알림. 2026-07-10 00:33 KST main push로 Deploy Worker 자동 배포(green) — 사후 감사에서 확인.
+- **신규 migration `202607090001`** (30번째, Realtime publication — RLS 불변, 멱등):
+  - [ ] Actions → **DB Migrate** → Run workflow 실행, Job Summary에서 `realtime publication에 review_requests 포함: t` 확인 (run ID 기록: `<RUN_ID>`)
+- **스모크 (파트장, 10분)**:
+  - [ ] [TEST_PLAN.md](./TEST_PLAN.md) "알림·동기화" 5항목 수행
+- **후속 정리**:
+  - [ ] Cloudflare autoconfig **PR #3 닫기** (머지 금지 — 기존 Actions 배포와 충돌) + Cloudflare 대시보드에서 **Workers Builds Git 연동 해제** (해제 전까지 push마다 autoconfig PR이 재생성됨)
+  - [ ] 원격 브랜치 정리: `improve/sqa-p1-final-stabilization`(PR #2로 squash-merge됨), `cloudflare/workers-autoconfig`(PR 닫은 뒤)
 
 ---
 

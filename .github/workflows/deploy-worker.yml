@@ -16,12 +16,12 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # 시크릿은 job 레벨에 두지 않는다 — npm ci/test가 실행하는 서드파티 코드에
+    # 노출되지 않도록 실제로 쓰는 단계(Build, Deploy)에만 주입한다.
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       WORKER_NAME: ${{ vars.WORKER_NAME }}
       VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
-      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
     steps:
       - name: Checkout
@@ -46,9 +46,12 @@ jobs:
         run: npm test
 
       - name: Check deploy configuration
+        env:
+          CF_TOKEN_SET: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+          ANON_KEY_SET: ${{ secrets.VITE_SUPABASE_ANON_KEY != '' }}
         run: |
           missing=()
-          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+          if [ "$CF_TOKEN_SET" != "true" ]; then
             missing+=("CLOUDFLARE_API_TOKEN (secret)")
           fi
           if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
@@ -60,7 +63,7 @@ jobs:
           if [ -z "$VITE_SUPABASE_URL" ]; then
             missing+=("VITE_SUPABASE_URL (variable)")
           fi
-          if [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
+          if [ "$ANON_KEY_SET" != "true" ]; then
             missing+=("VITE_SUPABASE_ANON_KEY (secret)")
           fi
 
@@ -98,10 +101,12 @@ jobs:
         env:
           VITE_APP_MODE: production
           VITE_SUPABASE_URL: ${{ env.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ env.VITE_SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - name: Deploy to Cloudflare Workers
         if: ${{ env.DEPLOY_SKIP != 'true' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           npx --yes wrangler@4 deploy --name "$WORKER_NAME" --assets dist --keep-vars --compatibility-date 2026-07-04
           {

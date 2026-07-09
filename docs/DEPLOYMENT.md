@@ -10,7 +10,7 @@
 ## Supabase
 
 1. 새 Supabase 프로젝트를 만든다. **리전(Region)은 반드시 `Northeast Asia (Seoul) / ap-northeast-2`** 로 선택한다. (팀원 이름·이메일이 이 리전에 저장되며, 사용 시작 전 팀 공지가 필요하다 — [OPERATIONS.md](./OPERATIONS.md) 개인정보 처리 절 참고.)
-2. `supabase/migrations` 아래 SQL 파일을 번호 순서대로 적용한다. 전체 목록·확인 SQL은 [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md)를 참고한다.
+2. `supabase/migrations` 아래 SQL 파일을 번호 순서대로 적용한다. 전체 목록·확인 SQL은 [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md)를 참고한다. 로컬 CLI 인증이 없으면 Actions → **DB Migrate**(workflow_dispatch)로 적용할 수 있다.
 3. 첫 파트장 bootstrap은 SQL Editor에서 1회 수행한다.
 
 ```sql
@@ -98,6 +98,11 @@ CI(`deploy-worker.yml`)와 동일한 wrangler 버전·`--compatibility-date`를 
 ### 롤백
 
 GitHub Actions에서 이전 성공 워크플로 run을 **Re-run**하거나, 문제 커밋을 revert한 뒤 main에 push한다.
+
+주의사항:
+
+- Re-run은 GitHub 정책상 **run 생성 후 30일까지만** 가능하다. 그보다 오래된 시점으로는 revert + push 경로를 쓴다.
+- 이 롤백은 **Worker(프런트엔드)만** 되돌린다. DB 마이그레이션은 롤백 스크립트가 없으므로(append-only), DB 문제는 [OPERATIONS.md](./OPERATIONS.md)의 백업 복원 절차를 따른다.
 
 ### SPA 라우팅
 

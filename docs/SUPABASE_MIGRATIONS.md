@@ -53,6 +53,10 @@ npx supabase db push
 
 push와 핵심 객체(RPC·Storage 버킷·RLS 정책) 존재 확인을 한 번에 하려면 `scripts/apply-pending-migrations.ps1`을 사용합니다.
 
+## GitHub Actions — DB Migrate (로컬 인증 없이)
+
+로컬에 Supabase 로그인이나 DB 비밀번호가 없어도, Actions → **DB Migrate** → Run workflow로 미적용 마이그레이션을 적용할 수 있습니다. 백업과 동일한 `SUPABASE_DB_URL` Secret을 사용하며, Job Summary에 적용 결과와 realtime publication 확인이 표시됩니다. append-only 정책 그대로 — 이 워크플로도 새 파일만 push합니다.
+
 ## SQL Editor (수동)
 
 Dashboard > SQL Editor에서 위 **전체 migration 파일** 내용을 **순서대로** 실행합니다.  

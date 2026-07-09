@@ -53,6 +53,28 @@ export type PendingReviewAlert = {
 }
 
 /**
+ * 페이지 컨텍스트 Notification 생성. Chromium 계열 Android는 'Notification' in window가
+ * true이고 권한도 granted지만 생성자 자체가 Illegal constructor를 던진다
+ * (ServiceWorkerRegistration.showNotification만 허용). 알림은 부가 기능이므로
+ * 생성 실패가 앱을 오류 화면으로 떨어뜨리지 않도록 여기서 흡수한다.
+ */
+export function showPendingReviewNotification(alert: PendingReviewAlert, onClick: () => void): void {
+  try {
+    const notification = new Notification(`새 검토요청 · ${alert.requesterName}`, {
+      body: alert.title,
+      // 같은 요청은 탭이 여러 개 열려 있어도 하나로 합쳐진다.
+      tag: `review-${alert.id}`,
+    })
+    notification.onclick = () => {
+      onClick()
+      notification.close()
+    }
+  } catch {
+    // 생성 불가 환경에서는 벨 뱃지와 목록 갱신만으로 충분하다.
+  }
+}
+
+/**
  * 기준선 이후 새로 접수된 대기 검토요청 — 데스크톱 알림 대상.
  * 기준선이 없으면 아무것도 고르지 않는다 (첫 로드에서 기존 대기 건 폭탄 방지).
  */

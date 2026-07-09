@@ -38,6 +38,16 @@ supabase login
 
 > **앱이 아예 안 열리면 pause를 먼저 의심하세요.** Supabase 무료 티어는 **7일 동안 접속(활동)이 없으면 프로젝트를 자동으로 pause**합니다. pause 상태면 API·Auth가 모두 응답하지 않습니다. Dashboard에서 해당 프로젝트를 **Restore/Resume**하면 몇 분 뒤 복구됩니다. 연휴·장기 미사용 구간 전에는 **접속 1회 루틴**(누군가 로그인만 해도 됨)으로 pause를 예방하세요.
 
+### 알림·자동 갱신이 안 될 때
+
+Realtime·데스크톱 알림은 **실패해도 오류를 표시하지 않도록** 설계되어 있습니다(앱은 5분 안전망 폴링 + 창 복귀 재조회로 계속 동작). "알림이 안 온다"는 신고는 아래 순서로 확인합니다.
+
+| 증상 | 확인 | 조치 |
+|---|---|---|
+| 새 검토요청이 즉시(수 초 내) 반영되지 않고 몇 분 뒤에만 보임 | SQL Editor: `select exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='review_requests');` | `false`면 migration `202607090001` 미적용 — Actions → **DB Migrate** 실행 ([SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md)) |
+| 데스크톱 알림이 안 뜸 | ① 파트장 계정인가 ② 벨 패널에서 옵트인했는가 ③ 브라우저 사이트 권한이 `허용`인가 ④ 창이 **비포커스**였는가 (앱을 보고 있으면 뱃지만 갱신) | 브라우저 사이트 설정에서 알림 권한 허용 후 벨 패널에서 다시 켜기. 모바일 브라우저는 미지원(뱃지만 동작) |
+| Realtime 연결 실패가 의심됨 | Supabase Dashboard → Logs → Realtime | 연결 실패여도 데이터는 폴링으로 갱신된다 — 즉시성만 떨어짐 |
+
 ## 주간 백업
 
 ### 자동 백업 (기본) — GitHub Actions
@@ -203,10 +213,14 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 
 > **사용 시작 전 팀 공지 1회가 필요합니다.** 팀원 이름·이메일이 외부 클라우드(Supabase, 서울 리전)에 저장된다는 사실을 사용 시작 전에 팀에 1회 공지하고, 공지 일자를 이 문서 하단 또는 팀 위키에 기록합니다.
 
+> **저장소 public 전환 금지.** 현재 HEAD는 실값을 제거했지만, **git 이력에는 과거 커밋의 팀원 실명·사내 이메일·운영 프로필 UUID·운영 URL이 남아 있습니다.** 이력 재작성(`git filter-repo` 등)과 노출 값 전수 점검 없이는 이 저장소를 절대 public으로 전환하지 않습니다. fork·이관·외부 공유도 동일하게 취급합니다.
+
 ## 배포
 
 자세한 CI/CD 설정은 [DEPLOYMENT.md](./DEPLOYMENT.md)를 참고하세요.  
 **직접 수행 작업 전체 계획**은 [MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md)를 참고하세요.
+
+새 마이그레이션 적용은 로컬 CLI(`npx supabase db push`) 또는 **Actions → DB Migrate**(workflow_dispatch, `SUPABASE_DB_URL` Secret 사용 — 로컬 Supabase 인증 불필요)로 수행합니다. 절차와 확인 SQL은 [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) 참고.
 
 Windows에서 `npm ci`가 `EPERM`으로 실패하면, 다른 터미널·에디터에서 `node_modules`를 잠그고 있지 않은지 확인한 뒤 해당 폴더를 삭제하고 다시 실행하세요.
 

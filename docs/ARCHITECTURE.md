@@ -17,6 +17,8 @@ src/
 │  ├─ AppRoutes.tsx          탭 → 화면 매핑 (역할 가드 포함)
 │  ├─ hooks/                 useAppData(세대 토큰 refresh) · useAuthProfile(부트스트랩)
 │  │                         · useMutationRunner(재진입 가드) · useHashNavigation · usePreviewRoleChange
+│  │                         · useBackgroundRefresh(5분 폴링+창 복귀) · useRealtimeReviewInserts(INSERT 구독)
+│  │                         · useDesktopNotifications(파트장 OS 알림 — 실패는 조용히 무시)
 │  ├─ types.ts               UI 계층 타입 (TabId 재수출, MutateFn, ToastMessage …)
 │  └─ constants.ts           emptyData, deleteWarnings
 ├─ data/                     데이터 접근 계층 (UI는 여기의 함수만 호출)
@@ -38,7 +40,8 @@ src/
 ├─ components/               공용 컴포넌트 (ui/ 프리미티브, CommandPalette, NotificationPanel, ErrorBoundary)
 ├─ domain/permissions.ts     RLS 정책의 클라이언트 거울 (실행 가능한 문서 — 테스트로 고정)
 ├─ hooks/                    공용 훅 (useTeamSummaries, useModalDismiss)
-├─ lib/                      순수 유틸 (dates·format·priority·csv·errors·attachments·notifications·readState …)
+├─ lib/                      순수 유틸 (dates·format·priority·csv·errors·attachments·notifications
+│                            ·desktopNotifications·clipboard·navigation·readState …)
 ├─ demo/ + demoData.ts       익명 데모 데이터 (preview 모드) — noPrivateSeedInSrc.test.ts가 익명성 강제
 ├─ types/ + types.ts         도메인 타입 배럴 (domain.ts + view.ts)
 └─ security/                 회귀 가드 테스트 (사설 데이터 유입 금지)

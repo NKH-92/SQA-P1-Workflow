@@ -1,0 +1,109 @@
+name: DB Migrate
+
+# 수동 실행 전용. supabase/migrations의 미적용 마이그레이션을 운영 DB에 적용한다.
+# 로컬에 Supabase 인증이 없는 운영자도 GitHub Secrets(SUPABASE_DB_URL)로 적용할 수 있다.
+# 적용 정책은 append-only(docs/SUPABASE_MIGRATIONS.md) — 이 워크플로는 새 파일만 push한다.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-migrate
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check secret
+        env:
+          DB_URL_SET: ${{ secrets.SUPABASE_DB_URL != '' }}
+        run: |
+          if [ "$DB_URL_SET" != "true" ]; then
+            {
+              echo "## DB migrate failed — missing secret: SUPABASE_DB_URL"
+              echo ""
+              echo "Repository Settings > Secrets and variables > Actions에 등록하세요."
+              echo "- \`SUPABASE_DB_URL\`: Dashboard > Connect의 Session pooler URI (비밀번호 포함)"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+
+      # CLI db push는 supabase_migrations.schema_migrations 이력 기준으로 미적용분을 계산한다.
+      # SQL Editor로만 적용해 온 프로젝트(이력 0건 + 스키마 존재)에서 그대로 push하면
+      # 전체 재적용을 시도하다 실패하므로, 그 경우 안내를 남기고 push 전에 멈춘다.
+      - name: Guard migration history
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          tables=$(psql "$DATABASE_URL" -tAc \
+            "select count(*) from information_schema.tables where table_schema = 'public'")
+          history=$(psql "$DATABASE_URL" -tAc \
+            "select count(*) from supabase_migrations.schema_migrations" 2>/dev/null || echo 0)
+          echo "public tables: $tables / recorded migrations: $history"
+          if [ "$tables" -gt 0 ] && [ "$history" -eq 0 ]; then
+            {
+              echo "## DB migrate aborted — 스키마는 있는데 migration 이력이 비어 있음"
+              echo ""
+              echo "이 DB는 SQL Editor로 수동 적용된 것으로 보입니다. 그대로 push하면 전체 재적용을 시도하다 실패합니다."
+              echo ""
+              echo "조치 중 택1:"
+              echo "1. 로컬에서 \`supabase migration repair --status applied <적용된 버전들>\` 후 이 워크플로 재실행"
+              echo "2. 미적용 migration 파일만 SQL Editor에서 직접 실행 (docs/SUPABASE_MIGRATIONS.md 순서·확인 SQL 참고)"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: List migration status (before)
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: supabase migration list --db-url "$DATABASE_URL"
+
+      - name: Push pending migrations
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: supabase db push --db-url "$DATABASE_URL"
+
+      - name: Verify key objects
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          applied=$(psql "$DATABASE_URL" -tAc \
+            "select count(*) from supabase_migrations.schema_migrations")
+          realtime=$(psql "$DATABASE_URL" -tAc \
+            "select exists (select 1 from pg_publication_tables
+             where pubname = 'supabase_realtime'
+               and schemaname = 'public'
+               and tablename = 'review_requests')")
+          local_count=$(ls supabase/migrations/*.sql | wc -l)
+
+          if [ "$realtime" != "t" ]; then
+            {
+              echo "## DB migrate FAILED — realtime publication 검증 실패"
+              echo ""
+              echo "push는 끝났지만 review_requests가 supabase_realtime publication에 없습니다 (202607090001 미반영)."
+              echo "docs/SUPABASE_MIGRATIONS.md의 확인 SQL로 상태를 점검하세요."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::review_requests is not in the supabase_realtime publication (202607090001 not applied)"
+            exit 1
+          fi
+
+          {
+            echo "## DB migrate OK"
+            echo ""
+            echo "- 로컬 migration 파일: $local_count개 / 원격 기록: $applied개"
+            echo "- realtime publication에 review_requests 포함: $realtime"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$applied" != "$local_count" ]; then
+            echo "::warning::remote schema_migrations count ($applied) != local file count ($local_count) — repair/수동 적용 이력이 섞여 있으면 정상일 수 있음 (docs/SUPABASE_MIGRATIONS.md 참고)"
+          fi

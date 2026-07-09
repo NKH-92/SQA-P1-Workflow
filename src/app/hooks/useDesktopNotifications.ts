@@ -6,6 +6,7 @@ import {
   loadDesktopNotificationSettings,
   saveDesktopNotificationSettings,
   selectNewPendingReviews,
+  showPendingReviewNotification,
 } from '../../lib/desktopNotifications'
 
 export type DesktopNotificationControls = {
@@ -63,16 +64,10 @@ export function useDesktopNotifications(
     // 앱을 보고 있는 중엔 벨 뱃지로 충분하다 — 창이 뒤에 있을 때만 띄운다.
     if (document.hasFocus()) return
     fresh.forEach((alert) => {
-      const notification = new Notification(`새 검토요청 · ${alert.requesterName}`, {
-        body: alert.title,
-        // 같은 요청은 탭이 여러 개 열려 있어도 하나로 합쳐진다.
-        tag: `review-${alert.id}`,
-      })
-      notification.onclick = () => {
+      showPendingReviewNotification(alert, () => {
         window.focus()
         setActiveTabRef.current('reviews', alert.id)
-        notification.close()
-      }
+      })
     })
   }, [data, enabled, leaderMode, profileId, supported])
 

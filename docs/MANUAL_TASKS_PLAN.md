@@ -339,8 +339,18 @@ Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy confi
 3. 아티팩트 다운로드 → 복호화(`openssl enc -d ...`, OPERATIONS.md 참고) → 복구 리허설 1회
 
 ### 완료 기준
-- [ ] Backup DB run green + `Backup OK` 확인
-- [ ] 복호화 성공 + 복구 리허설 1회 성공 기록 (분기 1회 반복)
+- [x] Backup DB run green + `Backup OK` 확인
+- [x] 복호화 성공 + 복구 리허설 1회 성공 기록 (분기 1회 반복)
+
+### 검증 기록 (2026-07-09)
+
+- **수행**: 파트장(워크플로 실행·아티팩트 다운로드·Secret 교체) + Claude(복호화·psql 복원·검증)
+- **백업**: Backup DB 수동 실행 2회 모두 green, 아티팩트 `db-backup-2026-07-09`(약 33KB, 암호화) 생성 확인
+- **⚠️ 리허설이 발견한 문제**: 최초 `BACKUP_PASSPHRASE`를 분실(어디에도 기록 안 됨) — **분실 시 백업 전체 복원 불가**를 실제로 확인. 새 암구호로 Secret 교체 후 백업 재실행으로 해결. **교훈: 암구호는 반드시 비밀번호 관리자에 보관할 것** (분기 리허설 때마다 복호화 가능 여부 확인)
+- **복호화**: `openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000` 성공 → schema(78KB)·data(106KB) 덤프 정상
+- **복원**: 테스트용 무료 Supabase 프로젝트에 psql로 schema → data 순 적용, **에러 0건**. 데이터 덤프에 `auth.users`·`auth.identities`·`storage.buckets`가 포함되어 있어 OPERATIONS.md의 "auth 먼저 복원" 수동 절차 불필요(덤프 상단 `session_replication_role=replica`로 FK 순서 문제도 자동 해소)
+- **행 수 검증(복원본)**: auth.users 10 / profiles 10 / allowed_users 11 / products 218 / product_assignments 198 / duties 25 / duty_assignments 21 / duty_major_categories 7 / activity_logs 2 — 운영 SQL Editor에서 동일 count 쿼리로 대조 가능
+- **정리**: 복호화된 평문 덤프는 검증 직후 로컬에서 삭제(팀원 정보 포함). 테스트 프로젝트는 리허설 후 삭제 또는 pause 권장
 
 ---
 
@@ -354,20 +364,20 @@ Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy confi
 [ ] D. leader 1명 + member 2명 계정 + Auth Site URL/Redirect + public sign-up OFF 재확인
 [ ] E. Workers 배포 + 스모크 + 보안 헤더(CSP) 확인
 [x] F. RLS 검증 (TEST_PLAN.md) + must_change_password 차단 확인 — 2026-07-09 완료 (작업 F 검증 기록 참조)
-[ ] G. Backup DB run green + 복호화·복구 리허설 기록
+[x] G. Backup DB run green + 복호화·복구 리허설 기록 — 2026-07-09 완료 (작업 G 검증 기록 참조)
 ```
 
 **최종 서명**
 
 | 항목 | 값 |
 |------|-----|
-| 완료일 | |
-| 담당 | |
-| 운영 URL | `<WORKER_URL>` |
-| Supabase project ref | `<PROJECT_REF>` |
-| GitHub HEAD | (최신 main 커밋 SHA) |
-| Actions run ID | `<ACTIONS_RUN_ID>` |
-| 비고 | |
+| 완료일 | 2026-07-09 |
+| 담당 | 파트장 |
+| 운영 URL | `<WORKER_URL>` (public 저장소 관례상 실값 미기재) |
+| Supabase project ref | `<PROJECT_REF>` (동일) |
+| GitHub HEAD | 9f15371 |
+| Actions run ID | 29015812702 (Backup DB) |
+| 비고 | F·G는 본 문서의 검증 기록 절 참조. 첨부파일(Storage) 백업 규정(OPERATIONS.md A/B 택1)은 미확정 — 팀 공지 필요 |
 
 ---
 

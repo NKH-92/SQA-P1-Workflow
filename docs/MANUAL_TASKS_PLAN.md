@@ -377,7 +377,7 @@ Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy confi
 | Supabase project ref | `<PROJECT_REF>` (동일) |
 | GitHub HEAD | 배포 코드 기준 6943176 (이후 문서 정리 커밋은 앱 산출물에 영향 없음) |
 | Actions run ID | 29015812702 (Backup DB) |
-| 비고 | 0~G 전부 완료. 2026-07-09 최종 배포 점검(빌드·라이브·인증/RLS·시크릿·문서) 통과 — 상세는 F·G 검증 기록. **잔여(팀 결정): 첨부파일(Storage) 백업 규정(OPERATIONS.md A/B 택1) 확정·기록** |
+| 비고 | 0~G 전부 완료. 2026-07-09 최종 배포 점검(빌드·라이브·인증/RLS·시크릿·문서) 통과 — 상세는 F·G 검증 기록. 첨부파일(Storage) 백업 규정은 **B안(백업 제외) 확정**(OPERATIONS.md) — 사용 규정 팀 공지만 남음 |
 
 ---
 

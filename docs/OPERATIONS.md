@@ -93,6 +93,8 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 
 > 운영 프로젝트에는 `disable_signup: true`가 적용되어 있다 (2026-07-09, Management API로 적용·확인). 설정을 되돌리지 않는 한 재확인은 불필요하다.
 
+> **수용한 Auth 설정 — "Require current password when updating"는 OFF로 둔다** (2026-07-09 확정). 이 앱은 `@supabase/supabase-js ^2.53.0`을 사용하는데, 이 버전은 비밀번호 변경 시 현재 비밀번호를 함께 보내는 `current_password` 파라미터를 지원하지 않는다. 이 토글을 ON으로 되돌리면 최초 로그인 비밀번호 변경(`src/screens/PasswordChangePanel.tsx`)이 `Current password required when setting new password` 400 오류로 **막힌다**. `current_password`를 지원하는 버전(supabase-js ≥ 2.102.0)으로 올려 변경 화면에 현재 비밀번호 입력을 추가하기 전에는 이 토글을 켜지 않는다.
+
 계정 생성 절차와 임시 비밀번호 규칙은 아래 "임시 비밀번호·첫 로그인" 절을 따릅니다.
 
 ### 미승인 Auth 계정 정리
@@ -109,13 +111,15 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 1. 테스트용 Supabase 프로젝트(또는 로컬 Postgres)를 준비합니다.
 2. 최신 백업 SQL을 `psql` 또는 Supabase SQL Editor로 복원합니다.
 
-   > **복원 순서 주의 — `auth.users` 먼저.** `profiles.id`는 `auth.users(id)`를 FK로 참조합니다(`ON DELETE CASCADE`). 빈 프로젝트에 `profiles`부터 복원하면 대응하는 `auth.users` row가 없어 **FK 위반으로 실패**합니다. 복원은 **① auth 사용자 재생성(또는 `auth` 스키마를 포함한 덤프 먼저 적용) → ② `public.profiles` → ③ 나머지 테이블** 순서로 진행합니다.
+   > **복원 순서 — 현재 백업은 그대로 schema → data 순으로 적용하면 됩니다** (2026-07-09 리허설로 확인). `backup.yml`의 `supabase db dump`는 `auth.users`·`auth.identities`·`storage.buckets`를 데이터 덤프에 포함하고, 덤프 선두에 `SET session_replication_role = replica;`가 있어 FK 검사가 꺼진 상태로 적재됩니다. 따라서 `profiles.id → auth.users(id)` FK 순서를 사람이 맞출 필요가 없습니다.
    >
-   > 예시(데이터 덤프를 순서대로 적용):
+   > 예시(schema 먼저, data 나중):
    > ```powershell
-   > $env:PGPASSWORD = '<DB_PASSWORD>'; psql "<DATABASE_URL>" -f backup/sqa-p1-workflow-<date>-data.sql
+   > $env:PGPASSWORD = '<DB_PASSWORD>'
+   > psql "<DATABASE_URL>" -f backup/sqa-p1-workflow-<date>-schema.sql
+   > psql "<DATABASE_URL>" -f backup/sqa-p1-workflow-<date>-data.sql
    > ```
-   > `auth.users`를 백업에 포함하지 않았다면, Dashboard > Authentication > Users에서 동일 이메일로 계정을 먼저 만든 뒤 `profiles` 데이터를 복원합니다.
+   > **폴백(덤프에 `auth` 스키마가 없을 때만):** 과거·수동 덤프처럼 `auth.users`가 빠진 백업이라면 `profiles` 복원이 FK 위반으로 실패합니다. 이때만 Dashboard > Authentication > Users에서 동일 이메일 계정을 먼저 만든 뒤 `public.profiles` → 나머지 순으로 복원합니다.
 
 3. `profiles`, `review_requests`, `products` 행 수를 운영과 대조합니다.
 4. RLS smoke test를 실행합니다 (`tests/rls/setup.sql` 참고).
@@ -170,7 +174,7 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 
 1. 파트장이 `allowed_users`에 이메일·이름·역할을 등록합니다.
 2. Supabase Dashboard > Authentication > Users > **Add user** 로 계정을 만듭니다 (앱 가입 UI 없음). 임시 비밀번호는 `1234`.
-   - Dashboard가 최소 비밀번호 길이 제한으로 `1234` 생성을 거부하면 Authentication → Providers → Email의 **Minimum password length**를 4로 조정합니다.
+   - Dashboard가 최소 비밀번호 길이 제한으로 `1234` 생성을 거부하면 Authentication → Providers → Email의 **Minimum password length**를 일시적으로 4로 낮춥니다. **계정 생성이 끝나면 반드시 6(권장 8) 이상으로 되돌립니다** — 낮춘 채로 두면 이후 모든 비밀번호에 대해 프로젝트 정책이 약해집니다(앱 변경 화면의 8자 강제는 클라이언트 측 검증일 뿐입니다).
 3. 사용자는 `1234`로 로그인한 뒤 `must_change_password` 화면에서 **8자 이상**의 새 비밀번호로 변경합니다. `'1234'` 등 너무 단순한 비밀번호는 새 비밀번호로 거부됩니다.
 
 ### 최초 변경은 이제 서버(RLS)에서 강제됨
@@ -227,4 +231,4 @@ Windows에서 `npm ci`가 `EPERM`으로 실패하면, 다른 터미널·에디�
 
 | 날짜 | 담당 | 백업 파일 | 결과 |
 |---|---|---|---|
-| (미실시) | | | |
+| 2026-07-09 | 파트장 + Claude | db-backup-2026-07-09 (Backup DB run 29015812702) | 성공 — 복호화 후 테스트 프로젝트에 schema→data 복원, 에러 0건. 행 수 대조: 사용자 10 / 제품 218 / 배정 198 / 직무 25. 리허설 중 최초 `BACKUP_PASSPHRASE` 분실 발견 → 교체·재백업으로 해결(암구호는 비밀번호 관리자 보관 필수) |

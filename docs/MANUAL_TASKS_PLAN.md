@@ -357,12 +357,12 @@ Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy confi
 ## 10. 진행 체크리스트 (복사용)
 
 ```
-[ ] 0. Supabase 프로젝트(서울 ap-northeast-2) + CLI 설치 + 팀 공지
-[ ] A. git push / PR merge + CI green (Deploy Worker green은 B 이후)
-[ ] B. GitHub Variables 3개 + Secrets 4개 (A보다 먼저 권장)
-[ ] C. Supabase migration ~202607080001 적용 + 확인 (총 29개)
-[ ] D. leader 1명 + member 2명 계정 + Auth Site URL/Redirect + public sign-up OFF 재확인
-[ ] E. Workers 배포 + 스모크 + 보안 헤더(CSP) 확인
+[x] 0. Supabase 프로젝트(서울 ap-northeast-2) + CLI 설치 + 팀 공지 — 완료 (운영 배포됨)
+[x] A. git push / PR merge + CI green (Deploy Worker green은 B 이후) — 완료
+[x] B. GitHub Variables 3개 + Secrets 4개 (A보다 먼저 권장) — 완료 (배포·백업 워크플로 green으로 확인)
+[x] C. Supabase migration ~202607080001 적용 + 확인 (총 29개) — 완료 (운영 반영됨)
+[x] D. leader 1명 + member 2명 계정 + Auth Site URL/Redirect + public sign-up OFF 재확인 — 완료 (파트원 온보딩, signup_disabled 라이브 확인)
+[x] E. Workers 배포 + 스모크 + 보안 헤더(CSP) 확인 — 완료 (2026-07-09 라이브 점검: CSP 실적용·service_role 미노출 확인)
 [x] F. RLS 검증 (TEST_PLAN.md) + must_change_password 차단 확인 — 2026-07-09 완료 (작업 F 검증 기록 참조)
 [x] G. Backup DB run green + 복호화·복구 리허설 기록 — 2026-07-09 완료 (작업 G 검증 기록 참조)
 ```
@@ -375,9 +375,9 @@ Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy confi
 | 담당 | 파트장 |
 | 운영 URL | `<WORKER_URL>` (public 저장소 관례상 실값 미기재) |
 | Supabase project ref | `<PROJECT_REF>` (동일) |
-| GitHub HEAD | 9f15371 |
+| GitHub HEAD | 배포 코드 기준 6943176 (이후 문서 정리 커밋은 앱 산출물에 영향 없음) |
 | Actions run ID | 29015812702 (Backup DB) |
-| 비고 | F·G는 본 문서의 검증 기록 절 참조. 첨부파일(Storage) 백업 규정(OPERATIONS.md A/B 택1)은 미확정 — 팀 공지 필요 |
+| 비고 | 0~G 전부 완료. 2026-07-09 최종 배포 점검(빌드·라이브·인증/RLS·시크릿·문서) 통과 — 상세는 F·G 검증 기록. **잔여(팀 결정): 첨부파일(Storage) 백업 규정(OPERATIONS.md A/B 택1) 확정·기록** |
 
 ---
 

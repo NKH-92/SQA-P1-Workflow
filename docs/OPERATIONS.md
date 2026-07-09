@@ -40,10 +40,31 @@ supabase login
 
 ## 주간 백업
 
+### 자동 백업 (기본) — GitHub Actions
+
+`.github/workflows/backup.yml`이 **매주 일요일 05:00 KST**(cron)에 스키마·데이터를 덤프해 **AES-256으로 암호화한 뒤** 워크플로 아티팩트(보존 90일)로 업로드합니다. Actions 탭에서 **Backup DB > Run workflow**로 수동 실행도 가능합니다.
+
 | 항목 | 내용 |
 |---|---|
-| 담당 | 파트장 또는 지정 운영자 |
-| 주기 | 주 1회 이상 (권장: 일요일) |
+| 필요 Secrets | `SUPABASE_DB_URL` (Dashboard > Connect의 Session pooler URI), `BACKUP_PASSPHRASE` (암호화 암구호) |
+| 암호화 이유 | 이 저장소가 public인 동안 아티팩트는 누구나 다운로드 가능 — 팀원 이름·이메일이 담긴 덤프는 평문 업로드 금지 |
+| 암구호 보관 | **분실 시 백업 복원 불가.** 비밀번호 관리자 등 통제된 곳에 보관 |
+| 확인 | 주 1회 Actions run이 green인지, Job Summary에 `Backup OK`가 있는지 |
+
+복원 시 복호화:
+
+```bash
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+  -in db-backup-<date>.tar.gz.enc -out db-backup.tar.gz
+tar xzf db-backup.tar.gz
+```
+
+### 수동 백업 (보조)
+
+Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요할 때:
+
+| 항목 | 내용 |
+|---|---|
 | 명령 | `$env:DATABASE_URL = "<DATABASE_URL>"; powershell -File scripts/backup-db.ps1` (스키마·데이터 각각 덤프) |
 | 보관 | 사내 접근 통제된 저장소(로컬 NAS, 암호화 드라이브). **공개 저장소·이메일 첨부 금지** |
 | 확인 | `*-schema.sql`·`*-data.sql` 모두 크기 > 0, schema 파일에 `CREATE TABLE`, data 파일에 `COPY` 또는 `INSERT` 포함 |
@@ -70,7 +91,8 @@ supabase login
 | Enable email signup | **OFF** | Authentication → Providers → Email |
 | 계정 생성 | Dashboard **Add user**만 | Authentication → Users |
 
-> **2026-07-07 MCP 검증**: 1차 probe 가입 성공(ON). 재probe는 email rate limit(429). `signup_disabled` 미수신 → **Dashboard에서 Enable email signup OFF 필요** (MCP로 Auth 설정 변경 불가).
+> **2026-07-07 MCP 검증**: 1차 probe 가입 성공(ON). 재probe는 email rate limit(429). `signup_disabled` 미수신 → OFF 필요 상태였음.
+> **2026-07-09 조치 완료**: Management API(`PATCH /v1/projects/<ref>/config/auth`)로 `disable_signup: true` 적용·재조회 확인. 설정을 되돌리지 않는 한 재확인 불필요.
 
 | 단계 | 작업 |
 |---|---|

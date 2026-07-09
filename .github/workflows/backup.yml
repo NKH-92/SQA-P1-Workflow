@@ -1,0 +1,86 @@
+name: Backup DB
+
+on:
+  schedule:
+    # 매주 일요일 05:00 KST (토요일 20:00 UTC)
+    - cron: '0 20 * * 6'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check backup secrets
+        env:
+          DB_URL_SET: ${{ secrets.SUPABASE_DB_URL != '' }}
+          PASSPHRASE_SET: ${{ secrets.BACKUP_PASSPHRASE != '' }}
+        run: |
+          missing=""
+          [ "$DB_URL_SET" != "true" ] && missing="$missing SUPABASE_DB_URL"
+          [ "$PASSPHRASE_SET" != "true" ] && missing="$missing BACKUP_PASSPHRASE"
+          if [ -n "$missing" ]; then
+            {
+              echo "## Backup failed — missing secrets:$missing"
+              echo ""
+              echo "Repository Settings > Secrets and variables > Actions에 등록하세요."
+              echo "- \`SUPABASE_DB_URL\`: Dashboard > Connect의 Session pooler URI (비밀번호 포함)"
+              echo "- \`BACKUP_PASSPHRASE\`: 덤프 암호화용 암구호 (분실 시 백업 복원 불가 — 비밀번호 관리자에 보관)"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Dump schema and data
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          date=$(TZ=Asia/Seoul date +%F)
+          echo "DUMP_DATE=$date" >> "$GITHUB_ENV"
+          mkdir -p dump
+          supabase db dump --db-url "$DATABASE_URL" -f "dump/sqa-p1-workflow-$date-schema.sql"
+          supabase db dump --db-url "$DATABASE_URL" --data-only -f "dump/sqa-p1-workflow-$date-data.sql"
+
+      # OPERATIONS.md 주간 백업 확인 기준과 동일: 크기 > 0, schema에 CREATE TABLE, data에 COPY/INSERT
+      - name: Validate dumps
+        run: |
+          schema="dump/sqa-p1-workflow-$DUMP_DATE-schema.sql"
+          data="dump/sqa-p1-workflow-$DUMP_DATE-data.sql"
+          for f in "$schema" "$data"; do
+            [ -s "$f" ] || { echo "empty or missing dump: $f"; exit 1; }
+          done
+          grep -q "CREATE TABLE" "$schema" || { echo "schema dump has no CREATE TABLE"; exit 1; }
+          grep -Eq "COPY |INSERT " "$data" || { echo "data dump has no COPY/INSERT"; exit 1; }
+
+      # 이 저장소는 public일 수 있고, public repo의 아티팩트는 누구나 내려받을 수 있다.
+      # 팀원 이름·이메일이 담긴 덤프는 반드시 암호화된 상태로만 업로드한다.
+      - name: Encrypt dump
+        env:
+          PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          tar czf "db-backup-$DUMP_DATE.tar.gz" -C dump .
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+            -in "db-backup-$DUMP_DATE.tar.gz" \
+            -out "db-backup-$DUMP_DATE.tar.gz.enc" \
+            -pass env:PASSPHRASE
+          rm -rf dump "db-backup-$DUMP_DATE.tar.gz"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ env.DUMP_DATE }}
+          path: db-backup-${{ env.DUMP_DATE }}.tar.gz.enc
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Summary
+        run: |
+          {
+            echo "## Backup OK — db-backup-$DUMP_DATE (encrypted, 보존 90일)"
+            echo ""
+            echo "복호화·복원 절차: docs/OPERATIONS.md \"주간 백업\" 절 참고"
+          } >> "$GITHUB_STEP_SUMMARY"

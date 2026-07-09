@@ -80,7 +80,10 @@ export async function fetchAppData(): Promise<FetchAppDataResult> {
     supabase
       .from('review_requests')
       .select('*, profiles(name,email), review_feedback(*, profiles(name))')
-      .order('created_at', { ascending: false }),
+      .order('created_at', { ascending: false })
+      // Embedded feedback rows must be chronological — the UI highlights the last item as
+      // the newest, which only holds if PostgREST returns them oldest-first.
+      .order('created_at', { referencedTable: 'review_feedback', ascending: true }),
     supabase.from('projects').select('*').order('created_at', { ascending: false }),
     supabase
       .from('project_assignments')

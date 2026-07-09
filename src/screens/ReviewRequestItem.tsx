@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Badge } from '../components/ui'
 import type { Profile, ReviewRequest, ReviewStatus } from '../types'
 import { resolveAttachmentHref } from '../lib/attachments'
-import { ageInDays, dueDateLabel, dueDateStatus } from '../lib/dates'
+import { ageInDays, dueDateLabel, dueDateShortLabel, dueDateStatus } from '../lib/dates'
 import { formatDate, reviewStatusLabels } from '../lib/format'
 import {
   Check,
@@ -72,6 +72,7 @@ export function ReviewRequestItem({
   const [transitionNotice, setTransitionNotice] = useState<{ text: string; tone: ReviewStatus } | null>(null)
   const [rejectNotice, setRejectNotice] = useState(false)
   const [celebrate, setCelebrate] = useState(false)
+  const feedbackInputRef = useRef<HTMLTextAreaElement>(null)
   const timelineSteps = getTimelineSteps(request.status)
   const requestFeedback = request.review_feedback ?? []
   const canEditOwn = profile.id === request.requester_id && request.status === 'pending'
@@ -98,6 +99,7 @@ export function ReviewRequestItem({
     if (status === 'rejected') {
       if (!(feedback[request.id]?.trim())) {
         setRejectNotice(true)
+        feedbackInputRef.current?.focus()
         return
       }
       setRejectNotice(false)
@@ -138,8 +140,15 @@ export function ReviewRequestItem({
 
       <div className="request-topline">
         <Badge status={request.status}>{reviewStatusLabels[request.status]}</Badge>
-        <span className="request-id">#{request.id.slice(0, 8).toUpperCase()}</span>
-        <span className="request-age">접수 {ageInDays(request.created_at)}일</span>
+        <span className="request-meta-inline">
+          {request.profiles?.name ?? '요청자'} · 접수 {ageInDays(request.created_at)}일
+        </span>
+        {request.status === 'pending' && request.due_date && (
+          <span className="due-chip" data-tone={dueUrgent ? 'hot' : dueStatus === 'due_soon' ? 'soon' : undefined}>
+            {dueDateShortLabel(request.due_date)}
+          </span>
+        )}
+        {request.attachment_url && <Paperclip size={14} aria-label="첨부 있음" />}
         {profile.role === 'leader' && request.status === 'pending' && (
           <div className="request-actions" aria-label="검토 상태 전환">
             {statusActions.map(({ status, label, variant }) => (
@@ -253,6 +262,7 @@ export function ReviewRequestItem({
               <strong>{profile.name}</strong>
             </div>
             <textarea
+              ref={feedbackInputRef}
               placeholder="이 검토요청에 대해 어떻게 생각하시나요?"
               value={feedback[request.id] ?? ''}
               onChange={(event) => {

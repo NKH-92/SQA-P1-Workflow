@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import { Badge, Rows } from '../components/ui'
+import { Badge, EmptyState, Rows } from '../components/ui'
 import type { AppData, Profile } from '../types'
 import type { MutateFn, TabId } from '../app/types'
 import { downloadCsv } from '../lib/csv'
 import { buildProductAllocationCsvRows } from '../lib/productAllocationCsv'
 import { addProfileNote as addProfileNoteMutation, createRepositoryContext } from '../data'
 import { formatDate, projectStatusLabels, roleLabels } from '../lib/format'
+import { compareProducts, productCategory, productCompanyName, productName } from '../lib/products'
+import type { ProductSortKey } from '../lib/products'
 import { useTeamSummaries } from '../hooks/useTeamSummaries'
 import {
   Download,
@@ -18,51 +20,22 @@ import {
   X,
 } from 'lucide-react'
 
-type ProductSortKey = 'source' | 'name' | 'company'
-type ProductAssignment = AppData['productAssignments'][number]
-
-function productName(assignment: ProductAssignment) {
-  return assignment.products?.name ?? assignment.product_id
-}
-
-function productCompanyName(assignment: ProductAssignment) {
-  return assignment.products?.company_name ?? (assignment.products?.category === '자사' ? '자사' : '')
-}
-
-function productCategory(assignment: ProductAssignment) {
-  return assignment.products?.category === '위탁' ? '위탁' : '자사'
-}
-
-function productSortValue(assignment: ProductAssignment) {
-  return assignment.products?.sort_order ?? Number.MAX_SAFE_INTEGER
-}
-
-function compareText(left: string, right: string) {
-  return left.localeCompare(right, 'ko-KR', { numeric: true, sensitivity: 'base' })
-}
-
-function compareProducts(left: ProductAssignment, right: ProductAssignment, sortKey: ProductSortKey) {
-  if (sortKey === 'source') {
-    return productSortValue(left) - productSortValue(right) || compareText(productName(left), productName(right))
-  }
-  if (sortKey === 'company') {
-    return compareText(productCompanyName(left), productCompanyName(right)) || compareText(productName(left), productName(right))
-  }
-  return compareText(productName(left), productName(right))
-}
-
 export function TeamPanel({
   profile,
   data,
   mutate,
   setData,
   setActiveTab,
+  initialSelectedId,
+  onInitialSelectionApplied,
 }: {
   profile: Profile
   data: AppData
   mutate: MutateFn
   setData: Dispatch<SetStateAction<AppData>>
   setActiveTab: (tab: TabId, entityId?: string) => void
+  initialSelectedId?: string | null
+  onInitialSelectionApplied?: () => void
 }) {
   const { teamMembers, teamSummaries } = useTeamSummaries(data)
   const [memberSearch, setMemberSearch] = useState('')
@@ -77,6 +50,14 @@ export function TeamPanel({
       setSelectedMemberId(teamSummaries[0].member.id)
     }
   }, [selectedMemberId, teamSummaries])
+
+  // 커맨드 팔레트에서 넘어온 파트원을 바로 선택한다(검토요청 큐와 같은 딥링크 방식).
+  useEffect(() => {
+    if (!initialSelectedId) return
+    if (!teamSummaries.some((summary) => summary.member.id === initialSelectedId)) return
+    setSelectedMemberId(initialSelectedId)
+    onInitialSelectionApplied?.()
+  }, [initialSelectedId, onInitialSelectionApplied, teamSummaries])
 
   const filteredSummaries = teamSummaries.filter((summary) => {
     const query = memberSearch.trim().toLowerCase()
@@ -118,7 +99,6 @@ export function TeamPanel({
   return (
     <div className="stack">
       <div className="page-intro">
-        <span>Team</span>
         <h1>파트원</h1>
         <p>
           담당 제품, 정기 업무, 프로젝트 상태를 <strong>{teamMembers.length}명</strong> 기준으로 봅니다.
@@ -170,7 +150,13 @@ export function TeamPanel({
           )
         })}
       </div>
-      {filteredSummaries.length === 0 && <p className="empty">검색 조건에 맞는 파트원이 없습니다.</p>}
+      {filteredSummaries.length === 0 && (
+        <EmptyState
+          icon={<Search size={22} />}
+          title="검색 조건에 맞는 파트원이 없습니다."
+          description="이름, 제품, 업무, 프로젝트명으로 검색할 수 있습니다."
+        />
+      )}
 
       {selectedSummary && (
         <div className="detail-panel summary-panel team-member-detail">

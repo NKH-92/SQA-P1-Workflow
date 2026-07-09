@@ -1,4 +1,5 @@
 import { recordActivityLog } from '../../lib/activityLog'
+import { UserFacingError } from '../../lib/errors'
 import type { LocalRepositoryContext, MasterRepository } from '../repositories/types'
 import {
   removeAllowedUser,
@@ -51,6 +52,11 @@ export function createLocalMasterRepository(ctx: LocalRepositoryContext): Master
 
     async deleteDutyMajorCategory(id) {
       const category = data.dutyMajorCategories.find((item) => item.id === id)
+      // Mirror the remote `major_category_id ... on delete restrict`: refuse deletion while
+      // duties still belong to the category, instead of silently orphaning them in demo mode.
+      if (data.duties.some((item) => item.major_category_id === id)) {
+        throw new UserFacingError('소속된 업무가 있어 대분류를 삭제할 수 없습니다. 먼저 업무를 이동하거나 삭제하세요.')
+      }
       setData((current) => removeDutyMajorCategory(current, id))
       await recordActivityLog(setData, {
         actor: profile,

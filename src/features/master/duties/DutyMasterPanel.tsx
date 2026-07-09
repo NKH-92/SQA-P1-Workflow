@@ -156,7 +156,6 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
   return (
     <div className="stack">
       <div className="page-intro master-page-heading">
-        <span>Master / Work Categories</span>
         <h1>업무 카테고리</h1>
         <p>
           대분류 {data.dutyMajorCategories.length}개 · 업무 {data.duties.length}개 · 미배정 {unassignedDuties.length}개

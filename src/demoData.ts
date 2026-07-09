@@ -216,7 +216,9 @@ export function createPreviewData(): AppData {
       requester_id: 'member-01',
       title: '파트너 API 전환 검토',
       description: '전환 일정과 영향 범위 검토가 필요합니다.',
-      attachment_url: 'https://example.com/reviews/partner-api',
+      // Attachments are storage-only; the demo has no Supabase Storage, so leave it empty
+      // rather than ship a fake URL that the storage-only edit path would silently drop.
+      attachment_url: null,
       due_date: '2026-07-05',
       status: 'pending',
       created_at: '2026-07-03T09:20:00.000Z',

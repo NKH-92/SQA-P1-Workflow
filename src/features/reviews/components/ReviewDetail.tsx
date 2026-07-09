@@ -1,4 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
+import { MousePointerClick } from 'lucide-react'
+import { EmptyState } from '../../../components/ui'
 import type { Profile, ReviewRequest, ReviewStatus } from '../../../types'
 import { ReviewRequestItem } from '../../../screens/ReviewRequestItem'
 
@@ -47,7 +49,11 @@ export function ReviewDetail({
           withdrawReview={withdrawReview}
         />
       ) : (
-        <p className="empty">왼쪽 목록에서 검토요청을 선택하세요.</p>
+        <EmptyState
+          icon={<MousePointerClick size={22} />}
+          title="왼쪽 목록에서 검토요청을 선택하세요."
+          description="제목을 클릭하면 상세 내용과 피드백 흐름이 여기에 열립니다."
+        />
       )}
     </div>
   )

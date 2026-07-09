@@ -1,4 +1,4 @@
-import { validateStorageAttachmentOwnership } from '../../lib/attachments'
+import { removeReviewAttachment, validateStorageAttachmentOwnership } from '../../lib/attachments'
 import { recordActivityLog } from '../../lib/activityLog'
 import { UserFacingError } from '../../lib/errors'
 import { reviewStatusLabels } from '../../lib/format'
@@ -23,8 +23,24 @@ export function createSupabaseReviewRepository(ctx: LocalRepositoryContext): Rev
       if (attachmentError) throw new UserFacingError(attachmentError)
 
       if (editingReviewId) {
-        const { error } = await supabase!.from('review_requests').update(payload).eq('id', editingReviewId)
+        const previousAttachment = data.reviewRequests.find((item) => item.id === editingReviewId)?.attachment_url
+        const { data: updated, error } = await supabase!
+          .from('review_requests')
+          .update(payload)
+          .eq('id', editingReviewId)
+          .select('id')
         if (error) throw error
+        // RLS allows editing only the requester's own pending row. Zero rows means the
+        // leader already closed it while the editor was open — surface it instead of a
+        // misleading success toast.
+        if (!updated || updated.length === 0) {
+          throw new UserFacingError('이미 처리된 요청이라 수정할 수 없습니다. 목록을 새로고침해 주세요.')
+        }
+        if (previousAttachment && previousAttachment !== payload.attachment_url) {
+          // 삭제 실패는 removeReviewAttachment 내부에서 삼켜지므로 결과를 기다릴 이유가 없다.
+          // 굳이 await하면 성공 토스트가 스토리지 왕복만큼 늦어진다.
+          void removeReviewAttachment(previousAttachment)
+        }
         await recordActivityLog(setData, {
           actor: profile,
           entityType: 'review_request',
@@ -56,8 +72,16 @@ export function createSupabaseReviewRepository(ctx: LocalRepositoryContext): Rev
 
     async withdrawReviewRequest(requestId) {
       const request = data.reviewRequests.find((item) => item.id === requestId)
-      const { error } = await supabase!.from('review_requests').delete().eq('id', requestId)
+      const { data: deleted, error } = await supabase!
+        .from('review_requests')
+        .delete()
+        .eq('id', requestId)
+        .select('id')
       if (error) throw error
+      if (!deleted || deleted.length === 0) {
+        throw new UserFacingError('이미 처리된 요청이라 회수할 수 없습니다. 목록을 새로고침해 주세요.')
+      }
+      if (request?.attachment_url) void removeReviewAttachment(request.attachment_url)
       await recordActivityLog(setData, {
         actor: profile,
         entityType: 'review_request',

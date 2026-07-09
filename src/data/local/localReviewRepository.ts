@@ -30,6 +30,11 @@ export function createLocalReviewRepository(ctx: LocalRepositoryContext): Review
       if (attachmentError) throw new UserFacingError(attachmentError)
 
       if (editingReviewId) {
+        // Parity with the remote pending-only RLS: don't let demo edit a closed request.
+        const target = data.reviewRequests.find((item) => item.id === editingReviewId)
+        if (target && target.status !== 'pending') {
+          throw new UserFacingError('이미 처리된 요청이라 수정할 수 없습니다. 목록을 새로고침해 주세요.')
+        }
         setData((current) => updateReviewRequest(current, editingReviewId, payload))
         await recordActivityLog(setData, {
           actor: profile,
@@ -58,6 +63,9 @@ export function createLocalReviewRepository(ctx: LocalRepositoryContext): Review
     async withdrawReviewRequest(requestId) {
       const request = data.reviewRequests.find((item) => item.id === requestId)
       if (!request) return
+      if (request.status !== 'pending') {
+        throw new UserFacingError('이미 처리된 요청이라 회수할 수 없습니다. 목록을 새로고침해 주세요.')
+      }
       setData((current) => removeReviewRequest(current, requestId))
       await recordActivityLog(setData, {
         actor: profile,

@@ -111,7 +111,13 @@ export function rejectReviewRequest(
     ...data,
     reviewRequests: data.reviewRequests.map((row) =>
       row.id === requestId
-        ? { ...row, status: 'rejected', review_feedback: [...(row.review_feedback ?? []), item] }
+        ? {
+            ...row,
+            status: 'rejected',
+            // Match the remote trigger so demo processing-time stats aren't computed as 0 days.
+            updated_at: new Date().toISOString(),
+            review_feedback: [...(row.review_feedback ?? []), item],
+          }
         : row,
     ),
   }

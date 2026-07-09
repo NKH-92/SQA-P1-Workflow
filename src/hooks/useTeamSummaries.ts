@@ -10,12 +10,6 @@ export type TeamSummary = {
   notes: AppData['profileNotes']
 }
 
-export type WorkloadSummary = TeamSummary & {
-  load: number
-  tone: 'overdue' | 'due_soon' | 'scheduled'
-  label: string
-}
-
 export function useTeamSummaries(data: AppData) {
   const teamMembers = useMemo(() => data.profiles.filter((item) => item.role === 'member'), [data.profiles])
 
@@ -32,23 +26,5 @@ export function useTeamSummaries(data: AppData) {
     [data.dutyAssignments, data.productAssignments, data.profileNotes, data.projectAssignments, data.reviewRequests, teamMembers],
   )
 
-  const workloadSummaries = useMemo<WorkloadSummary[]>(
-    () =>
-      teamSummaries.map((summary) => {
-        const load =
-          summary.products.length +
-          summary.duties.length +
-          summary.projects.length +
-          summary.reviews.filter((request) => request.status !== 'approved').length
-        return {
-          ...summary,
-          load,
-          tone: load >= 8 ? 'overdue' : load >= 5 ? 'due_soon' : 'scheduled',
-          label: load >= 8 ? '부하 높음' : load >= 5 ? '주의' : '안정',
-        }
-      }),
-    [teamSummaries],
-  )
-
-  return { teamMembers, teamSummaries, workloadSummaries }
+  return { teamMembers, teamSummaries }
 }

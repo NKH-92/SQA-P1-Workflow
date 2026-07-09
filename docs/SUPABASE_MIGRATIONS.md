@@ -32,6 +32,7 @@
 | `202607070003_revoke_public_execute_on_mutation_rpcs.sql` | PUBLIC execute revoke on mutation RPCs (authenticated only) |
 | `202607070004_extend_activity_log_entity_types.sql` | activity_logs entity_type check에 product/duty/duty_major_category 추가 |
 | `202607070005_protect_last_active_leader.sql` | 마지막 active leader 비활성화·강등 방지 |
+| `202607080001_enforce_password_change_and_restore_visibility.sql` | 비밀번호 변경 전 데이터 접근 RLS 차단 + 파트장 이름 view 복구 + last-leader counter 잠금 |
 
 ## Supabase CLI (권장)
 
@@ -51,10 +52,12 @@ Dashboard > SQL Editor에서 위 **전체 migration 파일** 내용을 **순서�
 
 ## 적용 전 DB 상태 확인
 
+> **주의**: `supabase_migrations.schema_migrations` 이력은 CLI `db push`로 적용한 경우에만 기록됩니다. SQL Editor로 수동 적용했다면 이 테이블이 비어 있을 수 있으니, 아래 constraint·trigger·function 확인 쿼리로 적용 여부를 판단하세요.
+
 ```sql
--- migration 적용 이력 확인
+-- migration 적용 이력 확인 (CLI db push 경로 전용)
 select * from supabase_migrations.schema_migrations
-where version in ('202607070004', '202607070005');
+where version in ('202607070004', '202607070005', '202607080001');
 
 -- activity_logs entity_type check includes master delete types
 select pg_get_constraintdef(oid)
@@ -103,6 +106,13 @@ where pronamespace = 'public'::regnamespace
     'replace_duty_assignments',
     'update_review_request_status'
   );
+
+-- 202607080001: 비밀번호 변경 전 접근 차단이 can_use_app()/is_active_leader()에 반영됐는지
+select pg_get_functiondef('public.can_use_app()'::regprocedure) like '%password_is_current%' as can_use_app_guarded,
+       pg_get_functiondef('public.is_active_leader()'::regprocedure) like '%password_is_current%' as is_active_leader_guarded;
+
+-- 202607080001: 파트장 이름 view가 다시 owner 권한으로 조회되는지 (member 가시성 복구)
+select reloptions from pg_class where relname = 'public_leader_profiles';
 ```
 
 ## 로컬 검증

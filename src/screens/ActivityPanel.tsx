@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Badge, Section } from '../components/ui'
 import type { AppData } from '../types'
 import { formatDate } from '../lib/format'
+import { relativeDateLabel } from '../lib/dates'
 import { MessageSquare, Search } from 'lucide-react'
 
 export function ActivityPanel({ data }: { data: AppData }) {
@@ -16,7 +17,6 @@ export function ActivityPanel({ data }: { data: AppData }) {
   return (
     <div className="stack">
       <div className="page-intro">
-        <span>Workspace / Activity</span>
         <h1>활동 로그</h1>
         <p>팀 활동 이력 최근 {data.activityLogs.length}건 (최대 100건)</p>
       </div>
@@ -34,8 +34,8 @@ export function ActivityPanel({ data }: { data: AppData }) {
               <article className="activity-row" key={log.id}>
                 <div>
                   <strong>{log.summary}</strong>
-                  <small>
-                    {formatDate(log.created_at)} · {log.action}
+                  <small title={formatDate(log.created_at)}>
+                    {relativeDateLabel(log.created_at)} · {log.action}
                   </small>
                 </div>
                 <Badge status="pending">{log.entity_type}</Badge>

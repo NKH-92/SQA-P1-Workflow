@@ -10,7 +10,13 @@ export type ReviewMonthlyStats = {
 
 function monthKey(value?: string | null) {
   if (!value) return null
-  return value.slice(0, 7)
+  // created_at is a UTC timestamptz. Bucket by the viewer's local (KST) month so a
+  // request made at, e.g., 2026-07-01 08:30 KST (2026-06-30 23:30 UTC) counts as July,
+  // matching the local-month bucket keys built in buildReviewMonthlyStats.
+  const time = Date.parse(value)
+  if (Number.isNaN(time)) return null
+  const date = new Date(time)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
 }
 
 function processingDays(request: ReviewRequest) {

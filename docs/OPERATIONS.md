@@ -4,14 +4,39 @@ SQA P1 Workflow의 일상 운영·백업·장애 대응 절차입니다.
 
 운영 URL·Supabase project ref는 팀 위키 또는 이 문서 하단에 `<WORKER_URL>`, `<PROJECT_REF>` 형태로만 기록하고, 저장소에는 커밋하지 않습니다.
 
+## 사전 준비 (Supabase CLI)
+
+백업(`scripts/backup-db.ps1`)과 마이그레이션(`supabase db push`)은 **Supabase CLI**를 전제로 합니다. 설치가 안 되어 있으면 아래 절차의 명령이 모두 실패합니다.
+
+Windows(파트장 PC) 기준 설치 방법 중 하나를 택합니다.
+
+- **Scoop 권장**
+  ```powershell
+  scoop install supabase
+  ```
+- **매번 npx로 실행** (전역 설치 없이)
+  ```powershell
+  npx supabase --version
+  ```
+
+설치 후 1회 로그인합니다.
+
+```powershell
+supabase login
+# npx 사용 시: npx supabase login
+```
+
 ## 장애 확인 순서
 
 | 순서 | 확인 대상 | 방법 | 정상 기준 |
 |---|---|---|---|
 | 1 | 앱 접속 | Workers URL 브라우저 접속 | 로그인 화면 또는 홈 표시 |
-| 2 | Cloudflare Workers | Dashboard > Workers & Pages > 해당 Worker | 최근 배포 성공, 에러율 없음 |
-| 3 | Supabase | Dashboard > Logs (API, Auth) | 5xx 급증 없음 |
-| 4 | Auth | Dashboard > Authentication > Users | 로그인 시도 실패 패턴 확인 |
+| 2 | Supabase 프로젝트 pause 여부 | Dashboard > 프로젝트 상태 | `Active` 표시 (일시정지 아님) |
+| 3 | Cloudflare Workers | Dashboard > Workers & Pages > 해당 Worker | 최근 배포 성공, 에러율 없음 |
+| 4 | Supabase | Dashboard > Logs (API, Auth) | 5xx 급증 없음 |
+| 5 | Auth | Dashboard > Authentication > Users | 로그인 시도 실패 패턴 확인 |
+
+> **앱이 아예 안 열리면 pause를 먼저 의심하세요.** Supabase 무료 티어는 **7일 동안 접속(활동)이 없으면 프로젝트를 자동으로 pause**합니다. pause 상태면 API·Auth가 모두 응답하지 않습니다. Dashboard에서 해당 프로젝트를 **Restore/Resume**하면 몇 분 뒤 복구됩니다. 연휴·장기 미사용 구간 전에는 **접속 1회 루틴**(누군가 로그인만 해도 됨)으로 pause를 예방하세요.
 
 ## 주간 백업
 
@@ -25,6 +50,17 @@ SQA P1 Workflow의 일상 운영·백업·장애 대응 절차입니다.
 
 `DATABASE_URL`은 Supabase Dashboard > Project Settings > Database > Connection string (URI)에서 확인합니다. **명령행 인자로 URL을 넘기지 마세요** — shell history에 비밀번호가 남을 수 있습니다.
 
+### Storage(첨부파일) 백업
+
+> **`scripts/backup-db.ps1`은 DB(스키마·데이터)만 덤프합니다. `review-attachments` 버킷의 Storage 첨부파일은 어떤 백업에도 포함되지 않습니다.** DB만 복원하면 검토요청의 `attachment_url`은 남지만 실제 파일은 없어 다운로드가 깨집니다.
+
+첨부파일 보호는 아래 둘 중 하나를 팀 규정으로 확정해 문서화합니다.
+
+| 방식 | 내용 | 적합한 경우 |
+|---|---|---|
+| A. 수동 백업 | Supabase Dashboard → Storage → `review-attachments`에서 파일을 주기적으로 수동 다운로드해 DB 백업과 같은 통제 저장소에 보관 | 첨부가 업무상 재확보 불가한 원본일 때 |
+| B. 백업 제외 | "**첨부는 백업 대상이 아님 — 중요 문서는 각자 원본을 보관**"을 운영 규정으로 공지하고, 앱 첨부는 공유·리뷰 편의용으로만 사용 | 첨부가 사본이고 원본을 작성자가 항상 보유할 때 |
+
 ## Auth 계정 생성·정리
 
 앱에는 **로그인 화면만** 있습니다. 공개 sign-up UI는 제공하지 않습니다.
@@ -32,9 +68,9 @@ SQA P1 Workflow의 일상 운영·백업·장애 대응 절차입니다.
 | 설정 | 권장 | 확인 위치 |
 |---|---|---|
 | Enable email signup | **OFF** | Authentication → Providers → Email |
+| 계정 생성 | Dashboard **Add user**만 | Authentication → Users |
 
 > **2026-07-07 MCP 검증**: 1차 probe 가입 성공(ON). 재probe는 email rate limit(429). `signup_disabled` 미수신 → **Dashboard에서 Enable email signup OFF 필요** (MCP로 Auth 설정 변경 불가).
-| 계정 생성 | Dashboard **Add user**만 | Authentication → Users |
 
 | 단계 | 작업 |
 |---|---|
@@ -55,6 +91,15 @@ SQA P1 Workflow의 일상 운영·백업·장애 대응 절차입니다.
 
 1. 테스트용 Supabase 프로젝트(또는 로컬 Postgres)를 준비합니다.
 2. 최신 백업 SQL을 `psql` 또는 Supabase SQL Editor로 복원합니다.
+
+   > **복원 순서 주의 — `auth.users` 먼저.** `profiles.id`는 `auth.users(id)`를 FK로 참조합니다(`ON DELETE CASCADE`). 빈 프로젝트에 `profiles`부터 복원하면 대응하는 `auth.users` row가 없어 **FK 위반으로 실패**합니다. 복원은 **① auth 사용자 재생성(또는 `auth` 스키마를 포함한 덤프 먼저 적용) → ② `public.profiles` → ③ 나머지 테이블** 순서로 진행합니다.
+   >
+   > 예시(데이터 덤프를 순서대로 적용):
+   > ```powershell
+   > $env:PGPASSWORD = '<DB_PASSWORD>'; psql "<DATABASE_URL>" -f backup/sqa-p1-workflow-<date>-data.sql
+   > ```
+   > `auth.users`를 백업에 포함하지 않았다면, Dashboard > Authentication > Users에서 동일 이메일로 계정을 먼저 만든 뒤 `profiles` 데이터를 복원합니다.
+
 3. `profiles`, `review_requests`, `products` 행 수를 운영과 대조합니다.
 4. RLS smoke test를 실행합니다 (`tests/rls/setup.sql` 참고).
    - Supabase local: `supabase start` 후 `SUPABASE_URL=http://127.0.0.1:54321` 등 env 설정, `npm test -- tests/rls`
@@ -62,23 +107,61 @@ SQA P1 Workflow의 일상 운영·백업·장애 대응 절차입니다.
    - local/자동화 불가 시 [TEST_PLAN.md](./TEST_PLAN.md)의 RLS 수동 검증 시나리오로 대체
 5. 리허설 날짜·담당·결과를 이 문서 하단 또는 팀 위키에 기록합니다.
 
-## 사용자 제거 (접근 회수)
+## 사용자 제거 (퇴사·전배자 처리)
 
-초대 목록(`allowed_users`)에서 삭제하는 것만으로는 **이미 가입한 계정의 로그인을 막을 수 없습니다.**
+**기본 원칙: 삭제하지 않고 비활성화한다.** 퇴사·전배자는 즉시 삭제하지 말고 **비활성화(`is_active=false`)를 기본**으로 처리합니다. 비활성화만으로 로그인·데이터 접근이 즉시 차단됩니다. 삭제는 **일정 보존 기간(권장: 1년) 경과 후**에만 검토합니다.
+
+초대 목록(`allowed_users`)에서 삭제하는 것만으로는 **이미 가입한 계정의 로그인을 막을 수 없습니다.** 접근 회수는 아래 비활성화로 합니다.
+
+### 1단계(기본): 비활성화
 
 | 단계 | 작업 | 확인 |
 |---|---|---|
-| 1 | Supabase Dashboard > Authentication > Users | 대상 이메일 검색 |
-| 2 | 사용자 삭제 | `profiles`는 FK cascade로 함께 삭제됨 |
+| 1 | 마스터 > 초대 관리에서 대상 사용자 `비활성화` (`is_active` 토글) | 상태 배지가 `비활성`으로 변경 |
+| 2 | 대상 계정으로 로그인 시도 | "계정이 비활성화되었습니다" 안내, 데이터 접근 불가 |
 | 3 | (선택) `allowed_users`에서도 제거 | 앱 > 마스터 > 초대 관리 |
+
+> 마지막 active leader는 비활성화·강등이 DB에서 거부됩니다(202607070005). leader를 내보낼 때는 먼저 **다른 사람을 leader로 지정(이관)한 뒤** 대상 leader를 비활성화하세요.
+
+### 2단계(보존 1년 경과 후에만): 삭제
+
+> ⚠️ **삭제는 되돌릴 수 없고, 그 사람이 남긴 이력이 함께 영구 삭제됩니다.** Auth Users에서 계정을 삭제하면 `profiles`가 cascade로 삭제되며, 이에 딸린 다음 데이터가 **함께 영구 삭제**됩니다.
+> - 그 사람이 올린 **검토요청**(`review_requests.requester_id` → CASCADE) 및 그에 달린 **피드백**(`review_feedback` → CASCADE)
+> - 그 사람의 **활동로그**(`activity_logs.actor_id` → CASCADE)
+> - `product_assignments`·`duty_assignments`·`project_assignments`·`profile_notes` 등 배정·메모 (모두 CASCADE)
+>
+> ⚠️ **leader 계정은 삭제 자체가 실패할 수 있습니다.** 그 사람이 **피드백을 남겼거나**(`review_feedback.leader_id` → `ON DELETE RESTRICT`) **프로젝트를 만든**(`projects.created_by` → `ON DELETE RESTRICT`) 경우, 참조가 남아 있는 한 삭제가 **FK 오류로 실패**합니다. leader는 원칙적으로 비활성화만 하고, 부득이 삭제해야 하면 참조 이력을 먼저 정리/이관해야 합니다.
+>
+> (FK 근거: `supabase/migrations/202607020001_initial_schema.sql`, `202607040003_operational_queue.sql`)
+
+보존 기간(권장 1년)이 지나 삭제가 확정되면:
+
+| 단계 | 작업 | 확인 |
+|---|---|---|
+| 0 | **DB·Storage 백업 수행** | `scripts/backup-db.ps1` + Storage 수동 백업(위 백업 절 참고) |
+| 1 | 대상이 leader이면 leader 권한·프로젝트·피드백을 다른 사람에게 이관 | 참조 이력 정리 |
+| 2 | Supabase Dashboard > Authentication > Users에서 대상 삭제 | `profiles` 및 위 CASCADE 데이터가 함께 삭제됨 |
+| 3 | `allowed_users`에서도 제거 | 앱 > 마스터 > 초대 관리 |
 | 4 | 대상 계정으로 로그인 시도 | 접근 불가 확인 |
 
 ## 임시 비밀번호·첫 로그인
 
+**공통 임시 비밀번호는 `1234`를 유지**하되, **최초 로그인 시 비밀번호 변경을 강제**합니다(파트장 확정).
+
 1. 파트장이 `allowed_users`에 이메일·이름·역할을 등록합니다.
-2. Supabase Dashboard > Authentication > Users > **Add user** 로 계정을 만듭니다 (앱 가입 UI 없음).
-3. 임시 비밀번호 발급 시 **최소 4자**(로그인 폼)이며, 첫 로그인 후 8자 이상으로 변경해야 합니다(`must_change_password`).
-4. `'1234'` 등 너무 단순한 비밀번호는 앱에서 거부됩니다.
+2. Supabase Dashboard > Authentication > Users > **Add user** 로 계정을 만듭니다 (앱 가입 UI 없음). 임시 비밀번호는 `1234`.
+3. 사용자는 `1234`로 로그인한 뒤 `must_change_password` 화면에서 **8자 이상**의 새 비밀번호로 변경합니다. `'1234'` 등 너무 단순한 비밀번호는 새 비밀번호로 거부됩니다.
+
+### 최초 변경은 이제 서버(RLS)에서 강제됨
+
+`must_change_password=true`인 동안에는 **RLS 레벨에서 데이터 읽기/쓰기가 차단**됩니다(마이그레이션 `202607080001`). 세션을 얻어 화면을 우회하고 REST/RPC를 직접 호출해도, 비밀번호를 바꾸기 전에는 어떤 데이터에도 접근할 수 없습니다. (자기 자신 `profiles` row 조회와 비밀번호 변경 RPC만 예외 — 변경 화면을 그리기 위함)
+
+### 잔여 위험과 완화책
+
+- **잔여 위험(계정 선점):** 임시 비밀번호가 공통 `1234`이므로, 공격자가 **대상 본인보다 먼저 `1234`로 로그인해 비밀번호를 바꿔버리면 계정을 탈취**할 수 있습니다. RLS 강제는 "바꾸기 전엔 접근 불가"를 보장할 뿐, "누가 먼저 바꾸느냐"는 막지 못합니다.
+- **완화책:**
+  1. **온보딩은 한 명씩** — 계정 생성 **직후 즉시 본인이 로그인해 비밀번호를 변경**하게 합니다. 미사용 상태로 `1234`인 계정을 오래 방치하지 않습니다.
+  2. **public sign-up OFF는 필수 전제** — Supabase Dashboard에서 Enable email signup을 반드시 OFF로 둡니다(위 Auth 절 참고).
 
 ## 사용자 비활성화 (is_active)
 
@@ -89,6 +172,12 @@ SQA P1 Workflow의 일상 운영·백업·장애 대응 절차입니다.
 | 3 | 재활성화 후 로그인 | 정상 홈 진입 |
 
 상세 RLS·Storage 검증은 [MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md) 작업 F를 참고한다.
+
+## 개인정보 처리 (팀 공지 필요)
+
+이 앱은 팀원의 **이름·이메일**을 Supabase(외부 클라우드)에 저장합니다. Supabase 프로젝트는 **서울 리전(`ap-northeast-2`)** 에 생성합니다.
+
+> **사용 시작 전 팀 공지 1회가 필요합니다.** 팀원 이름·이메일이 외부 클라우드(Supabase, 서울 리전)에 저장된다는 사실을 사용 시작 전에 팀에 1회 공지하고, 공지 일자를 이 문서 하단 또는 팀 위키에 기록합니다.
 
 ## 배포
 

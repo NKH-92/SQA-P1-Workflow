@@ -87,6 +87,17 @@ export async function importInvites(
         })),
         ...current.allowedUsers,
       ],
+      // Mirror addAllowedUser: reflect imported invites in the team list too, so demo
+      // single-add and CSV-add behave the same.
+      profiles: [
+        ...rows.map((row) => ({
+          id: makeId('profile'),
+          email: row.email,
+          name: row.name.trim(),
+          role: row.role,
+        })),
+        ...current.profiles,
+      ],
     }))
   }
 }

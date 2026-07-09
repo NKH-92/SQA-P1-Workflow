@@ -1,7 +1,8 @@
-import { Badge } from '../../../components/ui'
+import { Inbox } from 'lucide-react'
+import { EmptyState } from '../../../components/ui'
 import type { Profile, ReviewRequest, ReviewStatus } from '../../../types'
 import type { ReviewStatusFilter } from '../../../app/types'
-import { ageInDays, dueDateLabel, dueDateStatus } from '../../../lib/dates'
+import { dueDateShortLabel, dueDateStatus, relativeDateLabel } from '../../../lib/dates'
 import { formatDate, reviewStatusLabels } from '../../../lib/format'
 
 type ReviewListProps = {
@@ -13,6 +14,13 @@ type ReviewListProps = {
   onStatusFilterChange: (filter: ReviewStatusFilter) => void
   selectedReviewId: string | null
   onSelectReview: (id: string) => void
+  unreadIds?: Set<string>
+}
+
+function dueChipTone(dueStatus: ReturnType<typeof dueDateStatus>) {
+  if (dueStatus === 'overdue' || dueStatus === 'due_now') return 'hot'
+  if (dueStatus === 'due_soon') return 'soon'
+  return undefined
 }
 
 export function ReviewList({
@@ -24,6 +32,7 @@ export function ReviewList({
   onStatusFilterChange,
   selectedReviewId,
   onSelectReview,
+  unreadIds,
 }: ReviewListProps) {
   return (
     <aside className="review-list-pane" aria-label="검토요청 목록">
@@ -50,30 +59,38 @@ export function ReviewList({
           </button>
         ))}
       </div>
-      {visibleReviewRequests.length === 0 && <p className="empty">검토요청이 없습니다.</p>}
+      {visibleReviewRequests.length === 0 && (
+        <EmptyState icon={<Inbox size={22} />} title="검토요청이 없습니다." description="필터를 바꾸면 다른 상태의 요청이 보입니다." />
+      )}
       {visibleReviewRequests.map((request) => {
         const dueStatus = dueDateStatus(request.due_date)
-        const dueHot = dueStatus === 'overdue' || dueStatus === 'due_now'
+        const dueChip = request.status === 'pending' ? dueDateShortLabel(request.due_date) : null
+        const unread = unreadIds?.has(request.id) ?? false
         return (
           <button
             className={selectedReviewId === request.id ? 'review-list-item selected' : 'review-list-item'}
+            data-status={request.status}
             key={request.id}
             onClick={() => onSelectReview(request.id)}
             type="button"
           >
-            <span className="review-list-top">
-              <Badge status={request.status}>{reviewStatusLabels[request.status]}</Badge>
-              <time>{formatDate(request.created_at)}</time>
-            </span>
-            <strong>{request.title}</strong>
-            <span className="review-list-meta">
-              {request.profiles?.name ?? '요청자'} · 접수 {ageInDays(request.created_at)}일
-              {request.due_date && (
-                <>
-                  {' · '}
-                  <span className={dueHot ? 'due-hot' : undefined}>{dueDateLabel(request.due_date)}</span>
-                </>
+            <span className="review-list-line1">
+              {unread && <span className="unread-dot" role="img" aria-label="새 소식" />}
+              <strong>{request.title}</strong>
+              {dueChip && (
+                <span className="due-chip" data-tone={dueChipTone(dueStatus)}>
+                  {dueChip}
+                </span>
               )}
+            </span>
+            <span className="review-list-line2">
+              <span className="status-word" data-status={request.status}>
+                {reviewStatusLabels[request.status]}
+              </span>
+              <span className="dot-sep" aria-hidden="true" />
+              {request.profiles?.name ?? '요청자'}
+              <span className="dot-sep" aria-hidden="true" />
+              <time title={formatDate(request.created_at)}>{relativeDateLabel(request.created_at)}</time>
             </span>
           </button>
         )

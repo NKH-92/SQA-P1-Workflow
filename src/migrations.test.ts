@@ -244,4 +244,20 @@ describe('Supabase migrations', () => {
     expect(migration).toContain('profiles')
     expect(migration).toContain('allowed_users')
   })
+
+  it('enforces password change in RLS and restores leader visibility', () => {
+    const migration = readMigration('202607080001_enforce_password_change_and_restore_visibility.sql')
+
+    expect(migration).toContain('function public.password_is_current()')
+    expect(migration).toContain('not must_change_password')
+    // can_use_app() and is_active_leader() must both require the password check.
+    expect(migration).toContain('public.is_active_self() and public.password_is_current()')
+    expect(migration).toContain(
+      'public.is_leader() and public.is_active_self() and public.password_is_current()',
+    )
+    // leader names visible to members again.
+    expect(migration).toContain('security_invoker = false')
+    // last-active-leader counter locked down.
+    expect(migration).toContain('revoke execute on function public.count_active_leaders_except(uuid) from anon')
+  })
 })

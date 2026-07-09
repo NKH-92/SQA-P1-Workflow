@@ -10,8 +10,13 @@ export function useReviewSelection(
   const [selectedReviewId, setSelectedReviewId] = useState<string | null>(null)
   const firstVisibleReviewId = visibleReviewRequests[0]?.id ?? null
   const visibleReviewKey = visibleReviewRequests.map((request) => request.id).join('|')
+  // 칸반 카드·딥링크는 필터 밖 요청을 가리킬 수 있다. 호출부가 필터를 풀어주는 동안의
+  // 프레임에도 엉뚱한 요청이 아닌 선택한 요청을 보여주도록 scoped까지 폴백한다.
   const selectedReview =
-    visibleReviewRequests.find((request) => request.id === selectedReviewId) ?? visibleReviewRequests[0] ?? null
+    visibleReviewRequests.find((request) => request.id === selectedReviewId) ??
+    scopedReviewRequests.find((request) => request.id === selectedReviewId) ??
+    visibleReviewRequests[0] ??
+    null
 
   useEffect(() => {
     if (!firstVisibleReviewId) {

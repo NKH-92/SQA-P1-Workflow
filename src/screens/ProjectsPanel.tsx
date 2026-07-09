@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import { Badge, Rows, Section } from '../components/ui'
+import { Badge, EmptyState, Rows, Section } from '../components/ui'
 import type { AppData, Profile, Project, ProjectStatus } from '../types'
 import { downloadCsv } from '../lib/csv'
 import {
@@ -57,6 +57,8 @@ export function ProjectsPanel({
   const [assignmentEditMemberIds, setAssignmentEditMemberIds] = useState<string[]>([])
   const [pendingProjectDeleteId, setPendingProjectDeleteId] = useState<string | null>(null)
   const leaderMode = profile.role === 'leader'
+  // 파트원은 자기 프로젝트만 보므로 사람별 보기가 의미 없다 — 항상 프로젝트별로 고정한다.
+  const effectiveViewMode = leaderMode ? viewMode : 'project'
   const memberOptions = data.profiles.filter(canAssignProjectTo)
   const visibleProjectAssignments = selectVisibleProjectAssignments(data, profile, leaderMode)
   const projectFilter = { query: projectQuery, status: statusFilter }
@@ -186,7 +188,6 @@ export function ProjectsPanel({
   return (
     <div className="stack">
       <div className="page-intro">
-        <span>Projects</span>
         <h1>프로젝트</h1>
         <p>
           상태별로 묶어 <strong>{projectGroups.length}개</strong> 프로젝트를 확인합니다.
@@ -454,39 +455,30 @@ export function ProjectsPanel({
         </div>
       )}
       <Section title={leaderMode ? '프로젝트별 배정 현황' : '내 배정 업무'} icon={<BriefcaseBusiness size={18} />}>
-        <div className="section-toolbar">
-          <label className="search-field">
-            <Search size={16} />
-            <input
-              placeholder="프로젝트, 파트원, 메모 검색"
-              value={projectQuery}
-              onChange={(event) => setProjectQuery(event.target.value)}
-            />
-          </label>
-          <select className="compact-select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'all' | ProjectStatus)}>
-            <option value="all">전체 상태</option>
-            {Object.entries(projectStatusLabels).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <div className="view-switch">
-            <button className={viewMode === 'project' ? 'selected' : ''} onClick={() => setViewMode('project')} type="button">
-              프로젝트별
-            </button>
-            <button className={viewMode === 'member' ? 'selected' : ''} onClick={() => setViewMode('member')} type="button">
-              사람별
-            </button>
+        {/* 보기 전환 토글은 파트장 전용. */}
+        {leaderMode && (
+          <div className="section-toolbar">
+            {/* Search / status / CSV live in the page toolbar above and drive both views via
+                shared state; this section only owns the project-vs-member view toggle. */}
+            <div className="view-switch">
+              <button className={viewMode === 'project' ? 'selected' : ''} onClick={() => setViewMode('project')} type="button">
+                프로젝트별
+              </button>
+              <button className={viewMode === 'member' ? 'selected' : ''} onClick={() => setViewMode('member')} type="button">
+                사람별
+              </button>
+            </div>
           </div>
-          <button className="ghost" onClick={exportProjectCsv} type="button">
-            <Download size={16} />
-            CSV
-          </button>
-        </div>
-        {viewMode === 'project' ? (
+        )}
+        {effectiveViewMode === 'project' ? (
           <div className="group-list">
-            {projectGroups.length === 0 && <p className="empty">조건에 맞는 프로젝트가 없습니다.</p>}
+            {projectGroups.length === 0 && (
+              <EmptyState
+                icon={<FolderKanban size={22} />}
+                title="조건에 맞는 프로젝트가 없습니다."
+                description="검색어나 상태 필터를 바꿔 보세요."
+              />
+            )}
             {projectGroups.map(({ project, assignments }) => {
               const edit = projectEdits[project.id]
               return (
@@ -587,7 +579,13 @@ export function ProjectsPanel({
           </div>
         ) : (
           <div className="group-list">
-            {memberGroups.length === 0 && <p className="empty">조건에 맞는 파트원 배정이 없습니다.</p>}
+            {memberGroups.length === 0 && (
+              <EmptyState
+                icon={<Users size={22} />}
+                title="조건에 맞는 파트원 배정이 없습니다."
+                description="검색어나 상태 필터를 바꿔 보세요."
+              />
+            )}
             {memberGroups.map(({ member, assignments }) => (
               <article className="group-card" key={member.id}>
                 <div className="group-header">

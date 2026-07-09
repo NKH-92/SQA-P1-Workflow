@@ -1,5 +1,6 @@
 import { UserFacingError } from './errors'
 import { supabase } from './supabase'
+import { normalizeHttpUrl } from './urls'
 
 export const REVIEW_ATTACHMENTS_BUCKET = 'review-attachments'
 export const STORAGE_ATTACHMENT_PREFIX = `storage://${REVIEW_ATTACHMENTS_BUCKET}/`
@@ -50,9 +51,23 @@ export async function uploadReviewAttachment(userId: string, file: File) {
   return toStorageAttachmentUrl(path)
 }
 
+// Best-effort removal of an uploaded attachment. Used to avoid orphaned storage objects
+// when a review insert fails after upload, or when an attachment is replaced/withdrawn.
+// Cleanup failures are swallowed so they never mask the caller's primary result.
+export async function removeReviewAttachment(value?: string | null) {
+  if (!value || !isStorageAttachment(value) || !supabase) return
+  try {
+    await supabase.storage.from(REVIEW_ATTACHMENTS_BUCKET).remove([storagePathFromAttachment(value)])
+  } catch (error) {
+    console.warn('Failed to remove review attachment', error)
+  }
+}
+
 export async function resolveAttachmentHref(value?: string | null) {
   if (!value) return null
-  if (!isStorageAttachment(value)) return value
+  // Non-storage values (legacy/manual URLs) are rendered into an anchor href; only allow
+  // http/https so a stored `javascript:`/`data:` value cannot execute on click.
+  if (!isStorageAttachment(value)) return normalizeHttpUrl(value)
   if (!supabase) return null
   const { data, error } = await supabase.storage
     .from(REVIEW_ATTACHMENTS_BUCKET)

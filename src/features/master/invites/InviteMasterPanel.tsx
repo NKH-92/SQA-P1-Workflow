@@ -61,17 +61,39 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
     ])
   }
 
-  const importInvitesCsv = (file: File) =>
-    mutate(async () => {
-      const rows = parseInviteImportRows(parseCsvRows(await file.text()))
-      const existingEmails = new Set(data.allowedUsers.map((item) => item.email.toLowerCase()))
-      const incoming = rows.filter((row) => {
-        if (!EMAIL_PATTERN.test(row.email)) return false
-        return !existingEmails.has(row.email)
-      })
-      validateInviteImport(data, rows.length, incoming.length)
-      await importInvitesMutation(createRepositoryContext(profile, data, setData), incoming)
-    }, '초대 CSV 가져오기를 완료했습니다.')
+  const importInvitesCsv = async (file: File) => {
+    let rows: ReturnType<typeof parseInviteImportRows>
+    try {
+      rows = parseInviteImportRows(parseCsvRows(await file.text()))
+    } catch (error) {
+      // 파일 읽기·파싱 실패도 다른 실패와 같은 경로(오류 토스트)로 보여준다.
+      // 호출부가 void로 부르므로 여기서 삼키면 사용자는 성공으로 오해한다.
+      await mutate(async () => {
+        throw error
+      }, '')
+      return
+    }
+    const existingEmails = new Set(data.allowedUsers.map((item) => item.email.toLowerCase()))
+    const seen = new Set<string>()
+    const incoming = rows.filter((row) => {
+      if (!EMAIL_PATTERN.test(row.email)) return false
+      // Drop rows already registered AND duplicate rows within the file, so a repeated
+      // email cannot fail the whole batch on the remote unique constraint.
+      if (existingEmails.has(row.email) || seen.has(row.email)) return false
+      seen.add(row.email)
+      return true
+    })
+    const skipped = rows.length - incoming.length
+    await mutate(
+      async () => {
+        validateInviteImport(data, rows.length, incoming.length)
+        await importInvitesMutation(createRepositoryContext(profile, data, setData), incoming)
+      },
+      skipped > 0
+        ? `초대 ${incoming.length}건을 가져왔습니다. 중복·형식 오류 ${skipped}건은 제외했습니다.`
+        : `초대 ${incoming.length}건을 가져왔습니다.`,
+    )
+  }
 
   const addAllowedUser = async () => {
     const ok = await mutate(async () => {
@@ -111,7 +133,6 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
   return (
     <div className="stack">
       <div className="page-intro master-page-heading">
-        <span>Master / Invitations</span>
         <h1>초대 관리</h1>
         <p>
           초대 {data.allowedUsers.length}명 · 파트원 {memberOptions.length}명

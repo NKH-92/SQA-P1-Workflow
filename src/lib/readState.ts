@@ -22,7 +22,11 @@ export function loadReadState(userId: string): ReadState {
 export function markReviewsSeen(userId: string) {
   if (typeof localStorage === 'undefined') return
   const state = loadReadState(userId)
-  localStorage.setItem(storageKey(userId), JSON.stringify({ ...state, reviewsSeenAt: new Date().toISOString() }))
+  try {
+    localStorage.setItem(storageKey(userId), JSON.stringify({ ...state, reviewsSeenAt: new Date().toISOString() }))
+  } catch {
+    // Storage-blocked environments (private mode, quota) must not crash the reviews tab.
+  }
 }
 
 function eventTime(value?: string | null) {
@@ -31,20 +35,30 @@ function eventTime(value?: string | null) {
   return Number.isNaN(time) ? 0 : time
 }
 
-export function countUnreadReviews(profile: Profile, data: AppData, leaderMode: boolean) {
-  const seenAt = eventTime(loadReadState(profile.id).reviewsSeenAt)
-  if (leaderMode) {
-    return data.reviewRequests.filter((request) => {
-      if (request.status === 'pending') return eventTime(request.created_at) > seenAt
-      const newFeedback = request.review_feedback?.some((item) => eventTime(item.created_at) > seenAt)
-      return newFeedback
-    }).length
-  }
+type UnreadCheckRequest = AppData['reviewRequests'][number]
 
-  return data.reviewRequests.filter((request) => {
-    if (request.requester_id !== profile.id) return false
-    const updated = eventTime(request.updated_at ?? request.created_at)
-    const newFeedback = request.review_feedback?.some((item) => eventTime(item.created_at) > seenAt)
-    return updated > seenAt || newFeedback
-  }).length
+/** 목록의 미확인 dot과 뱃지 카운트가 같은 판정을 쓰도록 단일 함수로 유지한다. */
+export function isReviewUnread(
+  request: UnreadCheckRequest,
+  profile: Profile,
+  leaderMode: boolean,
+  seenAtIso: string | null,
+): boolean {
+  const seenAt = eventTime(seenAtIso)
+  if (leaderMode) {
+    // Unread for the leader = new incoming requests to review. Feedback is authored by the
+    // leader themselves (RLS restricts feedback inserts to leaders), so it must not count.
+    return request.status === 'pending' && eventTime(request.created_at) > seenAt
+  }
+  // Unread for the member = the leader acted on their request: new feedback, or a final
+  // (approved/rejected) status change. The member's own new pending request must not count.
+  if (request.requester_id !== profile.id) return false
+  const newFeedback = request.review_feedback?.some((item) => eventTime(item.created_at) > seenAt)
+  const closedUpdate = request.status !== 'pending' && eventTime(request.updated_at ?? request.created_at) > seenAt
+  return Boolean(newFeedback) || closedUpdate
+}
+
+export function countUnreadReviews(profile: Profile, data: AppData, leaderMode: boolean) {
+  const seenAtIso = loadReadState(profile.id).reviewsSeenAt
+  return data.reviewRequests.filter((request) => isReviewUnread(request, profile, leaderMode, seenAtIso)).length
 }

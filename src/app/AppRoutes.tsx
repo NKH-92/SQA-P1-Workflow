@@ -8,6 +8,7 @@ import {
   Dashboard,
   LeaderDashboard,
   MasterPanel,
+  MyWorkPanel,
   ProjectsPanel,
   ReviewsPanel,
   TeamPanel,
@@ -25,6 +26,8 @@ type AppRoutesProps = {
   setProfile: React.Dispatch<React.SetStateAction<Profile | null>>
   setMessage: React.Dispatch<React.SetStateAction<ToastMessage | null>>
   refreshData: () => Promise<void>
+  /** 검토 리스트 미확인 dot의 기준 시각(App이 탭 진입 시 캡처). null이면 dot을 켜지 않는다. */
+  reviewsUnreadCutoff: string | null
 }
 
 export function AppRoutes({
@@ -39,17 +42,19 @@ export function AppRoutes({
   setProfile: _setProfile,
   setMessage: _setMessage,
   refreshData: _refreshData,
+  reviewsUnreadCutoff,
 }: AppRoutesProps) {
   const leaderMode = canManageTeamData(profile)
 
   return (
     <>
-      {(activeTab === 'dashboard' || activeTab === 'work') &&
-        (leaderMode && activeTab === 'dashboard' ? (
+      {activeTab === 'dashboard' &&
+        (leaderMode ? (
           <LeaderDashboard profile={profile} data={data} setActiveTab={setActiveTab} />
-        ) : !leaderMode ? (
+        ) : (
           <Dashboard profile={profile} data={data} mutate={mutate} setData={setData} setActiveTab={setActiveTab} />
-        ) : null)}
+        ))}
+      {activeTab === 'work' && !leaderMode && <MyWorkPanel profile={profile} data={data} />}
       {activeTab === 'reviews' && (
         <ReviewsPanel
           profile={profile}
@@ -58,11 +63,20 @@ export function AppRoutes({
           setData={setData}
           initialSelectedId={navEntityId}
           onInitialSelectionApplied={() => setNavEntityId(null)}
+          reviewsUnreadCutoff={reviewsUnreadCutoff}
         />
       )}
       {activeTab === 'projects' && <ProjectsPanel profile={profile} data={data} mutate={mutate} setData={setData} />}
       {activeTab === 'team' && leaderMode && (
-        <TeamPanel profile={profile} data={data} mutate={mutate} setData={setData} setActiveTab={setActiveTab} />
+        <TeamPanel
+          profile={profile}
+          data={data}
+          mutate={mutate}
+          setData={setData}
+          setActiveTab={setActiveTab}
+          initialSelectedId={navEntityId}
+          onInitialSelectionApplied={() => setNavEntityId(null)}
+        />
       )}
       {(activeTab === 'products' || activeTab === 'duties' || activeTab === 'invites') && leaderMode && (
         <MasterPanel

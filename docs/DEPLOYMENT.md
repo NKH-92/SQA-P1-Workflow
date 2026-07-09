@@ -23,7 +23,7 @@ git push -u origin main
 
 ## Supabase
 
-1. 새 Supabase 프로젝트를 만든다.
+1. 새 Supabase 프로젝트를 만든다. **리전(Region)은 반드시 `Northeast Asia (Seoul) / ap-northeast-2`** 로 선택한다. (팀원 이름·이메일이 이 리전에 저장되며, 사용 시작 전 팀 공지가 필요하다 — [OPERATIONS.md](./OPERATIONS.md) 개인정보 처리 절 참고.)
 2. `supabase/migrations` 아래 SQL 파일을 번호 순서대로 적용한다. Phase 2~4 추가분은 [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md)를 참고한다.
 3. 첫 파트장 bootstrap은 SQL Editor에서 1회 수행한다.
 
@@ -39,9 +39,11 @@ set name = excluded.name,
 5. 이후 초대 사용자는 `allowed_users` 등록 후 Dashboard에서 사용자를 생성한다 (앱 가입 UI 없음).
 6. 여러 사용자를 한 번에 넣어야 하면 `supabase/private_seed.example.sql`을 `supabase/private_seed.local.sql`로 복사한 뒤 실제 이메일/이름으로 바꿔 SQL Editor에서 실행한다. `.local.sql` 파일은 커밋하지 않는다.
 
-### 사용자 제거
+### 사용자 제거 (퇴사·전배자)
 
-초대 목록에서만 삭제하면 이미 가입한 계정은 계속 로그인할 수 있다. Supabase Dashboard > Authentication > Users에서 사용자를 삭제하면 `profiles`가 cascade로 함께 삭제된다. 자세한 절차는 [OPERATIONS.md](./OPERATIONS.md)를 참고한다.
+**기본은 삭제가 아니라 비활성화다.** 퇴사·전배자는 즉시 삭제하지 말고 **비활성화(`is_active=false`)를 기본**으로 처리하고, **일정 보존 기간(권장 1년) 경과 후에만 삭제**를 검토한다. 초대 목록에서만 삭제하면 이미 가입한 계정은 계속 로그인할 수 있으므로, 접근 회수는 비활성화로 한다.
+
+삭제 시 주의: Users에서 사용자를 삭제하면 `profiles`가 cascade로 삭제되며 그 사람의 **검토요청·피드백·활동로그가 함께 영구 삭제**된다. 또한 피드백을 남겼거나 프로젝트를 만든 **leader 계정은 `ON DELETE RESTRICT`로 삭제가 FK 오류로 실패**할 수 있다. 개정된 비활성화-우선 원칙과 경고, 삭제 절차는 [OPERATIONS.md](./OPERATIONS.md) "사용자 제거 (퇴사·전배자 처리)" 절을 참고한다.
 
 ## Cloudflare Workers (기본 배포)
 
@@ -75,6 +77,20 @@ Repository Settings > Secrets and variables > Actions에 다음을 등록한다.
 **주의:** `main` push 후 Actions가 green이어도, 예전에는 deploy env가 없을 때 배포 없이 성공처럼 보일 수 있었다. 현재는 `main` push에서 deploy env가 없으면 워크플로가 **실패**한다. CI 테스트만 확인하려면 Actions에서 **Deploy Worker** 워크플로를 `workflow_dispatch`로 실행한다 (env 미설정 시 test만 통과, build/deploy는 스킵).
 
 ### 수동 배포
+
+**PowerShell (Windows)** — 파트장 PC 기준. 인라인 `VAR=x cmd` 문법은 PowerShell에서 동작하지 않으므로 `$env:VAR='x'`로 먼저 설정한다.
+
+```powershell
+npm ci
+npm test
+$env:VITE_APP_MODE = 'production'
+$env:VITE_SUPABASE_URL = '<SUPABASE_URL>'
+$env:VITE_SUPABASE_ANON_KEY = '<SUPABASE_ANON_KEY>'
+npm run build
+npx wrangler deploy --name <WORKER_NAME> --assets dist --keep-vars
+```
+
+**bash / macOS** — 인라인 env 문법 사용 가능.
 
 ```bash
 npm ci

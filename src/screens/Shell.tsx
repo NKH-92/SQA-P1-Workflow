@@ -1,8 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { AppData, Profile, Role } from '../types'
 import type { TabId, ToastMessage } from '../app/types'
 import { roleLabels } from '../lib/format'
+import type { AppNotification } from '../lib/notifications'
+import { NotificationPanel } from '../components/NotificationPanel'
 import {
+  Bell,
   BriefcaseBusiness,
   Check,
   ClipboardList,
@@ -12,10 +15,23 @@ import {
   MessageSquare,
   Package,
   RefreshCw,
+  Rows3,
+  Search,
   ShieldCheck,
   Users,
   X,
 } from 'lucide-react'
+
+type Density = 'comfortable' | 'compact'
+
+function loadDensity(): Density {
+  if (typeof localStorage === 'undefined') return 'comfortable'
+  try {
+    return localStorage.getItem('ui:density') === 'compact' ? 'compact' : 'comfortable'
+  } catch {
+    return 'comfortable'
+  }
+}
 
 export function Shell({
   activeTab,
@@ -29,6 +45,9 @@ export function Shell({
   lastSyncedAt,
   pendingCount,
   unreadReviewsCount,
+  notifications,
+  onMarkAllRead,
+  onOpenCommandPalette,
   onRefresh,
   onSignOut,
   onPreviewRoleChange,
@@ -45,12 +64,27 @@ export function Shell({
   lastSyncedAt: Date | null
   pendingCount: number
   unreadReviewsCount: number
+  notifications: AppNotification[]
+  onMarkAllRead: () => void
+  onOpenCommandPalette: () => void
   onRefresh: () => void
   onSignOut: () => void
   onPreviewRoleChange?: (role: Role) => void
   children: React.ReactNode
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [notifOpen, setNotifOpen] = useState(false)
+  // A3: 간격 압축 모드. 문서 루트 data-density 속성으로 CSS 프리셋을 전환한다.
+  const [density, setDensity] = useState<Density>(loadDensity)
+  useEffect(() => {
+    document.documentElement.dataset.density = density
+    try {
+      localStorage.setItem('ui:density', density)
+    } catch {
+      // 저장이 막힌 환경(사생활 보호 모드 등)에서도 토글 자체는 동작해야 한다.
+    }
+  }, [density])
+  const unreadNotifications = notifications.filter((item) => item.unread).length
   const memberCount = data.profiles.filter((item) => item.role === 'member').length
   const memberReviewCount = data.reviewRequests.filter((request) => request.requester_id === profile.id).length
   const memberProjectCount = data.projectAssignments.filter((assignment) => assignment.user_id === profile.id).length
@@ -103,14 +137,14 @@ export function Shell({
       description: leaderMode ? `대기 검토 ${pendingCount}건 · 파트원 ${memberCount}명` : `${profile.name}님의 오늘 업무`,
     },
     reviews: {
-      label: leaderMode ? '홈 / 검토요청' : '내 업무 / 검토요청',
+      label: leaderMode ? '워크스페이스 / 검토요청' : '내 업무 / 검토요청',
       description: leaderMode ? '검토 대기 항목과 피드백 흐름' : '내가 요청한 검토와 답변',
     },
     projects: {
-      label: leaderMode ? '홈 / 프로젝트' : '내 업무 / 프로젝트',
+      label: leaderMode ? '워크스페이스 / 프로젝트' : '내 업무 / 프로젝트',
       description: leaderMode ? '상태별 프로젝트와 담당자 배정' : '내게 배정된 프로젝트',
     },
-    team: { label: '홈 / 파트원', description: '파트원별 담당 제품, 업무, 프로젝트' },
+    team: { label: '워크스페이스 / 파트원', description: '파트원별 담당 제품, 업무, 프로젝트' },
     products: { label: '마스터 / 제품', description: '제품 등록과 담당자 배정 기준' },
     duties: { label: '마스터 / 업무 카테고리', description: '업무 카테고리와 담당 범위' },
     invites: { label: '마스터 / 초대 관리', description: '초대 대상과 역할 관리' },
@@ -163,9 +197,14 @@ export function Shell({
           ))}
         </nav>
         <div className="sidebar-footer" title={profile.email}>
-          <div>
-            <strong>{profile.name}</strong>
-            <small>{roleLabels[profile.role]}</small>
+          <div className="sidebar-footer-user">
+            <div className="sidebar-footer-avatar" aria-hidden="true">
+              {profile.name.trim().charAt(0) || '?'}
+            </div>
+            <div className="sidebar-footer-info">
+              <strong>{profile.name}</strong>
+              <small>{roleLabels[profile.role]}</small>
+            </div>
           </div>
           {onPreviewRoleChange && (
             <div className="segmented">
@@ -198,12 +237,12 @@ export function Shell({
               <p>{activeDescription.description}</p>
             </div>
           </div>
+          <button className="topbar-cmd" onClick={onOpenCommandPalette} type="button">
+            <Search size={14} aria-hidden="true" />
+            <span>화면, 검토요청, 파트원 검색...</span>
+            <span className="k">Ctrl K</span>
+          </button>
           <div className="topbar-actions">
-            {message && (
-              <span className="toast" data-tone={message.tone} role="status" aria-live="polite">
-                {message.text}
-              </span>
-            )}
             {syncLabel && <span className="sync-label">{syncLabel}</span>}
             {refreshing && (
               <span className="saving" role="status" aria-live="polite">
@@ -216,16 +255,54 @@ export function Shell({
                 저장 중
               </span>
             )}
+            <button
+              aria-pressed={density === 'compact'}
+              className="icon-button"
+              onClick={() => setDensity(density === 'compact' ? 'comfortable' : 'compact')}
+              title={density === 'compact' ? '간격 보통으로 보기' : '간격 압축해서 보기'}
+              type="button"
+            >
+              <Rows3 size={16} />
+            </button>
+            <button
+              aria-label={unreadNotifications > 0 ? `알림 ${unreadNotifications}건` : '알림'}
+              className="icon-button topbar-notif"
+              onClick={() => setNotifOpen((value) => !value)}
+              title="알림"
+              type="button"
+            >
+              <Bell size={16} />
+              {unreadNotifications > 0 && <span className="dot" aria-hidden="true" />}
+            </button>
             <button className="icon-button" title="새로고침" onClick={onRefresh} type="button" disabled={refreshing || saving}>
-              <RefreshCw className={refreshing ? 'spin' : undefined} size={18} />
+              <RefreshCw className={refreshing ? 'spin' : undefined} size={16} />
             </button>
             <button className="icon-button" title="로그아웃" onClick={onSignOut} type="button">
-              <LogOut size={18} />
+              <LogOut size={16} />
             </button>
           </div>
+          {notifOpen && (
+            <NotificationPanel
+              notifications={notifications}
+              onClose={() => setNotifOpen(false)}
+              onMarkAllRead={() => {
+                onMarkAllRead()
+                setNotifOpen(false)
+              }}
+              onSelect={setActiveTab}
+            />
+          )}
         </header>
         {children}
       </main>
+      {/* D4: 결과 토스트는 우하단 고정 — topbar는 진행 상태 표시만 담당한다. */}
+      {message && (
+        <div className="toast-viewport">
+          <span className="toast" data-tone={message.tone} role="status" aria-live="polite">
+            {message.text}
+          </span>
+        </div>
+      )}
     </div>
   )
 }

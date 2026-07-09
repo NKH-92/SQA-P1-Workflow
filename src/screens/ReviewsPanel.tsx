@@ -13,17 +13,19 @@ import {
 } from '../data'
 import { UserFacingError } from '../lib/errors'
 import { formatDate } from '../lib/format'
-import { uploadReviewAttachment } from '../lib/attachments'
+import { isReviewUnread } from '../lib/readState'
+import { removeReviewAttachment, uploadReviewAttachment } from '../lib/attachments'
 import {
   selectReviewStatusCounts,
   selectScopedReviewRequests,
   selectVisibleReviewRequests,
 } from '../features/reviews/review.selectors'
 import { ReviewDetail } from '../features/reviews/components/ReviewDetail'
+import { ReviewKanban } from '../features/reviews/components/ReviewKanban'
 import { ReviewList } from '../features/reviews/components/ReviewList'
 import { emptyReviewForm, useReviewDraft } from '../features/reviews/useReviewDraft'
 import { useReviewSelection } from '../features/reviews/useReviewSelection'
-import { Paperclip, Send, X } from 'lucide-react'
+import { LayoutGrid, List, Paperclip, Send, X } from 'lucide-react'
 
 export function ReviewsPanel({
   profile,
@@ -32,6 +34,7 @@ export function ReviewsPanel({
   setData,
   initialSelectedId,
   onInitialSelectionApplied,
+  reviewsUnreadCutoff = null,
 }: {
   profile: Profile
   data: AppData
@@ -39,6 +42,8 @@ export function ReviewsPanel({
   setData: Dispatch<SetStateAction<AppData>>
   initialSelectedId?: string | null
   onInitialSelectionApplied?: () => void
+  /** 미확인 dot 기준 시각. App이 탭 진입 '이전' seenAt을 캡처해 내려준다. null이면 dot 없음. */
+  reviewsUnreadCutoff?: string | null
 }) {
   const [editingReviewId, setEditingReviewId] = useState<string | null>(null)
   const [pendingWithdrawId, setPendingWithdrawId] = useState<string | null>(null)
@@ -47,17 +52,44 @@ export function ReviewsPanel({
   const [isReviewComposerOpen, setReviewComposerOpen] = useState(false)
   const [feedback, setFeedback] = useState<Record<string, string>>({})
   const [statusFilter, setStatusFilter] = useState<ReviewStatusFilter>('all')
+  // 칸반은 상태 흐름 전체를 보는 파트장에게 유용하다. 파트원은 목록만.
+  const [reviewView, setReviewView] = useState<'list' | 'kanban'>('list')
 
   const scopedReviewRequests = selectScopedReviewRequests(data, profile)
   const reviewTarget = data.profiles.find((item) => item.role === 'leader')
   const statusCounts = selectReviewStatusCounts(scopedReviewRequests)
   const visibleReviewRequests = selectVisibleReviewRequests(data, profile, statusFilter)
+  const unreadReviewIds = useMemo(
+    () =>
+      new Set(
+        reviewsUnreadCutoff == null
+          ? []
+          : scopedReviewRequests
+              .filter((request) => isReviewUnread(request, profile, profile.role === 'leader', reviewsUnreadCutoff))
+              .map((request) => request.id),
+      ),
+    [profile, reviewsUnreadCutoff, scopedReviewRequests],
+  )
   const { selectedReviewId, setSelectedReviewId, selectedReview } = useReviewSelection(
     visibleReviewRequests,
     scopedReviewRequests,
     initialSelectedId,
     onInitialSelectionApplied,
   )
+
+  // 칸반 카드·딥링크는 리스트 상태 필터 밖의 요청을 가리킬 수 있다.
+  // 필터 밖 요청을 선택하면 필터를 '전체'로 풀어 상세와 목록을 일치시킨다.
+  const selectReview = (id: string) => {
+    const target = scopedReviewRequests.find((request) => request.id === id)
+    if (target && statusFilter !== 'all' && target.status !== statusFilter) setStatusFilter('all')
+    setSelectedReviewId(id)
+  }
+
+  useEffect(() => {
+    if (!initialSelectedId) return
+    const target = scopedReviewRequests.find((request) => request.id === initialSelectedId)
+    if (target && statusFilter !== 'all' && target.status !== statusFilter) setStatusFilter('all')
+  }, [initialSelectedId, scopedReviewRequests, statusFilter])
 
   const {
     form,
@@ -74,29 +106,26 @@ export function ReviewsPanel({
   const isReviewSubmitDisabled =
     !form.title.trim() || !form.description.trim() || (form.deadlineMode === 'date' && !form.due_date)
 
-  const deadlineQuickOptions = useMemo(() => {
-    const today = new Date()
-    const toInputDate = (date: Date) => {
-      const year = date.getFullYear()
-      const month = String(date.getMonth() + 1).padStart(2, '0')
-      const day = String(date.getDate()).padStart(2, '0')
-      return `${year}-${month}-${day}`
-    }
-    const addDays = (days: number) => {
-      const date = new Date(today)
-      date.setDate(today.getDate() + days)
-      return toInputDate(date)
-    }
-    return [
-      { label: '오늘', value: addDays(0) },
-      { label: '내일', value: addDays(1) },
-      { label: '이번 주', value: addDays(3) },
-      { label: '다음 주', value: addDays(7) },
-    ]
-  }, [])
+  const deadlineQuickOptions = [
+    { label: '오늘', days: 0 },
+    { label: '내일', days: 1 },
+    { label: '이번 주', days: 3 },
+    { label: '다음 주', days: 7 },
+  ]
 
-  const applyQuickDeadline = (value: string) =>
-    setForm((current) => ({ ...current, deadlineMode: 'date', due_date: value }))
+  // Compute the date at click/render time (not at mount) so a composer left open past
+  // midnight does not stamp yesterday's date onto "오늘".
+  const quickDeadlineDate = (days: number) => {
+    const date = new Date()
+    date.setDate(date.getDate() + days)
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  const applyQuickDeadline = (days: number) =>
+    setForm((current) => ({ ...current, deadlineMode: 'date', due_date: quickDeadlineDate(days) }))
 
   const openReviewComposer = () => {
     setEditingReviewId(null)
@@ -158,6 +187,11 @@ export function ReviewsPanel({
       if (!title || !description) {
         throw new UserFacingError('제목과 설명을 입력해 주세요.')
       }
+      const dueDate = form.deadlineMode === 'date' ? form.due_date : null
+      if (form.deadlineMode === 'date' && !dueDate) {
+        throw new UserFacingError('검토 기한 날짜를 선택해 주세요.')
+      }
+      const uploadedNow = Boolean(attachmentFile) && ctx.isRemote
       const attachmentUrl = attachmentFile
         ? ctx.isRemote
           ? await uploadReviewAttachment(profile.id, attachmentFile)
@@ -165,20 +199,23 @@ export function ReviewsPanel({
               throw new UserFacingError('파일 첨부는 Supabase 연결 환경에서만 사용할 수 있습니다.')
             })()
         : existingStorageAttachment
-      const dueDate = form.deadlineMode === 'date' ? form.due_date : null
-      if (form.deadlineMode === 'date' && !dueDate) {
-        throw new UserFacingError('검토 기한 날짜를 선택해 주세요.')
+      let result: { isUpdate: boolean }
+      try {
+        result = await saveReviewRequest(ctx, {
+          editingReviewId,
+          payload: {
+            title,
+            description,
+            attachment_url: attachmentUrl,
+            due_date: dueDate,
+          },
+        })
+      } catch (error) {
+        // The record insert/update failed after we uploaded a new file — drop the orphan.
+        if (uploadedNow && attachmentUrl) await removeReviewAttachment(attachmentUrl)
+        throw error
       }
-      const { isUpdate } = await saveReviewRequest(ctx, {
-        editingReviewId,
-        payload: {
-          title,
-          description,
-          attachment_url: attachmentUrl,
-          due_date: dueDate,
-        },
-      })
-      if (isUpdate) {
+      if (result.isUpdate) {
         setEditingReviewId(null)
         resetForm()
         setAttachmentFile(null)
@@ -362,17 +399,20 @@ export function ReviewsPanel({
                       </button>
                     </div>
                     <div className="deadline-chip-row">
-                      {deadlineQuickOptions.map((option) => (
-                        <button
-                          className={form.deadlineMode === 'date' && form.due_date === option.value ? 'selected' : ''}
-                          key={option.label}
-                          onClick={() => applyQuickDeadline(option.value)}
-                          type="button"
-                        >
-                          <span>{option.label}</span>
-                          <small>{formatDate(option.value).slice(6)}</small>
-                        </button>
-                      ))}
+                      {deadlineQuickOptions.map((option) => {
+                        const optionValue = quickDeadlineDate(option.days)
+                        return (
+                          <button
+                            className={form.deadlineMode === 'date' && form.due_date === optionValue ? 'selected' : ''}
+                            key={option.label}
+                            onClick={() => applyQuickDeadline(option.days)}
+                            type="button"
+                          >
+                            <span>{option.label}</span>
+                            <small>{formatDate(optionValue).slice(6)}</small>
+                          </button>
+                        )
+                      })}
                     </div>
                     {form.deadlineMode === 'date' && (
                       <input
@@ -429,31 +469,84 @@ export function ReviewsPanel({
           </section>
         </div>
       )}
-      <section className="review-workspace">
-        <ReviewList
-          onSelectReview={setSelectedReviewId}
-          onStatusFilterChange={setStatusFilter}
-          profile={profile}
-          scopedReviewRequests={scopedReviewRequests}
-          selectedReviewId={selectedReview?.id ?? null}
-          statusCounts={statusCounts}
-          statusFilter={statusFilter}
-          visibleReviewRequests={visibleReviewRequests}
-        />
-        <ReviewDetail
-          addFeedback={addFeedback}
-          feedback={feedback}
-          onEdit={openReviewEditor}
-          onWithdraw={(id) => setPendingWithdrawId(id)}
-          pendingWithdrawId={pendingWithdrawId}
-          profile={profile}
-          rejectReview={rejectReview}
-          selectedReview={selectedReview}
-          setFeedback={setFeedback}
-          updateStatus={updateStatus}
-          withdrawReview={withdrawReview}
-        />
-      </section>
+      {profile.role === 'leader' && (
+        <div className="workspace-header">
+          <h2>검토 워크스페이스</h2>
+          <div className="workspace-view-toggle" role="group" aria-label="검토요청 보기 방식">
+            <button
+              aria-pressed={reviewView === 'list'}
+              className={reviewView === 'list' ? 'selected' : ''}
+              onClick={() => setReviewView('list')}
+              type="button"
+            >
+              <List size={14} aria-hidden="true" />
+              목록
+            </button>
+            <button
+              aria-pressed={reviewView === 'kanban'}
+              className={reviewView === 'kanban' ? 'selected' : ''}
+              onClick={() => setReviewView('kanban')}
+              type="button"
+            >
+              <LayoutGrid size={14} aria-hidden="true" />
+              칸반
+            </button>
+          </div>
+        </div>
+      )}
+      {reviewView === 'kanban' && profile.role === 'leader' ? (
+        <section className="review-workspace kanban-mode">
+          <ReviewKanban
+            onSelectReview={selectReview}
+            requests={scopedReviewRequests}
+            selectedReviewId={selectedReview?.id ?? null}
+          />
+          {selectedReview && (
+            <div className="kanban-detail">
+              <ReviewDetail
+                addFeedback={addFeedback}
+                feedback={feedback}
+                onEdit={openReviewEditor}
+                onWithdraw={(id) => setPendingWithdrawId(id)}
+                pendingWithdrawId={pendingWithdrawId}
+                profile={profile}
+                rejectReview={rejectReview}
+                selectedReview={selectedReview}
+                setFeedback={setFeedback}
+                updateStatus={updateStatus}
+                withdrawReview={withdrawReview}
+              />
+            </div>
+          )}
+        </section>
+      ) : (
+        <section className="review-workspace">
+          <ReviewList
+            onSelectReview={selectReview}
+            onStatusFilterChange={setStatusFilter}
+            profile={profile}
+            scopedReviewRequests={scopedReviewRequests}
+            selectedReviewId={selectedReview?.id ?? null}
+            statusCounts={statusCounts}
+            statusFilter={statusFilter}
+            unreadIds={unreadReviewIds}
+            visibleReviewRequests={visibleReviewRequests}
+          />
+          <ReviewDetail
+            addFeedback={addFeedback}
+            feedback={feedback}
+            onEdit={openReviewEditor}
+            onWithdraw={(id) => setPendingWithdrawId(id)}
+            pendingWithdrawId={pendingWithdrawId}
+            profile={profile}
+            rejectReview={rejectReview}
+            selectedReview={selectedReview}
+            setFeedback={setFeedback}
+            updateStatus={updateStatus}
+            withdrawReview={withdrawReview}
+          />
+        </section>
+      )}
     </div>
   )
 }

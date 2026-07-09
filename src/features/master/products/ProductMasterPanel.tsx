@@ -45,14 +45,51 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
     setPendingDelete(null)
   }, [adminSearch])
 
-  const importProductsCsv = (file: File) =>
-    mutate(async () => {
-      const rows = parseProductImportRows(parseCsvRows(await file.text()))
-      const existingNames = new Set(data.products.map((item) => item.name.trim().toLowerCase()))
-      const incoming = rows.filter((row) => !existingNames.has(row.name.trim().toLowerCase()))
-      validateProductImport(data, rows.length, incoming.length)
-      await importProductsMutation(createRepositoryContext(profile, data, setData), incoming)
-    }, '제품 CSV 가져오기를 완료했습니다.')
+  const importProductsCsv = async (file: File) => {
+    let rows: ReturnType<typeof parseProductImportRows>
+    try {
+      rows = parseProductImportRows(parseCsvRows(await file.text()))
+    } catch (error) {
+      // 파일 읽기·파싱 실패도 다른 실패와 같은 경로(오류 토스트)로 보여준다.
+      await mutate(async () => {
+        throw error
+      }, '')
+      return
+    }
+    const existingNames = new Set(data.products.map((item) => item.name.trim().toLowerCase()))
+    const seen = new Set<string>()
+    const incoming = rows
+      .filter((row) => {
+        const extra = row as { category?: string }
+        // 구분값이 있는데 자사/위탁이 아니면 형식 오류로 제외한다 — '위탁품' 같은 값을
+        // 경고 없이 '자사'로 바꿔 등록하면 마스터 데이터가 조용히 오염된다.
+        if (extra.category && extra.category !== '자사' && extra.category !== '위탁') return false
+        const key = row.name.trim().toLowerCase()
+        // Drop rows already registered AND duplicate rows within the file (remote name is unique).
+        if (existingNames.has(key) || seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      .map((row) => {
+        const extra = row as { category?: string; companyName?: string }
+        return {
+          name: row.name,
+          companyName: extra.companyName,
+          // 빈 구분(열 없음 포함)만 '자사' 기본값을 준다. 그 외 값은 위에서 걸러졌다.
+          category: extra.category === '위탁' ? '위탁' : '자사',
+        }
+      })
+    const skipped = rows.length - incoming.length
+    await mutate(
+      async () => {
+        validateProductImport(data, rows.length, incoming.length)
+        await importProductsMutation(createRepositoryContext(profile, data, setData), incoming)
+      },
+      skipped > 0
+        ? `제품 ${incoming.length}건을 가져왔습니다. 중복·형식 오류 ${skipped}건은 제외했습니다.`
+        : `제품 ${incoming.length}건을 가져왔습니다.`,
+    )
+  }
 
   const addProduct = async () => {
     const ok = await mutate(async () => {
@@ -102,7 +139,6 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
   return (
     <div className="stack">
       <div className="page-intro master-page-heading">
-        <span>Master / Products</span>
         <h1>제품 마스터</h1>
         <p>
           등록 {data.products.length}개 · 미배정 {unassignedProducts.length}개

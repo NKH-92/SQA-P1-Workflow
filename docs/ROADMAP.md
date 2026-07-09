@@ -1,28 +1,26 @@
-# SQA P1 Workflow 완성 로드맵 (2차 계획)
+# SQA P1 Workflow 로드맵
 
-- 작성일: 2026-07-08
-- 전제: [IMPROVEMENT_PLAN.md](./IMPROVEMENT_PLAN.md)의 작업 1~16은 **전부 구현 완료** 상태 (typecheck·테스트 129개 통과 확인, 커밋 `4f7a859` 기준).
-- 현재 위치: **코드 완성, 운영 미배포.**
-- 합의된 우선순위: ① 배포·운영 안착 → ② 알림 강화 → ③ 품질·테스트 보강 (통계·보고 확장은 후순위 보류).
+- 현재 위치: **코드·배포 전 리뷰 완료, 운영 미배포.** Phase 0(운영 배포)이 다음 단계다.
+- 우선순위: ① 배포·운영 안착 → ② 알림 강화 → ③ 품질·테스트 보강 (통계·보고 확장은 후순위 보류).
 - 원칙: 사용자 10명, **전 구간 무료 티어 유지** (Supabase Free + Cloudflare Workers Free + GitHub Free).
 
 ---
 
 ## Phase 0 — 운영 배포 (1일 집중, 최우선)
 
-[MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md)의 A~G를 실제로 수행하고 서명한다. 코드 작업이 아니라 **콘솔 작업 + 검증**이다.
+[MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md)의 0·A~G를 실제로 수행하고 서명한다. 코드 작업이 아니라 **콘솔 작업 + 검증**이다.
 
-> **선행**: 2026-07-08 배포 전 리뷰([PRE_DEPLOY_REVIEW.md](./PRE_DEPLOY_REVIEW.md))에서 P0·P1·P2를 전부 수정했다. 마이그레이션이 **29개**(신규 `202607080001` 포함)로 늘었고, 이 마이그레이션이 `can_use_app`/`is_active_leader` RLS 헬퍼를 바꾸므로 작업 F의 RLS 수동 검증에 **비밀번호 변경 강제 재검증**을 반드시 포함한다([TEST_PLAN.md](./TEST_PLAN.md) 참조).
+> 작업 F의 RLS 수동 검증에는 **비밀번호 변경 강제(RLS 차단) 검증**이 포함된다([TEST_PLAN.md](./TEST_PLAN.md) 참조).
 
 | 순서 | 작업 | 수행 주체 | 비고 |
 |:---:|------|-----------|------|
 | A | git push + CI green 확인 | 파트장 (Claude 보조) | 로컬은 이미 그린 |
-| B | GitHub Variables 3개 + Secrets 2개 등록 | 파트장 | anon key만, service_role 금지 |
-| C | Supabase 마이그레이션 28개 적용 + 확인 SQL | 파트장 (Claude가 확인 SQL 준비) | `202607070001~0005` 포함 여부 필수 확인 |
+| B | GitHub Variables 3개 + Secrets 4개 등록 | 파트장 | 배포 2 + 백업 2. anon key만, service_role 금지 |
+| C | Supabase 마이그레이션 29개 적용 + 확인 SQL | 파트장 (Claude가 확인 SQL 준비) | [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) 목록 기준 |
 | D | Auth 설정(가입 차단·Site URL) + leader 1 / member 2 계정 | 파트장 | public sign-up **OFF** — Access 미사용의 전제 조건 |
-| E | Workers 배포 + 스모크 6항목 | 파트장 (Claude가 체크리스트 제공) | |
+| E | Workers 배포 + 스모크 | 파트장 (Claude가 체크리스트 제공) | 보안 헤더(`_headers`) 적용 여부 확인 포함 |
 | F | RLS 수동 검증 (TEST_PLAN.md) | 파트장 | 3계정 매트릭스 |
-| G | 백업 1회 + 복구 리허설 | 파트장 (Claude가 절차 안내) | 무료 티어는 자동 백업 없음 → 이게 유일한 백업 |
+| G | 백업 1회 + 복구 리허설 | 파트장 (Claude가 절차 안내) | 주간 자동 암호화 백업(Actions)이 기본 — 첫 실행·복구를 여기서 검증 |
 
 **완료 기준**: MANUAL_TASKS_PLAN 하단 서명란 기입 (완료일·운영 URL·HEAD SHA).
 
@@ -40,7 +38,7 @@
 ### 2주차 — 전원 확대 (10명)
 - [ ] 파트원 전원 초대 등록 + 첫 로그인 완료 확인 (임시 비밀번호 → 변경 강제 흐름)
 - [ ] 운영 선언: "검토요청·프로젝트 배정은 이 시스템이 단일 창구"
-- [ ] 주간 루틴 시작: **매주 금요일 백업** ([OPERATIONS.md](./OPERATIONS.md)) + 주 1회 10분 회고(불편사항 수집)
+- [ ] 주간 루틴 시작: **주간 자동 백업(Actions, 일요일 05:00 KST) green 확인** ([OPERATIONS.md](./OPERATIONS.md)) + 주 1회 10분 회고(불편사항 수집)
 
 ### 성공 지표 (2주차 말 측정)
 - 파트원 전원이 검토요청 1건 이상 생성
@@ -53,7 +51,7 @@
 
 ## Phase 2 — 알림 강화 (파일럿 이후 1~2주)
 
-현재는 로그인해야 미확인 뱃지를 볼 수 있다. 로그인 없이도 변화를 인지하게 만든다.
+앱 안에는 미확인 뱃지·알림 패널이 있지만, 어느 쪽이든 로그인해야 보인다. 로그인 없이도 변화를 인지하게 만든다.
 
 ### 선결정 (파일럿 중 확인)
 - [ ] **도달 채널 결정**: 사내에서 실제로 확인하는 채널이 무엇인가 — 이메일 / Teams·Slack 등 메신저 웹훅 / 둘 다. (사내망 정책상 외부 웹훅 차단 여부도 확인)
@@ -80,7 +78,7 @@
 | 1 | Playwright E2E 스모크 | 데모 모드 기반이라 서버 없이 CI에서 실행 가능 — leader/member 전 탭 순회 + 검토요청 생성→피드백→종결 1루프 |
 | 2 | ProjectsPanel 컴포넌트 테스트 | 배정 편집 diff·프로젝트 삭제 2단계 확인 (ReviewsPanel 테스트 패턴 재사용) |
 | 3 | MasterPanel 컴포넌트 테스트 | 인라인 수정·CSV 가져오기·초대 비활성화 토글 |
-| 4 | master/team 뮤테이션 repository 완전 위임 | 데이터 레이어 내부의 `ctx.isRemote` 인라인 분기를 repository 클래스로 이관 (E-2 마무리) |
+| 4 | master/team 뮤테이션 repository 완전 위임 | 데이터 레이어 내부의 `ctx.isRemote` 인라인 분기를 repository 클래스로 이관 |
 | 5 | 월 1회 의존성 업데이트 루틴 | `npm outdated` 확인 → 마이너 업데이트 → 전체 테스트 → 데모 스모크 |
 
 **완료 기준**: CI에 E2E 스모크 포함, 주요 4개 화면(Reviews·Projects·Master·Team) 렌더 테스트 존재.
@@ -95,17 +93,18 @@
 |------|-------------|-----------|------|
 | Supabase DB | 500MB | Dashboard → Database → 사용량 | 10명 규모로는 수년치 여유 |
 | Supabase Storage | 1GB | Dashboard → Storage | 첨부 10MB 제한 유지, 종결 1년 경과 첨부 정리 규칙 검토 |
-| Supabase 프로젝트 일시정지 | **7일 비활성 시 자동 pause** | — | 장기 연휴 주의 — 재개 절차를 OPERATIONS.md에 추가 |
-| Supabase 자동 백업 | 없음 | — | 주간 수동 백업이 유일한 복구 수단 |
+| Supabase 프로젝트 일시정지 | **7일 비활성 시 자동 pause** | — | 장기 연휴 주의 — 재개 절차는 [OPERATIONS.md](./OPERATIONS.md) 장애 확인 순서 참고 |
+| Supabase 자동 백업 | 없음 (Free 내장 백업 없음) | Actions **Backup DB** run green 확인 | 주간 자동 암호화 백업(아티팩트 90일)이 복구 수단 — Storage 첨부는 백업 제외([OPERATIONS.md](./OPERATIONS.md)) |
 | Cloudflare Workers | 10만 요청/일 | Dashboard → Workers 메트릭 | 10명 규모로는 도달 불가 |
 
 ---
 
-## 하지 않기로 한 것 (재확인)
+## 하지 않기로 한 것
 
-- Cloudflare Access: 제거 확정 (2026-07-08) — Supabase public sign-up OFF + 초대제로 대체
-- 상태관리 라이브러리·react-query·전면 리디자인·path 라우터: 1차 계획의 결론 유지 (10인 규모 과설계)
-- 통계·보고 확장: 우선순위 보류 — 파일럿에서 실수요 확인 후 재검토
+- **Cloudflare Access**: 도입하지 않는다 — Supabase public sign-up OFF + 초대제로 대체.
+- **상태관리 라이브러리·react-query·전면 리디자인·path 라우터**: 10인 규모에 과설계로 판단, 도입하지 않는다.
+- **4px 그리드 전환**: 전면 리디자인 범위라 보류 — 현재의 광학 보정 간격 체계를 유지한다([DESIGN.md](../DESIGN.md) 참조).
+- **통계·보고 확장**: 우선순위 보류 — 파일럿에서 실수요 확인 후 재검토.
 
 ---
 

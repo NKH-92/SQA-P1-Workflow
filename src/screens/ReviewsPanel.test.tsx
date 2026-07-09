@@ -88,7 +88,7 @@ describe('ReviewsPanel', () => {
     await user.click(within(dialog).getByRole('button', { name: '검토요청 작성 닫기' }))
     localStorage.removeItem(`draft:review:${previewMember.id}`)
 
-    await user.click(screen.getByRole('button', { name: '검토요청 작성', exact: true }))
+    await user.click(screen.getByRole('button', { name: '검토요청 작성' }))
     const newDialog = composerDialog()
     expect(within(newDialog).getByLabelText(/^제목/)).toHaveValue('')
     expect(within(newDialog).getByLabelText(/^설명/)).toHaveValue('')
@@ -113,7 +113,7 @@ describe('ReviewsPanel', () => {
       <ReviewsPanel profile={previewMember} data={data} mutate={vi.fn()} setData={() => undefined} />,
     )
 
-    await user.click(screen.getByRole('button', { name: '검토요청 작성', exact: true }))
+    await user.click(screen.getByRole('button', { name: '검토요청 작성' }))
 
     const dialog = composerDialog()
     expect(within(dialog).getByLabelText(/^제목/)).toHaveValue('초안 제목')
@@ -129,7 +129,7 @@ describe('ReviewsPanel', () => {
       <ReviewsPanel profile={previewMember} data={data} mutate={vi.fn()} setData={() => undefined} />,
     )
 
-    await user.click(screen.getByRole('button', { name: '검토요청 작성', exact: true }))
+    await user.click(screen.getByRole('button', { name: '검토요청 작성' }))
     const dialog = composerDialog()
     await user.type(within(dialog).getByLabelText(/^제목/), '수동 초안')
     await user.click(within(dialog).getByRole('button', { name: '초안 저장' }))

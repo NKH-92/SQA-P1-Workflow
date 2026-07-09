@@ -17,14 +17,14 @@
 | **D** | Supabase Auth·초기 계정 | 파트장 | 30분 | C 이후 |
 | **E** | Workers 배포 + 앱 스모크 | 운영자 | 20분 | B, C, D 이후 |
 | **F** | RLS·기능 수동 검증 | 파트장 | 60~90분 | C, D, E 이후 |
-| **G** | 주간 백업 1회 + 복구 리허설 | 운영자 | 45~60분 | C 이후 (E와 병렬 가능) |
+| **G** | 자동 백업 첫 실행 + 복구 리허설 | 운영자 | 45~60분 | B, C 이후 (E와 병렬 가능) |
 
 **권장 일정 (1일 집중)**  
 사전: 0 / 오전: B → A → C → D → E / 오후: F → G
 
 ---
 
-## 1.5. 작업 0 — 사전 준비 (Supabase 프로젝트 + CLI)
+## 2. 작업 0 — 사전 준비 (Supabase 프로젝트 + CLI)
 
 ### 목표
 이후 모든 작업의 전제인 **Supabase 프로젝트**와 **Supabase CLI**를 준비한다. 이게 없으면 작업 B에서 등록할 API 값(URL/anon key)을 읽을 프로젝트가 없고, 작업 C의 `db push`·작업 G의 백업이 실행되지 않는다.
@@ -55,10 +55,10 @@
 
 ---
 
-## 2. 작업 A — Git push 및 CI 확인
+## 3. 작업 A — Git push 및 CI 확인
 
 ### 목표
-로컬 `main`의 개선 사항을 원격에 반영하고, GitHub Actions 4 job(typecheck / lint / test / build)이 통과하는지 확인한다.
+로컬 `main`을 원격에 반영하고, GitHub Actions 4 job(typecheck / lint / test / build)이 통과하는지 확인한다.
 
 ### 절차
 
@@ -96,7 +96,7 @@
 
 ---
 
-## 3. 작업 B — GitHub Variables / Secrets
+## 4. 작업 B — GitHub Variables / Secrets
 
 ### 목표
 Cloudflare Workers 자동 배포와 빌드 시 Supabase env 주입이 가능하도록 저장소 설정을 완료한다.
@@ -114,13 +114,15 @@ GitHub 저장소 → **Settings → Secrets and variables → Actions**
 
 ### Secrets (민감)
 
-| 이름 | 값 출처 | 금지 |
-|------|---------|------|
-| `VITE_SUPABASE_ANON_KEY` | Supabase → Settings → API → anon public | service_role 키 **사용 금지** |
-| `CLOUDFLARE_API_TOKEN` | Cloudflare → My Profile → API Tokens (Workers Edit) | |
+| 이름 | 값 출처 | 용도 | 금지 |
+|------|---------|------|------|
+| `VITE_SUPABASE_ANON_KEY` | Supabase → Settings → API → anon public | 배포 (E) | service_role 키 **사용 금지** |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare → My Profile → API Tokens (Workers Edit) | 배포 (E) | |
+| `SUPABASE_DB_URL` | Supabase → Dashboard → Connect의 **Session pooler URI** (비밀번호 포함) | 주간 자동 백업 (G) | |
+| `BACKUP_PASSPHRASE` | 새로 정한 백업 암호화 암구호 | 주간 자동 백업 (G) | **분실 시 백업 복원 불가** — 비밀번호 관리자에 보관 |
 
 ### 확인
-- [ ] Variables 3개, Secrets 2개 등록 완료
+- [ ] Variables 3개, Secrets 4개 등록 완료
 - [ ] `git grep`으로 저장소에 URL/키/계정 ID가 **없음**
 
 ### 완료 기준
@@ -128,18 +130,17 @@ GitHub 저장소 → **Settings → Secrets and variables → Actions**
 
 ---
 
-## 4. 작업 C — Supabase 마이그레이션 적용
+## 5. 작업 C — Supabase 마이그레이션 적용
 
 ### 목표
 `supabase/migrations/`의 DB·Storage·RLS 변경을 **운영(또는 스테이징) Supabase**에 반영한다.
 
-### 최신 적용 범위 (확인 필요)
+### 적용 범위
 
-`supabase/migrations/`에는 현재 **총 29개**의 migration 파일이 있다. 다음 migration이 모두 적용되었는지 확인한다:
+`supabase/migrations/`의 **총 29개** migration 파일 전체를 순서대로 적용한다 ([SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) 목록 참고). 적용 후 아래 핵심 migration이 실제 반영됐는지 확인 SQL로 검증한다.
 
-- `202607080001` (최신 — 비밀번호 변경 전 RLS 차단 + leader 이름 view 복원 + last-active-leader 카운터 잠금)
-- `202607070001` ~ `202607070005` (audit RLS, PUBLIC revoke, activity log entity types, last active leader 보호)
-- 그 이전 migration 전체 ([SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) 목록 참고)
+- `202607080001` — 비밀번호 변경 전 RLS 차단 + leader 이름 view + last-active-leader 카운터 잠금
+- `202607070001` ~ `202607070005` — audit RLS, PUBLIC revoke, activity log entity types, last active leader 보호
 
 | 미적용 migration | 증상 |
 |------------------|------|
@@ -198,12 +199,12 @@ where relname = 'public_leader_profiles';  -- security_invoker=false 여야 함
 
 ---
 
-## 5. 작업 D — Supabase Auth 및 초기 계정
+## 6. 작업 D — Supabase Auth 및 초기 계정
 
 ### 목표
 파트장 1명 + RLS 검증용 member 2명을 준비한다.
 
-### 5.1 첫 파트장 bootstrap
+### 6.1 첫 파트장 bootstrap
 
 SQL Editor에서 1회 실행 (이메일·이름을 실제 값으로 교체):
 
@@ -216,7 +217,9 @@ set name = excluded.name, role = excluded.role;
 
 그 다음 Supabase Dashboard > Authentication > Users > **Add user** 로 파트장 계정을 만든다(임시 비밀번호 `1234`).
 
-### 5.1.5 RLS 검증용 member 2명 생성
+> Dashboard가 최소 비밀번호 길이 제한으로 `1234` 생성을 거부하면, Authentication → Providers → Email의 **Minimum password length**를 4로 조정한 뒤 생성한다.
+
+### 6.2 RLS 검증용 member 2명 생성
 
 RLS·권한 검증(작업 F)에는 파트장 외에 member 계정 2개가 필요하다.
 
@@ -232,7 +235,7 @@ RLS·권한 검증(작업 F)에는 파트장 외에 member 계정 2개가 필요
 2. Dashboard > Authentication > Users > **Add user** 로 위 2개 이메일 계정을 각각 생성한다. **임시 비밀번호는 공통 `1234`**.
 3. 각 계정은 **본인이 즉시 로그인**해 `must_change_password` 화면에서 8자 이상으로 변경한다. (공통 `1234` 선점 방지를 위해 한 명씩 즉시 온보딩 — [OPERATIONS.md](./OPERATIONS.md) 임시 비밀번호 절 참고)
 
-### 5.2 Auth 설정 확인
+### 6.3 Auth 설정 확인
 
 Supabase → **Authentication → URL Configuration**
 
@@ -248,9 +251,9 @@ Supabase → **Authentication → Providers → Email**
 | Enable email signup (Allow new users to sign up) | **OFF** |
 | Confirm email | OFF (내부 앱, Dashboard Add user만) |
 
-> public sign-up이 ON이면 앱 외 경로로 가입이 가능하다. Dashboard에서 OFF 후 probe 또는 Dashboard에서 직접 확인한다.
+> public sign-up이 ON이면 앱 외 경로로 가입이 가능하다. 운영 프로젝트에는 이미 `disable_signup: true`가 적용되어 있으므로([OPERATIONS.md](./OPERATIONS.md) Auth 절), 여기서는 설정이 유지되고 있는지 재확인한다.
 
-### 5.3 첫 로그인
+### 6.4 첫 로그인
 
 1. 임시 비밀번호 `1234`로 로그인 (최소 4자)
 2. `must_change_password` 화면에서 **8자 이상**으로 변경 (`1234` 재사용 불가)
@@ -264,7 +267,7 @@ Supabase → **Authentication → Providers → Email**
 
 ---
 
-## 6. 작업 E — Workers 배포 및 앱 스모크
+## 7. 작업 E — Workers 배포 및 앱 스모크
 
 ### 목표
 `<WORKER_URL>`에서 빌드된 앱이 Supabase와 연결되어 동작하는지 확인한다.
@@ -284,14 +287,16 @@ Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy confi
 | 4 | 프로젝트 생성 | 기본 배정 0명, 명시적 선택 후만 배정 |
 | 5 | mutation 실패 | DB/validation 오류 시 모달이 닫히지 않음 |
 | 6 | 활동 로그 탭 | leader만 전체 목록 |
+| 7 | 보안 헤더 | `curl -I <WORKER_URL>` 응답에 `Content-Security-Policy` 등 `public/_headers`의 헤더 포함 (미적용이면 CSP가 전부 무효) |
 
 ### 완료 기준
 - [ ] `<WORKER_URL>` 접속·로그인·해시 라우팅·콘솔 치명 오류 없음
 - [ ] 파트장 로그인·CRUD 1회 이상 성공
+- [ ] 보안 헤더(CSP) 적용 확인 + 브라우저 콘솔에 CSP violation 없음
 
 ---
 
-## 7. 작업 F — RLS 및 권한 수동 검증
+## 8. 작업 F — RLS 및 권한 수동 검증
 
 ### 목표
 `docs/TEST_PLAN.md` RLS 섹션을 **3계정**으로 재현해 데이터 격리를 확인한다.
@@ -312,27 +317,31 @@ Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy confi
 
 ---
 
-## 8. 작업 G — 백업 및 복구 리허설
+## 9. 작업 G — 백업 및 복구 리허설
 
-주 1회 백업 + 분기 1회 복구 리허설. 상세: [OPERATIONS.md](./OPERATIONS.md)
+백업은 GitHub Actions(`backup.yml`)가 **매주 일요일 05:00 KST**에 자동 수행한다(암호화 아티팩트, 보존 90일). 이 작업에서는 첫 실행과 복구를 검증한다. 상세: [OPERATIONS.md](./OPERATIONS.md)
+
+1. 작업 B의 `SUPABASE_DB_URL`·`BACKUP_PASSPHRASE` Secrets 등록 확인
+2. Actions → **Backup DB** → Run workflow(수동 1회) → run green + Job Summary에 `Backup OK` 확인
+3. 아티팩트 다운로드 → 복호화(`openssl enc -d ...`, OPERATIONS.md 참고) → 복구 리허설 1회
 
 ### 완료 기준
-- [ ] 백업 파일 1개 이상 보관
-- [ ] 복구 리허설 1회 성공 기록
+- [ ] Backup DB run green + `Backup OK` 확인
+- [ ] 복호화 성공 + 복구 리허설 1회 성공 기록 (분기 1회 반복)
 
 ---
 
-## 9. 진행 체크리스트 (복사용)
+## 10. 진행 체크리스트 (복사용)
 
 ```
 [ ] 0. Supabase 프로젝트(서울 ap-northeast-2) + CLI 설치 + 팀 공지
 [ ] A. git push / PR merge + CI green (Deploy Worker green은 B 이후)
-[ ] B. GitHub Variables/Secrets 5개 (A보다 먼저 권장)
+[ ] B. GitHub Variables 3개 + Secrets 4개 (A보다 먼저 권장)
 [ ] C. Supabase migration ~202607080001 적용 + 확인 (총 29개)
-[ ] D. leader 1명 + member 2명 계정 + Auth Site URL/Redirect + public sign-up OFF
-[ ] E. Workers 배포 + 스모크
+[ ] D. leader 1명 + member 2명 계정 + Auth Site URL/Redirect + public sign-up OFF 재확인
+[ ] E. Workers 배포 + 스모크 + 보안 헤더(CSP) 확인
 [ ] F. RLS 검증 (TEST_PLAN.md) + must_change_password 차단 확인
-[ ] G. 백업 1회 + 복구 리허설 기록
+[ ] G. Backup DB run green + 복호화·복구 리허설 기록
 ```
 
 **최종 서명**
@@ -349,7 +358,7 @@ Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy confi
 
 ---
 
-## 10. 관련 문서
+## 11. 관련 문서
 
 | 문서 | 용도 |
 |------|------|

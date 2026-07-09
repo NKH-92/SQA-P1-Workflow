@@ -1,6 +1,5 @@
 import { makeId } from '../../lib/format'
 import { supabase } from '../../lib/supabase'
-import type { AdminDeleteTable } from '../../app/types'
 import type { Product, ProductCategory, Role, DutyMajorCategory } from '../../types'
 import type { RepositoryContext } from '../repositoryContext'
 import {
@@ -27,15 +26,6 @@ function normalizeProductInput(input: ProductInput) {
     category,
     company_name: input.companyName?.trim() || (category === '자사' ? '자사' : ''),
     sort_order: input.sortOrder ?? null,
-  }
-}
-
-function productRelation(product: Product) {
-  return {
-    name: product.name,
-    category: product.category,
-    company_name: product.company_name,
-    sort_order: product.sort_order,
   }
 }
 
@@ -467,34 +457,4 @@ export async function deleteDuty(ctx: RepositoryContext, id: string): Promise<vo
 
 export async function deleteDutyMajorCategory(ctx: RepositoryContext, id: string): Promise<void> {
   return masterRepository(ctx).deleteDutyMajorCategory(id)
-}
-
-export async function deleteProductAssignment(ctx: RepositoryContext, id: string): Promise<void> {
-  return masterRepository(ctx).deleteProductAssignment(id)
-}
-
-export async function deleteDutyAssignment(ctx: RepositoryContext, id: string): Promise<void> {
-  return masterRepository(ctx).deleteDutyAssignment(id)
-}
-
-export async function deleteMasterEntity(ctx: RepositoryContext, table: AdminDeleteTable, id: string): Promise<void> {
-  const repo = masterRepository(ctx)
-  switch (table) {
-    case 'allowed_users':
-      return repo.deleteAllowedUser(id)
-    case 'products':
-      return repo.deleteProduct(id)
-    case 'duties':
-      return repo.deleteDuty(id)
-    case 'duty_major_categories':
-      return repo.deleteDutyMajorCategory(id)
-    case 'product_assignments':
-      return repo.deleteProductAssignment(id)
-    case 'duty_assignments':
-      return repo.deleteDutyAssignment(id)
-    default: {
-      const exhaustive: never = table
-      throw new Error(`Unsupported delete table: ${exhaustive}`)
-    }
-  }
 }

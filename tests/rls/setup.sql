@@ -2,7 +2,7 @@
 --
 -- Prerequisites:
 --   1. supabase start
---   2. Apply all migrations: supabase db reset (or scripts/apply-migrations.ps1)
+--   2. Apply all migrations: supabase db reset (remote DB: scripts/apply-pending-migrations.ps1)
 --   3. Export env for vitest:
 --        SUPABASE_URL=http://127.0.0.1:54321
 --        SUPABASE_ANON_KEY=<anon key from supabase status>

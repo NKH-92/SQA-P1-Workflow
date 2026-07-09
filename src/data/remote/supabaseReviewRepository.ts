@@ -8,11 +8,9 @@ import {
   assertStorageAttachmentOnly,
 } from '../../features/reviews/review.validators'
 import { supabase } from '../../lib/supabase'
-import type { ReviewStatus } from '../../types'
-import type { LocalRepositoryContext, ReviewRepository } from '../repositories/types'
-import type { ReviewRequestPayload } from '../local/appDataReducers'
+import type { RepositoryDeps, ReviewRepository } from '../repositories/types'
 
-export function createSupabaseReviewRepository(ctx: LocalRepositoryContext): ReviewRepository {
+export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepository {
   const { profile, data, setData } = ctx
 
   return {
@@ -152,5 +150,3 @@ export function createSupabaseReviewRepository(ctx: LocalRepositoryContext): Rev
     },
   }
 }
-
-export type { ReviewRequestPayload, ReviewStatus }

@@ -37,6 +37,8 @@
 
 ## RLS 수동 검증
 
+> 자동화된 RLS 테스트가 `tests/rls/`에 있다 (로컬 Supabase 필요 — 실행 방법은 [OPERATIONS.md](./OPERATIONS.md) 분기 복구 리허설 절 참고). 자동 테스트가 1차 검증 수단이고, 아래 수동 시나리오는 로컬/자동화가 불가능할 때의 대체 경로이자 자동 테스트가 못 덮는 항목의 보완이다.
+
 Supabase에 최소 3명(`leader`, `member A`, `member B`)을 등록한 뒤 각 계정으로 로그인한다.
 
 - `member A`는 `member B`의 `profiles`, `product_assignments`, `duty_assignments`, `review_requests`, `project_assignments`를 볼 수 없어야 한다.
@@ -56,21 +58,23 @@ Supabase에 최소 3명(`leader`, `member A`, `member B`)을 등록한 뒤 각 �
 - `member` 계정을 `profiles.is_active = false`로 설정하면 본인 데이터 조회·쓰기가 RLS에서 거부되어야 한다.
 - `leader` 계정을 `profiles.is_active = false`로 설정해도 API로 제품·프로젝트·검토요청을 조회·수정할 수 없어야 한다.
 - `leader`는 `profiles.is_active`를 변경할 수 있어야 한다.
-- `member` 계정으로 로그인해 검토요청·대시보드에서 파트장 **이름**이 표시되는지 확인한다. `public_leader_profiles` select가 실패하지 않고 **행이 0건이 아니어야** 한다(202607080001로 owner 권한 조회 복구됨).
+- `member` 계정으로 로그인해 검토요청·대시보드에서 파트장 **이름**이 표시되는지 확인한다. `public_leader_profiles` select가 실패하지 않고 **행이 0건이 아니어야** 한다(owner 권한 조회 — 202607080001).
 - `member`는 파트장의 email 등 민감 정보를 볼 수 없어야 한다.
 
-### 비밀번호 변경 강제(202607080001) 재검증 — RLS 헬퍼(`can_use_app`/`is_active_leader`)를 바꿨으므로 아래를 반드시 재수행한다
+### 비밀번호 변경 강제 검증 (202607080001)
+
+`must_change_password`는 RLS 헬퍼(`can_use_app`/`is_active_leader`)에서 서버 강제되므로 아래를 반드시 수행한다.
 
 - `profiles.must_change_password = true`인 계정(임시 비밀번호 1234로 방금 만든 계정)으로 로그인하면 앱이 비밀번호 변경 화면을 표시한다.
 - 그 상태에서 세션 토큰으로 REST/RPC를 직접 호출해도(비밀번호 변경 화면 우회 시도) `products`·`review_requests`·`projects` 등 어떤 테이블도 조회·쓰기가 되지 않아야 한다(빈 결과/거부).
 - 비밀번호 변경(8자 이상)을 완료해 `must_change_password = false`가 되면 이후 정상적으로 데이터가 조회·쓰기된다.
 - 첫 파트장 계정도 동일하게, 비밀번호 변경 전에는 마스터/배정 등 leader 작업이 거부되고 변경 후 정상 동작해야 한다.
-- 위 검증 후, 본문의 `is_active=false` 항목과 member/leader 격리 항목을 **한 번 더** 확인해 헬퍼 변경이 기존 격리를 깨지 않았는지 확인한다.
+- 위 검증 후, 본문의 `is_active=false` 항목과 member/leader 격리 항목도 함께 확인해 헬퍼가 기존 격리를 깨지 않는지 확인한다.
 
 ## 로컬 검증 명령
 
 ```bash
-npm install
+npm ci
 npm test
 npm run build
 npm run dev

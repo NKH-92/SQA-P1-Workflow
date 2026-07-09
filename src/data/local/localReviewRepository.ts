@@ -7,8 +7,8 @@ import {
   assertReviewStatusTransition,
   assertStorageAttachmentOnly,
 } from '../../features/reviews/review.validators'
-import type { ReviewFeedback, ReviewStatus } from '../../types'
-import type { LocalRepositoryContext, ReviewRepository } from '../repositories/types'
+import type { ReviewFeedback } from '../../types'
+import type { RepositoryDeps, ReviewRepository } from '../repositories/types'
 import {
   appendReviewFeedback,
   createReviewRequest,
@@ -19,7 +19,7 @@ import {
   updateReviewRequest,
 } from './appDataReducers'
 
-export function createLocalReviewRepository(ctx: LocalRepositoryContext): ReviewRepository {
+export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewRepository {
   const { profile, data, setData } = ctx
 
   return {
@@ -134,5 +134,3 @@ export function createLocalReviewRepository(ctx: LocalRepositoryContext): Review
     },
   }
 }
-
-export type { ReviewStatus }

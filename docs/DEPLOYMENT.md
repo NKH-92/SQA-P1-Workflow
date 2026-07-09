@@ -1,30 +1,16 @@
 # 배포 및 운영 체크리스트
 
-## GitHub 업로드
+## GitHub 저장소
 
-1. 로컬 저장소를 초기화한다.
+원격 저장소는 GitHub `origin/main`이며, `main` push가 CI·배포 워크플로의 트리거다.
 
-```bash
-git init
-git add .
-git commit -m "Initial SQA P1 Workflow app"
-```
-
-2. GitHub에서 새 저장소를 만든다. 운영 전까지는 private 저장소를 권장한다.
-3. GitHub가 안내하는 remote URL을 연결하고 push한다.
-
-```bash
-git branch -M main
-git remote add origin https://github.com/<owner>/<repo>.git
-git push -u origin main
-```
-
-업로드 전에 `.env.local`, `node_modules`, `dist`는 커밋 대상에서 제외되어야 한다. 이 프로젝트는 `.gitignore`에서 해당 항목을 제외한다.
+- `.env.local`, `node_modules`, `dist`, 백업·시드 로컬 파일은 `.gitignore`로 커밋에서 제외된다.
+- 운영 URL·Supabase project ref·키는 저장소에 커밋하지 않는다 (GitHub Variables/Secrets로만 관리).
 
 ## Supabase
 
 1. 새 Supabase 프로젝트를 만든다. **리전(Region)은 반드시 `Northeast Asia (Seoul) / ap-northeast-2`** 로 선택한다. (팀원 이름·이메일이 이 리전에 저장되며, 사용 시작 전 팀 공지가 필요하다 — [OPERATIONS.md](./OPERATIONS.md) 개인정보 처리 절 참고.)
-2. `supabase/migrations` 아래 SQL 파일을 번호 순서대로 적용한다. Phase 2~4 추가분은 [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md)를 참고한다.
+2. `supabase/migrations` 아래 SQL 파일을 번호 순서대로 적용한다. 전체 목록·확인 SQL은 [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md)를 참고한다.
 3. 첫 파트장 bootstrap은 SQL Editor에서 1회 수행한다.
 
 ```sql
@@ -41,9 +27,7 @@ set name = excluded.name,
 
 ### 사용자 제거 (퇴사·전배자)
 
-**기본은 삭제가 아니라 비활성화다.** 퇴사·전배자는 즉시 삭제하지 말고 **비활성화(`is_active=false`)를 기본**으로 처리하고, **일정 보존 기간(권장 1년) 경과 후에만 삭제**를 검토한다. 초대 목록에서만 삭제하면 이미 가입한 계정은 계속 로그인할 수 있으므로, 접근 회수는 비활성화로 한다.
-
-삭제 시 주의: Users에서 사용자를 삭제하면 `profiles`가 cascade로 삭제되며 그 사람의 **검토요청·피드백·활동로그가 함께 영구 삭제**된다. 또한 피드백을 남겼거나 프로젝트를 만든 **leader 계정은 `ON DELETE RESTRICT`로 삭제가 FK 오류로 실패**할 수 있다. 개정된 비활성화-우선 원칙과 경고, 삭제 절차는 [OPERATIONS.md](./OPERATIONS.md) "사용자 제거 (퇴사·전배자 처리)" 절을 참고한다.
+**기본은 삭제가 아니라 비활성화(`is_active=false`)다.** 초대 목록에서만 삭제해도 이미 가입한 계정의 로그인은 막히지 않는다. 삭제는 보존 기간(권장 1년) 경과 후에만 검토한다 — cascade로 지워지는 업무 이력과 leader 계정 삭제 실패(FK RESTRICT) 케이스가 있으므로 반드시 [OPERATIONS.md](./OPERATIONS.md) "사용자 제거 (퇴사·전배자 처리)" 절차를 따른다.
 
 ## Cloudflare Workers (기본 배포)
 
@@ -74,7 +58,7 @@ Repository Settings > Secrets and variables > Actions에 다음을 등록한다.
 | `workflow_dispatch` | **테스트만** 수행, build/deploy **스킵** (warning). Job Summary에 스킵 사유 표시 | 수동 test-only 실행 성공. 배포·빌드는 아님 |
 | 위 설정 모두 등록됨 | Wrangler deploy 실행 | Job Summary에 **Deploy succeeded** — 실제 배포 완료 |
 
-**주의:** `main` push 후 Actions가 green이어도, 예전에는 deploy env가 없을 때 배포 없이 성공처럼 보일 수 있었다. 현재는 `main` push에서 deploy env가 없으면 워크플로가 **실패**한다. CI 테스트만 확인하려면 Actions에서 **Deploy Worker** 워크플로를 `workflow_dispatch`로 실행한다 (env 미설정 시 test만 통과, build/deploy는 스킵).
+**주의:** `main` push에서 deploy env가 없으면 워크플로가 **실패**한다 — 설정 누락을 조용히 넘기지 않기 위한 의도된 동작이다. CI 테스트만 확인하려면 Actions에서 **Deploy Worker** 워크플로를 `workflow_dispatch`로 실행한다 (env 미설정 시 test만 통과, build/deploy는 스킵).
 
 ### 수동 배포
 
@@ -87,7 +71,7 @@ $env:VITE_APP_MODE = 'production'
 $env:VITE_SUPABASE_URL = '<SUPABASE_URL>'
 $env:VITE_SUPABASE_ANON_KEY = '<SUPABASE_ANON_KEY>'
 npm run build
-npx wrangler deploy --name <WORKER_NAME> --assets dist --keep-vars
+npx --yes wrangler@4 deploy --name <WORKER_NAME> --assets dist --keep-vars --compatibility-date 2026-07-04
 ```
 
 **bash / macOS** — 인라인 env 문법 사용 가능.
@@ -96,8 +80,10 @@ npx wrangler deploy --name <WORKER_NAME> --assets dist --keep-vars
 npm ci
 npm test
 VITE_APP_MODE=production VITE_SUPABASE_URL=... VITE_SUPABASE_ANON_KEY=... npm run build
-npx wrangler deploy --name <WORKER_NAME> --assets dist --keep-vars
+npx --yes wrangler@4 deploy --name <WORKER_NAME> --assets dist --keep-vars --compatibility-date 2026-07-04
 ```
+
+CI(`deploy-worker.yml`)와 동일한 wrangler 버전·`--compatibility-date`를 사용한다. 날짜를 올릴 때는 CI와 이 문서를 함께 바꾼다.
 
 ### 보안 헤더 (CSP)
 
@@ -105,7 +91,7 @@ npx wrangler deploy --name <WORKER_NAME> --assets dist --keep-vars
 
 - `Content-Security-Policy`: `connect-src`에 Supabase(`https://*.supabase.co`, `wss://*.supabase.co`)만 허용
 - `frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`
-- Google Fonts CDN은 사용하지 않습니다 (시스템 폰트 스택)
+- 외부 폰트 CDN은 사용하지 않습니다 (Inter·Newsreader·JetBrains Mono를 `@fontsource-variable`로 번들에 셀프 호스팅)
 
 배포 후 브라우저 DevTools Console에서 CSP violation이 없는지, 로그인·Storage signed URL이 동작하는지 확인하세요.
 
@@ -131,7 +117,7 @@ Pages URL을 Supabase Auth의 Site URL 및 Redirect URLs에 추가한다.
 
 ## 운영 전 보호
 
-- 앱 내부 권한은 Supabase Auth와 RLS가 담당한다. Supabase Dashboard에서 public sign-up을 비활성화하고, 초대 사용자만 Dashboard에서 생성한다.
+- 앱 내부 권한은 Supabase Auth와 RLS가 담당한다. public sign-up은 **비활성화 상태를 유지**하고(적용 완료 — [OPERATIONS.md](./OPERATIONS.md) Auth 절), 계정은 Dashboard에서만 생성한다.
 - 운영 URL·Supabase project ref는 저장소에 커밋하지 않는다. GitHub Variables/Secrets와 [MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md) 체크리스트 하단에 `<WORKER_URL>`, `<PROJECT_REF>` 플레이스홀더로 기록한다.
 - 백업·복구·장애 대응은 [OPERATIONS.md](./OPERATIONS.md)를 참고한다.
 - Supabase Pro 전환 기준:

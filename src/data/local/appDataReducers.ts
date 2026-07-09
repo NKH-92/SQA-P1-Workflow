@@ -10,7 +10,6 @@ import type {
   ReviewFeedback,
   ReviewRequest,
   ReviewStatus,
-  Role,
 } from '../../types'
 
 export type ReviewRequestPayload = {
@@ -235,10 +234,6 @@ export function replaceProjectAssignments(
   }
 }
 
-export function addProduct(data: AppData, product: Product): AppData {
-  return { ...data, products: [product, ...data.products] }
-}
-
 export function updateProductRow(
   data: AppData,
   productId: string,
@@ -265,13 +260,6 @@ export function removeProduct(data: AppData, productId: string): AppData {
     ...data,
     products: data.products.filter((item) => item.id !== productId),
     productAssignments: data.productAssignments.filter((item) => item.product_id !== productId),
-  }
-}
-
-export function removeProductAssignment(data: AppData, assignmentId: string): AppData {
-  return {
-    ...data,
-    productAssignments: data.productAssignments.filter((item) => item.id !== assignmentId),
   }
 }
 
@@ -335,13 +323,6 @@ export function removeDuty(data: AppData, dutyId: string): AppData {
     ...data,
     duties: data.duties.filter((item) => item.id !== dutyId),
     dutyAssignments: data.dutyAssignments.filter((item) => item.duty_id !== dutyId),
-  }
-}
-
-export function removeDutyAssignment(data: AppData, assignmentId: string): AppData {
-  return {
-    ...data,
-    dutyAssignments: data.dutyAssignments.filter((item) => item.id !== assignmentId),
   }
 }
 
@@ -415,38 +396,6 @@ export function appendDutyAssignment(
       },
       ...data.dutyAssignments,
     ],
-  }
-}
-
-export function addAllowedUserLocal(
-  data: AppData,
-  input: { id: string; email: string; name: string; role: Role; created_at: string },
-): AppData {
-  return {
-    ...data,
-    allowedUsers: [input, ...data.allowedUsers],
-    profiles: [
-      { id: makeId('profile'), email: input.email, name: input.name, role: input.role },
-      ...data.profiles,
-    ],
-  }
-}
-
-export function updateAllowedUser(
-  data: AppData,
-  inviteId: string,
-  payload: { email: string; name: string; role: Role },
-): AppData {
-  return {
-    ...data,
-    allowedUsers: data.allowedUsers.map((item) => (item.id === inviteId ? { ...item, ...payload } : item)),
-  }
-}
-
-export function setProfileActive(data: AppData, profileId: string, nextActive: boolean): AppData {
-  return {
-    ...data,
-    profiles: data.profiles.map((item) => (item.id === profileId ? { ...item, is_active: nextActive } : item)),
   }
 }
 

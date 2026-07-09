@@ -63,7 +63,7 @@ describeRls(`RLS assignments (${RLS_SKIP_NOTE})`, () => {
 
     const { error } = await client.rpc('replace_product_assignments', {
       p_product_id: productId,
-      p_user_ids: [],
+      p_member_ids: [],
     })
 
     expect(error).not.toBeNull()

@@ -1,11 +1,11 @@
-# SQA P1 Workflow · 디자인 토큰 계약 (V2 Warm Paper, Data-First 개정)
+# SQA P1 Workflow · 디자인 토큰 계약 (V2 Warm Paper · Data-First)
 
 모든 색·크기·간격·라운드·그림자는 이 문서의 토큰으로만 쓴다.
 새 값이 필요하면 **먼저 여기에 토큰을 추가**하고 `src/styles.css`의 `:root`에 반영한 뒤 사용한다.
 컴포넌트 CSS에 원시 hex와 임의 간격 숫자를 직접 쓰지 않는다.
 
-- 방향: 10인 SQA 파트의 매일 쓰는 내부 운영 도구. Warm Paper(스톤 뉴트럴 + 세피아 액센트)의 톤은 유지하되,
-  에디토리얼 장식(질감 오버레이·세리프 이탤릭 숫자·영문 장식 라벨)은 걷어낸 **데이터 우선** 언어.
+- 방향: 10인 SQA 파트의 매일 쓰는 내부 운영 도구. Warm Paper(스톤 뉴트럴 + 세피아 액센트) 톤의 **데이터 우선** 언어 —
+  에디토리얼 장식(질감 오버레이·세리프 이탤릭 숫자·영문 장식 라벨)은 쓰지 않는다.
 - 다이얼: `DESIGN_VARIANCE 3 · MOTION_INTENSITY 2 · VISUAL_DENSITY 7`
 
 ## 1. 분위기 (Atmosphere)
@@ -67,7 +67,8 @@
 - **라벨 규칙**: UI 마이크로 라벨은 한국어, 최소 11px. 영문 대문자 트래킹 라벨은 쓰지 않는다.
   예외: 사이드바 브랜드 워드마크("SQA P1 / WORKFLOW") 한 곳만 허용 — 로고 록업이지 UI 라벨이 아니다.
   기계값(mono 숫자·시각·키캡)은 최소 10.5px.
-- 크기 스케일: 10.5 / 11 / 12 / 12.5 / 13 / 13.5 / 14(본문) / 15 / 17 / 20 / 24 / 34px.
+- 크기 스케일(현재 사용 값): 10 / 10.5 / 11 / 11.5 / 12 / 12.5 / 13 / 13.5 / **14(본문)** / 14.5 / 15 / 16 / 17 / 18 / 19 / 20 / 21 / 22 / 24 / 26 / 27 / 34px.
+  신규 코드는 이 목록 안에서 고르고, 새 크기를 추가하려면 여기 먼저 등재한다.
 
 ## 4. 간격·레이아웃 (Spacing)
 
@@ -76,9 +77,9 @@
 - 신규 코드의 권장 값: 2 / 4 / 6 / 8 / 10 / 12 / 14 / 16 / 18 / 20 / 24 / 26 / 32 / 44px.
   이 목록 밖 값을 쓰려면 인접 요소와의 광학 정렬 근거가 있어야 한다.
 - 구조: `--sidebar-w: 220px`, `--topbar-h: 56px`, 콘텐츠 최대폭 1400px.
-- **밀도 2모드**: 기본(comfortable)과 압축(compact). 압축은 `:root[data-density='compact']`에서
-  `--stack-gap 26→16px`, `--row-pad-y 10→6px`, `--section-pad 24→16px`, 리스트 아이템 패딩 축소로만 구현한다.
-  글자 크기는 밀도 모드로 줄이지 않는다.
+- **밀도 2모드**: 기본(comfortable)과 압축(compact). 압축은 `:root[data-density='compact']` 하위의
+  셀렉터별 간격 오버라이드로만 구현한다(`src/styles.css` "밀도 압축 모드" 절 — `.stack` gap 26→14px,
+  `.row` 패딩 10→6px, 섹션·리스트 패딩 축소). 글자 크기는 밀도 모드로 줄이지 않는다.
 
 ## 5. 컴포넌트 (Components)
 
@@ -87,7 +88,7 @@
 - 버튼: `.primary`(잉크 배경) / `.ghost`(패널) / `.danger`(reject). compact 변형 30px.
 - 배지: `data-status` 기반, 상태색 매핑(§2)만 사용.
 - 리스트 행: 좌측 3px 상태/긴급도 바(`::before`)가 시급도의 표준 문법.
-- KPI 스탯: 라벨(한국어 11px, dim) + 값(산스 26px tabular-nums) + 단위(12px dim).
+- KPI 스탯: 라벨(한국어 11~11.5px, dim) + 값(산스 22~24px tabular-nums) + 단위(12px dim).
 - 빈 상태: 아이콘(faint) + 본문 1줄 + (선택) 행동 버튼. 이탤릭 세리프 문구는 쓰지 않는다.
 - 토스트: 우하단 고정, `--shadow-lg`, tone별 상태색. topbar에는 저장 중/동기화 라벨만 남긴다.
 - 아이콘: lucide-react 단일 패밀리, stroke 1.8, 장식용 hand-rolled SVG 금지.
@@ -97,7 +98,7 @@
 - `--dur-fast 150ms / --dur-normal 250ms`, `--ease-out / --ease-deep / --ease-spring`.
 - transform·opacity·filter만 애니메이션. 레이아웃 속성 애니메이션 금지.
 - hover 반응은 **클릭 가능한 요소에만** 허용.
-- `prefers-reduced-motion: reduce`에서 모든 애니메이션 1ms로 축소(기존 규칙 유지).
+- `prefers-reduced-motion: reduce`에서 모든 애니메이션을 1ms로 축소한다.
 
 ## 7. 깊이 (Depth)
 
@@ -113,4 +114,4 @@
 - 예외(링): 선택/현재 상태 표시는 elevation이 아니라 링이다 — `inset 0 0 0 1px <border 토큰>` 또는
   `0 0 0 3~4px <상태색 bg 토큰>` 형태만 허용하고, 그림자 사다리와 섞어 쓸 수 있다.
   (활성 네비, 선택된 리스트 행·카드, 타임라인 current 스텝이 이 패턴을 쓴다.)
-- 포커스 표시는 `outline: 2px solid var(--paper-accent)` (비텍스트 대비 3:1 이상, 기존 규칙 유지).
+- 포커스 표시는 `outline: 2px solid var(--paper-accent)` (비텍스트 대비 3:1 이상).

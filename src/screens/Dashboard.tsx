@@ -1,7 +1,6 @@
-import type { Dispatch, SetStateAction } from 'react'
 import { Badge, EmptyState, Section } from '../components/ui'
 import type { AppData, Profile } from '../types'
-import type { MutateFn, TabId } from '../app/types'
+import type { TabId } from '../app/types'
 import { formatDate, reviewStatusLabels } from '../lib/format'
 import { daysUntil, dueDateLabel, relativeDateLabel } from '../lib/dates'
 import { productCategory, productCompanyName, productName } from '../lib/products'
@@ -23,8 +22,6 @@ export function Dashboard({
 }: {
   profile: Profile
   data: AppData
-  mutate: MutateFn
-  setData: Dispatch<SetStateAction<AppData>>
   setActiveTab: (tab: TabId, entityId?: string) => void
 }) {
   const leaderProfile = data.profiles.find((item) => item.role === 'leader')

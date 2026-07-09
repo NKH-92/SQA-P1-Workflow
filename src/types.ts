@@ -20,4 +20,3 @@ export type {
 } from './types/domain'
 
 export type { AppData } from './types/view'
-export type { DbTable } from './types/db'

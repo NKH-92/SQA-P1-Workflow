@@ -74,3 +74,21 @@ export function dueDateStatus(value?: string | null, now = new Date()) {
   if (days <= 7) return 'due_soon'
   return 'scheduled'
 }
+
+/**
+ * 마감 긴급도 단일 기준(dueDateStatus 파생) — 리스트·칸반·홈·알림이 모두 이 함수를 쓴다.
+ * 화면마다 긴급도 색이 달라지면 안 된다.
+ */
+export function dueUrgency(value?: string | null, now = new Date()): 'urgent' | 'warning' | 'normal' {
+  const status = dueDateStatus(value, now)
+  if (status === 'overdue' || status === 'due_now') return 'urgent'
+  if (status === 'due_soon') return 'warning'
+  return 'normal'
+}
+
+/** 정렬·비교용 epoch ms. 값이 없거나 파싱 불가면 0. */
+export function eventTime(value?: string | null) {
+  if (!value) return 0
+  const time = Date.parse(value)
+  return Number.isNaN(time) ? 0 : time
+}

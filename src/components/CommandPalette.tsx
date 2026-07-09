@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Search } from 'lucide-react'
 import type { AppData, Profile } from '../types'
 import type { TabId } from '../app/types'
+import { selectScopedReviewRequests } from '../features/reviews/review.selectors'
 import { reviewStatusLabels } from '../lib/format'
 
 export type CommandItem = {
@@ -77,9 +78,7 @@ export function CommandPalette({
 
     // 검토요청: 파트장은 전체, 파트원은 본인 것만 (RLS 가시성과 동일).
     // 여기서 자르지 않는다 — 오래된 요청도 검색으로 찾을 수 있어야 한다.
-    const visibleReviews = leaderMode
-      ? data.reviewRequests
-      : data.reviewRequests.filter((request) => request.requester_id === profile.id)
+    const visibleReviews = selectScopedReviewRequests(data, profile)
     visibleReviews.forEach((request) => {
       result.push({
         id: `review-${request.id}`,
@@ -107,7 +106,7 @@ export function CommandPalette({
     }
 
     return result
-  }, [data, leaderMode, onClose, open, profile.id, setActiveTab])
+  }, [data, leaderMode, onClose, open, profile, setActiveTab])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()

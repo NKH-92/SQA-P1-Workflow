@@ -1,10 +1,8 @@
 import { recordActivityLog } from '../../lib/activityLog'
 import { supabase } from '../../lib/supabase'
-import type { Project } from '../../types'
-import type { LocalRepositoryContext, ProjectRepository } from '../repositories/types'
-import type { ProjectInput } from '../local/appDataReducers'
+import type { RepositoryDeps, ProjectRepository } from '../repositories/types'
 
-export function createSupabaseProjectRepository(ctx: LocalRepositoryContext): ProjectRepository {
+export function createSupabaseProjectRepository(ctx: RepositoryDeps): ProjectRepository {
   const { profile, setData } = ctx
 
   return {
@@ -71,5 +69,3 @@ export function createSupabaseProjectRepository(ctx: LocalRepositoryContext): Pr
     },
   }
 }
-
-export type { ProjectInput, Project }

@@ -1,8 +1,8 @@
 import { recordActivityLog } from '../../lib/activityLog'
 import { supabase } from '../../lib/supabase'
-import type { LocalRepositoryContext, MasterRepository } from '../repositories/types'
+import type { RepositoryDeps, MasterRepository } from '../repositories/types'
 
-export function createSupabaseMasterRepository(ctx: LocalRepositoryContext): MasterRepository {
+export function createSupabaseMasterRepository(ctx: RepositoryDeps): MasterRepository {
   const { profile, data, setData } = ctx
 
   return {
@@ -55,36 +55,6 @@ export function createSupabaseMasterRepository(ctx: LocalRepositoryContext): Mas
         entityId: id,
         action: 'deleted',
         summary: `${category?.name ?? '대분류'}를 삭제했습니다.`,
-      }, { isRemote: true })
-    },
-
-    async deleteProductAssignment(id) {
-      const assignment = data.productAssignments.find((item) => item.id === id)
-      const { error } = await supabase!.from('product_assignments').delete().eq('id', id)
-      if (error) throw error
-      await recordActivityLog(setData, {
-        actor: profile,
-        targetUserId: assignment?.user_id ?? null,
-        entityType: 'product_assignment',
-        entityId: id,
-        action: 'deleted',
-        summary: `제품 배정을 삭제했습니다.`,
-        metadata: { product_id: assignment?.product_id },
-      }, { isRemote: true })
-    },
-
-    async deleteDutyAssignment(id) {
-      const assignment = data.dutyAssignments.find((item) => item.id === id)
-      const { error } = await supabase!.from('duty_assignments').delete().eq('id', id)
-      if (error) throw error
-      await recordActivityLog(setData, {
-        actor: profile,
-        targetUserId: assignment?.user_id ?? null,
-        entityType: 'duty_assignment',
-        entityId: id,
-        action: 'deleted',
-        summary: `업무 배정을 삭제했습니다.`,
-        metadata: { duty_id: assignment?.duty_id },
       }, { isRemote: true })
     },
   }

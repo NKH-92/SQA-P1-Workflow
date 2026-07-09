@@ -41,7 +41,7 @@ export function clearReviewDraftStorage(profileId: string) {
   localStorage.removeItem(`draft:review:${profileId}`)
 }
 
-export function useReviewDraft(profileId: string, _editingReviewId: string | null, _isComposerOpen: boolean) {
+export function useReviewDraft(profileId: string) {
   const [form, setForm] = useState(emptyReviewForm)
   const [draftNotice, setDraftNotice] = useState<string | null>(null)
   const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null)
@@ -82,7 +82,7 @@ export function useReviewDraft(profileId: string, _editingReviewId: string | nul
           setDraftNotice('만료된 초안을 삭제했습니다.')
           return
         }
-        const { saved_at: _savedAt, expires_at: _expiresAt, ...formState } = parsed
+        const { saved_at, expires_at, ...formState } = parsed
         setForm(formState)
         setDraftNotice('이 기기에 저장된 초안을 불러왔습니다.')
         setDraftSavedAt(new Date(parsed.saved_at))

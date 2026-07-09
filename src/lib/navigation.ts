@@ -1,35 +1,37 @@
-export type AppTabId =
-  | 'dashboard'
-  | 'reviews'
-  | 'projects'
-  | 'team'
-  | 'products'
-  | 'duties'
-  | 'invites'
-  | 'work'
-  | 'activity'
+export const APP_TABS = [
+  'dashboard',
+  'reviews',
+  'projects',
+  'team',
+  'products',
+  'duties',
+  'invites',
+  'work',
+  'activity',
+] as const
 
-const VALID_TABS: AppTabId[] = ['dashboard', 'reviews', 'projects', 'team', 'products', 'duties', 'invites', 'work', 'activity']
+/** 앱 탭 id의 단일 원천. app/types.ts가 재수출하며, 다른 곳에 목록을 복제하지 않는다. */
+export type TabId = (typeof APP_TABS)[number]
 
 export function parseAppHash(hash = typeof window !== 'undefined' ? window.location.hash : '') {
   const raw = hash.replace(/^#\/?/, '')
-  if (!raw) return { tab: 'dashboard' as AppTabId, entityId: null as string | null }
+  if (!raw) return { tab: 'dashboard' as TabId, entityId: null as string | null }
   const [tabPart, query = ''] = raw.split('?')
-  const tab = VALID_TABS.includes(tabPart as AppTabId) ? (tabPart as AppTabId) : 'dashboard'
+  const tab = (APP_TABS as readonly string[]).includes(tabPart) ? (tabPart as TabId) : 'dashboard'
   const entityId = new URLSearchParams(query).get('id')
   return { tab, entityId }
 }
 
-export function buildAppHash(tab: AppTabId, entityId?: string | null) {
+export function buildAppHash(tab: TabId, entityId?: string | null) {
   if (entityId) return `#/${tab}?id=${encodeURIComponent(entityId)}`
   return `#/${tab}`
 }
 
-export function isLeaderTab(tab: AppTabId) {
+export function isLeaderTab(tab: TabId) {
   return tab === 'team' || tab === 'products' || tab === 'duties' || tab === 'invites' || tab === 'activity'
 }
 
-export function sanitizeTabForRole(tab: AppTabId, leaderMode: boolean): AppTabId {
+export function sanitizeTabForRole(tab: TabId, leaderMode: boolean): TabId {
   if (leaderMode && tab === 'work') return 'dashboard'
   if (!leaderMode && isLeaderTab(tab)) return 'dashboard'
   return tab

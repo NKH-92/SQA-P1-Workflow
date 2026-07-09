@@ -1,16 +1,6 @@
-import type { Dispatch, SetStateAction } from 'react'
-import type { AppData, Profile, ReviewStatus, Role } from '../types'
+import type { ReviewStatus } from '../types'
 
-export type TabId =
-  | 'dashboard'
-  | 'reviews'
-  | 'projects'
-  | 'team'
-  | 'products'
-  | 'duties'
-  | 'invites'
-  | 'work'
-  | 'activity'
+export type { TabId } from '../lib/navigation'
 
 export type MasterTabId = 'products' | 'duties' | 'invites'
 export type ReviewStatusFilter = 'all' | ReviewStatus
@@ -20,18 +10,6 @@ export type AdminDeleteTable =
   | 'products'
   | 'duties'
   | 'duty_major_categories'
-  | 'product_assignments'
-  | 'duty_assignments'
 export type DeadlineMode = 'date' | 'none'
 
 export type MutateFn = (operation: () => Promise<void>, success: string) => Promise<boolean>
-
-export type ScreenProps = {
-  profile: Profile
-  data: AppData
-  mutate: MutateFn
-  setData: Dispatch<SetStateAction<AppData>>
-  setActiveTab: (tab: TabId, entityId?: string) => void
-}
-
-export type { Role }

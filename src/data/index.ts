@@ -31,13 +31,10 @@ export {
   updateDuty,
   updateInvite,
   toggleProfileActive,
-  deleteMasterEntity,
   deleteAllowedUser,
   deleteProduct,
   deleteDuty,
   deleteDutyMajorCategory,
-  deleteProductAssignment,
-  deleteDutyAssignment,
 } from './mutations/master'
 
 export { addProfileNote } from './mutations/team'

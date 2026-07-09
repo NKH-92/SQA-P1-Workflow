@@ -18,17 +18,17 @@ function compareMasterProducts(left: AppData['products'][number], right: AppData
   return leftOrder - rightOrder || left.name.localeCompare(right.name, 'ko-KR', { numeric: true, sensitivity: 'base' })
 }
 
-export function selectMasterSearchMatches(query: string, ...values: Array<string | null | undefined>) {
+function selectMasterSearchMatches(query: string, ...values: Array<string | null | undefined>) {
   const normalized = query.trim().toLowerCase()
   if (!normalized) return true
   return values.filter(Boolean).join(' ').toLowerCase().includes(normalized)
 }
 
-export function selectFilteredProducts(data: AppData, query: string) {
+function selectFilteredProducts(data: AppData, query: string) {
   return data.products.filter((item) => selectMasterSearchMatches(query, item.name, item.category, item.company_name))
 }
 
-export function selectFilteredDuties(data: AppData, query: string) {
+function selectFilteredDuties(data: AppData, query: string) {
   return data.duties.filter((item) =>
     selectMasterSearchMatches(
       query,

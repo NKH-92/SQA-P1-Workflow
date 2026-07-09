@@ -1,6 +1,6 @@
 import type { AppData, Profile } from '../types'
 import type { TabId } from '../app/types'
-import { daysUntil, dueDateStatus, relativeDateLabel, relativeDaysAgo } from './dates'
+import { daysUntil, dueUrgency, eventTime, relativeDateLabel, relativeDaysAgo } from './dates'
 import { isReviewUnread, loadReadState } from './readState'
 
 export type AppNotification = {
@@ -18,12 +18,6 @@ export type AppNotification = {
   at: number
 }
 
-function eventTime(value?: string | null) {
-  if (!value) return 0
-  const time = Date.parse(value)
-  return Number.isNaN(time) ? 0 : time
-}
-
 /**
  * 오늘 발생분은 "방금"/"n분 전"/"n시간 전", 그 이전은 달력 자정 기준(dates.ts와 동일)
  * "어제"/"n일 전". 경과 24h로 날짜를 세면 검토 목록(relativeDateLabel)과 같은 이벤트가
@@ -39,14 +33,6 @@ function relativeTime(at: number, now: number) {
   if (diffMinutes < 1) return '방금'
   if (diffMinutes < 60) return `${diffMinutes}분 전`
   return `${Math.floor(diffMinutes / 60)}시간 전`
-}
-
-/** 리스트·칸반·홈과 같은 기준(dueDateStatus)을 쓴다 — 화면마다 긴급도 색이 달라지면 안 된다. */
-function deadlineUrgency(dueDate?: string | null): AppNotification['urgency'] {
-  const status = dueDateStatus(dueDate)
-  if (status === 'overdue' || status === 'due_now') return 'urgent'
-  if (status === 'due_soon') return 'warning'
-  return 'normal'
 }
 
 /**
@@ -76,7 +62,7 @@ export function buildNotifications(
           title: `${request.profiles?.name ?? '파트원'}님이 “${request.title}” 검토를 요청했습니다.`,
           when: relativeTime(at, now),
           kind: '검토요청',
-          urgency: deadlineUrgency(request.due_date),
+          urgency: dueUrgency(request.due_date),
           unread: isReviewUnread(request, profile, leaderMode, seenAtIso),
           tab: 'reviews',
           entityId: request.id,
@@ -150,7 +136,7 @@ export function buildNotifications(
           : `“${project.name}” 프로젝트 마감이 ${days === 0 ? '오늘' : `${days}일 남았습니다`}.`,
       when: `D${days < 0 ? '+' : '-'}${Math.abs(days)}`,
       kind: '프로젝트',
-      urgency: deadlineUrgency(project.deadline),
+      urgency: dueUrgency(project.deadline),
       unread: false,
       tab: 'projects',
       at: eventTime(project.deadline),

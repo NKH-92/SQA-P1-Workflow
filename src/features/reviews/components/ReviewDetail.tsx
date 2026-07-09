@@ -2,7 +2,7 @@ import type { Dispatch, SetStateAction } from 'react'
 import { MousePointerClick } from 'lucide-react'
 import { EmptyState } from '../../../components/ui'
 import type { Profile, ReviewRequest, ReviewStatus } from '../../../types'
-import { ReviewRequestItem } from '../../../screens/ReviewRequestItem'
+import { ReviewRequestItem } from './ReviewRequestItem'
 
 type ReviewDetailProps = {
   profile: Profile

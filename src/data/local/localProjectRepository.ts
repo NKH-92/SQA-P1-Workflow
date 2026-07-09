@@ -1,11 +1,10 @@
 import { recordActivityLog } from '../../lib/activityLog'
 import { makeId } from '../../lib/format'
-import type { Profile, Project } from '../../types'
-import type { LocalRepositoryContext, ProjectRepository } from '../repositories/types'
+import type { RepositoryDeps, ProjectRepository } from '../repositories/types'
 import { addProject, removeProject, replaceProjectAssignments, updateProject } from './appDataReducers'
 
-export function createLocalProjectRepository(ctx: LocalRepositoryContext): ProjectRepository {
-  const { profile, data, setData } = ctx
+export function createLocalProjectRepository(ctx: RepositoryDeps): ProjectRepository {
+  const { profile, setData } = ctx
 
   return {
     async createProject({ project, memberIds, memberOptions }) {
@@ -65,5 +64,3 @@ export function createLocalProjectRepository(ctx: LocalRepositoryContext): Proje
     },
   }
 }
-
-export type { Project, Profile }

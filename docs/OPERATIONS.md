@@ -91,14 +91,9 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 | Enable email signup | **OFF** | Authentication → Providers → Email |
 | 계정 생성 | Dashboard **Add user**만 | Authentication → Users |
 
-> **2026-07-07 MCP 검증**: 1차 probe 가입 성공(ON). 재probe는 email rate limit(429). `signup_disabled` 미수신 → OFF 필요 상태였음.
-> **2026-07-09 조치 완료**: Management API(`PATCH /v1/projects/<ref>/config/auth`)로 `disable_signup: true` 적용·재조회 확인. 설정을 되돌리지 않는 한 재확인 불필요.
+> 운영 프로젝트에는 `disable_signup: true`가 적용되어 있다 (2026-07-09, Management API로 적용·확인). 설정을 되돌리지 않는 한 재확인은 불필요하다.
 
-| 단계 | 작업 |
-|---|---|
-| 1 | 파트장이 마스터 > 초대 관리에서 `allowed_users`에 이메일·이름·역할 등록 |
-| 2 | Supabase Dashboard > Authentication > Users > **Add user** 로 계정 생성 (임시 비밀번호 발급) |
-| 3 | 사용자는 앱에서 로그인 → `profiles` 자동 생성 → 필요 시 비밀번호 변경 |
+계정 생성 절차와 임시 비밀번호 규칙은 아래 "임시 비밀번호·첫 로그인" 절을 따릅니다.
 
 ### 미승인 Auth 계정 정리
 
@@ -107,7 +102,7 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 1. Supabase Dashboard > Authentication > Users
 2. `profiles`에 대응 row가 없거나 `allowed_users`에 없는 이메일 조회
 3. 미사용 계정이면 Users에서 삭제
-4. 반복 발생 시 Supabase Auth 설정에서 public sign-up을 비활성화하거나 Dashboard 생성만 허용
+4. public sign-up이 OFF이므로 미승인 계정은 Dashboard 생성 경로에서만 생깁니다 — 계정 생성은 파트장만 수행합니다
 
 ## 분기 복구 리허설
 
@@ -142,6 +137,9 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 | 1 | 마스터 > 초대 관리에서 대상 사용자 `비활성화` (`is_active` 토글) | 상태 배지가 `비활성`으로 변경 |
 | 2 | 대상 계정으로 로그인 시도 | "계정이 비활성화되었습니다" 안내, 데이터 접근 불가 |
 | 3 | (선택) `allowed_users`에서도 제거 | 앱 > 마스터 > 초대 관리 |
+| 4 | (복귀 시) 재활성화 후 로그인 | 정상 홈 진입 |
+
+상세 RLS·Storage 검증은 [MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md) 작업 F를 참고합니다.
 
 > 마지막 active leader는 비활성화·강등이 DB에서 거부됩니다(202607070005). leader를 내보낼 때는 먼저 **다른 사람을 leader로 지정(이관)한 뒤** 대상 leader를 비활성화하세요.
 
@@ -172,6 +170,7 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 
 1. 파트장이 `allowed_users`에 이메일·이름·역할을 등록합니다.
 2. Supabase Dashboard > Authentication > Users > **Add user** 로 계정을 만듭니다 (앱 가입 UI 없음). 임시 비밀번호는 `1234`.
+   - Dashboard가 최소 비밀번호 길이 제한으로 `1234` 생성을 거부하면 Authentication → Providers → Email의 **Minimum password length**를 4로 조정합니다.
 3. 사용자는 `1234`로 로그인한 뒤 `must_change_password` 화면에서 **8자 이상**의 새 비밀번호로 변경합니다. `'1234'` 등 너무 단순한 비밀번호는 새 비밀번호로 거부됩니다.
 
 ### 최초 변경은 이제 서버(RLS)에서 강제됨
@@ -185,15 +184,10 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
   1. **온보딩은 한 명씩** — 계정 생성 **직후 즉시 본인이 로그인해 비밀번호를 변경**하게 합니다. 미사용 상태로 `1234`인 계정을 오래 방치하지 않습니다.
   2. **public sign-up OFF는 필수 전제** — Supabase Dashboard에서 Enable email signup을 반드시 OFF로 둡니다(위 Auth 절 참고).
 
-## 사용자 비활성화 (is_active)
+## 알려진 한계 (수용한 위험)
 
-| 단계 | 작업 | 확인 |
-|---|---|---|
-| 1 | 마스터 > 초대 관리에서 대상 사용자 `비활성화` | 상태 배지가 `비활성`으로 변경 |
-| 2 | 대상 계정으로 로그인 | "계정이 비활성화되었습니다" 안내 |
-| 3 | 재활성화 후 로그인 | 정상 홈 진입 |
-
-상세 RLS·Storage 검증은 [MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md) 작업 F를 참고한다.
+- **활동 로그 자기 명의 삽입**: member가 `activity_logs`에 자기 명의(`actor_id=self`)의 임의 로그를 삽입할 수 있다. 타인 사칭·수정·삭제는 불가(append-only)해 위험이 낮고, 차단하려면 모든 뮤테이션의 로그 삽입을 SECURITY DEFINER RPC로 옮기는 큰 변경이 필요해 수용한다. 감사 요구가 생기면 그때 RPC 경유로 좁힌다.
+- **공통 임시 비밀번호 `1234` 선점**: 위 "임시 비밀번호·첫 로그인" 절의 잔여 위험 참고 — "한 명씩 즉시 온보딩 + public sign-up OFF"로 완화한다.
 
 ## 개인정보 처리 (팀 공지 필요)
 
@@ -208,9 +202,17 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 
 Windows에서 `npm ci`가 `EPERM`으로 실패하면, 다른 터미널·에디터에서 `node_modules`를 잠그고 있지 않은지 확인한 뒤 해당 폴더를 삭제하고 다시 실행하세요.
 
+## 데이터 시드 재생성 (선택)
+
+제품·업무 배정을 사설 CSV에서 일괄 생성해야 할 때 사용합니다. 일상 등록은 앱의 마스터 탭(CSV 가져오기 포함)으로 충분합니다.
+
+1. `data/private/*.example` 3개 파일을 `.local.*`로 복사해 실제 값 입력 (`.local.*`은 커밋되지 않음)
+2. `node scripts/generate-p1-product-seed.mjs` / `node scripts/generate-p1-duty-seed.mjs` 실행
+3. 생성된 `scripts/.seed-batches/*.sql`(비추적)을 SQL Editor에서 실행
+
 ## 제품명 중복 정리 (products_name_key)
 
-`202607060002` migration은 **중복 제품을 삭제하지 않습니다**. 중복이 있으면 migration이 실패하므로, 적용 전 반드시 수동 병합하세요. `202607060003_audit_product_duplicates.sql`은 중복을 감사 테이블에 기록하고 unique constraint를 idempotent하게 재적용합니다.
+`202607060002` migration은 **중복 제품을 삭제하지 않습니다**. 중복이 있으면 migration이 실패하므로, 적용 전 반드시 수동 병합하세요. `202607060003_audit_product_duplicates.sql`은 중복을 감사 테이블(`product_dedup_audit`)에 기록하고 unique constraint를 적용합니다.
 
 | 단계 | 작업 | 확인 |
 |---|---|---|
@@ -220,8 +222,6 @@ Windows에서 `npm ci`가 `EPERM`으로 실패하면, 다른 터미널·에디�
 | 3 | 병합 후 중복 행 삭제 | `group by name having count(*) > 1` 결과 0건 |
 | 4 | `202607060002` migration 적용 | `products_name_key` 존재, RPC 생성 |
 | 5 | `202607060003` migration 적용 (선택 감사) | `product_dedup_audit`에 기록 확인 |
-
-**주의:** 구버전 060002(delete 포함)가 이미 적용된 DB에서는 데이터가 삭제되었을 수 있습니다. `product_dedup_audit`과 백업으로 영향을 조사하세요.
 
 ## 복구 리허설 기록
 

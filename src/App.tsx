@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AppRoutes, usePreviewRoleChange } from './app/AppRoutes'
+import { AppRoutes } from './app/AppRoutes'
 import { useAppData } from './app/hooks/useAppData'
+import { usePreviewRoleChange } from './app/hooks/usePreviewRoleChange'
 import { useAuthProfile } from './app/hooks/useAuthProfile'
 import { useHashNavigation } from './app/hooks/useHashNavigation'
 import { useMutationRunner } from './app/hooks/useMutationRunner'
@@ -90,10 +91,9 @@ function App() {
     setReadTick((value) => value + 1)
   }
 
+  // signOut이 resetNavigation까지 수행한다(useAuthProfile → useHashNavigation).
   const handleSignOut = async () => {
     await signOut()
-    navigation.setActiveTab('dashboard')
-    if (typeof window !== 'undefined') window.location.hash = '#/dashboard'
   }
 
   if (!authReady || initialLoading || sessionUser === undefined) {
@@ -168,9 +168,6 @@ function App() {
           mutate={mutate}
           setData={setData}
           setActiveTab={navigation.setActiveTab}
-          setProfile={setProfile}
-          setMessage={setMessage}
-          refreshData={refreshData}
           reviewsUnreadCutoff={reviewsUnreadCutoff}
         />
       </Shell>

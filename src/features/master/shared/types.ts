@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react'
-import type { MutateFn, TabId } from '../../../app/types'
+import type { MutateFn } from '../../../app/types'
 import type { AppData, Profile } from '../../../types'
 
 export type MasterSubPanelProps = {
@@ -7,5 +7,4 @@ export type MasterSubPanelProps = {
   data: AppData
   mutate: MutateFn
   setData: Dispatch<SetStateAction<AppData>>
-  setActiveTab: (tab: TabId, entityId?: string) => void
 }

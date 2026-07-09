@@ -1,5 +1,5 @@
 import type { ReviewRequest, ReviewStatus } from '../../../types'
-import { dueDateLabel, dueDateShortLabel, dueDateStatus } from '../../../lib/dates'
+import { dueDateLabel, dueDateShortLabel, dueUrgency } from '../../../lib/dates'
 
 const COLUMNS: Array<{ status: ReviewStatus; label: string }> = [
   { status: 'pending', label: '대기중' },
@@ -8,11 +8,9 @@ const COLUMNS: Array<{ status: ReviewStatus; label: string }> = [
 ]
 
 function cardUrgency(request: ReviewRequest): 'urgent' | 'warning' | 'normal' {
+  // 종결된 요청은 기한이 지났어도 긴급 표시하지 않는다.
   if (request.status !== 'pending') return 'normal'
-  const status = dueDateStatus(request.due_date)
-  if (status === 'overdue' || status === 'due_now') return 'urgent'
-  if (status === 'due_soon') return 'warning'
-  return 'normal'
+  return dueUrgency(request.due_date)
 }
 
 /**

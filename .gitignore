@@ -9,12 +9,13 @@ vite.config.d.ts
 .env.*.local
 supabase/*private*.local.sql
 scripts/.seed-batches/
-scripts/seed-p1-products.sql
-scripts/.seed-query.json
 data/private/*.local.csv
 data/private/*.local.json
 backup/*.sql
 supabase/.temp/
+
+.claude/
+.superloopy/
 
 .DS_Store
 Thumbs.db

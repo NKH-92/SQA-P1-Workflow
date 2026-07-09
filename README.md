@@ -45,4 +45,15 @@ npm run typecheck  # TypeScript 검사
 npm run lint       # ESLint
 ```
 
-배포 절차는 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)를 참고하세요.
+## 문서
+
+| 문서 | 내용 |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 소스 구조·계층 규칙·권한 모델·테스트 지도 |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | GitHub·Workers·Supabase 배포 설정 |
+| [docs/MANUAL_TASKS_PLAN.md](docs/MANUAL_TASKS_PLAN.md) | 운영 배포 체크리스트 (작업 0·A~G) |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | 백업·장애·계정 관리 런북 |
+| [docs/SUPABASE_MIGRATIONS.md](docs/SUPABASE_MIGRATIONS.md) | 마이그레이션 정책·목록·확인 SQL |
+| [docs/TEST_PLAN.md](docs/TEST_PLAN.md) | 기능·RLS 검증 시나리오 |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | 배포 이후 단계별 계획 |
+| [DESIGN.md](DESIGN.md) | 디자인 토큰 계약 |

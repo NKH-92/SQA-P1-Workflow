@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Badge } from '../components/ui'
-import type { Profile, ReviewRequest, ReviewStatus } from '../types'
-import { resolveAttachmentHref } from '../lib/attachments'
-import { ageInDays, dueDateLabel, dueDateShortLabel, dueDateStatus } from '../lib/dates'
-import { formatDate, reviewStatusLabels } from '../lib/format'
+import { Badge } from '../../../components/ui'
+import type { Profile, ReviewRequest, ReviewStatus } from '../../../types'
+import { resolveAttachmentHref } from '../../../lib/attachments'
+import { ageInDays, dueDateLabel, dueDateShortLabel, dueUrgency } from '../../../lib/dates'
+import { formatDate, reviewStatusLabels } from '../../../lib/format'
 import {
   Check,
   Paperclip,
@@ -76,8 +76,8 @@ export function ReviewRequestItem({
   const timelineSteps = getTimelineSteps(request.status)
   const requestFeedback = request.review_feedback ?? []
   const canEditOwn = profile.id === request.requester_id && request.status === 'pending'
-  const dueStatus = dueDateStatus(request.due_date)
-  const dueUrgent = dueStatus === 'overdue' || dueStatus === 'due_now'
+  const urgency = dueUrgency(request.due_date)
+  const dueUrgent = urgency === 'urgent'
 
   useEffect(() => {
     let active = true
@@ -120,7 +120,7 @@ export function ReviewRequestItem({
   }
 
   return (
-    <article className={celebrate ? 'request-item is-celebrating' : 'request-item'}>
+    <article className="request-item">
       {celebrate && (
         <div className="confetti-lite" aria-hidden="true">
           {Array.from({ length: 22 }).map((_, index) => (
@@ -144,7 +144,7 @@ export function ReviewRequestItem({
           {request.profiles?.name ?? '요청자'} · 접수 {ageInDays(request.created_at)}일
         </span>
         {request.status === 'pending' && request.due_date && (
-          <span className="due-chip" data-tone={dueUrgent ? 'hot' : dueStatus === 'due_soon' ? 'soon' : undefined}>
+          <span className="due-chip" data-tone={dueUrgent ? 'hot' : urgency === 'warning' ? 'soon' : undefined}>
             {dueDateShortLabel(request.due_date)}
           </span>
         )}

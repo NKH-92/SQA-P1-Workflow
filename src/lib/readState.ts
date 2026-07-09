@@ -1,4 +1,5 @@
 import type { AppData, Profile } from '../types'
+import { eventTime } from './dates'
 
 export type ReadState = {
   reviewsSeenAt: string | null
@@ -27,12 +28,6 @@ export function markReviewsSeen(userId: string) {
   } catch {
     // Storage-blocked environments (private mode, quota) must not crash the reviews tab.
   }
-}
-
-function eventTime(value?: string | null) {
-  if (!value) return 0
-  const time = Date.parse(value)
-  return Number.isNaN(time) ? 0 : time
 }
 
 type UnreadCheckRequest = AppData['reviewRequests'][number]

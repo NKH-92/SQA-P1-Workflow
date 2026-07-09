@@ -1,16 +1,14 @@
 import { recordActivityLog } from '../../lib/activityLog'
 import { UserFacingError } from '../../lib/errors'
-import type { LocalRepositoryContext, MasterRepository } from '../repositories/types'
+import type { RepositoryDeps, MasterRepository } from '../repositories/types'
 import {
   removeAllowedUser,
   removeDuty,
-  removeDutyAssignment,
   removeDutyMajorCategory,
   removeProduct,
-  removeProductAssignment,
 } from './appDataReducers'
 
-export function createLocalMasterRepository(ctx: LocalRepositoryContext): MasterRepository {
+export function createLocalMasterRepository(ctx: RepositoryDeps): MasterRepository {
   const { profile, data, setData } = ctx
 
   return {
@@ -64,34 +62,6 @@ export function createLocalMasterRepository(ctx: LocalRepositoryContext): Master
         entityId: id,
         action: 'deleted',
         summary: `${category?.name ?? '대분류'}를 삭제했습니다.`,
-      })
-    },
-
-    async deleteProductAssignment(id) {
-      const assignment = data.productAssignments.find((item) => item.id === id)
-      setData((current) => removeProductAssignment(current, id))
-      await recordActivityLog(setData, {
-        actor: profile,
-        targetUserId: assignment?.user_id ?? null,
-        entityType: 'product_assignment',
-        entityId: id,
-        action: 'deleted',
-        summary: `제품 배정을 삭제했습니다.`,
-        metadata: { product_id: assignment?.product_id },
-      })
-    },
-
-    async deleteDutyAssignment(id) {
-      const assignment = data.dutyAssignments.find((item) => item.id === id)
-      setData((current) => removeDutyAssignment(current, id))
-      await recordActivityLog(setData, {
-        actor: profile,
-        targetUserId: assignment?.user_id ?? null,
-        entityType: 'duty_assignment',
-        entityId: id,
-        action: 'deleted',
-        summary: `업무 배정을 삭제했습니다.`,
-        metadata: { duty_id: assignment?.duty_id },
       })
     },
   }

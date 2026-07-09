@@ -6,7 +6,6 @@ import type { AppNotification } from '../lib/notifications'
 import { NotificationPanel } from '../components/NotificationPanel'
 import {
   Bell,
-  BriefcaseBusiness,
   Check,
   ClipboardList,
   FolderKanban,
@@ -74,7 +73,7 @@ export function Shell({
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
-  // A3: 간격 압축 모드. 문서 루트 data-density 속성으로 CSS 프리셋을 전환한다.
+  // 간격 압축 모드. 문서 루트 data-density 속성으로 CSS 프리셋을 전환한다.
   const [density, setDensity] = useState<Density>(loadDensity)
   useEffect(() => {
     document.documentElement.dataset.density = density
@@ -131,7 +130,7 @@ export function Shell({
           ],
         },
       ]
-  const tabDescriptionsV2: Record<TabId, { label: string; description: string }> = {
+  const tabDescriptions: Record<TabId, { label: string; description: string }> = {
     dashboard: {
       label: '홈',
       description: leaderMode ? `대기 검토 ${pendingCount}건 · 파트원 ${memberCount}명` : `${profile.name}님의 오늘 업무`,
@@ -151,7 +150,7 @@ export function Shell({
     activity: { label: '워크스페이스 / 활동 로그', description: '팀 전체 활동 이력' },
     work: { label: '내 업무 / 내 담당', description: '내 담당 제품과 정기 업무' },
   }
-  const activeDescription = tabDescriptionsV2[activeTab]
+  const activeDescription = tabDescriptions[activeTab]
   const syncLabel = lastSyncedAt
     ? `마지막 동기화 ${lastSyncedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`
     : null
@@ -161,8 +160,8 @@ export function Shell({
       <div className={`overlay${sidebarOpen ? ' visible' : ''}`} onClick={() => setSidebarOpen(false)} />
       <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
         <div className="sidebar-top">
+          {/* 브랜드 마크 'P'는 .brand::before가 그린다 */}
           <div className="brand">
-            <BriefcaseBusiness size={28} />
             <div>
               <strong>SQA P1</strong>
               <span>Workflow</span>
@@ -295,7 +294,7 @@ export function Shell({
         </header>
         {children}
       </main>
-      {/* D4: 결과 토스트는 우하단 고정 — topbar는 진행 상태 표시만 담당한다. */}
+      {/* 결과 토스트는 우하단 고정 — topbar는 진행 상태 표시만 담당한다. */}
       {message && (
         <div className="toast-viewport">
           <span className="toast" data-tone={message.tone} role="status" aria-live="polite">

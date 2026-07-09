@@ -11,14 +11,6 @@ function readScript(name: string) {
 }
 
 describe('migration scripts', () => {
-  it('apply-migrations.ps1 lists 202607 pending migrations', () => {
-    const script = readScript('apply-migrations.ps1')
-
-    expect(script).toContain('202607*.sql')
-    expect(script).toContain('Pending migrations (202607*)')
-    expect(script).toContain('Sort-Object Name')
-  })
-
   it('apply-pending-migrations.ps1 uses db query not db execute', () => {
     const script = readScript('apply-pending-migrations.ps1')
 

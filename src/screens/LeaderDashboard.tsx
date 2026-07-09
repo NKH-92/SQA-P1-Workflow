@@ -2,10 +2,13 @@ import { useState } from 'react'
 import { EmptyState, Section, Sparkline } from '../components/ui'
 import type { AppData, Profile } from '../types'
 import type { TabId } from '../app/types'
-import { formatDate, reviewStatusLabels } from '../lib/format'
 import { buildReviewMonthlyStats } from '../lib/stats'
-import { dueDateLabel, dueDateStatus, daysUntil } from '../lib/dates'
-import { reviewPriorityScore } from '../lib/priority'
+import {
+  PRIORITY_GROUPS,
+  selectLeaderPriorityQueue,
+  selectProjectReminderItems,
+  selectUnassignedProducts,
+} from '../features/dashboard/prioritySelectors'
 import { useTeamSummaries } from '../hooks/useTeamSummaries'
 import {
   CalendarClock,
@@ -15,32 +18,6 @@ import {
   Package,
   Timer,
 } from 'lucide-react'
-
-type PriorityUrgency = 'urgent' | 'warning' | 'normal'
-
-type PriorityItem = {
-  id: string
-  kind: string
-  title: string
-  who: string
-  dueLabel: string
-  dueDetail: string
-  urgency: PriorityUrgency
-  targetTab: TabId
-  entityId?: string
-  score: number
-  group: PriorityGroupKey
-}
-
-/** A2: 우선순위 큐를 시급도 순서의 소그룹으로 나눈다. */
-type PriorityGroupKey = 'overdue' | 'week' | 'assign' | 'later'
-
-const PRIORITY_GROUPS: Array<{ key: PriorityGroupKey; label: string; urgency: PriorityUrgency }> = [
-  { key: 'overdue', label: '지연 · 오늘', urgency: 'urgent' },
-  { key: 'week', label: '이번 주', urgency: 'warning' },
-  { key: 'assign', label: '배정 필요', urgency: 'normal' },
-  { key: 'later', label: '기한 여유 · 없음', urgency: 'normal' },
-]
 
 const PRIORITY_PREVIEW_COUNT = 8
 
@@ -56,108 +33,9 @@ export function LeaderDashboard({
   const [showAllPriorities, setShowAllPriorities] = useState(false)
   const { teamMembers } = useTeamSummaries(data)
   const pendingReviews = data.reviewRequests.filter((request) => request.status === 'pending')
-  const productAssignmentIds = new Set(data.productAssignments.map((assignment) => assignment.product_id))
-  const unassignedProducts = data.products.filter((product) => !productAssignmentIds.has(product.id))
-  const membersWithAssignmentGaps = teamMembers.filter(
-    (member) =>
-      !data.productAssignments.some((assignment) => assignment.user_id === member.id) ||
-      !data.dutyAssignments.some((assignment) => assignment.user_id === member.id),
-  )
-  const openReviewRequests = [...pendingReviews].sort(
-    (left, right) => reviewPriorityScore(left) - reviewPriorityScore(right),
-  )
-  // 프로젝트 단위로 센다 — 배정 행 단위로 세면 담당자 수만큼 부풀고, 무배정 프로젝트는 누락된다.
-  const projectReminderItems = data.projects
-    .map((project) => {
-      const days = daysUntil(project.deadline)
-      const assigneeNames = data.projectAssignments
-        .filter((assignment) => assignment.project_id === project.id)
-        .map(
-          (assignment) =>
-            (assignment.profiles ?? data.profiles.find((item) => item.id === assignment.user_id))?.name ?? null,
-        )
-        .filter((name): name is string => Boolean(name))
-      return { project, days, assigneeNames }
-    })
-    .filter(({ project, days }) => project.deadline && project.status !== 'done' && days != null && days <= 14)
-    .sort((left, right) => (left.days ?? 999) - (right.days ?? 999))
-
-  const reviewUrgency = (dueDate: string | null | undefined): PriorityUrgency => {
-    const status = dueDateStatus(dueDate)
-    if (status === 'overdue' || status === 'due_now') return 'urgent'
-    if (status === 'due_soon') return 'warning'
-    return 'normal'
-  }
-
-  const urgencyGroup = (urgency: PriorityUrgency): PriorityGroupKey =>
-    urgency === 'urgent' ? 'overdue' : urgency === 'warning' ? 'week' : 'later'
-
-  const priorityQueue: PriorityItem[] = [
-    ...openReviewRequests.map((request) => {
-      const urgency = reviewUrgency(request.due_date)
-      return {
-        id: `review-${request.id}`,
-        kind: '검토요청',
-        title: request.title,
-        who: request.profiles?.name ?? '요청자',
-        dueLabel: request.due_date ? dueDateLabel(request.due_date) : '기한 없음',
-        dueDetail: request.due_date ? formatDate(request.due_date) : reviewStatusLabels[request.status],
-        urgency,
-        targetTab: 'reviews' as TabId,
-        entityId: request.id,
-        score: reviewPriorityScore(request),
-        group: urgencyGroup(urgency),
-      }
-    }),
-    ...projectReminderItems.map(({ project, days, assigneeNames }) => {
-      // 8~14일 뒤 마감은 '이번 주'가 아니다 — normal로 두면 '기한 여유' 그룹으로 내려간다.
-      const urgency: PriorityUrgency = days != null && days <= 3 ? 'urgent' : days != null && days <= 7 ? 'warning' : 'normal'
-      return {
-        id: `project-${project.id}`,
-        kind: '프로젝트',
-        title: project.name,
-        who: assigneeNames.length > 0 ? assigneeNames.join(', ') : '담당자 미지정',
-        dueLabel: dueDateLabel(project.deadline),
-        dueDetail: formatDate(project.deadline),
-        urgency,
-        targetTab: 'projects' as TabId,
-        score: 3000 + (days ?? 999),
-        group: urgencyGroup(urgency),
-      }
-    }),
-    ...(unassignedProducts.length > 0
-      ? [
-          {
-            id: 'unassigned-products',
-            kind: '마스터',
-            title: '미배정 제품 확인',
-            who: `${unassignedProducts.length}개 제품`,
-            dueLabel: '배정 필요',
-            dueDetail: '담당자를 지정해야 합니다',
-            urgency: 'normal' as PriorityUrgency,
-            targetTab: 'products' as TabId,
-            score: 5000,
-            group: 'assign' as PriorityGroupKey,
-          },
-        ]
-      : []),
-    ...(membersWithAssignmentGaps.length > 0
-      ? [
-          {
-            id: 'assignment-gaps',
-            kind: '파트원',
-            title: '담당 공백 파트원 확인',
-            who: `${membersWithAssignmentGaps.length}명`,
-            dueLabel: '배정 필요',
-            dueDetail: '제품 또는 업무 배정이 비어 있습니다',
-            urgency: 'normal' as PriorityUrgency,
-            targetTab: 'team' as TabId,
-            score: 5100,
-            group: 'assign' as PriorityGroupKey,
-          },
-        ]
-      : []),
-  ].sort((left, right) => left.score - right.score)
+  const unassignedProducts = selectUnassignedProducts(data)
+  const projectReminderItems = selectProjectReminderItems(data)
+  const priorityQueue = selectLeaderPriorityQueue(data, teamMembers)
 
   const visibleQueue = showAllPriorities ? priorityQueue : priorityQueue.slice(0, PRIORITY_PREVIEW_COUNT)
   const hiddenPriorityCount = priorityQueue.length - visibleQueue.length
@@ -180,7 +58,7 @@ export function LeaderDashboard({
         </p>
       </div>
 
-      {/* A1: 핵심 지표를 최상단에서 한눈에. 클릭하면 해당 화면으로 이동한다. */}
+      {/* 핵심 지표를 최상단에서 한눈에. 클릭하면 해당 화면으로 이동한다. */}
       <div className="kpi-strip">
         <button className="kpi-stat" onClick={() => setActiveTab('reviews')} type="button">
           <span className="kpi-stat-label">

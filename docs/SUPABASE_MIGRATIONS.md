@@ -2,6 +2,11 @@
 
 `supabase/migrations/` 디렉터리의 SQL 파일을 **파일명(타임스탬프) 순서대로** 적용합니다.
 
+## 정책 (append-only)
+
+- 마이그레이션은 **불변 이력**입니다. 스키마·RLS 변경은 반드시 **새 파일 추가**로 하고, 이미 적용된 파일은 수정·이름 변경·병합(squash)하지 않습니다 — DB의 적용 이력과 어긋나게 됩니다.
+- 새 마이그레이션을 추가하면 `src/migrations.test.ts`의 텍스트 회귀 테스트를 함께 갱신합니다.
+
 | 파일 | 내용 |
 |------|------|
 | `202607020001_initial_schema.sql` | 초기 스키마 |
@@ -45,6 +50,8 @@ npx supabase link --project-ref <PROJECT_REF>
 npx supabase db push
 ```
 
+push와 핵심 객체(RPC·Storage 버킷·RLS 정책) 존재 확인을 한 번에 하려면 `scripts/apply-pending-migrations.ps1`을 사용합니다.
+
 ## SQL Editor (수동)
 
 Dashboard > SQL Editor에서 위 **전체 migration 파일** 내용을 **순서대로** 실행합니다.  
@@ -56,8 +63,8 @@ Dashboard > SQL Editor에서 위 **전체 migration 파일** 내용을 **순서�
 
 ```sql
 -- migration 적용 이력 확인 (CLI db push 경로 전용)
-select * from supabase_migrations.schema_migrations
-where version in ('202607070004', '202607070005', '202607080001');
+-- 최신 버전이 로컬 supabase/migrations/의 마지막 파일과 같아야 합니다
+select max(version) from supabase_migrations.schema_migrations;
 
 -- activity_logs entity_type check includes master delete types
 select pg_get_constraintdef(oid)
@@ -81,11 +88,7 @@ select exists (
 );
 ```
 
-| DB 상태 | 조치 |
-|---|---|
-| 060002 **미적용** | 중복 병합 후 `db push` — 정상 경로 |
-| 060002 **적용됨**(구버전 delete 포함), 060003 미적용 | delete가 이미 실행됐을 수 있음 → 백업·audit 확인 후 060003 적용 |
-| 둘 다 적용됨 | forward-fix 불필요. audit 테이블로 영향 조사 |
+중복 제품이 있으면 `202607060002`가 실패하므로, 적용 전에 [OPERATIONS.md](./OPERATIONS.md)의 제품명 중복 정리 절차로 수동 병합합니다.
 
 ## 적용 확인
 

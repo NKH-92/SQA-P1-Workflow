@@ -3458,6 +3458,12 @@ button.review-preview-row:hover {
   box-shadow: var(--shadow-sm);
 }
 
+/* 딥링크 착지 카드 — 스크롤 후 잠시 강조되었다가 원래대로 돌아간다. */
+.group-card.deeplink-target {
+  border-color: var(--paper-accent);
+  box-shadow: var(--shadow-glow);
+}
+
 .group-header {
   display: flex;
   align-items: flex-start;
@@ -4898,6 +4904,33 @@ button.review-preview-row:hover {
 .notif-item-body small {
   color: var(--paper-faint);
   font-size: 11px;
+}
+
+/* 파트장 전용 — 데스크톱 알림 설정 행 */
+.notif-pref {
+  display: grid;
+  gap: 4px;
+  padding: 10px 18px;
+  border-top: 1px solid var(--paper-border);
+}
+
+.notif-pref label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--paper-text);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.notif-pref label svg {
+  color: var(--paper-faint);
+}
+
+.notif-pref small {
+  color: var(--paper-dim);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .notif-foot {

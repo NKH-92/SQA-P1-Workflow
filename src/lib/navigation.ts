@@ -27,6 +27,15 @@ export function buildAppHash(tab: TabId, entityId?: string | null) {
   return `#/${tab}`
 }
 
+/** 메신저 등에 붙여넣는 공유 딥링크. 해시 라우팅이라 배포 경로가 어디든 그대로 동작한다. */
+export function buildShareUrl(
+  tab: TabId,
+  entityId: string,
+  location: Pick<Location, 'origin' | 'pathname'> = window.location,
+) {
+  return `${location.origin}${location.pathname}${buildAppHash(tab, entityId)}`
+}
+
 export function isLeaderTab(tab: TabId) {
   return tab === 'team' || tab === 'products' || tab === 'duties' || tab === 'invites' || tab === 'activity'
 }

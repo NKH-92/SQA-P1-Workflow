@@ -58,7 +58,16 @@ export function AppRoutes({
           reviewsUnreadCutoff={reviewsUnreadCutoff}
         />
       )}
-      {activeTab === 'projects' && <ProjectsPanel profile={profile} data={data} mutate={mutate} setData={setData} />}
+      {activeTab === 'projects' && (
+        <ProjectsPanel
+          profile={profile}
+          data={data}
+          mutate={mutate}
+          setData={setData}
+          initialSelectedId={navEntityId}
+          onInitialSelectionApplied={() => setNavEntityId(null)}
+        />
+      )}
       {activeTab === 'team' && leaderMode && (
         <TeamPanel
           profile={profile}

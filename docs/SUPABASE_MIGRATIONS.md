@@ -38,6 +38,7 @@
 | `202607070004_extend_activity_log_entity_types.sql` | activity_logs entity_type check에 product/duty/duty_major_category 추가 |
 | `202607070005_protect_last_active_leader.sql` | 마지막 active leader 비활성화·강등 방지 |
 | `202607080001_enforce_password_change_and_restore_visibility.sql` | 비밀번호 변경 전 데이터 접근 RLS 차단 + 파트장 이름 view 복구 + last-leader counter 잠금 |
+| `202607090001_realtime_review_requests.sql` | 검토요청 INSERT Realtime 발행 (파트장 브라우저 알림용, RLS 불변) |
 
 ## Supabase CLI (권장)
 
@@ -116,6 +117,14 @@ select pg_get_functiondef('public.can_use_app()'::regprocedure) like '%password_
 
 -- 202607080001: 파트장 이름 view가 다시 owner 권한으로 조회되는지 (member 가시성 복구)
 select reloptions from pg_class where relname = 'public_leader_profiles';
+
+-- 202607090001: review_requests가 realtime publication에 포함됐는지
+select exists (
+  select 1 from pg_publication_tables
+  where pubname = 'supabase_realtime'
+    and schemaname = 'public'
+    and tablename = 'review_requests'
+);
 ```
 
 ## 로컬 검증

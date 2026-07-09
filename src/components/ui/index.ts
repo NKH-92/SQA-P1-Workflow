@@ -1,4 +1,5 @@
 export { Badge } from './Badge'
+export { CopyLinkButton } from './CopyLinkButton'
 export { EmptyState } from './EmptyState'
 export { FormGrid } from './FormGrid'
 export { IconAction } from './IconAction'

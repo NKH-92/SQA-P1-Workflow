@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Badge } from '../../../components/ui'
+import { Badge, CopyLinkButton } from '../../../components/ui'
 import type { Profile, ReviewRequest, ReviewStatus } from '../../../types'
 import { resolveAttachmentHref } from '../../../lib/attachments'
 import { ageInDays, dueDateLabel, dueDateShortLabel, dueUrgency } from '../../../lib/dates'
@@ -150,19 +150,22 @@ export function ReviewRequestItem({
         )}
         {request.attachment_url && <Paperclip size={14} aria-label="첨부 있음" />}
         {profile.role === 'leader' && request.status === 'pending' && (
-          <div className="request-actions" aria-label="검토 상태 전환">
-            {statusActions.map(({ status, label, variant }) => (
-              <button
-                className={variant ? `status-btn ${variant}` : 'status-btn'}
-                disabled={request.status === status}
-                key={status}
-                onClick={() => handleStatusTransition(status)}
-                type="button"
-              >
-                {request.status === status && <Check size={13} />}
-                {label}
-              </button>
-            ))}
+          <div className="request-actions">
+            <span role="group" aria-label="검토 상태 전환" style={{ display: 'contents' }}>
+              {statusActions.map(({ status, label, variant }) => (
+                <button
+                  className={variant ? `status-btn ${variant}` : 'status-btn'}
+                  disabled={request.status === status}
+                  key={status}
+                  onClick={() => handleStatusTransition(status)}
+                  type="button"
+                >
+                  {request.status === status && <Check size={13} />}
+                  {label}
+                </button>
+              ))}
+            </span>
+            <CopyLinkButton tab="reviews" entityId={request.id} />
           </div>
         )}
         {canEditOwn && (
@@ -186,6 +189,12 @@ export function ReviewRequestItem({
                 회수
               </button>
             )}
+            <CopyLinkButton tab="reviews" entityId={request.id} />
+          </div>
+        )}
+        {!(profile.role === 'leader' && request.status === 'pending') && !canEditOwn && (
+          <div className="request-actions">
+            <CopyLinkButton tab="reviews" entityId={request.id} />
           </div>
         )}
       </div>

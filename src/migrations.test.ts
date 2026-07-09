@@ -260,4 +260,14 @@ describe('Supabase migrations', () => {
     // last-active-leader counter locked down.
     expect(migration).toContain('revoke execute on function public.count_active_leaders_except(uuid) from anon')
   })
+
+  it('publishes review_requests inserts over realtime without touching RLS', () => {
+    const migration = readMigration('202607090001_realtime_review_requests.sql')
+
+    expect(migration).toContain("pubname = 'supabase_realtime'")
+    expect(migration).toContain('alter publication supabase_realtime add table public.review_requests')
+    // Realtime publication must not weaken row visibility — no policy/grant changes here.
+    expect(migration).not.toContain('create policy')
+    expect(migration).not.toContain('grant ')
+  })
 })

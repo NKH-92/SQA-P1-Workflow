@@ -1,6 +1,6 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import { Badge, EmptyState, Rows, Section } from '../components/ui'
+import { Badge, CopyLinkButton, EmptyState, Rows, Section } from '../components/ui'
 import type { AppData, Profile, Project, ProjectStatus } from '../types'
 import { downloadCsv } from '../lib/csv'
 import {
@@ -40,11 +40,15 @@ export function ProjectsPanel({
   data,
   mutate,
   setData,
+  initialSelectedId,
+  onInitialSelectionApplied,
 }: {
   profile: Profile
   data: AppData
   mutate: MutateFn
   setData: Dispatch<SetStateAction<AppData>>
+  initialSelectedId?: string | null
+  onInitialSelectionApplied?: () => void
 }) {
   const [projectForm, setProjectForm] = useState({ name: '', description: '', deadline: '', status: 'planned' as ProjectStatus })
   const [isProjectComposerOpen, setProjectComposerOpen] = useState(false)
@@ -66,6 +70,28 @@ export function ProjectsPanel({
   const projectGroups = selectProjectGroups(data, profile, leaderMode, projectFilter, filteredProjectAssignments)
   const memberGroups = selectMemberProjectGroups(memberOptions, profile, leaderMode, filteredProjectAssignments)
   const projectStatusGroups = selectProjectStatusGroups(projectGroups)
+  const [highlightedProjectId, setHighlightedProjectId] = useState<string | null>(null)
+
+  // 딥링크 대상이 로드되면 필터를 풀어 카드가 보이게 하고, 스크롤·강조로 안내한다.
+  // 프로젝트는 상세 뷰가 없는 보드형이라 '선택' 대신 카드 강조가 착지 동작이다.
+  useEffect(() => {
+    if (!initialSelectedId) return
+    if (!data.projects.some((project) => project.id === initialSelectedId)) return
+    setProjectQuery('')
+    setStatusFilter('all')
+    setViewMode('project')
+    setHighlightedProjectId(initialSelectedId)
+    onInitialSelectionApplied?.()
+  }, [initialSelectedId, data.projects, onInitialSelectionApplied])
+
+  useEffect(() => {
+    if (!highlightedProjectId) return
+    document
+      .querySelector(`[data-project-id="${highlightedProjectId}"]`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const timer = window.setTimeout(() => setHighlightedProjectId(null), 2600)
+    return () => window.clearTimeout(timer)
+  }, [highlightedProjectId])
 
   const closeProjectComposer = useCallback(() => setProjectComposerOpen(false), [])
 
@@ -262,7 +288,11 @@ export function ProjectsPanel({
             {projectGroups.map(({ project, assignments }) => {
               const edit = projectEdits[project.id]
               return (
-                <article className="group-card" key={project.id}>
+                <article
+                  className={highlightedProjectId === project.id ? 'group-card deeplink-target' : 'group-card'}
+                  data-project-id={project.id}
+                  key={project.id}
+                >
                   {edit ? (
                     <div className="project-edit-form">
                       <label>
@@ -309,6 +339,7 @@ export function ProjectsPanel({
                       </div>
                       <div className="group-actions">
                         <Badge status={project.status}>{projectStatusLabels[project.status]}</Badge>
+                        <CopyLinkButton tab="projects" entityId={project.id} />
                         {leaderMode && (
                           <>
                             <button

@@ -16,13 +16,14 @@ export function useAppData(reportWarnings?: (warnings: string[]) => void) {
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null)
   const generationRef = useRef(0)
 
-  const refreshData = useCallback(async (options?: { initial?: boolean }) => {
+  const refreshData = useCallback(async (options?: { initial?: boolean; silent?: boolean }) => {
     if (!supabase) return
-    const isInitial = options?.initial ?? false
+    // silent: 백그라운드 폴링·Realtime 재조회용 — 5분마다 topbar가 '갱신 중'으로 깜빡이지 않게 한다.
+    const isQuiet = (options?.initial ?? false) || (options?.silent ?? false)
     // Generation token: if a newer refresh starts before this one resolves, the older
     // (possibly pre-mutation) snapshot must not overwrite the newer state.
     const generation = ++generationRef.current
-    if (!isInitial) setRefreshing(true)
+    if (!isQuiet) setRefreshing(true)
     try {
       const result = await fetchAppData()
       if (generation !== generationRef.current) return

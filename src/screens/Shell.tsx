@@ -3,6 +3,7 @@ import type { AppData, Profile, Role } from '../types'
 import type { TabId, ToastMessage } from '../app/types'
 import { roleLabels } from '../lib/format'
 import type { AppNotification } from '../lib/notifications'
+import type { DesktopNotificationControls } from '../app/hooks/useDesktopNotifications'
 import { NotificationPanel } from '../components/NotificationPanel'
 import {
   Bell,
@@ -45,6 +46,7 @@ export function Shell({
   pendingCount,
   unreadReviewsCount,
   notifications,
+  desktopNotifications,
   onMarkAllRead,
   onOpenCommandPalette,
   onRefresh,
@@ -64,6 +66,8 @@ export function Shell({
   pendingCount: number
   unreadReviewsCount: number
   notifications: AppNotification[]
+  /** 파트장에게만 내려온다 — 데스크톱 알림 설정 토글. */
+  desktopNotifications?: DesktopNotificationControls
   onMarkAllRead: () => void
   onOpenCommandPalette: () => void
   onRefresh: () => void
@@ -283,6 +287,7 @@ export function Shell({
           {notifOpen && (
             <NotificationPanel
               notifications={notifications}
+              desktopNotifications={desktopNotifications}
               onClose={() => setNotifOpen(false)}
               onMarkAllRead={() => {
                 onMarkAllRead()

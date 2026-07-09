@@ -1,15 +1,19 @@
 import { useEffect, useRef } from 'react'
-import { Bell } from 'lucide-react'
+import { Bell, Monitor } from 'lucide-react'
 import type { AppNotification } from '../lib/notifications'
+import type { DesktopNotificationControls } from '../app/hooks/useDesktopNotifications'
 import type { TabId } from '../app/types'
 
 export function NotificationPanel({
   notifications,
+  desktopNotifications,
   onClose,
   onMarkAllRead,
   onSelect,
 }: {
   notifications: AppNotification[]
+  /** 파트장에게만 내려온다 — 새 검토요청 데스크톱 알림 토글. */
+  desktopNotifications?: DesktopNotificationControls
   onClose: () => void
   onMarkAllRead: () => void
   onSelect: (tab: TabId, entityId?: string) => void
@@ -75,6 +79,21 @@ export function NotificationPanel({
           </button>
         ))}
       </div>
+      {desktopNotifications?.supported && (
+        <div className="notif-pref">
+          <label>
+            <input
+              checked={desktopNotifications.enabled}
+              onChange={() => void desktopNotifications.toggle()}
+              type="checkbox"
+            />
+            <Monitor size={13} aria-hidden="true" />새 검토요청 데스크톱 알림
+          </label>
+          {desktopNotifications.permission === 'denied' && (
+            <small>브라우저가 이 사이트의 알림을 차단 중입니다. 주소창 자물쇠 → 알림 허용 후 다시 켜 주세요.</small>
+          )}
+        </div>
+      )}
       <div className="notif-foot">
         <button onClick={() => { onSelect('reviews'); onClose() }} type="button">
           검토요청 전체 보기 →

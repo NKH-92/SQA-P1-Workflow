@@ -5,6 +5,15 @@ name: DB Migrate
 # 적용 정책은 append-only(docs/SUPABASE_MIGRATIONS.md) — 이 워크플로는 새 파일만 push한다.
 on:
   workflow_dispatch:
+    inputs:
+      repair_reverted:
+        description: "push 전 이력에서 제거할(reverted) 버전들 — 공백 구분. 예: 원격에만 있는 타임스탬프 버전"
+        required: false
+        default: ""
+      repair_applied:
+        description: "push 전 적용됨(applied)으로 기록할 버전들 — 공백 구분. 내용이 이미 반영된 로컬 파일만"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -67,6 +76,35 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: supabase migration list --db-url "$DATABASE_URL"
+
+      # 이력 정정 — supabase_migrations.schema_migrations 기록만 바꾼다 (스키마 불변).
+      # SQL Editor/Dashboard 경로로 적용된 이력(타임스탬프 버전)과 로컬 파일명이 어긋날 때 사용.
+      # applied로 기록하는 버전은 반드시 내용이 이미 DB에 반영된 파일이어야 한다.
+      - name: Repair migration history (optional)
+        if: ${{ github.event.inputs.repair_reverted != '' || github.event.inputs.repair_applied != '' }}
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+          REPAIR_REVERTED: ${{ github.event.inputs.repair_reverted }}
+          REPAIR_APPLIED: ${{ github.event.inputs.repair_applied }}
+        run: |
+          if ! [[ "$REPAIR_REVERTED $REPAIR_APPLIED" =~ ^[0-9[:space:]]*$ ]]; then
+            echo "::error::repair inputs must be space-separated numeric versions"
+            exit 1
+          fi
+          if [ -n "${REPAIR_REVERTED// /}" ]; then
+            echo "repair --status reverted: $REPAIR_REVERTED"
+            supabase migration repair --db-url "$DATABASE_URL" --status reverted $REPAIR_REVERTED
+          fi
+          if [ -n "${REPAIR_APPLIED// /}" ]; then
+            echo "repair --status applied: $REPAIR_APPLIED"
+            supabase migration repair --db-url "$DATABASE_URL" --status applied $REPAIR_APPLIED
+          fi
+          {
+            echo "### Migration history repaired"
+            [ -n "${REPAIR_REVERTED// /}" ] && echo "- reverted: \`$REPAIR_REVERTED\`"
+            [ -n "${REPAIR_APPLIED// /}" ] && echo "- applied: \`$REPAIR_APPLIED\`"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Push pending migrations
         env:

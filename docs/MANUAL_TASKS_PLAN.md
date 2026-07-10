@@ -391,7 +391,7 @@ Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy confi
 
 - **앱 코드**: 딥링크 공유·백그라운드 동기화(5분 폴링+창 복귀)·검토요청 Realtime 즉시 반영·파트장 데스크톱 알림. 2026-07-10 00:33 KST main push로 Deploy Worker 자동 배포(green) — 사후 감사에서 확인.
 - **신규 migration `202607090001`** (30번째, Realtime publication — RLS 불변, 멱등):
-  - [ ] Actions → **DB Migrate** → Run workflow 실행, Job Summary에서 `realtime publication에 review_requests 포함: t` 확인 (run ID 기록: `<RUN_ID>`)
+  - [x] Actions → **DB Migrate**로 적용 완료 (run ID: 29061734389, 2026-07-10). 운영 이력에 Dashboard 경유 타임스탬프 버전 10개가 섞여 있어 첫 실행이 실패했고, repair 입력(타임스탬프 10개 `reverted` + 기적용 로컬 9개 `applied`)으로 이력 정정 후 202607090001 단독 적용 — realtime publication 검증 통과, 원격 이력 30개 = 로컬 30개 일치. 이후 마이그레이션은 repair 없이 DB Migrate 실행만으로 적용된다.
 - **스모크 (파트장, 10분)**:
   - [ ] [TEST_PLAN.md](./TEST_PLAN.md) "알림·동기화" 5항목 수행
 - **후속 정리**:

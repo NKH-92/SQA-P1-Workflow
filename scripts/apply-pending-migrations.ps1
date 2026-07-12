@@ -95,7 +95,7 @@ select 'profile_note_private_audit_ok' where
       and not tgisinternal
   );
 select 'latest_migration_version_ok' where
-  exists (select 1 from supabase_migrations.schema_migrations where version = '202607120001');
+  exists (select 1 from supabase_migrations.schema_migrations where version = '202607120002');
 select id from storage.buckets where id = 'review-attachments';
 select policyname from pg_policies where tablename = 'review_requests' and policyname in ('review_requests_update_self_pending', 'review_requests_delete_self_pending');
 select 'realtime_pub_' || tablename from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'review_requests';

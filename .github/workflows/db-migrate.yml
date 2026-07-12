@@ -140,18 +140,18 @@ jobs:
             "select
               to_regprocedure('public.add_product_assignment(uuid,uuid)') is not null
               and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.add_product_assignment(uuid,uuid)')), false)
-              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.add_product_assignment(uuid,uuid)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.add_product_assignment(uuid,uuid)')), false)
               and coalesce(has_function_privilege('authenticated', to_regprocedure('public.add_product_assignment(uuid,uuid)'), 'EXECUTE'), false)
               and not coalesce(has_function_privilege('anon', to_regprocedure('public.add_product_assignment(uuid,uuid)'), 'EXECUTE'), true)
               and to_regprocedure('public.add_duty_assignment(uuid,uuid)') is not null
               and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.add_duty_assignment(uuid,uuid)')), false)
-              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.add_duty_assignment(uuid,uuid)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.add_duty_assignment(uuid,uuid)')), false)
               and coalesce(has_function_privilege('authenticated', to_regprocedure('public.add_duty_assignment(uuid,uuid)'), 'EXECUTE'), false)
               and not coalesce(has_function_privilege('anon', to_regprocedure('public.add_duty_assignment(uuid,uuid)'), 'EXECUTE'), true)
               and to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)') is not null
               and coalesce((select pg_get_function_result(to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)')) = 'timestamp with time zone'), false)
               and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)')), false)
-              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)')), false)
               and coalesce(has_function_privilege('authenticated', to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)'), 'EXECUTE'), false)
               and not coalesce(has_function_privilege('anon', to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)'), 'EXECUTE'), true)")
           assignment_versions=$(psql "$DATABASE_URL" -tAc \
@@ -171,7 +171,7 @@ jobs:
             "select
               to_regprocedure('public.validate_assignment_user_active()') is not null
               and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.validate_assignment_user_active()')), false)
-              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.validate_assignment_user_active()')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.validate_assignment_user_active()')), false)
               and coalesce(pg_get_functiondef(to_regprocedure('public.validate_assignment_user_active()')) like '%require_profile_role(new.user_id, ''member''%', false)
               and coalesce(pg_get_functiondef(to_regprocedure('public.validate_assignment_user_active()')) like '%profile_is_active(new.user_id)%', false)
               and exists (
@@ -230,7 +230,7 @@ jobs:
               to_regprocedure('public.count_active_leaders_except(uuid)') is not null
               and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.count_active_leaders_except(uuid)')), false)
               and coalesce((select provolatile = 'v' from pg_proc where oid = to_regprocedure('public.count_active_leaders_except(uuid)')), false)
-              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.count_active_leaders_except(uuid)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.count_active_leaders_except(uuid)')), false)
               and not coalesce(has_function_privilege('authenticated', to_regprocedure('public.count_active_leaders_except(uuid)'), 'EXECUTE'), true)
               and not coalesce(has_function_privilege('anon', to_regprocedure('public.count_active_leaders_except(uuid)'), 'EXECUTE'), true)
               and pg_get_functiondef(to_regprocedure('public.guard_last_active_leader_profile()')) like '%pg_advisory_xact_lock%'
@@ -248,7 +248,7 @@ jobs:
               and not has_table_privilege('authenticated', 'public.project_assignments', 'DELETE')
               and to_regprocedure('public.bump_project_revision_from_assignment()') is not null
               and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.bump_project_revision_from_assignment()')), false)
-              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.bump_project_revision_from_assignment()')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.bump_project_revision_from_assignment()')), false)
               and coalesce((select proacl is not null and proacl::text not like '%{=X%' and proacl::text not like '%,=X%' from pg_proc where oid = to_regprocedure('public.bump_project_revision_from_assignment()')), false)
               and not coalesce(has_function_privilege('authenticated', to_regprocedure('public.bump_project_revision_from_assignment()'), 'EXECUTE'), true)
               and not coalesce(has_function_privilege('anon', to_regprocedure('public.bump_project_revision_from_assignment()'), 'EXECUTE'), true)
@@ -270,13 +270,13 @@ jobs:
               and coalesce(pg_get_functiondef(to_regprocedure('public.reject_review_request(uuid,text)')) like '%insert into public.activity_logs%', false)
               and coalesce(pg_get_functiondef(to_regprocedure('public.add_review_feedback(uuid,text)')) like '%insert into public.activity_logs%', false)
               and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.update_review_request_status(uuid,public.review_status)')), false)
-              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.update_review_request_status(uuid,public.review_status)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.update_review_request_status(uuid,public.review_status)')), false)
               and coalesce((select proacl is not null and proacl::text not like '%{=X%' and proacl::text not like '%,=X%' from pg_proc where oid = to_regprocedure('public.update_review_request_status(uuid,public.review_status)')), false)
               and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.reject_review_request(uuid,text)')), false)
-              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.reject_review_request(uuid,text)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.reject_review_request(uuid,text)')), false)
               and coalesce((select proacl is not null and proacl::text not like '%{=X%' and proacl::text not like '%,=X%' from pg_proc where oid = to_regprocedure('public.reject_review_request(uuid,text)')), false)
               and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.add_review_feedback(uuid,text)')), false)
-              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.add_review_feedback(uuid,text)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.add_review_feedback(uuid,text)')), false)
               and coalesce((select proacl is not null and proacl::text not like '%{=X%' and proacl::text not like '%,=X%' from pg_proc where oid = to_regprocedure('public.add_review_feedback(uuid,text)')), false)
               and has_function_privilege('authenticated', to_regprocedure('public.update_review_request_status(uuid,public.review_status)'), 'EXECUTE')
               and has_function_privilege('authenticated', to_regprocedure('public.reject_review_request(uuid,text)'), 'EXECUTE')

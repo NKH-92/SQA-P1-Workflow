@@ -8,7 +8,9 @@ describeRls(`RLS review-attachments storage (${RLS_SKIP_NOTE})`, () => {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? ''
   const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? ''
 
-  it('allows member to upload only under own user id prefix', async () => {
+  // Storage API can take a few seconds to warm up right after `supabase db reset` in CI,
+  // so this test gets a longer timeout than the 5s default.
+  it('allows member to upload only under own user id prefix', { timeout: 15000 }, async () => {
     const memberAEmail = process.env.RLS_MEMBER_A_EMAIL
     const memberAPassword = process.env.RLS_MEMBER_A_PASSWORD
     const memberAUserId = process.env.RLS_MEMBER_A_USER_ID
@@ -23,7 +25,7 @@ describeRls(`RLS review-attachments storage (${RLS_SKIP_NOTE})`, () => {
     const ownPath = `${memberAUserId}/rls-smoke.txt`
     const { error: ownUploadError } = await client.storage
       .from('review-attachments')
-      .upload(ownPath, new Blob(['rls smoke']), { upsert: true })
+      .upload(ownPath, new Blob(['rls smoke'], { type: 'text/plain' }), { upsert: true })
 
     expect(ownUploadError).toBeNull()
 
@@ -31,7 +33,7 @@ describeRls(`RLS review-attachments storage (${RLS_SKIP_NOTE})`, () => {
     const foreignPath = `${otherUserId}/rls-smoke.txt`
     const { error: foreignUploadError } = await client.storage
       .from('review-attachments')
-      .upload(foreignPath, new Blob(['rls smoke']), { upsert: true })
+      .upload(foreignPath, new Blob(['rls smoke'], { type: 'text/plain' }), { upsert: true })
 
     expect(foreignUploadError).not.toBeNull()
   })

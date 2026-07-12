@@ -167,7 +167,13 @@ describeRls(`RLS review requests (${RLS_SKIP_NOTE})`, () => {
     const foreignUpdate = await leader.from('review_feedback').update({ comment: 'foreign edit' }).eq('id', otherAuthorId).select('id')
     expect(foreignUpdate.error).toBeNull()
     expect(foreignUpdate.data).toEqual([])
-    const protectedColumns = await leader.from('review_feedback').update({ leader_id: leader.id }).eq('id', otherAuthorId)
+    // Any concrete value works: the column-level grant (comment only) must reject the leader_id
+    // column itself. (Previously used leader.id, which is undefined on a client instance — the
+    // column was stripped client-side and the request became a no-op that never errored.)
+    const protectedColumns = await leader
+      .from('review_feedback')
+      .update({ leader_id: '00000000-0000-0000-0000-000000000000' })
+      .eq('id', otherAuthorId)
     expect(protectedColumns.error).not.toBeNull()
 
     const leaderB = createClient(url, anonKey, { auth: { persistSession: false } })

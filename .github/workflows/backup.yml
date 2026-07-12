@@ -43,7 +43,7 @@ jobs:
           fi
 
       # 버전 고정 — latest는 백업 도구 체인을 비결정적으로 만든다 (복원 리허설과 동일 버전 유지)
-      - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
+      - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
         with:
           version: 2.109.1
 

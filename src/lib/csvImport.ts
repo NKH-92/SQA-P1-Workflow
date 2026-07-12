@@ -1,4 +1,5 @@
 import type { Role } from '../types'
+import { UserFacingError } from './errors'
 
 export function normalizeCsvImportedValue(value: string) {
   const trimmed = value.trim()
@@ -40,12 +41,12 @@ export function parseCsvRows(text: string): string[][] {
       cell = ''
       continue
     }
-    if (char === '\n' || (char === '\r' && next === '\n')) {
+    if (char === '\n' || char === '\r') {
       row.push(normalizeCsvImportedValue(cell))
       if (row.some((value) => value.length > 0)) rows.push(row)
       row = []
       cell = ''
-      if (char === '\r') index += 1
+      if (char === '\r' && next === '\n') index += 1
       continue
     }
     cell += char
@@ -69,7 +70,15 @@ export function parseProductImportRows(rows: string[][]) {
     companyName: header.findIndex((value) => ['company', 'company_name', '회사명', '위탁사명'].includes(normalizeHeader(value))),
   }
   if (indexes.name < 0) {
-    return body.map((cells) => ({ name: cells[0]?.trim() ?? '' })).filter((item) => item.name)
+    if (rows.some((cells) => cells.slice(1).some((value) => value.trim().length > 0))) {
+      throw new UserFacingError('헤더 없는 제품 CSV는 제품명 한 열만 사용할 수 있습니다.')
+    }
+    return rows.map((cells) => ({ name: cells[0]?.trim() ?? '' })).filter((item) => item.name)
+  }
+  if (header.length === 1 && rows.length > 1) {
+    throw new UserFacingError(
+      '1열 제품 CSV의 첫 값이 헤더 예약어라서 헤더와 데이터인지 구분할 수 없습니다. 제품명 열을 포함한 다열 헤더 CSV를 사용해 주세요.',
+    )
   }
   return body
     .map((cells) => ({
@@ -91,7 +100,7 @@ export function parseInviteImportRows(rows: string[][]) {
   const parseRole = (value: string): Role => (value.trim().toLowerCase() === 'leader' || value.trim() === '파트장' ? 'leader' : 'member')
 
   if (indexes.email < 0) {
-    return body
+    return rows
       .map((cells) => ({
         email: cells[0]?.trim().toLowerCase() ?? '',
         name: cells[1]?.trim() ?? '',

@@ -15,5 +15,11 @@ export function isSupabaseLocalConfigured(): boolean {
   }
 }
 
+if (process.env.RLS_REQUIRED === '1' && !isSupabaseLocalConfigured()) {
+  throw new Error(
+    'RLS_REQUIRED=1 but local Supabase is not configured. Set SUPABASE_URL=http://127.0.0.1:54321 and SUPABASE_ANON_KEY.',
+  )
+}
+
 export const RLS_SKIP_NOTE =
   'Requires Supabase local (SUPABASE_URL=http://127.0.0.1:54321). See tests/rls/setup.sql.'

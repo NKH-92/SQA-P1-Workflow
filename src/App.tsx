@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppRoutes } from './app/AppRoutes'
 import { useAppData } from './app/hooks/useAppData'
 import { useBackgroundRefresh } from './app/hooks/useBackgroundRefresh'
@@ -8,6 +8,8 @@ import { useRealtimeReviewInserts } from './app/hooks/useRealtimeReviewInserts'
 import { useAuthProfile } from './app/hooks/useAuthProfile'
 import { useHashNavigation } from './app/hooks/useHashNavigation'
 import { useMutationRunner } from './app/hooks/useMutationRunner'
+import { shouldMarkReviewsSeen } from './app/reviewNavigation'
+import { reconciledProfile } from './app/profileSync'
 import { CommandPalette } from './components/CommandPalette'
 import { canManageTeamData } from './domain/permissions'
 import { selectScopedReviewRequests } from './features/reviews/review.selectors'
@@ -16,7 +18,16 @@ import { buildNotifications } from './lib/notifications'
 import { countUnreadReviews, loadReadState, markReviewsSeen } from './lib/readState'
 import { hasSupabaseConfig, isPreviewMode } from './lib/supabase'
 import type { Profile } from './types'
-import { AuthPanel, BlockedProfile, ConfigErrorScreen, LoadingScreen, PasswordChangePanel, Shell } from './screens'
+import type { TabId } from './app/types'
+import {
+  AuthPanel,
+  BlockedProfile,
+  ConfigErrorScreen,
+  LoadingScreen,
+  PasswordChangePanel,
+  ProfileLoadErrorScreen,
+  Shell,
+} from './screens'
 
 function App() {
   const [readTick, setReadTick] = useState(0)
@@ -25,7 +36,7 @@ function App() {
   const [reviewsUnreadCutoff, setReviewsUnreadCutoff] = useState<string | null>(null)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const reportWarningsRef = useRef<(warnings: string[]) => void>(() => {})
-  const { data, setData, refreshing, lastSyncedAt, refreshData } = useAppData((warnings) =>
+  const { data, setData, refreshing, lastSyncedAt, refreshData, loadReviewRequest, resetSyncState } = useAppData((warnings) =>
     reportWarningsRef.current(warnings),
   )
   const { saving, message, setMessage, mutate } = useMutationRunner(refreshData)
@@ -33,14 +44,46 @@ function App() {
     reportWarningsRef.current = (warnings) => setMessage({ text: warnings.join(' '), tone: 'warning' })
   }, [setMessage])
   const resetNavigationRef = useRef<() => void>(() => {})
-  const auth = useAuthProfile(refreshData, setData, setMessage, () => resetNavigationRef.current())
-  const { profile, setProfile, authReady, sessionWithoutProfile, initialLoading, sessionUser, signOut } = auth
+  const auth = useAuthProfile(
+    refreshData,
+    setData,
+    setMessage,
+    () => resetNavigationRef.current(),
+    resetSyncState,
+  )
+  const {
+    profile,
+    setProfile,
+    authReady,
+    sessionWithoutProfile,
+    profileLoadError,
+    retryProfileLoad,
+    initialLoading,
+    sessionUser,
+    signOut,
+  } = auth
   const leaderMode = canManageTeamData(profile)
   const navigation = useHashNavigation(leaderMode, Boolean(profile))
+  const { activeTab: navigationActiveTab, setActiveTab: setNavigationActiveTab } = navigation
+  const profileId = profile?.id ?? null
+  const setActiveTab = useCallback((tab: TabId, entityId?: string) => {
+    if (profileId && shouldMarkReviewsSeen(navigationActiveTab, tab)) {
+      markReviewsSeen(profileId)
+      setReviewsUnreadCutoff(loadReadState(profileId).reviewsSeenAt)
+      setReadTick((value) => value + 1)
+    }
+    setNavigationActiveTab(tab, entityId)
+  }, [navigationActiveTab, profileId, setNavigationActiveTab])
   useEffect(() => {
     resetNavigationRef.current = navigation.resetNavigation
   }, [navigation.resetNavigation])
-  const previewRoleChange = usePreviewRoleChange(setProfile, navigation.setActiveTab)
+
+  useEffect(() => {
+    if (!profile || !lastSyncedAt) return
+    const latest = reconciledProfile(profile, data.profiles)
+    if (latest !== profile) setProfile(latest)
+  }, [data.profiles, lastSyncedAt, profile, setProfile])
+  const previewRoleChange = usePreviewRoleChange(setProfile, setActiveTab)
 
   // 로그인·활성·비밀번호 변경 완료 상태에서만 백그라운드 동기화가 의미 있다
   // (must_change_password는 RLS가 조회를 막아 빈 응답만 반복한다).
@@ -55,7 +98,7 @@ function App() {
     profile?.id ?? null,
     leaderMode,
     data,
-    navigation.setActiveTab,
+    setActiveTab,
   )
 
   const pendingCount = data.reviewRequests.filter((request) => request.status === 'pending').length
@@ -77,12 +120,26 @@ function App() {
     setReadTick((value) => value + 1)
   }, [navigation.activeTab, profile])
 
-  // 딥링크 대상이 없으면(삭제·권한 밖) 조용히 첫 항목으로 폴백되는 대신 안내한다.
+  // 딥링크 대상이 현재 capped 목록에 없으면 검토요청만 on-demand로 한 번 조회한다.
+  // 그래도 없으면(삭제·권한 밖) 조용히 첫 항목으로 폴백되는 대신 안내한다.
   // 대상이 존재하면 각 패널의 소비 effect(자식)가 먼저 실행되어 선택을 적용한다.
   const dataReady = isPreviewMode || lastSyncedAt != null
   const { navEntityId, activeTab: navActiveTab, setNavEntityId } = navigation
+  const historyLookupRef = useRef<string | null>(null)
+  const historyAbortRef = useRef<AbortController | null>(null)
   useEffect(() => {
-    if (!navEntityId || !profile || !dataReady) return
+    if (!navEntityId) {
+      historyAbortRef.current?.abort()
+      historyAbortRef.current = null
+      historyLookupRef.current = null
+      return
+    }
+    if (!profile || !dataReady) {
+      historyAbortRef.current?.abort()
+      historyAbortRef.current = null
+      historyLookupRef.current = null
+      return
+    }
     const found =
       navActiveTab === 'reviews'
         ? selectScopedReviewRequests(data, profile).some((request) => request.id === navEntityId)
@@ -91,10 +148,41 @@ function App() {
           : navActiveTab === 'team'
             ? data.profiles.some((item) => item.id === navEntityId)
             : true
-    if (found) return
+    if (found) {
+      historyAbortRef.current?.abort()
+      historyAbortRef.current = null
+      historyLookupRef.current = null
+      return
+    }
+    if (navActiveTab === 'reviews') {
+      if (historyLookupRef.current === navEntityId) return
+      historyAbortRef.current?.abort()
+      const abortController = new AbortController()
+      historyAbortRef.current = abortController
+      historyLookupRef.current = navEntityId
+      void loadReviewRequest(navEntityId, abortController.signal)
+        .then((loaded) => {
+          if (loaded === null) {
+            historyLookupRef.current = null
+            return
+          }
+          if (loaded || historyLookupRef.current !== navEntityId) return
+          setNavEntityId(null)
+          setMessage({ text: '링크 대상을 찾을 수 없습니다. 삭제되었거나 접근 권한이 없는 항목일 수 있습니다.', tone: 'warning' })
+        })
+        .catch((error) => {
+          if (historyLookupRef.current !== navEntityId) return
+          historyLookupRef.current = null
+          setMessage({ text: toUserMessage(error), tone: 'warning' })
+        })
+      return
+    }
+    historyAbortRef.current?.abort()
+    historyAbortRef.current = null
+    historyLookupRef.current = null
     setNavEntityId(null)
     setMessage({ text: '링크 대상을 찾을 수 없습니다. 삭제되었거나 접근 권한이 없는 항목일 수 있습니다.', tone: 'warning' })
-  }, [navEntityId, navActiveTab, setNavEntityId, data, profile, dataReady, setMessage])
+  }, [navEntityId, navActiveTab, setNavEntityId, data, profile, dataReady, loadReviewRequest, setMessage])
 
   // 팔레트는 인증 완료 후 메인 화면에서만 렌더된다. 로그인·비밀번호 변경 화면에서
   // 단축키를 받으면 브라우저 기본 동작만 뺏고 열림 상태가 뒤에서 토글되어,
@@ -147,6 +235,16 @@ function App() {
     return <BlockedProfile onSignOut={() => void handleSignOut()} inactive />
   }
 
+  if (!profile && hasSupabaseConfig && profileLoadError) {
+    return (
+      <ProfileLoadErrorScreen
+        message={profileLoadError}
+        onRetry={retryProfileLoad}
+        onSignOut={() => void handleSignOut()}
+      />
+    )
+  }
+
   if (!profile && hasSupabaseConfig) {
     return <AuthPanel />
   }
@@ -179,7 +277,7 @@ function App() {
     <>
       <Shell
         activeTab={navigation.activeTab}
-        setActiveTab={navigation.setActiveTab}
+        setActiveTab={setActiveTab}
         profile={profile}
         data={data}
         leaderMode={leaderMode}
@@ -207,7 +305,7 @@ function App() {
           data={data}
           mutate={mutate}
           setData={setData}
-          setActiveTab={navigation.setActiveTab}
+          setActiveTab={setActiveTab}
           reviewsUnreadCutoff={reviewsUnreadCutoff}
         />
       </Shell>
@@ -217,7 +315,7 @@ function App() {
         profile={profile}
         data={data}
         leaderMode={leaderMode}
-        setActiveTab={navigation.setActiveTab}
+        setActiveTab={setActiveTab}
       />
     </>
   )

@@ -1,0 +1,2 @@
+-- Deterministic RLS users and rows are created through scripts/setup-rls-fixtures.mjs
+-- after `supabase db reset`, because Auth users must be created through the Admin API.

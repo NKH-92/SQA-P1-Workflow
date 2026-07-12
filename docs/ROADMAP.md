@@ -20,7 +20,7 @@
 | D | Auth 설정(가입 차단·Site URL) + leader 1 / member 2 계정 | 파트장 | public sign-up **OFF** — Access 미사용의 전제 조건 |
 | E | Workers 배포 + 스모크 | 파트장 (Claude가 체크리스트 제공) | 보안 헤더(`_headers`) 적용 여부 확인 포함 |
 | F | RLS 수동 검증 (TEST_PLAN.md) | 파트장 | 3계정 매트릭스 |
-| G | 백업 1회 + 복구 리허설 | 파트장 (Claude가 절차 안내) | 주간 자동 암호화 백업(Actions)이 기본 — 첫 실행·복구를 여기서 검증 |
+| G | 백업 1회 + 복구 리허설 | 파트장 (에이전트가 절차 안내) | 매일 자동 암호화 백업(Actions)이 기본 — 첫 실행·복구를 여기서 검증 |
 
 **완료 기준**: MANUAL_TASKS_PLAN 하단 서명란 기입 (완료일·운영 URL·HEAD SHA).
 
@@ -38,7 +38,7 @@
 ### 2주차 — 전원 확대 (10명)
 - [ ] 파트원 전원 초대 등록 + 첫 로그인 완료 확인 (임시 비밀번호 → 변경 강제 흐름)
 - [ ] 운영 선언: "검토요청·프로젝트 배정은 이 시스템이 단일 창구"
-- [ ] 주간 루틴 시작: **주간 자동 백업(Actions, 일요일 05:00 KST) green 확인** ([OPERATIONS.md](./OPERATIONS.md)) + 주 1회 10분 회고(불편사항 수집)
+- [ ] 운영 루틴 시작: **매일 자동 백업(Actions, 05:00 KST) green 확인** ([OPERATIONS.md](./OPERATIONS.md)) + 주 1회 10분 회고(불편사항 수집)
 
 ### 성공 지표 (2주차 말 측정)
 - 파트원 전원이 검토요청 1건 이상 생성
@@ -96,14 +96,14 @@
 | Supabase DB | 500MB | Dashboard → Database → 사용량 | 10명 규모로는 수년치 여유 |
 | Supabase Storage | 1GB | Dashboard → Storage | 첨부 10MB 제한 유지, 종결 1년 경과 첨부 정리 규칙 검토 |
 | Supabase 프로젝트 일시정지 | **7일 비활성 시 자동 pause** | — | 장기 연휴 주의 — 재개 절차는 [OPERATIONS.md](./OPERATIONS.md) 장애 확인 순서 참고 |
-| Supabase 자동 백업 | 없음 (Free 내장 백업 없음) | Actions **Backup DB** run green 확인 | 주간 자동 암호화 백업(아티팩트 90일)이 복구 수단 — Storage 첨부는 백업 제외([OPERATIONS.md](./OPERATIONS.md)) |
+| Supabase 자동 백업 | 없음 (Free 내장 백업 없음) | Actions **Backup DB** run green 확인 | 매일 자동 암호화 백업(아티팩트 90일)이 복구 수단 — Storage 첨부는 백업 제외([OPERATIONS.md](./OPERATIONS.md)) |
 | Cloudflare Workers | 10만 요청/일 | Dashboard → Workers 메트릭 | 10명 규모로는 도달 불가 |
 
 ---
 
 ## 하지 않기로 한 것
 
-- **Cloudflare Access**: 도입하지 않는다 — Supabase public sign-up OFF + 초대제로 대체.
+- **Cloudflare Access**: Worker/도메인이 인터넷에서 접근 가능하면 파트원만 허용하도록 필수 적용한다. 내부망에서만 접근 가능하고 외부 경로가 없다는 증거가 있을 때만 생략한다. Supabase public sign-up OFF와 초대제는 앱 계정 통제이며 HTTP 주소 자체의 외부 접근 제한을 대체하지 않는다.
 - **상태관리 라이브러리·react-query·전면 리디자인·path 라우터**: 10인 규모에 과설계로 판단, 도입하지 않는다.
 - **4px 그리드 전환**: 전면 리디자인 범위라 보류 — 현재의 광학 보정 간격 체계를 유지한다([DESIGN.md](../DESIGN.md) 참조).
 - **통계·보고 확장**: 우선순위 보류 — 파일럿에서 실수요 확인 후 재검토.

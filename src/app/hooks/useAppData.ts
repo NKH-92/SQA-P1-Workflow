@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPreviewData } from '../../demoData'
-import { fetchAppData } from '../../data/fetchAppData'
+import { fetchAppData, fetchReviewRequestById, mergeReviewRequests } from '../../data/fetchAppData'
 import { isPreviewMode, supabase } from '../../lib/supabase'
 import type { AppData } from '../../types'
 import { emptyData } from '../constants'
@@ -41,5 +41,26 @@ export function useAppData(reportWarnings?: (warnings: string[]) => void) {
     }
   }, [])
 
-  return { data, setData, refreshing, lastSyncedAt, refreshData }
+  const loadReviewRequest = useCallback(async (requestId: string, signal?: AbortSignal): Promise<boolean | null> => {
+    if (!supabase) return false
+    const generation = generationRef.current
+    const request = await fetchReviewRequestById(requestId, signal)
+    if (generation !== generationRef.current) return null
+    if (!request) return false
+    setData((current) => ({
+      ...current,
+      reviewRequests: mergeReviewRequests(current.reviewRequests, [request]),
+    }))
+    return true
+  }, [])
+
+  const resetSyncState = useCallback(() => {
+    // Invalidate an in-flight response from the previous session so it cannot repopulate
+    // data or make a new login look ready before its own initial refresh completes.
+    generationRef.current += 1
+    setRefreshing(false)
+    setLastSyncedAt(null)
+  }, [])
+
+  return { data, setData, refreshing, lastSyncedAt, refreshData, loadReviewRequest, resetSyncState }
 }

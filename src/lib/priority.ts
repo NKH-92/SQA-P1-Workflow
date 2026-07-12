@@ -3,14 +3,22 @@ import { ageInDays, daysUntil } from './dates'
 
 const statusWeights: Record<ReviewStatus, number> = {
   pending: 0,
-  rejected: 4000,
-  approved: 5000,
+  rejected: 1_000_000,
+  approved: 2_000_000,
+}
+
+const MAX_DUE_WEIGHT = 499_999
+
+function boundedDueWeight(value: number) {
+  return Math.max(-MAX_DUE_WEIGHT, Math.min(MAX_DUE_WEIGHT, value))
 }
 
 export function reviewPriorityScore(request: ReviewRequest, now = new Date()) {
   const days = daysUntil(request.due_date, now)
   const statusWeight = statusWeights[request.status]
-  const dueWeight = days == null ? 1000 + ageInDays(request.created_at, now.getTime()) : days
+  const dueWeight = boundedDueWeight(
+    days == null ? 1000 + ageInDays(request.created_at, now.getTime()) : days,
+  )
   return statusWeight + dueWeight
 }
 

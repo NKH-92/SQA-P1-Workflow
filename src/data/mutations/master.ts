@@ -1,4 +1,7 @@
 import { makeId } from '../../lib/format'
+import { assertAffectedRows, assertRecordExists, UserFacingError } from '../../lib/errors'
+import { recordActivityLog } from '../../lib/activityLog'
+import { canReceiveAssignment } from '../../domain/permissions'
 import { supabase } from '../../lib/supabase'
 import type { Product, ProductCategory, Role, DutyMajorCategory } from '../../types'
 import type { RepositoryContext } from '../repositoryContext'
@@ -19,6 +22,24 @@ type ProductInput = {
   sortOrder?: number | null
 }
 
+function assertLocalAssignmentLeader(ctx: RepositoryContext) {
+  if (ctx.profile.role !== 'leader' || ctx.profile.is_active === false || ctx.profile.must_change_password === true) {
+    throw new UserFacingError('활성 파트장 권한이 필요합니다.')
+  }
+}
+
+const assertLocalLeader = assertLocalAssignmentLeader
+
+function assertLocalAssignmentMembers(ctx: RepositoryContext, memberIds: string[]) {
+  for (const memberId of new Set(memberIds)) {
+    const member = ctx.data.profiles.find((item) => item.id === memberId)
+    assertRecordExists(member)
+    if (!canReceiveAssignment(member)) {
+      throw new UserFacingError('활성 상태인 파트원에게만 배정할 수 있습니다.')
+    }
+  }
+}
+
 function normalizeProductInput(input: ProductInput) {
   const category = input.category?.trim() || '자사'
   return {
@@ -35,6 +56,7 @@ export async function importProducts(
 ): Promise<void> {
   const { setData } = ctx
   const products = rows.map(normalizeProductInput)
+  if (!ctx.isRemote) assertLocalLeader(ctx)
   if (ctx.isRemote) {
     const { error } = await supabase!.from('products').insert(products)
     if (error) throw error
@@ -47,6 +69,7 @@ export async function importProducts(
       ],
     }))
   }
+  await logMasterActivity(ctx, 'product', 'created', `${products.length}개 제품을 가져왔습니다.`, null, { count: products.length })
 }
 
 export async function importInvites(
@@ -54,6 +77,7 @@ export async function importInvites(
   rows: Array<{ email: string; name: string; role: Role }>,
 ): Promise<void> {
   const { profile, setData } = ctx
+  if (!ctx.isRemote) assertLocalLeader(ctx)
   if (ctx.isRemote) {
     const { error } = await supabase!.from('allowed_users').insert(
       rows.map((row) => ({
@@ -90,6 +114,7 @@ export async function importInvites(
       ],
     }))
   }
+  await logMasterActivity(ctx, 'allowed_user', 'created', `${rows.length}개 초대를 가져왔습니다.`, null, { count: rows.length })
 }
 
 export async function addAllowedUser(
@@ -97,6 +122,7 @@ export async function addAllowedUser(
   input: { email: string; name: string; role: Role },
 ): Promise<void> {
   const { profile, setData } = ctx
+  if (!ctx.isRemote) assertLocalLeader(ctx)
   if (ctx.isRemote) {
     const { error } = await supabase!.from('allowed_users').insert({
       email: input.email,
@@ -115,6 +141,7 @@ export async function addAllowedUser(
       ],
     }))
   }
+  await logMasterActivity(ctx, 'allowed_user', 'created', `${input.name} 초대를 추가했습니다.`, null, { email: input.email, role: input.role })
 }
 
 export async function addProduct(
@@ -123,6 +150,7 @@ export async function addProduct(
 ): Promise<void> {
   const { setData } = ctx
   const product = normalizeProductInput(input)
+  if (!ctx.isRemote) assertLocalLeader(ctx)
   if (ctx.isRemote) {
     const { error } = await supabase!.from('products').insert(product)
     if (error) throw error
@@ -132,6 +160,7 @@ export async function addProduct(
       products: [{ id: makeId('product'), ...product }, ...current.products],
     }))
   }
+  await logMasterActivity(ctx, 'product', 'created', `${product.name} 제품을 추가했습니다.`, null, product)
 }
 
 export async function addDutyMajorCategory(
@@ -143,6 +172,7 @@ export async function addDutyMajorCategory(
     name: input.name.trim(),
     sort_order: input.sortOrder ?? null,
   }
+  if (!ctx.isRemote) assertLocalLeader(ctx)
   if (ctx.isRemote) {
     const { error } = await supabase!.from('duty_major_categories').insert(payload)
     if (error) throw error
@@ -152,6 +182,7 @@ export async function addDutyMajorCategory(
       dutyMajorCategories: [{ id: makeId('duty-major'), ...payload }, ...current.dutyMajorCategories],
     }))
   }
+  await logMasterActivity(ctx, 'duty_major_category', 'created', `${payload.name} 대분류를 추가했습니다.`, null, payload)
 }
 
 function dutyRelation(duty: { name: string; major_category_id: string; duty_major_categories?: DutyMajorCategory | Pick<DutyMajorCategory, 'name' | 'sort_order'> | null }) {
@@ -173,6 +204,7 @@ export async function addDuty(
     sort_order: input.sortOrder ?? null,
   }
   const majorCategory = data.dutyMajorCategories.find((item) => item.id === input.majorCategoryId)
+  if (!ctx.isRemote) assertLocalLeader(ctx)
   if (ctx.isRemote) {
     const { error } = await supabase!.from('duties').insert(payload)
     if (error) throw error
@@ -189,6 +221,7 @@ export async function addDuty(
       ],
     }))
   }
+  await logMasterActivity(ctx, 'duty', 'created', `${payload.name} 업무를 추가했습니다.`, null, payload)
 }
 
 export async function saveProductAssignments(
@@ -210,7 +243,10 @@ export async function saveProductAssignments(
     })
     if (error) throw error
   } else {
+    assertLocalAssignmentLeader(ctx)
+    assertLocalAssignmentMembers(ctx, nextMemberIds)
     const resolvedProduct = product ?? data.products.find((item) => item.id === productId) ?? null
+    assertRecordExists(resolvedProduct)
     const members =
       memberOptions?.map((item) => item) ??
       data.profiles.map((item) => ({ id: item.id, name: item.name, email: item.email }))
@@ -218,6 +254,7 @@ export async function saveProductAssignments(
       replaceProductAssignments(current, productId, nextMemberIds, resolvedProduct, members),
     )
   }
+  await logMasterActivity(ctx, 'product_assignment', 'updated', '제품 배정을 조정했습니다.', productId, { assigned_user_ids: nextMemberIds })
 }
 
 export async function saveDutyAssignments(
@@ -239,7 +276,10 @@ export async function saveDutyAssignments(
     })
     if (error) throw error
   } else {
+    assertLocalAssignmentLeader(ctx)
+    assertLocalAssignmentMembers(ctx, nextMemberIds)
     const resolvedDuty = duty ?? data.duties.find((item) => item.id === dutyId) ?? null
+    assertRecordExists(resolvedDuty)
     const members =
       memberOptions?.map((item) => item) ??
       data.profiles.map((item) => ({ id: item.id, name: item.name, email: item.email }))
@@ -254,6 +294,7 @@ export async function saveDutyAssignments(
       : null
     setData((current) => replaceDutyAssignments(current, dutyId, nextMemberIds, dutyForReducer, members))
   }
+  await logMasterActivity(ctx, 'duty_assignment', 'updated', '업무 배정을 조정했습니다.', dutyId, { assigned_user_ids: nextMemberIds })
 }
 
 export async function assignProduct(
@@ -261,22 +302,48 @@ export async function assignProduct(
   input: { userId: string; productId: string },
 ): Promise<void> {
   const { data, setData } = ctx
-  const currentIds = data.productAssignments
-    .filter((assignment) => assignment.product_id === input.productId)
-    .map((assignment) => assignment.user_id)
-  if (currentIds.includes(input.userId)) return
-
+  if (!ctx.isRemote) assertLocalLeader(ctx)
   if (ctx.isRemote) {
-    await saveProductAssignments(ctx, {
-      productId: input.productId,
-      nextMemberIds: [...currentIds, input.userId],
+    const { error } = await supabase!.rpc('add_product_assignment', {
+      p_product_id: input.productId,
+      p_user_id: input.userId,
     })
+    if (error) throw error
+    await logMasterActivity(ctx, 'product_assignment', 'created', '제품을 배정했습니다.', input.productId, { user_id: input.userId })
     return
-  } else {
-    const member = data.profiles.find((item) => item.id === input.userId)
-    const product = data.products.find((item) => item.id === input.productId)
-    setData((current) => appendProductAssignment(current, input.userId, input.productId, member, product))
   }
+
+  const alreadyAssigned = data.productAssignments.some(
+    (assignment) => assignment.product_id === input.productId && assignment.user_id === input.userId,
+  )
+  if (alreadyAssigned) return
+  const member = data.profiles.find((item) => item.id === input.userId)
+  const product = data.products.find((item) => item.id === input.productId)
+  assertRecordExists(member)
+  assertRecordExists(product)
+  if (!canReceiveAssignment(member)) {
+    throw new UserFacingError('활성 상태인 파트원에게만 제품을 배정할 수 있습니다.')
+  }
+  setData((current) => appendProductAssignment(current, input.userId, input.productId, member, product))
+  await logMasterActivity(ctx, 'product_assignment', 'created', '제품을 배정했습니다.', input.productId, { user_id: input.userId })
+}
+
+async function logMasterActivity(
+  ctx: RepositoryContext,
+  entityType: Parameters<typeof recordActivityLog>[1]['entityType'],
+  action: string,
+  summary: string,
+  entityId: string | null = null,
+  metadata: Record<string, unknown> = {},
+) {
+  await recordActivityLog(ctx.setData, {
+    actor: ctx.profile,
+    entityType,
+    entityId,
+    action,
+    summary,
+    metadata,
+  }, { isRemote: ctx.isRemote })
 }
 
 export async function assignDuty(
@@ -284,28 +351,36 @@ export async function assignDuty(
   input: { userId: string; dutyId: string },
 ): Promise<void> {
   const { data, setData } = ctx
-  const currentIds = data.dutyAssignments
-    .filter((assignment) => assignment.duty_id === input.dutyId)
-    .map((assignment) => assignment.user_id)
-  if (currentIds.includes(input.userId)) return
-
+  if (!ctx.isRemote) assertLocalLeader(ctx)
   if (ctx.isRemote) {
-    await saveDutyAssignments(ctx, {
-      dutyId: input.dutyId,
-      nextMemberIds: [...currentIds, input.userId],
+    const { error } = await supabase!.rpc('add_duty_assignment', {
+      p_duty_id: input.dutyId,
+      p_user_id: input.userId,
     })
+    if (error) throw error
+    await logMasterActivity(ctx, 'duty_assignment', 'created', '업무를 배정했습니다.', input.dutyId, { user_id: input.userId })
     return
-  } else {
-    const member = data.profiles.find((item) => item.id === input.userId)
-    const duty = data.duties.find((item) => item.id === input.dutyId)
-    const dutySnapshot = duty
-      ? dutyRelation({
-          ...duty,
-          duty_major_categories: data.dutyMajorCategories.find((item) => item.id === duty.major_category_id) ?? null,
-        })
-      : null
-    setData((current) => appendDutyAssignment(current, input.userId, input.dutyId, member, dutySnapshot))
   }
+
+  const alreadyAssigned = data.dutyAssignments.some(
+    (assignment) => assignment.duty_id === input.dutyId && assignment.user_id === input.userId,
+  )
+  if (alreadyAssigned) return
+  const member = data.profiles.find((item) => item.id === input.userId)
+  const duty = data.duties.find((item) => item.id === input.dutyId)
+  assertRecordExists(member)
+  assertRecordExists(duty)
+  if (!canReceiveAssignment(member)) {
+    throw new UserFacingError('활성 상태인 파트원에게만 업무를 배정할 수 있습니다.')
+  }
+  const dutySnapshot = duty
+    ? dutyRelation({
+        ...duty,
+        duty_major_categories: data.dutyMajorCategories.find((item) => item.id === duty.major_category_id) ?? null,
+      })
+    : null
+  setData((current) => appendDutyAssignment(current, input.userId, input.dutyId, member, dutySnapshot))
+  await logMasterActivity(ctx, 'duty_assignment', 'created', '업무를 배정했습니다.', input.dutyId, { user_id: input.userId })
 }
 
 export async function updateProduct(
@@ -313,13 +388,16 @@ export async function updateProduct(
   productId: string,
   payload: { name: string; category?: ProductCategory | string | null; company_name?: string | null; sort_order?: number | null },
 ): Promise<void> {
-  const { setData } = ctx
+  const { data, setData } = ctx
   if (ctx.isRemote) {
-    const { error } = await supabase!.from('products').update(payload).eq('id', productId)
+    const { data: affected, error } = await supabase!.from('products').update(payload).eq('id', productId).select('id')
     if (error) throw error
+    assertAffectedRows(affected)
   } else {
+    assertRecordExists(data.products.find((item) => item.id === productId))
     setData((current) => updateProductRow(current, productId, payload))
   }
+  await logMasterActivity(ctx, 'product', 'updated', '제품 정보를 수정했습니다.', productId, payload)
 }
 
 export async function updateDutyMajorCategory(
@@ -327,11 +405,17 @@ export async function updateDutyMajorCategory(
   majorCategoryId: string,
   payload: { name: string; sort_order?: number | null },
 ): Promise<void> {
-  const { setData } = ctx
+  const { data, setData } = ctx
   if (ctx.isRemote) {
-    const { error } = await supabase!.from('duty_major_categories').update(payload).eq('id', majorCategoryId)
+    const { data: affected, error } = await supabase!
+      .from('duty_major_categories')
+      .update(payload)
+      .eq('id', majorCategoryId)
+      .select('id')
     if (error) throw error
+    assertAffectedRows(affected)
   } else {
+    assertRecordExists(data.dutyMajorCategories.find((item) => item.id === majorCategoryId))
     setData((current) => ({
       ...current,
       dutyMajorCategories: current.dutyMajorCategories.map((item) =>
@@ -361,6 +445,7 @@ export async function updateDutyMajorCategory(
       ),
     }))
   }
+  await logMasterActivity(ctx, 'duty_major_category', 'updated', '업무 대분류를 수정했습니다.', majorCategoryId, payload)
 }
 
 export async function updateDuty(
@@ -370,10 +455,13 @@ export async function updateDuty(
 ): Promise<void> {
   const { data, setData } = ctx
   const majorCategory = data.dutyMajorCategories.find((item) => item.id === payload.major_category_id)
+  if (!ctx.isRemote) assertLocalLeader(ctx)
   if (ctx.isRemote) {
-    const { error } = await supabase!.from('duties').update(payload).eq('id', dutyId)
+    const { data: affected, error } = await supabase!.from('duties').update(payload).eq('id', dutyId).select('id')
     if (error) throw error
+    assertAffectedRows(affected)
   } else {
+    assertRecordExists(data.duties.find((item) => item.id === dutyId))
     setData((current) => ({
       ...current,
       duties: current.duties.map((item) =>
@@ -401,6 +489,7 @@ export async function updateDuty(
       ),
     }))
   }
+  await logMasterActivity(ctx, 'duty', 'updated', '업무 정보를 수정했습니다.', dutyId, payload)
 }
 
 export async function updateInvite(
@@ -408,11 +497,18 @@ export async function updateInvite(
   inviteId: string,
   payload: { email: string; name: string; role: Role },
 ): Promise<void> {
-  const { setData } = ctx
+  const { data, setData } = ctx
+  if (!ctx.isRemote) assertLocalLeader(ctx)
   if (ctx.isRemote) {
-    const { error } = await supabase!.from('allowed_users').update(payload).eq('id', inviteId)
+    const { data: affected, error } = await supabase!
+      .from('allowed_users')
+      .update(payload)
+      .eq('id', inviteId)
+      .select('id')
     if (error) throw error
+    assertAffectedRows(affected)
   } else {
+    assertRecordExists(data.allowedUsers.find((item) => item.id === inviteId))
     setData((current) => ({
       ...current,
       allowedUsers: current.allowedUsers.map((item) =>
@@ -420,6 +516,7 @@ export async function updateInvite(
       ),
     }))
   }
+  await logMasterActivity(ctx, 'allowed_user', 'updated', '초대 정보를 수정했습니다.', inviteId, payload)
 }
 
 export async function toggleProfileActive(
@@ -427,16 +524,33 @@ export async function toggleProfileActive(
   profileId: string,
   nextActive: boolean,
 ): Promise<void> {
-  const { setData } = ctx
+  const { data, setData } = ctx
   if (ctx.isRemote) {
-    const { error } = await supabase!.from('profiles').update({ is_active: nextActive }).eq('id', profileId)
+    const { data: affected, error } = await supabase!
+      .from('profiles')
+      .update({ is_active: nextActive })
+      .eq('id', profileId)
+      .select('id')
     if (error) throw error
+    assertAffectedRows(affected)
   } else {
+    assertLocalAssignmentLeader(ctx)
+    const target = data.profiles.find((item) => item.id === profileId)
+    assertRecordExists(target)
+    if (target.role === 'leader' && target.is_active !== false && !nextActive) {
+      const remainingLeaders = data.profiles.filter(
+        (item) => item.role === 'leader' && item.is_active !== false && item.id !== profileId,
+      )
+      if (remainingLeaders.length === 0) {
+        throw new UserFacingError('활성 파트장은 최소 한 명 이상 유지해야 합니다.')
+      }
+    }
     setData((current) => ({
       ...current,
       profiles: current.profiles.map((item) => (item.id === profileId ? { ...item, is_active: nextActive } : item)),
     }))
   }
+  await logMasterActivity(ctx, 'allowed_user', nextActive ? 'activated' : 'deactivated', nextActive ? '사용자를 활성화했습니다.' : '사용자를 비활성화했습니다.', profileId, { is_active: nextActive })
 }
 
 function masterRepository(ctx: RepositoryContext) {

@@ -45,26 +45,28 @@ function renderTimelineStepIcon(index: number, status: ReviewStatus, state: Time
 
 export function ReviewRequestItem({
   addFeedback,
-  feedback,
   onEdit,
   onWithdraw,
   pendingWithdraw,
   profile,
   rejectReview,
+  reopenReview,
+  updateFeedback,
+  deleteFeedback,
   request,
-  setFeedback,
   updateStatus,
   withdrawReview,
 }: {
-  addFeedback: (requestId: string) => void
-  feedback: Record<string, string>
+  addFeedback: (requestId: string, comment: string) => Promise<boolean>
   onEdit: (request: ReviewRequest) => void
   onWithdraw: (requestId: string | null) => void
   pendingWithdraw: boolean
   profile: Profile
-  rejectReview: (requestId: string) => Promise<boolean>
+  rejectReview: (requestId: string, comment: string) => Promise<boolean>
+  reopenReview: (requestId: string) => Promise<boolean>
+  updateFeedback: (feedbackId: string, comment: string) => Promise<boolean>
+  deleteFeedback: (feedbackId: string) => Promise<boolean>
   request: ReviewRequest
-  setFeedback: React.Dispatch<React.SetStateAction<Record<string, string>>>
   updateStatus: (id: string, status: ReviewStatus) => Promise<boolean>
   withdrawReview: (requestId: string) => void
 }) {
@@ -72,6 +74,10 @@ export function ReviewRequestItem({
   const [transitionNotice, setTransitionNotice] = useState<{ text: string; tone: ReviewStatus } | null>(null)
   const [rejectNotice, setRejectNotice] = useState(false)
   const [celebrate, setCelebrate] = useState(false)
+  const [editingFeedbackId, setEditingFeedbackId] = useState<string | null>(null)
+  const [editingFeedbackText, setEditingFeedbackText] = useState('')
+  const [feedbackDraft, setFeedbackDraft] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const feedbackInputRef = useRef<HTMLTextAreaElement>(null)
   const timelineSteps = getTimelineSteps(request.status)
   const requestFeedback = request.review_feedback ?? []
@@ -94,22 +100,34 @@ export function ReviewRequestItem({
     }
   }, [request.attachment_url])
 
+  const withSubmitting = async <T,>(operation: () => Promise<T>): Promise<T> => {
+    setIsSubmitting(true)
+    try {
+      return await operation()
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   const handleStatusTransition = async (status: ReviewStatus) => {
-    if (status === request.status) return
+    if (status === request.status || isSubmitting) return
     if (status === 'rejected') {
-      if (!(feedback[request.id]?.trim())) {
+      if (!feedbackDraft.trim()) {
         setRejectNotice(true)
         feedbackInputRef.current?.focus()
         return
       }
+      if (!window.confirm('이 검토요청을 반려 처리하시겠습니까?')) return
       setRejectNotice(false)
-      const ok = await rejectReview(request.id)
+      const ok = await withSubmitting(() => rejectReview(request.id, feedbackDraft))
       if (!ok) return
+      setFeedbackDraft('')
       setTransitionNotice({ text: '반려 상태로 전환했습니다.', tone: status })
       window.setTimeout(() => setTransitionNotice(null), 2600)
       return
     }
-    const ok = await updateStatus(request.id, status)
+    if (!window.confirm('이 검토요청을 완료 처리하시겠습니까?')) return
+    const ok = await withSubmitting(() => updateStatus(request.id, status))
     if (!ok) return
     setTransitionNotice({ text: `${reviewStatusLabels[status]} 상태로 전환했습니다.`, tone: status })
     if (status === 'approved') {
@@ -117,6 +135,45 @@ export function ReviewRequestItem({
       window.setTimeout(() => setCelebrate(false), 1400)
     }
     window.setTimeout(() => setTransitionNotice(null), 2600)
+  }
+
+  const handleReopen = async () => {
+    if (isSubmitting) return
+    if (!window.confirm('종결된 검토요청을 다시 대기 상태로 되돌리시겠습니까?')) return
+    await withSubmitting(() => reopenReview(request.id))
+  }
+
+  const submitFeedback = async () => {
+    if (isSubmitting || !feedbackDraft.trim()) return
+    const submittedComment = feedbackDraft
+    setIsSubmitting(true)
+    try {
+      const ok = await addFeedback(request.id, submittedComment)
+      if (ok) {
+        setFeedbackDraft((current) => (current === submittedComment ? '' : current))
+      }
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const startFeedbackEdit = (feedbackId: string, comment: string) => {
+    setEditingFeedbackId(feedbackId)
+    setEditingFeedbackText(comment)
+  }
+
+  const saveFeedbackEdit = async () => {
+    if (!editingFeedbackId || !editingFeedbackText.trim()) return
+    const ok = await withSubmitting(() => updateFeedback(editingFeedbackId!, editingFeedbackText))
+    if (ok) {
+      setEditingFeedbackId(null)
+      setEditingFeedbackText('')
+    }
+  }
+
+  const removeFeedback = async (feedbackId: string) => {
+    if (!window.confirm('이 피드백을 삭제하시겠습니까?')) return
+    await withSubmitting(() => deleteFeedback(feedbackId))
   }
 
   return (
@@ -155,7 +212,7 @@ export function ReviewRequestItem({
               {statusActions.map(({ status, label, variant }) => (
                 <button
                   className={variant ? `status-btn ${variant}` : 'status-btn'}
-                  disabled={request.status === status}
+                  disabled={request.status === status || isSubmitting}
                   key={status}
                   onClick={() => handleStatusTransition(status)}
                   type="button"
@@ -192,7 +249,17 @@ export function ReviewRequestItem({
             <CopyLinkButton tab="reviews" entityId={request.id} />
           </div>
         )}
-        {!(profile.role === 'leader' && request.status === 'pending') && !canEditOwn && (
+        {profile.role === 'leader' && (request.status === 'approved' || request.status === 'rejected') && (
+          <div className="request-actions">
+            <button className="ghost compact" disabled={isSubmitting} onClick={() => void handleReopen()} type="button">
+              다시 열기
+            </button>
+            <CopyLinkButton tab="reviews" entityId={request.id} />
+          </div>
+        )}
+        {!(profile.role === 'leader' && request.status === 'pending') &&
+          !(profile.role === 'leader' && (request.status === 'approved' || request.status === 'rejected')) &&
+          !canEditOwn && (
           <div className="request-actions">
             <CopyLinkButton tab="reviews" entityId={request.id} />
           </div>
@@ -260,7 +327,37 @@ export function ReviewRequestItem({
                 <span>
                   {item.profiles?.name ?? '파트장'} · {formatDate(item.created_at)}
                 </span>
-                <p>{item.comment}</p>
+                {editingFeedbackId === item.id ? (
+                  <div className="feedback-edit-form">
+                    <textarea
+                      aria-label="피드백 수정"
+                      value={editingFeedbackText}
+                      onChange={(event) => setEditingFeedbackText(event.target.value)}
+                    />
+                    <div className="feedback-edit-actions">
+                      <button className="primary compact" disabled={isSubmitting} onClick={() => void saveFeedbackEdit()} type="button">
+                        저장
+                      </button>
+                      <button className="ghost compact" onClick={() => setEditingFeedbackId(null)} type="button">
+                        취소
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p>{item.comment}</p>
+                    {profile.role === 'leader' && item.leader_id === profile.id && (
+                      <div className="feedback-actions">
+                        <button className="ghost compact" onClick={() => startFeedbackEdit(item.id, item.comment)} type="button">
+                          수정
+                        </button>
+                        <button className="ghost compact" disabled={isSubmitting} onClick={() => void removeFeedback(item.id)} type="button">
+                          삭제
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             ))}
           </div>
@@ -271,17 +368,19 @@ export function ReviewRequestItem({
               <strong>{profile.name}</strong>
             </div>
             <textarea
+              maxLength={2000}
+              disabled={isSubmitting}
               ref={feedbackInputRef}
               placeholder="이 검토요청에 대해 어떻게 생각하시나요?"
-              value={feedback[request.id] ?? ''}
+              value={feedbackDraft}
               onChange={(event) => {
-                setFeedback({ ...feedback, [request.id]: event.target.value })
+                setFeedbackDraft(event.target.value)
                 if (rejectNotice) setRejectNotice(false)
               }}
               onKeyDown={(event) => {
                 if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
                   event.preventDefault()
-                  void addFeedback(request.id)
+                  void submitFeedback()
                 }
               }}
             />
@@ -293,8 +392,8 @@ export function ReviewRequestItem({
               </span>
               <button
                 className="primary compact"
-                disabled={!(feedback[request.id]?.trim())}
-                onClick={() => void addFeedback(request.id)}
+                disabled={isSubmitting || !feedbackDraft.trim()}
+                onClick={() => void submitFeedback()}
                 type="button"
               >
                 <Send size={14} />

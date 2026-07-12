@@ -8,6 +8,7 @@ export function useReviewSelection(
   onInitialSelectionApplied?: () => void,
 ) {
   const [selectedReviewId, setSelectedReviewId] = useState<string | null>(null)
+  const [selectedReviewSnapshot, setSelectedReviewSnapshot] = useState<ReviewRequest | null>(null)
   const firstVisibleReviewId = visibleReviewRequests[0]?.id ?? null
   const visibleReviewKey = visibleReviewRequests.map((request) => request.id).join('|')
   // 칸반 카드·딥링크는 필터 밖 요청을 가리킬 수 있다. 호출부가 필터를 풀어주는 동안의
@@ -15,23 +16,30 @@ export function useReviewSelection(
   const selectedReview =
     visibleReviewRequests.find((request) => request.id === selectedReviewId) ??
     scopedReviewRequests.find((request) => request.id === selectedReviewId) ??
+    (selectedReviewSnapshot?.id === selectedReviewId ? selectedReviewSnapshot : null) ??
     visibleReviewRequests[0] ??
     null
 
   useEffect(() => {
     if (!firstVisibleReviewId) {
-      if (selectedReviewId !== null) setSelectedReviewId(null)
+      if (selectedReviewId !== null && selectedReviewSnapshot?.id !== selectedReviewId) setSelectedReviewId(null)
       return
     }
-    if (!visibleReviewRequests.some((request) => request.id === selectedReviewId)) {
+    if (
+      !visibleReviewRequests.some((request) => request.id === selectedReviewId) &&
+      !scopedReviewRequests.some((request) => request.id === selectedReviewId) &&
+      selectedReviewSnapshot?.id !== selectedReviewId
+    ) {
       setSelectedReviewId(firstVisibleReviewId)
     }
-  }, [firstVisibleReviewId, selectedReviewId, visibleReviewKey, visibleReviewRequests])
+  }, [firstVisibleReviewId, selectedReviewId, selectedReviewSnapshot, scopedReviewRequests, visibleReviewKey, visibleReviewRequests])
 
   useEffect(() => {
     if (!initialSelectedId) return
-    if (!scopedReviewRequests.some((request) => request.id === initialSelectedId)) return
-    setSelectedReviewId(initialSelectedId)
+    const target = scopedReviewRequests.find((request) => request.id === initialSelectedId)
+    if (!target) return
+    setSelectedReviewSnapshot(target)
+    setSelectedReviewId(target.id)
     onInitialSelectionApplied?.()
   }, [initialSelectedId, onInitialSelectionApplied, scopedReviewRequests])
 

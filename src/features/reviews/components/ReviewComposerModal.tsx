@@ -174,6 +174,9 @@ export function ReviewComposerModal({
                 {existingStorageAttachment && !attachmentFile && (
                   <p className="draft-notice">기존 첨부 파일이 유지됩니다.</p>
                 )}
+                <p className="draft-notice">
+                  첨부 파일은 시스템 백업 대상이 아닙니다. 중요한 원본은 작성자가 별도로 보관해 주세요.
+                </p>
               </div>
             </div>
             <div className="modal-field-row">

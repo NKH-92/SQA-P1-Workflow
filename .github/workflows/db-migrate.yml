@@ -6,17 +6,14 @@ name: DB Migrate
 on:
   workflow_dispatch:
     inputs:
-      repair_reverted:
-        description: "push 전 이력에서 제거할(reverted) 버전들 — 공백 구분. 예: 원격에만 있는 타임스탬프 버전"
-        required: false
-        default: ""
-      repair_applied:
-        description: "push 전 적용됨(applied)으로 기록할 버전들 — 공백 구분. 내용이 이미 반영된 로컬 파일만"
-        required: false
-        default: ""
+      backup_run_id:
+        description: "24시간 이내 main에서 성공했고 암호화 artifact가 남아 있는 Backup DB run ID"
+        required: true
+        type: string
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: db-migrate
@@ -25,7 +22,47 @@ concurrency:
 jobs:
   migrate:
     runs-on: ubuntu-latest
+    environment: production
     steps:
+      - name: Require main branch
+        if: ${{ github.ref != 'refs/heads/main' }}
+        run: |
+          echo "::error::Production migration is allowed only from refs/heads/main (received: $GITHUB_REF)."
+          exit 1
+
+      - name: Require a recent successful backup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BACKUP_RUN_ID: ${{ github.event.inputs.backup_run_id }}
+        run: |
+          if ! [[ "$BACKUP_RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::backup_run_id must be a numeric GitHub Actions run ID"
+            exit 1
+          fi
+
+          run_json=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BACKUP_RUN_ID")
+          workflow_path=$(jq -r '.path' <<<"$run_json")
+          event=$(jq -r '.event' <<<"$run_json")
+          head_branch=$(jq -r '.head_branch' <<<"$run_json")
+          head_sha=$(jq -r '.head_sha' <<<"$run_json")
+          conclusion=$(jq -r '.conclusion' <<<"$run_json")
+          updated_at=$(jq -r '.updated_at' <<<"$run_json")
+          age_seconds=$(( $(date -u +%s) - $(date -u -d "$updated_at" +%s) ))
+          artifact_count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BACKUP_RUN_ID/artifacts" \
+            --jq '[.artifacts[] | select(.expired == false and (.name | startswith("db-backup-")))] | length')
+
+          if [ "$workflow_path" != ".github/workflows/backup.yml" ] \
+            || { [ "$event" != "workflow_dispatch" ] && [ "$event" != "schedule" ]; } \
+            || [ "$head_branch" != "main" ] \
+            || [ "$head_sha" != "$GITHUB_SHA" ] \
+            || [ "$conclusion" != "success" ] \
+            || [ "$age_seconds" -lt 0 ] \
+            || [ "$age_seconds" -gt 86400 ] \
+            || [ "$artifact_count" -lt 1 ]; then
+            echo "::error::backup gate failed (path=$workflow_path event=$event branch=$head_branch sha=$head_sha expected_sha=$GITHUB_SHA conclusion=$conclusion age_seconds=$age_seconds artifacts=$artifact_count)"
+            exit 1
+          fi
+
       - name: Check secret
         env:
           DB_URL_SET: ${{ secrets.SUPABASE_DB_URL != '' }}
@@ -41,9 +78,11 @@ jobs:
           fi
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
 
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
         with:
           version: 2.109.1
 
@@ -77,34 +116,9 @@ jobs:
           DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: supabase migration list --db-url "$DATABASE_URL"
 
-      # 이력 정정 — supabase_migrations.schema_migrations 기록만 바꾼다 (스키마 불변).
-      # SQL Editor/Dashboard 경로로 적용된 이력(타임스탬프 버전)과 로컬 파일명이 어긋날 때 사용.
-      # applied로 기록하는 버전은 반드시 내용이 이미 DB에 반영된 파일이어야 한다.
-      - name: Repair migration history (optional)
-        if: ${{ github.event.inputs.repair_reverted != '' || github.event.inputs.repair_applied != '' }}
-        env:
-          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
-          REPAIR_REVERTED: ${{ github.event.inputs.repair_reverted }}
-          REPAIR_APPLIED: ${{ github.event.inputs.repair_applied }}
-        run: |
-          if ! [[ "$REPAIR_REVERTED $REPAIR_APPLIED" =~ ^[0-9[:space:]]*$ ]]; then
-            echo "::error::repair inputs must be space-separated numeric versions"
-            exit 1
-          fi
-          if [ -n "${REPAIR_REVERTED// /}" ]; then
-            echo "repair --status reverted: $REPAIR_REVERTED"
-            supabase migration repair --db-url "$DATABASE_URL" --status reverted $REPAIR_REVERTED
-          fi
-          if [ -n "${REPAIR_APPLIED// /}" ]; then
-            echo "repair --status applied: $REPAIR_APPLIED"
-            supabase migration repair --db-url "$DATABASE_URL" --status applied $REPAIR_APPLIED
-          fi
-          {
-            echo "### Migration history repaired"
-            [ -n "${REPAIR_REVERTED// /}" ] && echo "- reverted: \`$REPAIR_REVERTED\`"
-            [ -n "${REPAIR_APPLIED// /}" ] && echo "- applied: \`$REPAIR_APPLIED\`"
-            echo ""
-          } >> "$GITHUB_STEP_SUMMARY"
+      # Migration history repair is intentionally excluded from this routine.
+      # A mismatched/empty history must be handled as a separately reviewed break-glass
+      # operation after object-by-object verification; it must never be combined with db push.
 
       - name: Push pending migrations
         env:
@@ -122,6 +136,154 @@ jobs:
              where pubname = 'supabase_realtime'
                and schemaname = 'public'
                and tablename = 'review_requests')")
+          assignment_rpcs=$(psql "$DATABASE_URL" -tAc \
+            "select
+              to_regprocedure('public.add_product_assignment(uuid,uuid)') is not null
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.add_product_assignment(uuid,uuid)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.add_product_assignment(uuid,uuid)')), false)
+              and coalesce(has_function_privilege('authenticated', to_regprocedure('public.add_product_assignment(uuid,uuid)'), 'EXECUTE'), false)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.add_product_assignment(uuid,uuid)'), 'EXECUTE'), true)
+              and to_regprocedure('public.add_duty_assignment(uuid,uuid)') is not null
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.add_duty_assignment(uuid,uuid)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.add_duty_assignment(uuid,uuid)')), false)
+              and coalesce(has_function_privilege('authenticated', to_regprocedure('public.add_duty_assignment(uuid,uuid)'), 'EXECUTE'), false)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.add_duty_assignment(uuid,uuid)'), 'EXECUTE'), true)
+              and to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)') is not null
+              and coalesce((select pg_get_function_result(to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)')) = 'timestamp with time zone'), false)
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)')), false)
+              and coalesce(has_function_privilege('authenticated', to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)'), 'EXECUTE'), false)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)'), 'EXECUTE'), true)")
+          assignment_versions=$(psql "$DATABASE_URL" -tAc \
+            "select
+              exists (select 1 from supabase_migrations.schema_migrations where version = '202607110001')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '202607110002')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '202607110003')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '202607110004')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '202607110005')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '202607110006')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '202607110007')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '202607110008')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '202607110009')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '202607110010')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '202607110011')")
+          assignment_guard=$(psql "$DATABASE_URL" -tAc \
+            "select
+              to_regprocedure('public.validate_assignment_user_active()') is not null
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.validate_assignment_user_active()')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.validate_assignment_user_active()')), false)
+              and coalesce(pg_get_functiondef(to_regprocedure('public.validate_assignment_user_active()')) like '%require_profile_role(new.user_id, ''member''%', false)
+              and coalesce(pg_get_functiondef(to_regprocedure('public.validate_assignment_user_active()')) like '%profile_is_active(new.user_id)%', false)
+              and exists (
+                select 1 from pg_trigger
+                where tgrelid = 'public.product_assignments'::regclass
+                  and tgname = 'product_assignments_validate_active'
+                  and tgfoid = to_regprocedure('public.validate_assignment_user_active()')
+                  and tgenabled in ('O', 'A')
+                  and pg_get_triggerdef(oid) like '%BEFORE INSERT OR UPDATE OF user_id%'
+              )
+              and exists (
+                select 1 from pg_trigger
+                where tgrelid = 'public.duty_assignments'::regclass
+                  and tgname = 'duty_assignments_validate_active'
+                  and tgfoid = to_regprocedure('public.validate_assignment_user_active()')
+                  and tgenabled in ('O', 'A')
+                  and pg_get_triggerdef(oid) like '%BEFORE INSERT OR UPDATE OF user_id%'
+              )")
+          leader_view_gate=$(psql "$DATABASE_URL" -tAc \
+            "select pg_get_viewdef('public.public_leader_profiles'::regclass, true) like '%can_use_app()%'")
+          review_status_gate=$(psql "$DATABASE_URL" -tAc \
+            "select
+              not has_table_privilege('authenticated', 'public.review_requests', 'UPDATE')
+              and has_column_privilege('authenticated', 'public.review_requests', 'title', 'UPDATE')
+              and has_column_privilege('authenticated', 'public.review_requests', 'description', 'UPDATE')
+              and has_column_privilege('authenticated', 'public.review_requests', 'attachment_url', 'UPDATE')
+              and has_column_privilege('authenticated', 'public.review_requests', 'due_date', 'UPDATE')
+              and not has_column_privilege('authenticated', 'public.review_requests', 'status', 'UPDATE')
+              and to_regclass('private.review_status_events') is not null
+              and exists (
+                select 1 from pg_trigger
+                where tgrelid = 'public.review_requests'::regclass
+                  and tgname = 'review_requests_record_status_event'
+                  and tgenabled in ('O', 'A')
+              )")
+          private_audit_gate=$(psql "$DATABASE_URL" -tAc \
+            "select
+              to_regclass('private.audit_events') is not null
+              and not has_schema_privilege('authenticated', 'private', 'USAGE')
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('private.record_mutation_audit()')), false)
+              and coalesce((select 'search_path=pg_catalog, public, private, pg_temp' = any(proconfig) from pg_proc where oid = to_regprocedure('private.record_mutation_audit()')), false)
+              and (
+                select count(*) >= 12 from pg_trigger
+                where tgfoid = to_regprocedure('private.record_mutation_audit()')
+                  and tgenabled in ('O', 'A')
+              )
+              and exists (
+                select 1 from pg_trigger
+                where tgrelid = 'public.profile_notes'::regclass
+                  and tgname = 'profile_notes_private_audit'
+                  and tgfoid = to_regprocedure('private.record_mutation_audit()')
+                  and tgenabled in ('O', 'A')
+              )")
+          last_leader_gate=$(psql "$DATABASE_URL" -tAc \
+            "select
+              to_regprocedure('public.count_active_leaders_except(uuid)') is not null
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.count_active_leaders_except(uuid)')), false)
+              and coalesce((select provolatile = 'v' from pg_proc where oid = to_regprocedure('public.count_active_leaders_except(uuid)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.count_active_leaders_except(uuid)')), false)
+              and not coalesce(has_function_privilege('authenticated', to_regprocedure('public.count_active_leaders_except(uuid)'), 'EXECUTE'), true)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.count_active_leaders_except(uuid)'), 'EXECUTE'), true)
+              and pg_get_functiondef(to_regprocedure('public.guard_last_active_leader_profile()')) like '%pg_advisory_xact_lock%'
+              and pg_get_functiondef(to_regprocedure('public.guard_last_active_leader_allowed_user()')) like '%pg_advisory_xact_lock%'")
+          direct_write_gate=$(psql "$DATABASE_URL" -tAc \
+            "select
+              exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_requests' and policyname = 'review_requests_update_self_pending' and qual like '%can_use_app()%' and with_check like '%can_use_app()%')
+              and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_requests' and policyname = 'review_requests_delete_self_pending' and qual like '%can_use_app()%')
+              and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_feedback' and policyname = 'review_feedback_update_leader' and qual like '%leader_id = auth.uid()%' and with_check like '%leader_id = auth.uid()%')
+              and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_feedback' and policyname = 'review_feedback_delete_leader' and qual like '%leader_id = auth.uid()%')
+              and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_feedback' and policyname = 'review_feedback_insert_leader' and with_check like '%is_active_leader()%' and with_check like '%leader_id = auth.uid()%')
+              and coalesce(pg_get_functiondef(to_regprocedure('public.is_active_leader()')) like '%password_is_current()%', false)
+              and not has_table_privilege('authenticated', 'public.project_assignments', 'INSERT')
+              and not has_table_privilege('authenticated', 'public.project_assignments', 'UPDATE')
+              and not has_table_privilege('authenticated', 'public.project_assignments', 'DELETE')
+              and to_regprocedure('public.bump_project_revision_from_assignment()') is not null
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.bump_project_revision_from_assignment()')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.bump_project_revision_from_assignment()')), false)
+              and coalesce((select proacl is not null and proacl::text not like '%{=X%' and proacl::text not like '%,=X%' from pg_proc where oid = to_regprocedure('public.bump_project_revision_from_assignment()')), false)
+              and not coalesce(has_function_privilege('authenticated', to_regprocedure('public.bump_project_revision_from_assignment()'), 'EXECUTE'), true)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.bump_project_revision_from_assignment()'), 'EXECUTE'), true)
+              and exists (select 1 from pg_trigger where tgrelid = 'public.project_assignments'::regclass and tgname = 'project_assignments_bump_project_revision' and tgenabled in ('O', 'A'))")
+          leader_policy_gate=$(psql "$DATABASE_URL" -tAc \
+            "select not exists (
+              select 1 from pg_policies
+               where schemaname = 'public'
+                 and (coalesce(qual, '') like '%is_leader()%' or coalesce(with_check, '') like '%is_leader()%')
+                 and coalesce(qual, '') not like '%is_active_leader()%'
+                 and coalesce(with_check, '') not like '%is_active_leader()%'
+            )")
+          review_activity_gate=$(psql "$DATABASE_URL" -tAc \
+            "select
+              to_regprocedure('public.update_review_request_status(uuid,public.review_status)') is not null
+              and to_regprocedure('public.reject_review_request(uuid,text)') is not null
+              and to_regprocedure('public.add_review_feedback(uuid,text)') is not null
+              and coalesce(pg_get_functiondef(to_regprocedure('public.update_review_request_status(uuid,public.review_status)')) like '%insert into public.activity_logs%', false)
+              and coalesce(pg_get_functiondef(to_regprocedure('public.reject_review_request(uuid,text)')) like '%insert into public.activity_logs%', false)
+              and coalesce(pg_get_functiondef(to_regprocedure('public.add_review_feedback(uuid,text)')) like '%insert into public.activity_logs%', false)
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.update_review_request_status(uuid,public.review_status)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.update_review_request_status(uuid,public.review_status)')), false)
+              and coalesce((select proacl is not null and proacl::text not like '%{=X%' and proacl::text not like '%,=X%' from pg_proc where oid = to_regprocedure('public.update_review_request_status(uuid,public.review_status)')), false)
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.reject_review_request(uuid,text)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.reject_review_request(uuid,text)')), false)
+              and coalesce((select proacl is not null and proacl::text not like '%{=X%' and proacl::text not like '%,=X%' from pg_proc where oid = to_regprocedure('public.reject_review_request(uuid,text)')), false)
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.add_review_feedback(uuid,text)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.add_review_feedback(uuid,text)')), false)
+              and coalesce((select proacl is not null and proacl::text not like '%{=X%' and proacl::text not like '%,=X%' from pg_proc where oid = to_regprocedure('public.add_review_feedback(uuid,text)')), false)
+              and has_function_privilege('authenticated', to_regprocedure('public.update_review_request_status(uuid,public.review_status)'), 'EXECUTE')
+              and has_function_privilege('authenticated', to_regprocedure('public.reject_review_request(uuid,text)'), 'EXECUTE')
+              and has_function_privilege('authenticated', to_regprocedure('public.add_review_feedback(uuid,text)'), 'EXECUTE')
+              and not has_function_privilege('anon', to_regprocedure('public.update_review_request_status(uuid,public.review_status)'), 'EXECUTE')
+              and not has_function_privilege('anon', to_regprocedure('public.reject_review_request(uuid,text)'), 'EXECUTE')
+              and not has_function_privilege('anon', to_regprocedure('public.add_review_feedback(uuid,text)'), 'EXECUTE')")
           local_count=$(ls supabase/migrations/*.sql | wc -l)
 
           if [ "$realtime" != "t" ]; then
@@ -135,6 +297,56 @@ jobs:
             exit 1
           fi
 
+          if [ "$assignment_versions" != "t" ]; then
+            echo "::error::required assignment migrations are not recorded (received: $assignment_versions)"
+            exit 1
+          fi
+
+          if [ "$assignment_rpcs" != "t" ]; then
+            echo "::error::assignment RPC existence/security/ACL verification failed (received: $assignment_rpcs)"
+            exit 1
+          fi
+
+          if [ "$assignment_guard" != "t" ]; then
+            echo "::error::assignment member/active trigger invariant verification failed (received: $assignment_guard)"
+            exit 1
+          fi
+
+          if [ "$leader_view_gate" != "t" ]; then
+            echo "::error::public_leader_profiles access gate verification failed (received: $leader_view_gate)"
+            exit 1
+          fi
+
+          if [ "$review_status_gate" != "t" ]; then
+            echo "::error::review status RPC-only/audit verification failed (received: $review_status_gate)"
+            exit 1
+          fi
+
+          if [ "$private_audit_gate" != "t" ]; then
+            echo "::error::private mutation audit verification failed (received: $private_audit_gate)"
+            exit 1
+          fi
+
+          if [ "$last_leader_gate" != "t" ]; then
+            echo "::error::last-active-leader serialization verification failed (received: $last_leader_gate)"
+            exit 1
+          fi
+
+          if [ "$direct_write_gate" != "t" ]; then
+            echo "::error::direct write/OCC hardening verification failed (received: $direct_write_gate)"
+            exit 1
+          fi
+
+          if [ "$review_activity_gate" != "t" ]; then
+            echo "::error::transactional review activity-log verification failed (received: $review_activity_gate)"
+            exit 1
+          fi
+
+          if [ "$leader_policy_gate" != "t" ]; then
+            echo "::error::role-only leader RLS policy detected; active/password gate is not proven (received: $leader_policy_gate)"
+            exit 1
+          fi
+
           {
             echo "## DB migrate OK"
             echo ""
@@ -142,6 +354,18 @@ jobs:
             echo "- realtime publication에 review_requests 포함: $realtime"
           } >> "$GITHUB_STEP_SUMMARY"
 
+          echo "assignment migration versions: $assignment_versions" >> "$GITHUB_STEP_SUMMARY"
+          echo "assignment RPC security/ACL checks: $assignment_rpcs" >> "$GITHUB_STEP_SUMMARY"
+          echo "assignment member/active trigger checks: $assignment_guard" >> "$GITHUB_STEP_SUMMARY"
+          echo "leader profile view app-access gate: $leader_view_gate" >> "$GITHUB_STEP_SUMMARY"
+          echo "review status RPC-only/audit gate: $review_status_gate" >> "$GITHUB_STEP_SUMMARY"
+          echo "private mutation audit gate: $private_audit_gate" >> "$GITHUB_STEP_SUMMARY"
+          echo "last-active-leader serialization gate: $last_leader_gate" >> "$GITHUB_STEP_SUMMARY"
+          echo "direct write/OCC hardening gate: $direct_write_gate" >> "$GITHUB_STEP_SUMMARY"
+          echo "transactional review activity-log gate: $review_activity_gate" >> "$GITHUB_STEP_SUMMARY"
+          echo "active/password leader policy gate: $leader_policy_gate" >> "$GITHUB_STEP_SUMMARY"
+
           if [ "$applied" != "$local_count" ]; then
-            echo "::warning::remote schema_migrations count ($applied) != local file count ($local_count) — repair/수동 적용 이력이 섞여 있으면 정상일 수 있음 (docs/SUPABASE_MIGRATIONS.md 참고)"
+            echo "::error::remote schema_migrations count ($applied) does not match local file count ($local_count); refusing a green drifted migration run"
+            exit 1
           fi

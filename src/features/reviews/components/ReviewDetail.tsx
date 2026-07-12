@@ -1,4 +1,3 @@
-import type { Dispatch, SetStateAction } from 'react'
 import { MousePointerClick } from 'lucide-react'
 import { EmptyState } from '../../../components/ui'
 import type { Profile, ReviewRequest, ReviewStatus } from '../../../types'
@@ -7,27 +6,29 @@ import { ReviewRequestItem } from './ReviewRequestItem'
 type ReviewDetailProps = {
   profile: Profile
   selectedReview: ReviewRequest | null
-  feedback: Record<string, string>
-  setFeedback: Dispatch<SetStateAction<Record<string, string>>>
   pendingWithdrawId: string | null
   onEdit: (request: ReviewRequest) => void
   onWithdraw: (id: string | null) => void
   withdrawReview: (requestId: string) => void
-  rejectReview: (requestId: string) => Promise<boolean>
+  rejectReview: (requestId: string, comment: string) => Promise<boolean>
+  reopenReview: (requestId: string) => Promise<boolean>
+  updateFeedback: (feedbackId: string, comment: string) => Promise<boolean>
+  deleteFeedback: (feedbackId: string) => Promise<boolean>
   updateStatus: (id: string, status: ReviewStatus) => Promise<boolean>
-  addFeedback: (requestId: string) => void
+  addFeedback: (requestId: string, comment: string) => Promise<boolean>
 }
 
 export function ReviewDetail({
   profile,
   selectedReview,
-  feedback,
-  setFeedback,
   pendingWithdrawId,
   onEdit,
   onWithdraw,
   withdrawReview,
   rejectReview,
+  reopenReview,
+  updateFeedback,
+  deleteFeedback,
   updateStatus,
   addFeedback,
 }: ReviewDetailProps) {
@@ -36,15 +37,16 @@ export function ReviewDetail({
       {selectedReview ? (
         <ReviewRequestItem
           addFeedback={addFeedback}
-          feedback={feedback}
           key={selectedReview.id}
           onEdit={onEdit}
           onWithdraw={onWithdraw}
           pendingWithdraw={pendingWithdrawId === selectedReview.id}
           profile={profile}
           rejectReview={rejectReview}
+          reopenReview={reopenReview}
+          updateFeedback={updateFeedback}
+          deleteFeedback={deleteFeedback}
           request={selectedReview}
-          setFeedback={setFeedback}
           updateStatus={updateStatus}
           withdrawReview={withdrawReview}
         />

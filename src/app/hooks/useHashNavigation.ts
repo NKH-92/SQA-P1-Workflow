@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { buildAppHash, isLeaderTab, parseAppHash, sanitizeTabForRole } from '../../lib/navigation'
+import { buildAppHash, parseAppHash, sanitizeTabForRole } from '../../lib/navigation'
 import type { TabId } from '../types'
 
 export function useHashNavigation(leaderMode: boolean, profileLoaded: boolean) {
@@ -16,6 +16,14 @@ export function useHashNavigation(leaderMode: boolean, profileLoaded: boolean) {
     }
   }, [])
 
+  const replaceActiveTab = useCallback((tab: TabId, entityId?: string | null) => {
+    setActiveTabState(tab)
+    setNavEntityId(entityId ?? null)
+    if (typeof window === 'undefined') return
+    const hash = buildAppHash(tab, entityId)
+    if (window.location.hash !== hash) window.history.replaceState(null, '', hash)
+  }, [])
+
   const resetNavigation = useCallback(() => {
     setActiveTab('dashboard')
     if (typeof window !== 'undefined') window.location.hash = '#/dashboard'
@@ -26,11 +34,12 @@ export function useHashNavigation(leaderMode: boolean, profileLoaded: boolean) {
     const syncFromHash = () => {
       const { tab, entityId } = parseAppHash()
       const safeTab = sanitizeTabForRole(tab, leaderMode)
+      const safeEntityId = safeTab === tab ? entityId : null
       setActiveTabState(safeTab)
-      setNavEntityId(entityId)
+      setNavEntityId(safeEntityId)
       if (safeTab !== tab) {
-        const hash = buildAppHash(safeTab, entityId)
-        if (window.location.hash !== hash) window.location.hash = hash
+        const hash = buildAppHash(safeTab, safeEntityId)
+        if (window.location.hash !== hash) window.history.replaceState(null, '', hash)
       }
     }
     window.addEventListener('hashchange', syncFromHash)
@@ -40,13 +49,8 @@ export function useHashNavigation(leaderMode: boolean, profileLoaded: boolean) {
   useEffect(() => {
     if (!profileLoaded) return
     const safeTab = sanitizeTabForRole(activeTab, leaderMode)
-    if (safeTab !== activeTab) setActiveTab(safeTab)
-  }, [activeTab, leaderMode, profileLoaded, setActiveTab])
-
-  useEffect(() => {
-    if (!profileLoaded || leaderMode) return
-    if (isLeaderTab(activeTab)) setActiveTab('dashboard')
-  }, [activeTab, leaderMode, profileLoaded, setActiveTab])
+    if (safeTab !== activeTab) replaceActiveTab(safeTab)
+  }, [activeTab, leaderMode, profileLoaded, replaceActiveTab])
 
   return { activeTab, navEntityId, setActiveTab, setNavEntityId, resetNavigation }
 }

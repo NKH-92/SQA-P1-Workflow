@@ -84,10 +84,10 @@
    ```
    **통과 기준**: `typecheck`, `lint`, `test`, `build` 모두 green.
 
-> ⚠️ **순서 함정 — A(push)를 B(Secrets 등록) 전에 하면 Deploy Worker가 의도적으로 실패한다.** `main` push 시 deploy env(Variables/Secrets)가 없으면 Deploy Worker 워크플로는 설계된 guard에 의해 **exit 1로 실패**한다(설정 누락을 조용히 넘기지 않으려는 의도된 동작). 따라서:
-> - **권장: 작업 B를 A보다 먼저** 완료한다.
-> - 부득이 A를 먼저 했다면, 이때의 Deploy Worker 실패는 정상이다. 아래 완료 기준의 "Deploy Worker green"은 **B 완료 후 재실행(main push 또는 `workflow_dispatch`)했을 때의 기준**이다.
-> - CI 테스트만 확인하려면 Deploy Worker를 `workflow_dispatch`로 실행한다(env 미설정 시 test만 통과, build/deploy는 스킵). 자세한 구분은 [DEPLOYMENT.md](./DEPLOYMENT.md) "배포 성공 vs 스킵 구분" 참고.
+> ⚠️ **운영 배포는 자동화하지 않는다.** `main` push는 CI만 실행하고, Deploy Worker는 작업 B 완료 후 `workflow_dispatch`에서 `main` + `deploy_confirm=true`를 명시해야 한다. Secrets/Variables가 없거나 확인값이 false면 운영 단계는 실패·스킵되도록 설계되어 있다.
+> - **권장: 작업 B를 배포 확인보다 먼저** 완료한다.
+> - 아래 완료 기준의 "Deploy Worker green"은 운영 증거를 검토한 뒤 수동 실행했을 때의 기준이다.
+> - CI 테스트만 확인하려면 CI workflow를 사용한다. Deploy Worker는 `workflow_dispatch`에서 `main`과 `deploy_confirm=true`를 명시한 경우에만 운영 배포 단계로 진행한다. 자세한 구분은 [DEPLOYMENT.md](./DEPLOYMENT.md) "배포 성공 vs 스킵 구분" 참고.
 
 ### 완료 기준
 - [ ] 원격 `main`(또는 merge된 PR)에 최신 커밋 반영
@@ -99,7 +99,7 @@
 ## 4. 작업 B — GitHub Variables / Secrets
 
 ### 목표
-Cloudflare Workers 자동 배포와 빌드 시 Supabase env 주입이 가능하도록 저장소 설정을 완료한다.
+Cloudflare Workers 수동 운영 배포와 빌드 시 Supabase env 주입이 가능하도록 저장소 설정을 완료한다.
 
 ### 등록 위치
 GitHub 저장소 → **Settings → Secrets and variables → Actions**
@@ -118,15 +118,15 @@ GitHub 저장소 → **Settings → Secrets and variables → Actions**
 |------|---------|------|------|
 | `VITE_SUPABASE_ANON_KEY` | Supabase → Settings → API → anon public | 배포 (E) | service_role 키 **사용 금지** |
 | `CLOUDFLARE_API_TOKEN` | Cloudflare → My Profile → API Tokens (Workers Edit) | 배포 (E) | |
-| `SUPABASE_DB_URL` | Supabase → Dashboard → Connect의 **Session pooler URI** (비밀번호 포함) | 주간 자동 백업 (G) · DB Migrate 워크플로 | |
-| `BACKUP_PASSPHRASE` | 새로 정한 백업 암호화 암구호 | 주간 자동 백업 (G) | **분실 시 백업 복원 불가** — 비밀번호 관리자에 보관 |
+| `SUPABASE_DB_URL` | Supabase → Dashboard → Connect의 **Session pooler URI** (비밀번호 포함) | 매일 자동 백업 · DB Migrate 워크플로 | |
+| `BACKUP_PASSPHRASE` | 새로 정한 백업 암호화 암구호 | 매일 자동 백업 | **분실 시 백업 복원 불가** — 비밀번호 관리자에 보관 |
 
 ### 확인
 - [ ] Variables 3개, Secrets 4개 등록 완료
 - [ ] `git grep`으로 저장소에 URL/키/계정 ID가 **없음**
 
 ### 완료 기준
-- [ ] `workflow_dispatch` 또는 main push 후 deploy 워크플로가 **skip 없이** 실행됨 (Secrets 미설정 시 **test만** 통과, build/deploy는 스킵)
+- [ ] Deploy Worker `workflow_dispatch`를 `main` + `deploy_confirm=true`로 실행하고 **skip 없이** 완료됨
 
 ---
 
@@ -137,7 +137,7 @@ GitHub 저장소 → **Settings → Secrets and variables → Actions**
 
 ### 적용 범위
 
-`supabase/migrations/`의 **총 30개** migration 파일 전체를 순서대로 적용한다 ([SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) 목록 참고). 적용 후 아래 핵심 migration이 실제 반영됐는지 확인 SQL로 검증한다.
+`supabase/migrations/`의 **현재 총 41개** migration 파일을 순서대로 적용한다 ([SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) 목록 참고). 운영에는 기존 30개까지 적용되어 있으므로 `202607110001`~`202607110011`은 프런트 배포보다 먼저 별도 migration-only 단계로 적용하고, 적용 직전 백업 및 함수·ACL·RLS 검증을 완료한다.
 
 > 2026-07-09 서명 시점에는 29개였고, 30번째 `202607090001`(Realtime)은 알림 패키지와 함께 추가되었다 — 적용 기록은 하단 "추가 배포 기록" 참조.
 
@@ -166,6 +166,8 @@ npx supabase db push
 ### 방법 2 — SQL Editor (수동)
 
 Dashboard → **SQL Editor**에서 [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) 목록 순서대로 실행.
+
+> SQL Editor 수동 적용은 복구·break-glass 검증용으로만 사용한다. 운영 DB의 정규 반영은 반드시 `DB Migrate`/CLI 경로를 사용해야 하며, SQL Editor 실행만으로는 `schema_migrations` 이력이 만들어지지 않아 Deploy Worker의 readiness gate를 통과하지 못한다. 수동 적용 후 운영 반영이 필요하면 먼저 백업·객체 검증을 완료하고 별도 승인된 migration-history repair 절차를 따른다.
 
 > 이미 적용된 migration은 **다시 실행하지 않는다.**
 
@@ -219,9 +221,7 @@ on conflict (email) do update
 set name = excluded.name, role = excluded.role;
 ```
 
-그 다음 Supabase Dashboard > Authentication > Users > **Add user** 로 파트장 계정을 만든다(임시 비밀번호 `1234`).
-
-> Dashboard가 최소 비밀번호 길이 제한으로 `1234` 생성을 거부하면, Authentication → Providers → Email의 **Minimum password length**를 4로 조정한 뒤 생성한다.
+그 다음 비밀번호 관리자에서 16자 이상의 계정별 무작위 임시 비밀번호를 생성하고, Supabase Dashboard > Authentication > Users > **Add user** 로 파트장 계정을 만든다. Minimum password length는 8 이상을 유지하며 계정 생성을 위해 낮추지 않는다.
 
 ### 6.2 RLS 검증용 member 2명 생성
 
@@ -236,8 +236,8 @@ RLS·권한 검증(작업 F)에는 파트장 외에 member 계정 2개가 필요
    on conflict (email) do update
    set name = excluded.name, role = excluded.role;
    ```
-2. Dashboard > Authentication > Users > **Add user** 로 위 2개 이메일 계정을 각각 생성한다. **임시 비밀번호는 공통 `1234`**.
-3. 각 계정은 **본인이 즉시 로그인**해 `must_change_password` 화면에서 8자 이상으로 변경한다. (공통 `1234` 선점 방지를 위해 한 명씩 즉시 온보딩 — [OPERATIONS.md](./OPERATIONS.md) 임시 비밀번호 절 참고)
+2. Dashboard > Authentication > Users > **Add user** 로 위 2개 이메일 계정을 각각 생성한다. 각 계정에 서로 다른 16자 이상의 무작위 임시 비밀번호를 사용한다.
+3. 각 계정은 승인된 1:1 채널로 임시 비밀번호를 전달받고 **본인이 즉시 로그인**해 `must_change_password` 화면에서 8자 이상으로 변경한다. 한 명씩 즉시 온보딩한다([OPERATIONS.md](./OPERATIONS.md) 임시 비밀번호 절 참고).
 
 ### 6.3 Auth 설정 확인
 
@@ -253,14 +253,14 @@ Supabase → **Authentication → Providers → Email**
 | 항목 | 권장 값 |
 |------|---------|
 | Enable email signup (Allow new users to sign up) | **OFF** |
-| Confirm email | OFF (내부 앱, Dashboard Add user만) |
+| Confirm email | **ON** (`mailer_autoconfirm=false`; 이메일 소유 확인 유지) |
 
 > public sign-up이 ON이면 앱 외 경로로 가입이 가능하다. 운영 프로젝트에는 이미 `disable_signup: true`가 적용되어 있으므로([OPERATIONS.md](./OPERATIONS.md) Auth 절), 여기서는 설정이 유지되고 있는지 재확인한다.
 
 ### 6.4 첫 로그인
 
-1. 임시 비밀번호 `1234`로 로그인 (최소 4자)
-2. `must_change_password` 화면에서 **8자 이상**으로 변경 (`1234` 재사용 불가)
+1. 계정별 무작위 임시 비밀번호로 로그인
+2. `must_change_password` 화면에서 **8자 이상**으로 변경
 3. 파트장 홈·마스터 탭 진입 확인
 
 ### 완료 기준
@@ -277,7 +277,7 @@ Supabase → **Authentication → Providers → Email**
 `<WORKER_URL>`에서 빌드된 앱이 Supabase와 연결되어 동작하는지 확인한다.
 
 ### 자동 배포
-작업 B 완료 후 `main` push 또는 Actions → **Deploy Worker** → `workflow_dispatch`
+작업 B 완료 후 Actions → **Deploy Worker** → `workflow_dispatch` (`main`, `deploy_confirm=true`)
 
 Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy config check → `build` → deploy 순서로 실행된다.
 
@@ -336,7 +336,7 @@ Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy confi
 
 ## 9. 작업 G — 백업 및 복구 리허설
 
-백업은 GitHub Actions(`backup.yml`)가 **매주 일요일 05:00 KST**에 자동 수행한다(암호화 아티팩트, 보존 90일). 이 작업에서는 첫 실행과 복구를 검증한다. 상세: [OPERATIONS.md](./OPERATIONS.md)
+백업은 GitHub Actions(`backup.yml`)가 **매일 05:00 KST**에 자동 수행한다(암호화 아티팩트, 보존 90일). 이 작업에서는 첫 실행과 복구를 검증한다. 상세: [OPERATIONS.md](./OPERATIONS.md)
 
 1. 작업 B의 `SUPABASE_DB_URL`·`BACKUP_PASSPHRASE` Secrets 등록 확인
 2. Actions → **Backup DB** → Run workflow(수동 1회) → run green + Job Summary에 `Backup OK` 확인
@@ -352,7 +352,7 @@ Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy confi
 - **백업**: Backup DB 수동 실행 2회 모두 green, 아티팩트 `db-backup-2026-07-09`(약 33KB, 암호화) 생성 확인
 - **⚠️ 리허설이 발견한 문제**: 최초 `BACKUP_PASSPHRASE`를 분실(어디에도 기록 안 됨) — **분실 시 백업 전체 복원 불가**를 실제로 확인. 새 암구호로 Secret 교체 후 백업 재실행으로 해결. **교훈: 암구호는 반드시 비밀번호 관리자에 보관할 것** (분기 리허설 때마다 복호화 가능 여부 확인)
 - **복호화**: `openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000` 성공 → schema(78KB)·data(106KB) 덤프 정상
-- **복원**: 테스트용 무료 Supabase 프로젝트에 psql로 schema → data 순 적용, **에러 0건**. 데이터 덤프에 `auth.users`·`auth.identities`·`storage.buckets`가 포함되어 있어 OPERATIONS.md의 "auth 먼저 복원" 수동 절차 불필요(덤프 상단 `session_replication_role=replica`로 FK 순서 문제도 자동 해소)
+- **과거 리허설 기록(현재 후보 SHA의 승인 증거 아님)**: 당시 테스트용 Supabase 프로젝트에서 schema → data 순 적용 결과 에러 0건. 당시 덤프에서 관찰된 managed `auth`/`storage` 객체 포함 여부는 현재 백업 계약이나 현재 후보의 복원 증거로 재사용하지 않는다. 현재 후보는 [RELEASE_EVIDENCE.md](./RELEASE_EVIDENCE.md)의 별도 복원 게이트를 다시 충족해야 한다.
 - **행 수 검증(복원본)**: auth.users 10 / profiles 10 / allowed_users 11 / products 218 / product_assignments 198 / duties 25 / duty_assignments 21 / duty_major_categories 7 / activity_logs 2 — 운영 SQL Editor에서 동일 count 쿼리로 대조 가능
 - **정리**: 복호화된 평문 덤프는 검증 직후 로컬에서 삭제(팀원 정보 포함). 테스트 프로젝트는 리허설 후 삭제 또는 pause 권장
 
@@ -395,7 +395,7 @@ Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy confi
 - **스모크 (파트장, 10분)**:
   - [ ] [TEST_PLAN.md](./TEST_PLAN.md) "알림·동기화" 5항목 수행
 - **후속 정리**:
-  - [ ] Cloudflare autoconfig **PR #3 닫기** (머지 금지 — 기존 Actions 배포와 충돌) + Cloudflare 대시보드에서 **Workers Builds Git 연동 해제** (해제 전까지 push마다 autoconfig PR이 재생성됨)
+  - [x] Cloudflare autoconfig **PR #3 닫기** + Workers Builds Git 연동 해제 검증 완료. main `0b112c60`에는 `Workers Builds: sqap1workflow`와 GitHub Actions `deploy` check가 동시에 있었으나, PR #3를 disconnect 사유로 닫은 뒤 probe `ed3c5cb0`에는 GitHub Actions build/typecheck/lint/test/deploy만 존재하고 Workers Builds check가 생성되지 않음(2026-07-10).
   - [ ] 원격 브랜치 정리: `improve/sqa-p1-final-stabilization`(PR #2로 squash-merge됨), `cloudflare/workers-autoconfig`(PR 닫은 뒤)
 
 ---

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { toUserMessage, UserFacingError } from './errors'
+import { assertAffectedRows, assertRecordExists, toUserMessage, UserFacingError } from './errors'
 
 describe('toUserMessage', () => {
   it('maps duplicate key code 23505', () => {
@@ -48,5 +48,18 @@ describe('toUserMessage', () => {
 
   it('preserves UserFacingError messages', () => {
     expect(toUserMessage(new UserFacingError('제목과 설명을 입력해 주세요.'))).toBe('제목과 설명을 입력해 주세요.')
+  })
+})
+
+describe('mutation result guards', () => {
+  it('rejects missing local records and zero-row remote results', () => {
+    expect(() => assertRecordExists(undefined)).toThrow(UserFacingError)
+    expect(() => assertAffectedRows([])).toThrow(UserFacingError)
+    expect(() => assertAffectedRows(null)).toThrow(UserFacingError)
+  })
+
+  it('accepts an existing record or at least one affected row', () => {
+    expect(() => assertRecordExists({ id: '1' })).not.toThrow()
+    expect(() => assertAffectedRows([{ id: '1' }])).not.toThrow()
   })
 })

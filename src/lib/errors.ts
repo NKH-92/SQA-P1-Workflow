@@ -10,6 +10,17 @@ export class UserFacingError extends Error {
   }
 }
 
+export const STALE_WRITE_MESSAGE =
+  '이미 삭제되었거나 변경할 수 없는 항목입니다. 목록을 새로고침해 주세요.'
+
+export function assertRecordExists<T>(record: T | null | undefined): asserts record is T {
+  if (record == null) throw new UserFacingError(STALE_WRITE_MESSAGE)
+}
+
+export function assertAffectedRows(rows: unknown[] | null | undefined): void {
+  if (!rows || rows.length === 0) throw new UserFacingError(STALE_WRITE_MESSAGE)
+}
+
 function isPostgrestError(error: unknown): error is PostgrestErrorLike {
   return typeof error === 'object' && error !== null && ('code' in error || 'message' in error)
 }

@@ -27,7 +27,7 @@ src/
 │  ├─ repositoryContext.ts   createRepositoryContext → { profile, data, setData, isRemote }
 │  ├─ repositories/types.ts  Review/Project/Master Repository 인터페이스 + RepositoryDeps
 │  ├─ local/                 데모(preview) 구현 — appDataReducers 순수 리듀서 사용
-│  ├─ remote/                Supabase 구현 — 위험한 쓰기는 전부 RPC (원자성·권한은 DB가 보장)
+│  ├─ remote/                Supabase 구현 — 상태 전이·원자적 다중행 쓰기는 RPC, 단순 CRUD는 RLS+행수/OCC 가드
 │  └─ mutations/             도메인별 뮤테이션 진입점. reviews/projects는 repository에 위임,
 │                            master는 일부 인라인 분기 잔존(ROADMAP Phase 3-4에서 위임 예정)
 ├─ features/                 기능 단위 (화면 컴포넌트·셀렉터·검증기·훅)
@@ -40,8 +40,8 @@ src/
 ├─ components/               공용 컴포넌트 (ui/ 프리미티브, CommandPalette, NotificationPanel, ErrorBoundary)
 ├─ domain/permissions.ts     RLS 정책의 클라이언트 거울 (실행 가능한 문서 — 테스트로 고정)
 ├─ hooks/                    공용 훅 (useTeamSummaries, useModalDismiss)
-├─ lib/                      순수 유틸 (dates·format·priority·csv·errors·attachments·notifications
-│                            ·desktopNotifications·clipboard·navigation·readState …)
+├─ lib/                      순수 유틸과 브라우저/외부 adapter. dates·format·priority·csv는 순수,
+│                            attachments·activityLog·desktopNotifications는 Storage/DB/브라우저 I/O 예외
 ├─ demo/ + demoData.ts       익명 데모 데이터 (preview 모드) — noPrivateSeedInSrc.test.ts가 익명성 강제
 ├─ types/ + types.ts         도메인 타입 배럴 (domain.ts + view.ts)
 └─ security/                 회귀 가드 테스트 (사설 데이터 유입 금지)
@@ -50,7 +50,8 @@ src/
 ## 계층 규칙
 
 - **의존 방향**: screens → features → lib/domain/types. features가 screens를 임포트하지 않는다.
-- **데이터 접근**: 화면은 `src/data`의 함수만 호출한다. Supabase 클라이언트를 화면에서 직접 만지지 않는다.
+- **데이터 접근**: 업무 데이터는 `src/data`의 함수만 호출한다. 현재 `attachments` lifecycle과
+  client activity telemetry는 `lib` adapter를 화면이 호출하는 명시적 예외이며 repository로 이전할 부채다.
 - **local/remote 등가성**: 데모(local)와 원격(remote)은 같은 Repository 인터페이스를 구현하고,
   검증 규칙(RLS 등가 가드)도 동일하게 동작해야 한다. 한쪽만 고치면 데모로 확인한 동작과 실서비스가 어긋난다.
 - **단일 기준 함수**: 마감 긴급도는 `lib/dates.ts`의 `dueUrgency`, 검토 정렬은 `lib/priority.ts`,
@@ -87,7 +88,7 @@ src/
 | 화면 렌더 | `src/screens/ReviewsPanel.test.tsx` | 다른 대형 화면은 ROADMAP Phase 3 |
 | 마이그레이션·스크립트 회귀 | `src/migrations.test.ts`, `src/scripts.test.ts` | |
 | 보안 가드 | `src/security/noPrivateSeedInSrc.test.ts` | 사설 데이터 유입 금지 |
-| RLS 자동 테스트 | `tests/rls/` | 로컬 Supabase에서만 실행(env 게이트), 아니면 skip |
+| RLS 자동 테스트 | `tests/rls/` | `npm run test:rls`; env 미구성 시 fail-closed. CI·Deploy가 결정적 local fixture로 실행 |
 
 ## 디자인
 
@@ -100,3 +101,5 @@ src/
   repository 위임으로 통일하는 작업은 [ROADMAP.md](./ROADMAP.md) Phase 3-4.
 - Shell 사이드바·CommandPalette의 탭 라벨 목록이 각자 유지된다(추가 시 두 곳 동기화 필요).
 - 대형 화면(Projects·Master·Team) 컴포넌트 테스트 부재 — ROADMAP Phase 3-2·3-3.
+- `lib/attachments.ts`와 `lib/activityLog.ts`의 I/O가 계층 예외로 남아 있다. attachment cleanup과
+  client telemetry를 repository로 옮길 때 원격 계약 테스트를 함께 이전한다.

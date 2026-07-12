@@ -5,12 +5,17 @@ on:
     branches: [main, master]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   typecheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: npm
@@ -20,8 +25,10 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: npm
@@ -31,20 +38,64 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: npm
       - run: npm ci
       - run: npm test
 
+  rls:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
+        with:
+          version: 2.109.1
+      - run: npm ci
+      - name: Start and reset local Supabase
+        run: |
+          supabase start
+          supabase db reset
+      - name: Seed deterministic RLS fixtures
+        run: |
+          eval "$(supabase status -o env)"
+          export SUPABASE_URL="$API_URL"
+          export SUPABASE_ANON_KEY="$ANON_KEY"
+          export SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
+          {
+            echo "SUPABASE_URL=$SUPABASE_URL"
+            echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
+            echo "SUPABASE_DB_URL=$DB_URL"
+            node scripts/setup-rls-fixtures.mjs
+          } >> "$GITHUB_ENV"
+      - run: npm run test:rls
+      - name: Verify private status audit event
+        run: |
+          count=$(psql "$SUPABASE_DB_URL" -tAc "select count(*) from private.review_status_events")
+          [ "$count" -ge 1 ] || { echo "::error::RLS status RPC produced no private audit event"; exit 1; }
+          mutation_count=$(psql "$SUPABASE_DB_URL" -tAc "select count(*) from private.audit_events")
+          [ "$mutation_count" -ge 1 ] || { echo "::error::RLS fixtures produced no private mutation audit event"; exit 1; }
+      - if: ${{ always() }}
+        run: supabase stop --no-backup
+
   build:
     runs-on: ubuntu-latest
-    needs: [typecheck, lint, test]
+    needs: [typecheck, lint, test, rls]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: npm

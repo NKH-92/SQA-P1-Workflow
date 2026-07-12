@@ -5,9 +5,12 @@ import type { ReviewStatusFilter, MutateFn } from '../app/types'
 import {
   addReviewFeedback,
   createRepositoryContext,
+  deleteReviewFeedback,
+  reopenReviewRequest,
   rejectReviewRequest,
   saveReviewRequest,
   updateReviewStatus,
+  updateReviewFeedback,
   withdrawReviewRequest,
 } from '../data'
 import { UserFacingError } from '../lib/errors'
@@ -49,15 +52,26 @@ export function ReviewsPanel({
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
   const [existingStorageAttachment, setExistingStorageAttachment] = useState<string | null>(null)
   const [isReviewComposerOpen, setReviewComposerOpen] = useState(false)
-  const [feedback, setFeedback] = useState<Record<string, string>>({})
   const [statusFilter, setStatusFilter] = useState<ReviewStatusFilter>('all')
   // 칸반은 상태 흐름 전체를 보는 파트장에게 유용하다. 파트원은 목록만.
   const [reviewView, setReviewView] = useState<'list' | 'kanban'>('list')
 
-  const scopedReviewRequests = selectScopedReviewRequests(data, profile)
-  const reviewTarget = data.profiles.find((item) => item.role === 'leader')
-  const statusCounts = selectReviewStatusCounts(scopedReviewRequests)
-  const visibleReviewRequests = selectVisibleReviewRequests(data, profile, statusFilter)
+  const scopedReviewRequests = useMemo(
+    () => selectScopedReviewRequests(data, profile),
+    [data, profile],
+  )
+  const reviewTarget = useMemo(
+    () => data.profiles.find((item) => item.role === 'leader'),
+    [data.profiles],
+  )
+  const statusCounts = useMemo(
+    () => selectReviewStatusCounts(scopedReviewRequests),
+    [scopedReviewRequests],
+  )
+  const visibleReviewRequests = useMemo(
+    () => selectVisibleReviewRequests(data, profile, statusFilter),
+    [data, profile, statusFilter],
+  )
   const unreadReviewIds = useMemo(
     () =>
       new Set(
@@ -78,11 +92,11 @@ export function ReviewsPanel({
 
   // 칸반 카드·딥링크는 리스트 상태 필터 밖의 요청을 가리킬 수 있다.
   // 필터 밖 요청을 선택하면 필터를 '전체'로 풀어 상세와 목록을 일치시킨다.
-  const selectReview = (id: string) => {
+  const selectReview = useCallback((id: string) => {
     const target = scopedReviewRequests.find((request) => request.id === id)
     if (target && statusFilter !== 'all' && target.status !== statusFilter) setStatusFilter('all')
     setSelectedReviewId(id)
-  }
+  }, [scopedReviewRequests, setSelectedReviewId, statusFilter])
 
   useEffect(() => {
     if (!initialSelectedId) return
@@ -194,12 +208,11 @@ export function ReviewsPanel({
       if (selectedReviewId === requestId) setSelectedReviewId(null)
     }, '검토요청을 회수했습니다.')
 
-  const rejectReview = async (requestId: string): Promise<boolean> =>
+  const rejectReview = async (requestId: string, comment: string): Promise<boolean> =>
     mutate(async () => {
-      const comment = feedback[requestId]?.trim()
-      if (!comment) throw new UserFacingError('반려 사유를 피드백에 입력해 주세요.')
-      await rejectReviewRequest(createRepositoryContext(profile, data, setData), requestId, comment)
-      setFeedback((current) => ({ ...current, [requestId]: '' }))
+      const trimmedComment = comment.trim()
+      if (!trimmedComment) throw new UserFacingError('반려 사유를 피드백에 입력해 주세요.')
+      await rejectReviewRequest(createRepositoryContext(profile, data, setData), requestId, trimmedComment)
     }, '검토요청을 반려했습니다.')
 
   const updateStatus = async (id: string, status: ReviewStatus): Promise<boolean> =>
@@ -207,12 +220,26 @@ export function ReviewsPanel({
       await updateReviewStatus(createRepositoryContext(profile, data, setData), id, status)
     }, '검토요청 상태를 변경했습니다.')
 
-  const addFeedback = (requestId: string) =>
+  const reopenReview = async (id: string): Promise<boolean> =>
     mutate(async () => {
-      const comment = feedback[requestId]?.trim()
-      if (!comment) return
-      await addReviewFeedback(createRepositoryContext(profile, data, setData), requestId, comment)
-      setFeedback((current) => ({ ...current, [requestId]: '' }))
+      await reopenReviewRequest(createRepositoryContext(profile, data, setData), id)
+    }, '검토요청을 다시 열었습니다.')
+
+  const updateFeedback = async (feedbackId: string, comment: string): Promise<boolean> =>
+    mutate(async () => {
+      await updateReviewFeedback(createRepositoryContext(profile, data, setData), feedbackId, comment)
+    }, '피드백을 수정했습니다.')
+
+  const deleteFeedback = async (feedbackId: string): Promise<boolean> =>
+    mutate(async () => {
+      await deleteReviewFeedback(createRepositoryContext(profile, data, setData), feedbackId)
+    }, '피드백을 삭제했습니다.')
+
+  const addFeedback = (requestId: string, comment: string): Promise<boolean> =>
+    mutate(async () => {
+      const trimmedComment = comment.trim()
+      if (!trimmedComment) return
+      await addReviewFeedback(createRepositoryContext(profile, data, setData), requestId, trimmedComment)
     }, '피드백을 남겼습니다.')
 
   return (
@@ -286,14 +313,15 @@ export function ReviewsPanel({
             <div className="kanban-detail">
               <ReviewDetail
                 addFeedback={addFeedback}
-                feedback={feedback}
                 onEdit={openReviewEditor}
                 onWithdraw={(id) => setPendingWithdrawId(id)}
                 pendingWithdrawId={pendingWithdrawId}
                 profile={profile}
                 rejectReview={rejectReview}
+                reopenReview={reopenReview}
+                updateFeedback={updateFeedback}
+                deleteFeedback={deleteFeedback}
                 selectedReview={selectedReview}
-                setFeedback={setFeedback}
                 updateStatus={updateStatus}
                 withdrawReview={withdrawReview}
               />
@@ -315,14 +343,15 @@ export function ReviewsPanel({
           />
           <ReviewDetail
             addFeedback={addFeedback}
-            feedback={feedback}
             onEdit={openReviewEditor}
             onWithdraw={(id) => setPendingWithdrawId(id)}
             pendingWithdrawId={pendingWithdrawId}
             profile={profile}
             rejectReview={rejectReview}
+            reopenReview={reopenReview}
+            updateFeedback={updateFeedback}
+            deleteFeedback={deleteFeedback}
             selectedReview={selectedReview}
-            setFeedback={setFeedback}
             updateStatus={updateStatus}
             withdrawReview={withdrawReview}
           />

@@ -16,7 +16,6 @@ import {
 } from '../../../data'
 import { selectProductGroups } from '../master.selectors'
 import {
-  validateProductAssignment,
   validateProductCreate,
   validateProductImport,
   validateProductUpdate,
@@ -103,7 +102,6 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
   const assignProduct = async () => {
     const ok = await mutate(async () => {
       if (!productAssignment.user_id) return
-      validateProductAssignment(data, productAssignment.user_id, productAssignment.product_id)
       await assignProductMutation(createRepositoryContext(profile, data, setData), {
         userId: productAssignment.user_id,
         productId: productAssignment.product_id,

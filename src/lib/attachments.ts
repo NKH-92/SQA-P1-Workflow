@@ -7,6 +7,25 @@ export const STORAGE_ATTACHMENT_PREFIX = `storage://${REVIEW_ATTACHMENTS_BUCKET}
 export const MAX_REVIEW_ATTACHMENT_BYTES = 10 * 1024 * 1024
 export const ALLOWED_REVIEW_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.png', '.jpg', '.jpeg', '.txt', '.zip']
 
+const REVIEW_ATTACHMENT_MIME_TYPES: Record<string, string> = {
+  '.pdf': 'application/pdf',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.txt': 'text/plain',
+  '.zip': 'application/zip',
+}
+
+export function reviewAttachmentContentType(fileName: string) {
+  const lower = fileName.toLowerCase()
+  const extension = ALLOWED_REVIEW_EXTENSIONS.find((candidate) => lower.endsWith(candidate))
+  return extension ? REVIEW_ATTACHMENT_MIME_TYPES[extension] : undefined
+}
+
 export function isStorageAttachment(value?: string | null) {
   return Boolean(value?.startsWith(STORAGE_ATTACHMENT_PREFIX))
 }
@@ -46,7 +65,10 @@ export async function uploadReviewAttachment(userId: string, file: File) {
 
   const safeName = file.name.replace(/[^\w.\-()가-힣]/g, '_')
   const path = `${userId}/${crypto.randomUUID()}-${safeName}`
-  const { error } = await supabase.storage.from(REVIEW_ATTACHMENTS_BUCKET).upload(path, file, { upsert: false })
+  const { error } = await supabase.storage.from(REVIEW_ATTACHMENTS_BUCKET).upload(path, file, {
+    upsert: false,
+    contentType: reviewAttachmentContentType(file.name),
+  })
   if (error) throw error
   return toStorageAttachmentUrl(path)
 }

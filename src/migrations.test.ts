@@ -292,6 +292,12 @@ describe('Supabase migrations', () => {
     expect(migration).toContain('grant execute on function public.add_product_assignment(uuid, uuid) to authenticated')
   })
 
+  it('drops drifted role-only leader write policies on projects and assignments', () => {
+    const migration = readMigration('202607120002_drop_role_only_leader_write_policies.sql')
+    expect(migration).toContain('drop policy if exists "projects_write_leader" on public.projects')
+    expect(migration).toContain('drop policy if exists "project_assignments_write_leader" on public.project_assignments')
+  })
+
   it('does not delete duplicate products in uniqueness migration', () => {
     const migration = readMigration('202607060002_p1_product_unique_and_assignment_rpcs.sql')
 

@@ -24,7 +24,7 @@ describe('migration scripts', () => {
     expect(script).toContain('active_leader_password_gate_ok')
     expect(script).toContain('profile_note_private_audit_ok')
     expect(script).toContain('latest_migration_version_ok')
-    expect(script).toContain("version = '202607110011'")
+    expect(script).toContain("version = '202607120001'")
     expect(script).toContain('count(*) >= 12')
     expect(script).not.toContain("proacl::text not like '%=X%'")
     expect(script).toContain("SupabaseCliVersion = '2.109.1'")

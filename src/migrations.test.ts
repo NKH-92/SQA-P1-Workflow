@@ -284,6 +284,14 @@ describe('Supabase migrations', () => {
     expect(migration).toContain("private.record_mutation_audit('profile_note')")
   })
 
+  it('revokes leftover anon grants on the add-only assignment RPCs', () => {
+    const migration = readMigration('202607120001_revoke_anon_from_add_assignment_rpcs.sql')
+    expect(migration).toContain('revoke all on function public.add_product_assignment(uuid, uuid) from anon')
+    expect(migration).toContain('revoke all on function public.add_duty_assignment(uuid, uuid) from anon')
+    expect(migration).toContain('revoke all on public.public_leader_profiles from anon')
+    expect(migration).toContain('grant execute on function public.add_product_assignment(uuid, uuid) to authenticated')
+  })
+
   it('does not delete duplicate products in uniqueness migration', () => {
     const migration = readMigration('202607060002_p1_product_unique_and_assignment_rpcs.sql')
 

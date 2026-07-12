@@ -1,3 +1,6 @@
+// @vitest-environment node
+// These are pure network integration tests; under the default jsdom environment the
+// jsdom Blob is incompatible with Node's native fetch (undici) and uploads hang forever.
 import { createClient } from '@supabase/supabase-js'
 import { describe, expect, it } from 'vitest'
 import { isSupabaseLocalConfigured, RLS_SKIP_NOTE } from './helpers'
@@ -25,7 +28,7 @@ describeRls(`RLS review-attachments storage (${RLS_SKIP_NOTE})`, () => {
     const ownPath = `${memberAUserId}/rls-smoke.txt`
     const { error: ownUploadError } = await client.storage
       .from('review-attachments')
-      .upload(ownPath, new Blob(['rls smoke'], { type: 'text/plain' }), { upsert: true })
+      .upload(ownPath, 'rls smoke', { contentType: 'text/plain', upsert: true })
 
     expect(ownUploadError).toBeNull()
 
@@ -33,7 +36,7 @@ describeRls(`RLS review-attachments storage (${RLS_SKIP_NOTE})`, () => {
     const foreignPath = `${otherUserId}/rls-smoke.txt`
     const { error: foreignUploadError } = await client.storage
       .from('review-attachments')
-      .upload(foreignPath, new Blob(['rls smoke'], { type: 'text/plain' }), { upsert: true })
+      .upload(foreignPath, 'rls smoke', { contentType: 'text/plain', upsert: true })
 
     expect(foreignUploadError).not.toBeNull()
   })

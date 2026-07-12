@@ -1,0 +1,48 @@
+name: Diagnose Grants (temporary, read-only)
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect assignment RPC grants (read-only)
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          echo "## Assignment RPC diagnostic" >> "$GITHUB_STEP_SUMMARY"
+
+          for sig in \
+            'public.add_product_assignment(uuid,uuid)' \
+            'public.add_duty_assignment(uuid,uuid)' \
+            'public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)'; do
+            echo "=== $sig ==="
+            psql "$DATABASE_URL" -tA -F '|' -c "
+              select
+                '$sig',
+                'exists='   || (to_regprocedure('$sig') is not null)::text,
+                'secdef='   || coalesce((select prosecdef from pg_proc where oid = to_regprocedure('$sig'))::text,'null'),
+                'proconfig='|| coalesce((select array_to_string(proconfig, ',') from pg_proc where oid = to_regprocedure('$sig')),'null'),
+                'anon_exec='|| coalesce(has_function_privilege('anon', to_regprocedure('$sig'), 'EXECUTE')::text,'null'),
+                'auth_exec='|| coalesce(has_function_privilege('authenticated', to_regprocedure('$sig'), 'EXECUTE')::text,'null'),
+                'acl='      || coalesce((select array_to_string(proacl, ',') from pg_proc where oid = to_regprocedure('$sig')),'null')
+            "
+          done
+
+          echo "=== return type of replace RPC ==="
+          psql "$DATABASE_URL" -tA -c "select pg_get_function_result(to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)'))"
+
+          echo "=== event triggers (possible auto-expose re-grant) ==="
+          psql "$DATABASE_URL" -tA -F '|' -c "
+            select evtname, evtevent, evtenabled,
+                   (select proname from pg_proc where oid = evtfoid) as fn
+            from pg_event_trigger order by evtname
+          "
+
+          echo "=== schema_migrations tail ==="
+          psql "$DATABASE_URL" -tA -c "select version from supabase_migrations.schema_migrations order by version desc limit 5"

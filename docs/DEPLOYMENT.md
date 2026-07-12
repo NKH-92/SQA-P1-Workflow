@@ -34,7 +34,10 @@ set name = excluded.name,
 이 저장소는 GitHub Actions로 **Cloudflare Workers**(`wrangler deploy --assets`)에 정적 SPA를 배포한다.
 
 - **CI** (`.github/workflows/ci.yml`): push/PR 시 `typecheck`, `lint`, `test`, `build` 4 job
-- **Deploy Worker** (`.github/workflows/deploy-worker.yml`): `main` push 또는 `workflow_dispatch` 시 `typecheck` → `lint` → `test` → deploy config check → `build` → deploy
+- **Deploy Worker** (`.github/workflows/deploy-worker.yml`): `workflow_dispatch`에서 `main`을 선택하고 `deploy_confirm=true`를 명시한 경우에만 branch guard → RLS → `typecheck` → `lint` → `test` → deploy config check → 운영 DB migration/RPC readiness check → `build` → deploy를 수행한다. `main` push는 CI만 실행하며 자동 운영 배포를 시작하지 않는다.
+- 배포 전에는 Supabase URL/anon key와 Auth 설정(signup OFF, email confirmation ON, anonymous OFF)을 실제 endpoint로 확인한다. 배포 후에는 `WORKER_URL`의 root mount·CSP·nosniff를 확인한다. **배포 후 healthcheck가 red면 이미 새 Worker가 올라간 상태**이므로 아래 롤백 절차로 즉시 이전 정상 버전을 재배포하고 원인을 조사한다.
+- 현재 healthcheck는 로그인 전 정적 HTML이 인증 없이 읽힌다는 전제다. Cloudflare Access를 활성화할 때는 Access service token을 healthcheck에 먼저 추가한 뒤 정책을 켠다. 그렇지 않으면 정상적인 `403`도 배포 실패로 판정한다.
+- 프런트가 신규 DB RPC를 사용하기 시작하는 변경은 한 번에 병합하지 않는다. migration-only 반영 → 직전 백업 → DB Migrate postcondition/RLS 확인 → 프런트 반영 순서로 분리한다.
 
 ### GitHub Variables / Secrets
 
@@ -54,13 +57,15 @@ Repository Settings > Secrets and variables > Actions에 다음을 등록한다.
 
 | 트리거 | Variables/Secrets 미설정 시 | green check 의미 |
 |---|---|---|
-| `push` → `main` | 워크플로 **실패** (exit 1). Job Summary에 누락 항목 표시 | 빌드·테스트는 통과했지만 **배포되지 않음** |
-| `workflow_dispatch` | **테스트만** 수행, build/deploy **스킵** (warning). Job Summary에 스킵 사유 표시 | 수동 test-only 실행 성공. 배포·빌드는 아님 |
-| 위 설정 모두 등록됨 | Wrangler deploy 실행 | Job Summary에 **Deploy succeeded** — 실제 배포 완료 |
+| `push` → `main` | 수동 배포 정책 위반으로 실패 | 운영 배포 없음 |
+| `workflow_dispatch` + `deploy_confirm=false` | 확인 단계에서 실패 | 운영 배포 없음 |
+| `workflow_dispatch` + `main` + `deploy_confirm=true` | 설정 누락 시 즉시 실패 | 모든 게이트 통과 시에만 실제 배포 |
 
-**주의:** `main` push에서 deploy env가 없으면 워크플로가 **실패**한다 — 설정 누락을 조용히 넘기지 않기 위한 의도된 동작이다. CI 테스트만 확인하려면 Actions에서 **Deploy Worker** 워크플로를 `workflow_dispatch`로 실행한다 (env 미설정 시 test만 통과, build/deploy는 스킵).
+**주의:** 운영 배포는 자동화하지 않는다. Actions에서 **Deploy Worker**를 `workflow_dispatch`로 실행하고 Branch는 반드시 `main`, `deploy_confirm=true`를 선택해야 한다. 설정 누락, 비-main ref, 확인값 미입력은 모두 즉시 실패한다. 설정 누락을 성공한 테스트 실행으로 처리하는 경로는 없다.
 
-### 수동 배포
+### 수동 배포 (break-glass 전용)
+
+아래 명령은 보호된 GitHub Environment, 승인자, 배포 전 DB readiness gate를 우회할 수 있으므로 정규 배포에 사용하지 않는다. Actions 자체가 장시간 사용할 수 없는 장애 상황에서만 승인자·대상 Worker·백업·검증 결과를 기록하고 실행한다.
 
 **PowerShell (Windows)** — 파트장 PC 기준. 인라인 `VAR=x cmd` 문법은 PowerShell에서 동작하지 않으므로 `$env:VAR='x'`로 먼저 설정한다.
 
@@ -71,7 +76,8 @@ $env:VITE_APP_MODE = 'production'
 $env:VITE_SUPABASE_URL = '<SUPABASE_URL>'
 $env:VITE_SUPABASE_ANON_KEY = '<SUPABASE_ANON_KEY>'
 npm run build
-npx --yes wrangler@4 deploy --name <WORKER_NAME> --assets dist --keep-vars --compatibility-date 2026-07-04
+npm ci
+npx --no-install wrangler deploy --name <WORKER_NAME> --assets dist --keep-vars --compatibility-date 2026-07-04
 ```
 
 **bash / macOS** — 인라인 env 문법 사용 가능.
@@ -80,7 +86,8 @@ npx --yes wrangler@4 deploy --name <WORKER_NAME> --assets dist --keep-vars --com
 npm ci
 npm test
 VITE_APP_MODE=production VITE_SUPABASE_URL=... VITE_SUPABASE_ANON_KEY=... npm run build
-npx --yes wrangler@4 deploy --name <WORKER_NAME> --assets dist --keep-vars --compatibility-date 2026-07-04
+npm ci
+npx --no-install wrangler deploy --name <WORKER_NAME> --assets dist --keep-vars --compatibility-date 2026-07-04
 ```
 
 CI(`deploy-worker.yml`)와 동일한 wrangler 버전·`--compatibility-date`를 사용한다. 날짜를 올릴 때는 CI와 이 문서를 함께 바꾼다.
@@ -123,7 +130,7 @@ Pages URL을 Supabase Auth의 Site URL 및 Redirect URLs에 추가한다.
 ## 운영 전 보호
 
 - 앱 내부 권한은 Supabase Auth와 RLS가 담당한다. public sign-up은 **비활성화 상태를 유지**하고(적용 완료 — [OPERATIONS.md](./OPERATIONS.md) Auth 절), 계정은 Dashboard에서만 생성한다.
-- 운영 URL·Supabase project ref는 저장소에 커밋하지 않는다. GitHub Variables/Secrets와 [MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md) 체크리스트 하단에 `<WORKER_URL>`, `<PROJECT_REF>` 플레이스홀더로 기록한다.
+- 운영 URL·Supabase project ref는 저장소에 커밋하지 않는다. `WORKER_URL`은 배포 후 자동 헬스체크용 GitHub Actions Variable로 등록하고, 실제 값은 GitHub Variables/Secrets와 [MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md) 체크리스트 하단에 `<WORKER_URL>`, `<PROJECT_REF>` 플레이스홀더로 기록한다.
 - 백업·복구·장애 대응은 [OPERATIONS.md](./OPERATIONS.md)를 참고한다.
 - Supabase Pro 전환 기준:
   - 실제 업무에서 매일 사용하기 시작함

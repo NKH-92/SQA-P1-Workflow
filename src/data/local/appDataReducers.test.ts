@@ -4,6 +4,8 @@ import {
   createReviewRequest,
   removeProduct,
   removeReviewRequest,
+  replaceProductAssignments,
+  replaceDutyAssignments,
   replaceProjectAssignments,
   setReviewStatus,
   updateProject,
@@ -72,6 +74,20 @@ describe('appDataReducers', () => {
     const next = replaceProjectAssignments(data, project!, [previewMember.id], [previewMember])
     const assigned = next.projectAssignments.filter((item) => item.project_id === project!.id)
     expect(assigned.some((item) => item.user_id === previewMember.id)).toBe(true)
+  })
+
+  it('deduplicates assignment ids like the remote on-conflict path', () => {
+    const data = createPreviewData()
+    const project = data.projects[0]!
+    const product = data.products[0]!
+    const duty = data.duties[0]!
+    const projectNext = replaceProjectAssignments(data, project, [previewMember.id, previewMember.id], [previewMember])
+    const productNext = replaceProductAssignments(projectNext, product.id, [previewMember.id, previewMember.id], product, [previewMember])
+    const dutyNext = replaceDutyAssignments(productNext, duty.id, [previewMember.id, previewMember.id], duty, [previewMember])
+
+    expect(dutyNext.projectAssignments.filter((item) => item.project_id === project.id && item.user_id === previewMember.id)).toHaveLength(1)
+    expect(dutyNext.productAssignments.filter((item) => item.product_id === product.id && item.user_id === previewMember.id)).toHaveLength(1)
+    expect(dutyNext.dutyAssignments.filter((item) => item.duty_id === duty.id && item.user_id === previewMember.id)).toHaveLength(1)
   })
 
   it('removes a product and its assignments', () => {

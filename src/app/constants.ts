@@ -2,7 +2,6 @@ import type { AdminDeleteTable } from './types'
 import type { AppData } from '../types'
 
 export const PASSWORD_MIN_LENGTH = 8
-export const TEMP_PASSWORD_MIN_LENGTH = 4
 
 export const emptyData: AppData = {
   profiles: [],

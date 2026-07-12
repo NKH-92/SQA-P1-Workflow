@@ -1,4 +1,5 @@
 import { recordActivityLog } from '../../lib/activityLog'
+import { assertAffectedRows } from '../../lib/errors'
 import { supabase } from '../../lib/supabase'
 import type { RepositoryDeps, MasterRepository } from '../repositories/types'
 
@@ -8,8 +9,9 @@ export function createSupabaseMasterRepository(ctx: RepositoryDeps): MasterRepos
   return {
     async deleteAllowedUser(id) {
       const invite = data.allowedUsers.find((item) => item.id === id)
-      const { error } = await supabase!.from('allowed_users').delete().eq('id', id)
+      const { data: affected, error } = await supabase!.from('allowed_users').delete().eq('id', id).select('id')
       if (error) throw error
+      assertAffectedRows(affected)
       await recordActivityLog(setData, {
         actor: profile,
         entityType: 'allowed_user',
@@ -21,8 +23,9 @@ export function createSupabaseMasterRepository(ctx: RepositoryDeps): MasterRepos
 
     async deleteProduct(id) {
       const product = data.products.find((item) => item.id === id)
-      const { error } = await supabase!.from('products').delete().eq('id', id)
+      const { data: affected, error } = await supabase!.from('products').delete().eq('id', id).select('id')
       if (error) throw error
+      assertAffectedRows(affected)
       await recordActivityLog(setData, {
         actor: profile,
         entityType: 'product',
@@ -34,8 +37,9 @@ export function createSupabaseMasterRepository(ctx: RepositoryDeps): MasterRepos
 
     async deleteDuty(id) {
       const duty = data.duties.find((item) => item.id === id)
-      const { error } = await supabase!.from('duties').delete().eq('id', id)
+      const { data: affected, error } = await supabase!.from('duties').delete().eq('id', id).select('id')
       if (error) throw error
+      assertAffectedRows(affected)
       await recordActivityLog(setData, {
         actor: profile,
         entityType: 'duty',
@@ -47,8 +51,13 @@ export function createSupabaseMasterRepository(ctx: RepositoryDeps): MasterRepos
 
     async deleteDutyMajorCategory(id) {
       const category = data.dutyMajorCategories.find((item) => item.id === id)
-      const { error } = await supabase!.from('duty_major_categories').delete().eq('id', id)
+      const { data: affected, error } = await supabase!
+        .from('duty_major_categories')
+        .delete()
+        .eq('id', id)
+        .select('id')
       if (error) throw error
+      assertAffectedRows(affected)
       await recordActivityLog(setData, {
         actor: profile,
         entityType: 'duty_major_category',

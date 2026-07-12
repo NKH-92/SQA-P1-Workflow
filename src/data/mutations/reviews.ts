@@ -40,10 +40,26 @@ export async function updateReviewStatus(
   return reviewRepository(ctx).updateReviewStatus(requestId, status)
 }
 
+export async function reopenReviewRequest(ctx: RepositoryContext, requestId: string): Promise<void> {
+  return reviewRepository(ctx).reopenReviewRequest(requestId)
+}
+
 export async function addReviewFeedback(
   ctx: RepositoryContext,
   requestId: string,
   comment: string,
 ): Promise<void> {
   await reviewRepository(ctx).addReviewFeedback(requestId, comment)
+}
+
+export async function updateReviewFeedback(
+  ctx: RepositoryContext,
+  feedbackId: string,
+  comment: string,
+): Promise<void> {
+  return reviewRepository(ctx).updateReviewFeedback(feedbackId, comment)
+}
+
+export async function deleteReviewFeedback(ctx: RepositoryContext, feedbackId: string): Promise<void> {
+  return reviewRepository(ctx).deleteReviewFeedback(feedbackId)
 }

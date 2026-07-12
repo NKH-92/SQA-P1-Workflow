@@ -26,6 +26,9 @@ export function ActivityPanel({ data }: { data: AppData }) {
       </label>
       <Section title="최근 100건" icon={<MessageSquare size={18} />}>
         <p className="empty-copy">더 오래된 기록은 Supabase Dashboard 또는 백업에서 확인하세요.</p>
+        <p className="empty-copy" role="note">
+          이 화면의 활동 로그는 빠른 확인을 위한 UX telemetry이며, 권한·감사 증거의 원본으로 사용하지 마세요.
+        </p>
         <div className="activity-list">
           {visibleLogs.length === 0 ? (
             <p className="empty-copy">표시할 활동이 없습니다.</p>

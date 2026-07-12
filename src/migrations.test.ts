@@ -147,6 +147,143 @@ describe('Supabase migrations', () => {
     expect(migration).toContain('set search_path = public')
   })
 
+  it('adds role-checked, add-only product and duty assignment RPCs', () => {
+    const migration = readMigration('202607110001_add_single_assignment_rpcs.sql')
+
+    expect(migration).toContain('add_product_assignment')
+    expect(migration).toContain('add_duty_assignment')
+    expect(migration).toContain("require_profile_role(p_user_id, 'member'")
+    expect(migration).toContain('profile_is_active(p_user_id)')
+    expect(migration).toContain('on conflict (user_id, product_id) do nothing')
+    expect(migration).toContain('on conflict (user_id, duty_id) do nothing')
+    expect(migration).toContain('revoke all on function public.add_product_assignment(uuid, uuid) from public')
+    expect(migration).toContain('grant execute on function public.add_duty_assignment(uuid, uuid) to authenticated')
+  })
+
+  it('requires active member targets for all product and duty assignment write paths', () => {
+    const migration = readMigration('202607110002_require_member_for_assignments.sql')
+
+    expect(migration).toContain('create or replace function public.validate_assignment_user_active()')
+    expect(migration).toContain("require_profile_role(new.user_id, 'member'")
+    expect(migration).toContain('profile_is_active(new.user_id)')
+    expect(migration).toContain('return new')
+  })
+
+  it('gates the owner-executed leader name view by current app access', () => {
+    const migration = readMigration('202607110003_gate_public_leader_profiles.sql')
+    expect(migration).toContain('public.can_use_app()')
+    expect(migration).toContain('security_invoker = false')
+    expect(migration).toContain('revoke all on public.public_leader_profiles from public')
+    expect(migration).toContain('grant select on public.public_leader_profiles to authenticated')
+  })
+
+  it('makes review status RPC-only and records committed transitions privately', () => {
+    const migration = readMigration('202607110004_restrict_review_status_and_audit.sql')
+    expect(migration).toContain('revoke update on table public.review_requests from authenticated')
+    expect(migration).toContain('grant update (title, description, attachment_url, due_date)')
+    expect(migration).toContain('create table if not exists private.review_status_events')
+    expect(migration).toContain('after update of status on public.review_requests')
+    expect(migration).toContain('when (old.status is distinct from new.status)')
+    expect(migration).toContain('txid_current()')
+    expect(migration).toContain('revoke all on schema private from authenticated')
+  })
+
+  it('records core mutations in a private transaction-bound audit trail', () => {
+    const migration = readMigration('202607110005_private_mutation_audit.sql')
+    expect(migration).toContain('create table if not exists private.audit_events')
+    expect(migration).toContain('security definer')
+    expect(migration).toContain('txid_current()')
+    expect(migration).toContain("when 'UPDATE' then 'updated'")
+    expect(migration).toContain("private.record_mutation_audit('product_assignment')")
+    expect(migration).toContain("private.record_mutation_audit('review_request')")
+    expect(migration).toContain("private.record_mutation_audit('project_assignment')")
+    expect(migration).toContain('revoke all on table private.audit_events from authenticated')
+    expect(migration).not.toContain('old_row')
+    expect(migration).not.toContain('new_row')
+  })
+
+  it('serializes concurrent last-active-leader checks', () => {
+    const migration = readMigration('202607110006_serialize_last_leader_guard.sql')
+    expect(migration.match(/pg_advisory_xact_lock/g)).toHaveLength(2)
+    expect(migration).toContain("hashtextextended('sqa-p1-active-leader-guard', 0)")
+    expect(migration).toContain('volatile')
+    expect(migration).toContain('fresh SPI snapshot')
+    expect(migration).toContain('revoke all on function public.count_active_leaders_except(uuid) from authenticated')
+    expect(migration).toContain('public.count_active_leaders_except(old.id) = 0')
+    expect(migration).toContain('public.count_active_leaders_except(linked_profile_id) = 0')
+  })
+
+  it('adds optimistic concurrency to project assignment replacement', () => {
+    const migration = readMigration('202607110007_serialize_project_assignment_replace.sql')
+    expect(migration).toContain('replace_project_assignments_if_current')
+    expect(migration).toContain('p_expected_updated_at timestamptz')
+    expect(migration).toContain('returns timestamptz')
+    expect(migration).toContain('for update')
+    expect(migration).toContain('project changed since it was opened')
+    expect(migration).toContain('set updated_at = clock_timestamp()')
+    expect(migration).toContain('return v_current_updated_at')
+    expect(migration).toContain('grant execute on function public.replace_project_assignments_if_current')
+  })
+
+  it('adds leader-only audited reopen and comment-only feedback correction', () => {
+    const migration = readMigration('202607110008_reopen_review_requests.sql')
+    expect(migration).toContain('reopen_review_request')
+    expect(migration).toContain('public.is_active_leader()')
+    expect(migration).toContain('for update')
+    expect(migration).toContain("only approved or rejected review requests can be reopened")
+    expect(migration).toContain("set status = 'pending'")
+    expect(migration).toContain("'reopened'")
+    expect(migration).toContain('jsonb_build_object')
+    expect(migration).toContain('revoke update on table public.review_feedback from authenticated')
+    expect(migration).toContain('grant update (comment) on table public.review_feedback to authenticated')
+    expect(migration).toContain('grant execute on function public.reopen_review_request(uuid) to authenticated')
+  })
+
+  it('closes password-gated member writes and invalidates project OCC on assignment changes', () => {
+    const migration = readMigration('202607110009_harden_review_member_and_project_assignment_paths.sql')
+    expect(migration).toContain('public.can_use_app()')
+    expect(migration).toContain('leader_id = auth.uid()')
+    expect(migration).toContain('bump_project_revision_from_assignment')
+    expect(migration).toContain('after insert or update or delete on public.project_assignments')
+    expect(migration).toContain('clock_timestamp()')
+    expect(migration).toContain('old.project_id is distinct from new.project_id')
+    expect(migration).toContain('revoke insert, update, delete on table public.project_assignments from authenticated')
+  })
+
+  it('retains the baseline assignment RPC before revoking direct table writes', () => {
+    const baseline = readMigration('202607060001_p0_atomic_assignments_and_review_status.sql')
+    const occ = readMigration('202607110007_serialize_project_assignment_replace.sql')
+    const hardening = readMigration('202607110009_harden_review_member_and_project_assignment_paths.sql')
+    expect(baseline).toContain('create or replace function public.replace_project_assignments(')
+    expect(occ).toContain('create or replace function public.replace_project_assignments_if_current(')
+    expect(hardening.indexOf('revoke insert, update, delete on table public.project_assignments from authenticated')).toBeGreaterThan(
+      hardening.indexOf('create trigger project_assignments_bump_project_revision'),
+    )
+  })
+
+  it('records review status and feedback activity in the mutation transaction', () => {
+    const migration = readMigration('202607110010_atomic_review_activity_logs.sql')
+    expect(migration).toContain('create or replace function public.update_review_request_status')
+    expect(migration).toContain('create or replace function public.reject_review_request')
+    expect(migration).toContain('create or replace function public.add_review_feedback')
+    expect(migration).toContain('security definer')
+    expect(migration).toContain("set search_path = ''")
+    expect(migration).toContain('for update')
+    expect(migration).toContain('insert into public.activity_logs')
+    expect(migration).toContain("p_comment !~ '[^[:space:]]'")
+    expect(migration).toContain('authentication required')
+    expect(migration).toContain("revoke all on function public.update_review_request_status(uuid, public.review_status) from public")
+    expect(migration).toContain("grant execute on function public.add_review_feedback(uuid, text) to authenticated")
+  })
+
+  it('adds profile notes to the private transaction-bound audit trail', () => {
+    const migration = readMigration('202607110011_add_profile_note_private_audit.sql')
+    expect(migration).toContain("to_regprocedure('private.record_mutation_audit()')")
+    expect(migration).toContain('profile_notes_private_audit')
+    expect(migration).toContain('after insert or update or delete on public.profile_notes')
+    expect(migration).toContain("private.record_mutation_audit('profile_note')")
+  })
+
   it('does not delete duplicate products in uniqueness migration', () => {
     const migration = readMigration('202607060002_p1_product_unique_and_assignment_rpcs.sql')
 

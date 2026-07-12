@@ -29,4 +29,18 @@ describeRls(`RLS public leader profiles (${RLS_SKIP_NOTE})`, () => {
     expect(data!.length).toBeGreaterThan(0)
     expect(data!.every((row) => 'name' in row && !('email' in row))).toBe(true)
   })
+
+  it('returns no leader names to an inactive authenticated profile', async () => {
+    const email = process.env.RLS_INACTIVE_MEMBER_EMAIL
+    const password = process.env.RLS_INACTIVE_MEMBER_PASSWORD
+    if (!email || !password) expect.fail('Set inactive member RLS fixture credentials')
+
+    const client = createClient(url, anonKey, { auth: { persistSession: false } })
+    const { error: signInError } = await client.auth.signInWithPassword({ email, password })
+    expect(signInError).toBeNull()
+
+    const { data, error } = await client.from('public_leader_profiles').select('id, name')
+    expect(error).toBeNull()
+    expect(data).toEqual([])
+  })
 })

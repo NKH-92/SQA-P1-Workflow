@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   isStorageAttachment,
+  reviewAttachmentContentType,
   toStorageAttachmentUrl,
   validateReviewAttachmentFile,
   validateStorageAttachmentOwnership,
@@ -34,5 +35,14 @@ describe('attachments', () => {
     expect(validateStorageAttachmentOwnership('user-1', other)).toBe('본인이 업로드한 파일만 첨부할 수 있습니다.')
     expect(validateStorageAttachmentOwnership('user-1', 'https://example.com/file.pdf')).toBeNull()
     expect(validateStorageAttachmentOwnership('user-1', null)).toBeNull()
+  })
+
+  it('normalizes allowed attachment extensions to standard MIME types', () => {
+    expect(reviewAttachmentContentType('bundle.ZIP')).toBe('application/zip')
+    expect(reviewAttachmentContentType('report.docx')).toBe(
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    )
+    expect(reviewAttachmentContentType('photo.jpeg')).toBe('image/jpeg')
+    expect(reviewAttachmentContentType('payload.exe')).toBeUndefined()
   })
 })

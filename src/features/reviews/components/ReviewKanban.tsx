@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { ReviewRequest, ReviewStatus } from '../../../types'
 import { dueDateLabel, dueDateShortLabel, dueUrgency } from '../../../lib/dates'
 
@@ -17,7 +18,7 @@ function cardUrgency(request: ReviewRequest): 'urgent' | 'warning' | 'normal' {
  * 검토요청 상태별 칸반 보드. 파트장이 대기/완료/반려 흐름을 한눈에 본다.
  * 카드 클릭은 목록과 동일하게 상세를 선택한다(상태 변경은 상세에서 수행).
  */
-export function ReviewKanban({
+export const ReviewKanban = memo(function ReviewKanban({
   requests,
   selectedReviewId,
   onSelectReview,
@@ -73,4 +74,4 @@ export function ReviewKanban({
       })}
     </div>
   )
-}
+})

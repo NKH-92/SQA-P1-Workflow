@@ -44,6 +44,19 @@ describe('reviewPriorityScore', () => {
     expect(sorted.map((item) => item.id)).toEqual(['2', '3', '1'])
   })
 
+  it('keeps status buckets disjoint even with extreme due dates', () => {
+    const farFuturePending = makeRequest({ status: 'pending', due_date: '9999-12-31' })
+    const ancientRejected = makeRequest({ status: 'rejected', due_date: '1900-01-01' })
+    const ancientApproved = makeRequest({ status: 'approved', due_date: '1900-01-01' })
+
+    expect(reviewPriorityScore(farFuturePending, now)).toBeLessThan(
+      reviewPriorityScore(ancientRejected, now),
+    )
+    expect(reviewPriorityScore(ancientRejected, now)).toBeLessThan(
+      reviewPriorityScore(ancientApproved, now),
+    )
+  })
+
   it('sorts member view by created_at descending', () => {
     const older = makeRequest({ id: 'old', created_at: '2026-07-01T00:00:00.000Z' })
     const newer = makeRequest({ id: 'new', created_at: '2026-07-04T00:00:00.000Z' })

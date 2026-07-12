@@ -20,16 +20,18 @@
 - 파트장이 검토요청을 `반려`할 때 피드백(사유) 없이는 상태 전환이 되지 않는다.
 - 파트장 홈 우선처리 큐에서 검토요청을 클릭하면 검토요청 탭 해당 항목 상세가 바로 선택된다.
 - URL 해시(`#/reviews?id=...`)로 새로고침해도 같은 탭·항목이 유지된다.
+- 6개월 이전 종결 검토요청의 URL 해시도 단건 on-demand 조회 후 상세가 열리고, 접근권한 밖/삭제된 ID만 안내 후 해시가 정리된다.
 - 파트장이 프로젝트 배정 인원을 추가/제외하고, 프로젝트를 삭제할 수 있다.
 - 마스터 화면에서 제품/업무/초대 이름·코드·역할을 인라인 수정할 수 있다.
 - 중복 제품명·업무명·초대 이메일·중복 제품 배정 시도 시 한국어 안내가 표시된다.
 - 파트원 검토요청 목록은 최신 접수순, 파트장 목록은 진행 중 요청이 종결 요청보다 위에 온다.
 - 검토요청 탭을 열면 마지막 확인 시각 이후 신규 요청·피드백 수가 사이드바 뱃지에 표시되고, 탭 진입 후 뱃지가 사라진다.
+- pending + 최근 종결 검토요청의 단일 조회가 상태 전환 중 행을 누락하지 않고, 겹친 행의 최신 `updated_at` 및 feedback ID union을 유지한다.
 - 파트장 대시보드 `월간 검토 처리`에 이번 달 접수·완료·반려·평균 처리일과 최근 6개월 표가 보인다.
 - 파트장 `활동 로그` 탭 제목이 **최근 100건**이며, 더 오래된 기록은 Dashboard/백업에서 확인해야 함을 안내한다.
 - 마스터 `제품`/`초대 관리` 탭에서 CSV 가져오기로 일괄 등록할 수 있고, 기존 등록분과 **파일 내 중복 행**을 모두 건너뛰며, 가져온 건수와 건너뛴 건수를 안내한다.
 - 앱 로그인 화면에 **가입 UI가 없고** 로그인만 가능하다. 미초대 계정은 `BlockedProfile` 안내가 표시된다.
-- 파트장은 `pending` 검토만 `완료`/`반려`로 전환할 수 있고, `approved`/`rejected`에서 상태 되돌리기 UI가 없다.
+- 파트장은 `pending` 검토만 `완료`/`반려`로 전환할 수 있고, `approved`/`rejected`에서는 확인 후 `다시 열기`로 `pending`에 복귀할 수 있다. 파트원에게는 재오픈 UI가 없다.
 - 검토요청 작성 시 **파일 업로드만** 첨부 가능하며 외부 URL 입력 필드는 없다. 데모 모드에서는 파일 첨부 시 안내 오류가 표시된다.
 - Storage 첨부(`storage://review-attachments/...`)가 있는 검토요청은 `첨부 열기` 링크로 열 수 있다(Supabase 연결 환경).
 - 마스터 초대 카드에서 가입한 사용자를 `비활성화`/`활성화`할 수 있고, 비활성 계정은 로그인 후 안내 화면만 표시된다.
@@ -47,7 +49,7 @@
 
 ## RLS 수동 검증
 
-> 자동화된 RLS 테스트가 `tests/rls/`에 있다 (로컬 Supabase 필요 — 실행 방법은 [OPERATIONS.md](./OPERATIONS.md) 분기 복구 리허설 절 참고). 자동 테스트가 1차 검증 수단이고, 아래 수동 시나리오는 로컬/자동화가 불가능할 때의 대체 경로이자 자동 테스트가 못 덮는 항목의 보완이다.
+> 자동화된 RLS 테스트가 `tests/rls/`에 있다. `supabase start && supabase db reset` 후 `supabase status -o env`의 local URL/key를 설정하고 `node scripts/setup-rls-fixtures.mjs`로 fixture를 만든 다음 `npm run test:rls`를 실행한다. 전용 명령은 환경이 없으면 skip하지 않고 실패한다. CI와 Deploy Worker도 동일한 local Supabase fixture job을 필수 gate로 실행한다. 아래 수동 시나리오는 자동 테스트가 못 덮는 항목의 보완이다.
 
 Supabase에 최소 3명(`leader`, `member A`, `member B`)을 등록한 뒤 각 계정으로 로그인한다.
 
@@ -63,6 +65,8 @@ Supabase에 최소 3명(`leader`, `member A`, `member B`)을 등록한 뒤 각 �
 - `activity_logs`는 leader가 전체를 조회하고, member는 본인이 actor이거나 target인 로그만 조회할 수 있어야 한다.
 - `member`가 `activity_logs.target_user_id`를 임의로 지정해 insert하려 하면 RLS가 거부해야 한다.
 - `member A`가 본인 `pending` 검토요청을 수정·삭제할 수 있고, `member B`의 요청이나 `approved`/`rejected` 요청은 수정·삭제할 수 없어야 한다.
+- 활성 파트장은 종결 검토요청을 재오픈할 수 있고, member·비활성 파트장·미인증 호출은 `reopen_review_request` RPC에서 거부되어야 한다.
+- 같은 종결 요청에 대한 동시 재오픈 호출은 하나만 성공하고, 최종 상태는 `pending`이며 status audit 이벤트는 한 건이어야 한다.
 - `member`는 `review-attachments` 버킷에 본인 경로(`{user_id}/...`)로만 업로드할 수 있고, 다른 사용자 파일은 조회·삭제할 수 없어야 한다.
 - `leader`는 `review-attachments` 버킷의 모든 파일을 조회할 수 있어야 한다.
 - `member` 계정을 `profiles.is_active = false`로 설정하면 본인 데이터 조회·쓰기가 RLS에서 거부되어야 한다.
@@ -75,7 +79,7 @@ Supabase에 최소 3명(`leader`, `member A`, `member B`)을 등록한 뒤 각 �
 
 `must_change_password`는 RLS 헬퍼(`can_use_app`/`is_active_leader`)에서 서버 강제되므로 아래를 반드시 수행한다.
 
-- `profiles.must_change_password = true`인 계정(임시 비밀번호 1234로 방금 만든 계정)으로 로그인하면 앱이 비밀번호 변경 화면을 표시한다.
+- `profiles.must_change_password = true`인 계정(계정별 무작위 임시 비밀번호로 방금 만든 계정)으로 로그인하면 앱이 비밀번호 변경 화면을 표시한다.
 - 그 상태에서 세션 토큰으로 REST/RPC를 직접 호출해도(비밀번호 변경 화면 우회 시도) `products`·`review_requests`·`projects` 등 어떤 테이블도 조회·쓰기가 되지 않아야 한다(빈 결과/거부).
 - 비밀번호 변경(8자 이상)을 완료해 `must_change_password = false`가 되면 이후 정상적으로 데이터가 조회·쓰기된다.
 - 첫 파트장 계정도 동일하게, 비밀번호 변경 전에는 마스터/배정 등 leader 작업이 거부되고 변경 후 정상 동작해야 한다.

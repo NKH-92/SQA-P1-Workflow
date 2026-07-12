@@ -1,206 +1,86 @@
-import { describe, expect, it } from 'vitest'
-import { assignProduct, saveDutyAssignments, saveProductAssignments } from './master'
+import { describe, expect, it, vi } from 'vitest'
+import type { AppData, Profile } from '../../types'
 import type { RepositoryContext } from '../repositoryContext'
-import type { AppData, Product, Profile } from '../../types'
+import { assignDuty, assignProduct, saveDutyAssignments, saveProductAssignments, toggleProfileActive } from './master'
 
-describe('saveProductAssignments (demo)', () => {
-  it('replaces product member assignments in local state', async () => {
-    const leader: Profile = {
-      id: 'leader-1',
-      email: 'leader@example.com',
-      name: 'Leader',
-      role: 'leader',
-    }
-    const memberA: Profile = {
-      id: 'member-a',
-      email: 'a@example.com',
-      name: 'Member A',
-      role: 'member',
-    }
-    const memberB: Profile = {
-      id: 'member-b',
-      email: 'b@example.com',
-      name: 'Member B',
-      role: 'member',
-    }
-    const product: Product = {
-      id: 'product-1',
-      name: 'Test Product',
-      category: '자사',
-      company_name: '자사',
-      sort_order: 1,
-    }
-    const data: AppData = {
-      profiles: [leader, memberA, memberB],
-      allowedUsers: [],
-      products: [product],
-      duties: [],
-      dutyMajorCategories: [],
-      productAssignments: [
-        {
-          id: 'assignment-a',
-          user_id: memberA.id,
-          product_id: product.id,
-          profiles: { name: memberA.name, email: memberA.email },
-          products: {
-            name: product.name,
-            category: product.category,
-            company_name: product.company_name,
-            sort_order: product.sort_order,
-          },
-        },
-      ],
-      dutyAssignments: [],
-      reviewRequests: [],
-      projects: [],
-      projectAssignments: [],
-      profileNotes: [],
-      activityLogs: [],
-    }
+vi.mock('../../lib/activityLog', () => ({
+  recordActivityLog: vi.fn(async () => undefined),
+}))
 
-    let nextData = data
-    const setData: RepositoryContext['setData'] = (updater) => {
-      nextData = typeof updater === 'function' ? updater(nextData) : updater
-    }
+const leader: Profile = { id: 'leader-1', email: 'leader@example.com', name: 'Leader', role: 'leader', is_active: true }
+const member: Profile = { id: 'member-1', email: 'member@example.com', name: 'Member', role: 'member', is_active: true }
+const inactiveMember: Profile = { ...member, id: 'member-inactive', is_active: false }
 
-    await saveProductAssignments(
-      { isRemote: false, profile: leader, data, setData },
-      {
-        productId: product.id,
-        nextMemberIds: [memberB.id],
-        product,
-        memberOptions: [memberA, memberB],
-      },
-    )
+function localContext(profile: Profile = leader): RepositoryContext {
+  const data: AppData = {
+    profiles: [leader, member, inactiveMember],
+    allowedUsers: [],
+    products: [{ id: 'product-1', name: 'Product', category: '자사', company_name: '자사', sort_order: 1 }],
+    duties: [{ id: 'duty-1', name: 'Duty', major_category_id: 'category-1', sort_order: 1, duty_major_categories: null }],
+    dutyMajorCategories: [{ id: 'category-1', name: 'Category', sort_order: 1 }],
+    productAssignments: [],
+    dutyAssignments: [],
+    reviewRequests: [],
+    projects: [],
+    projectAssignments: [],
+    profileNotes: [],
+    activityLogs: [],
+  }
+  return { isRemote: false, profile, data, setData: vi.fn() }
+}
 
-    const assigned = nextData.productAssignments.filter((item) => item.product_id === product.id)
-    expect(assigned).toHaveLength(1)
-    expect(assigned[0]?.user_id).toBe(memberB.id)
+describe('local assignment replacement parity', () => {
+  it('rejects inactive leaders before mutating preview data', async () => {
+    const ctx = localContext({ ...leader, is_active: false })
+
+    await expect(saveProductAssignments(ctx, { productId: 'product-1', nextMemberIds: ['member-1'] }))
+      .rejects.toThrow('활성 파트장 권한이 필요합니다.')
+    expect(ctx.setData).not.toHaveBeenCalled()
   })
-})
 
-describe('saveDutyAssignments (demo)', () => {
-  it('replaces duty member assignments in local state', async () => {
-    const leader: Profile = {
-      id: 'leader-1',
-      email: 'leader@example.com',
-      name: 'Leader',
-      role: 'leader',
-    }
-    const memberA: Profile = {
-      id: 'member-a',
-      email: 'a@example.com',
-      name: 'Member A',
-      role: 'member',
-    }
-    const memberB: Profile = {
-      id: 'member-b',
-      email: 'b@example.com',
-      name: 'Member B',
-      role: 'member',
-    }
-    const data: AppData = {
-      profiles: [leader, memberA, memberB],
-      allowedUsers: [],
-      products: [],
-      duties: [
-        {
-          id: 'duty-1',
-          name: 'Test Duty',
-          major_category_id: 'major-1',
-          sort_order: 1,
-          duty_major_categories: { name: '미분류', sort_order: 1 },
-        },
-      ],
-      dutyMajorCategories: [{ id: 'major-1', name: '미분류', sort_order: 1 }],
-      productAssignments: [],
-      dutyAssignments: [
-        {
-          id: 'assignment-a',
-          user_id: memberA.id,
-          duty_id: 'duty-1',
-          profiles: { name: memberA.name, email: memberA.email },
-          duties: {
-            name: 'Test Duty',
-            major_category_id: 'major-1',
-            duty_major_categories: { name: '미분류' },
-          },
-        },
-      ],
-      reviewRequests: [],
-      projects: [],
-      projectAssignments: [],
-      profileNotes: [],
-      activityLogs: [],
-    }
+  it('rejects leaders who still require a password change', async () => {
+    const ctx = localContext({ ...leader, must_change_password: true })
 
-    let nextData = data
-    const setData: RepositoryContext['setData'] = (updater) => {
-      nextData = typeof updater === 'function' ? updater(nextData) : updater
-    }
-
-    await saveDutyAssignments(
-      { isRemote: false, profile: leader, data, setData },
-      {
-        dutyId: 'duty-1',
-        nextMemberIds: [memberB.id],
-        memberOptions: [memberA, memberB],
-      },
-    )
-
-    const assigned = nextData.dutyAssignments.filter((item) => item.duty_id === 'duty-1')
-    expect(assigned).toHaveLength(1)
-    expect(assigned[0]?.user_id).toBe(memberB.id)
+    await expect(saveDutyAssignments(ctx, { dutyId: 'duty-1', nextMemberIds: ['member-1'] }))
+      .rejects.toThrow('활성 파트장 권한이 필요합니다.')
+    expect(ctx.setData).not.toHaveBeenCalled()
   })
-})
 
-describe('assignProduct (demo)', () => {
-  it('appends a product assignment in local state', async () => {
-    const leader: Profile = {
-      id: 'leader-1',
-      email: 'leader@example.com',
-      name: 'Leader',
-      role: 'leader',
-    }
-    const member: Profile = {
-      id: 'member-1',
-      email: 'member@example.com',
-      name: 'Member',
-      role: 'member',
-    }
-    const product: Product = {
-      id: 'product-1',
-      name: 'Demo Product',
-      category: '자사',
-      company_name: '자사',
-      sort_order: 1,
-    }
-    const data: AppData = {
-      profiles: [leader, member],
-      allowedUsers: [],
-      products: [product],
-      duties: [],
-      dutyMajorCategories: [],
-      productAssignments: [],
-      dutyAssignments: [],
-      reviewRequests: [],
-      projects: [],
-      projectAssignments: [],
-      profileNotes: [],
-      activityLogs: [],
-    }
+  it('rejects inactive or missing members in local product assignments', async () => {
+    const inactiveCtx = localContext()
+    await expect(saveProductAssignments(inactiveCtx, { productId: 'product-1', nextMemberIds: ['member-inactive'] }))
+      .rejects.toThrow('활성 상태인 파트원에게만 배정할 수 있습니다.')
 
-    let nextData = data
-    const setData: RepositoryContext['setData'] = (updater) => {
-      nextData = typeof updater === 'function' ? updater(nextData) : updater
-    }
+    const missingCtx = localContext()
+    await expect(saveDutyAssignments(missingCtx, { dutyId: 'duty-1', nextMemberIds: ['missing-member'] }))
+      .rejects.toThrow('이미 삭제되었거나 변경할 수 없는 항목입니다.')
+    expect(inactiveCtx.setData).not.toHaveBeenCalled()
+    expect(missingCtx.setData).not.toHaveBeenCalled()
+  })
 
-    await assignProduct(
-      { isRemote: false, profile: leader, data, setData },
-      { userId: member.id, productId: product.id },
+  it('allows an active leader to replace assignments for active members', async () => {
+    const ctx = localContext()
+
+    await saveProductAssignments(ctx, { productId: 'product-1', nextMemberIds: ['member-1'] })
+    expect(ctx.setData).toHaveBeenCalled()
+  })
+
+  it('requires an active leader for single assignment mutations', async () => {
+    const ctx = localContext(member)
+
+    await expect(assignProduct(ctx, { productId: 'product-1', userId: 'member-1' })).rejects.toThrow(
+      '활성 파트장 권한이 필요합니다.',
     )
+    await expect(assignDuty(ctx, { dutyId: 'duty-1', userId: 'member-1' })).rejects.toThrow(
+      '활성 파트장 권한이 필요합니다.',
+    )
+    expect(ctx.setData).not.toHaveBeenCalled()
+  })
 
-    expect(nextData.productAssignments).toHaveLength(1)
-    expect(nextData.productAssignments[0]?.user_id).toBe(member.id)
+  it('does not allow local preview to deactivate the last active leader', async () => {
+    const ctx = localContext()
+
+    await expect(toggleProfileActive(ctx, leader.id, false)).rejects.toThrow('활성 파트장은 최소 한 명 이상 유지해야 합니다.')
+    expect(ctx.setData).not.toHaveBeenCalled()
   })
 })

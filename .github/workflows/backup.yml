@@ -2,17 +2,27 @@ name: Backup DB
 
 on:
   schedule:
-    # 매주 일요일 05:00 KST (토요일 20:00 UTC)
-    - cron: '0 20 * * 6'
+    # 매일 05:00 KST (전날 20:00 UTC)
+    - cron: '0 20 * * *'
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: backup-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   backup:
     runs-on: ubuntu-latest
     steps:
+      - name: Require main branch
+        if: ${{ github.ref != 'refs/heads/main' }}
+        run: |
+          echo "::error::Production backup is allowed only from refs/heads/main (received: $GITHUB_REF)."
+          exit 1
+
       - name: Check backup secrets
         env:
           DB_URL_SET: ${{ secrets.SUPABASE_DB_URL != '' }}
@@ -33,7 +43,7 @@ jobs:
           fi
 
       # 버전 고정 — latest는 백업 도구 체인을 비결정적으로 만든다 (복원 리허설과 동일 버전 유지)
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
         with:
           version: 2.109.1
 
@@ -47,7 +57,7 @@ jobs:
           supabase db dump --db-url "$DATABASE_URL" -f "dump/sqa-p1-workflow-$date-schema.sql"
           supabase db dump --db-url "$DATABASE_URL" --data-only -f "dump/sqa-p1-workflow-$date-data.sql"
 
-      # OPERATIONS.md 주간 백업 확인 기준과 동일: 크기 > 0, schema에 CREATE TABLE, data에 COPY/INSERT
+      # OPERATIONS.md 매일 백업 확인 기준과 동일: 크기 > 0, schema에 CREATE TABLE, data에 COPY/INSERT
       - name: Validate dumps
         run: |
           schema="dump/sqa-p1-workflow-$DUMP_DATE-schema.sql"
@@ -64,24 +74,86 @@ jobs:
         env:
           PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
         run: |
-          tar czf "db-backup-$DUMP_DATE.tar.gz" -C dump .
-          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
-            -in "db-backup-$DUMP_DATE.tar.gz" \
-            -out "db-backup-$DUMP_DATE.tar.gz.enc" \
-            -pass env:PASSPHRASE
-          rm -rf dump "db-backup-$DUMP_DATE.tar.gz"
+          set +x
+          set -Eeuo pipefail
+          [ -n "${PASSPHRASE:-}" ] || { echo "::error::BACKUP_PASSPHRASE is missing"; exit 1; }
+          [[ "$PASSPHRASE" != *$'\n'* && "$PASSPHRASE" != *$'\r'* ]] || {
+            echo "::error::BACKUP_PASSPHRASE must be a single-line secret"
+            exit 1
+          }
 
-      - uses: actions/upload-artifact@v4
+          archive="db-backup-$DUMP_DATE.tar.gz"
+          gpg_output="$archive.gpg"
+          gpg_temp="$gpg_output.tmp"
+          legacy_output="$archive.enc"
+          umask 077
+          trap 'rm -f "$gpg_temp"' EXIT
+
+          tar czf "$archive" -C dump .
+          [ -s "$archive" ] && tar tzf "$archive" >/dev/null || {
+            echo "::error::Backup archive is missing, empty, or invalid"
+            exit 1
+          }
+
+          # Primary authenticated format. The passphrase is sent over stdin, never argv.
+          printf '%s' "$PASSPHRASE" | gpg \
+            --batch --no-tty --yes --pinentry-mode loopback --passphrase-fd 0 --no-symkey-cache \
+            --symmetric --cipher-algo AES256 --s2k-mode 3 --s2k-digest-algo SHA512 \
+            --s2k-count 65011712 --compress-algo none \
+            --output "$gpg_temp" -- "$archive"
+          [ -s "$gpg_temp" ] || { echo "::error::GPG backup was not created"; exit 1; }
+          printf '%s' "$PASSPHRASE" | gpg \
+            --batch --no-tty --pinentry-mode loopback --passphrase-fd 0 --no-symkey-cache \
+            --decrypt -- "$gpg_temp" | tar tzf - >/dev/null
+          mv -f "$gpg_temp" "$gpg_output"
+
+          # Transitional legacy copy. Keep until a .gpg restore rehearsal succeeds and
+          # all operators have the updated runbook.
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+            -in "$archive" -out "$legacy_output" -pass env:PASSPHRASE
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+            -in "$legacy_output" -pass env:PASSPHRASE | tar tzf - >/dev/null
+
+          rm -rf dump "$archive"
+          unset PASSPHRASE
+          trap - EXIT
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: db-backup-${{ env.DUMP_DATE }}
-          path: db-backup-${{ env.DUMP_DATE }}.tar.gz.enc
+          path: |
+            db-backup-${{ env.DUMP_DATE }}.tar.gz.gpg
+            db-backup-${{ env.DUMP_DATE }}.tar.gz.enc
           retention-days: 90
           if-no-files-found: error
 
       - name: Summary
         run: |
           {
-            echo "## Backup OK — db-backup-$DUMP_DATE (encrypted, 보존 90일)"
+            echo "## Backup OK — db-backup-$DUMP_DATE (.gpg primary + transitional .enc, 보존 90일)"
             echo ""
-            echo "복호화·복원 절차: docs/OPERATIONS.md \"주간 백업\" 절 참고"
+            echo "복호화·복원 절차: docs/OPERATIONS.md \"매일 백업\" 절 참고"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  notify-failure:
+    needs: backup
+    if: ${{ always() && needs.backup.result == 'failure' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Open or update the backup failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title='[Backup] Daily DB backup failed'
+          body="Backup DB failed at $(date -u +%FT%TZ). Run: $RUN_URL"
+          issue_number=$(gh issue list --state open --search "Daily DB backup failed in:title" \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$issue_number" ]; then
+            gh issue comment "$issue_number" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi

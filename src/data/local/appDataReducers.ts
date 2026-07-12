@@ -201,16 +201,21 @@ export function replaceProjectAssignments(
   nextMemberIds: string[],
   memberOptions: Profile[],
 ): AppData {
+  const desiredIds = [...new Set(nextMemberIds)]
   const currentIds = data.projectAssignments
     .filter((assignment) => assignment.project_id === project.id)
     .map((assignment) => assignment.user_id)
-  const toAdd = nextMemberIds.filter((id) => !currentIds.includes(id))
+  const toAdd = desiredIds.filter((id) => !currentIds.includes(id))
   const toRemove = data.projectAssignments.filter(
-    (assignment) => assignment.project_id === project.id && !nextMemberIds.includes(assignment.user_id),
+    (assignment) => assignment.project_id === project.id && !desiredIds.includes(assignment.user_id),
   )
+  const updatedAt = new Date().toISOString()
 
   return {
     ...data,
+    projects: data.projects.map((item) =>
+      item.id === project.id ? { ...item, updated_at: updatedAt } : item,
+    ),
     projectAssignments: [
       ...data.projectAssignments.filter((assignment) => !toRemove.some((item) => item.id === assignment.id)),
       ...toAdd.map((memberId) => {
@@ -270,12 +275,13 @@ export function replaceProductAssignments(
   product: Product | null,
   memberOptions: Array<{ id: string; name: string; email: string }>,
 ): AppData {
+  const desiredIds = [...new Set(nextMemberIds)]
   const currentIds = data.productAssignments
     .filter((assignment) => assignment.product_id === productId)
     .map((assignment) => assignment.user_id)
-  const toAdd = nextMemberIds.filter((id) => !currentIds.includes(id))
+  const toAdd = desiredIds.filter((id) => !currentIds.includes(id))
   const toRemove = data.productAssignments.filter(
-    (assignment) => assignment.product_id === productId && !nextMemberIds.includes(assignment.user_id),
+    (assignment) => assignment.product_id === productId && !desiredIds.includes(assignment.user_id),
   )
 
   return {
@@ -351,12 +357,13 @@ export function replaceDutyAssignments(
   } | null,
   memberOptions: Array<{ id: string; name: string; email: string }>,
 ): AppData {
+  const desiredIds = [...new Set(nextMemberIds)]
   const currentIds = data.dutyAssignments
     .filter((assignment) => assignment.duty_id === dutyId)
     .map((assignment) => assignment.user_id)
-  const toAdd = nextMemberIds.filter((id) => !currentIds.includes(id))
+  const toAdd = desiredIds.filter((id) => !currentIds.includes(id))
   const toRemove = data.dutyAssignments.filter(
-    (assignment) => assignment.duty_id === dutyId && !nextMemberIds.includes(assignment.user_id),
+    (assignment) => assignment.duty_id === dutyId && !desiredIds.includes(assignment.user_id),
   )
 
   return {
@@ -401,4 +408,25 @@ export function appendDutyAssignment(
 
 export function newId(prefix: string): string {
   return makeId(prefix)
+}
+export function updateReviewFeedback(data: AppData, feedbackId: string, comment: string): AppData {
+  return {
+    ...data,
+    reviewRequests: data.reviewRequests.map((row) => ({
+      ...row,
+      review_feedback: row.review_feedback?.map((feedback) =>
+        feedback.id === feedbackId ? { ...feedback, comment } : feedback,
+      ),
+    })),
+  }
+}
+
+export function removeReviewFeedback(data: AppData, feedbackId: string): AppData {
+  return {
+    ...data,
+    reviewRequests: data.reviewRequests.map((row) => ({
+      ...row,
+      review_feedback: row.review_feedback?.filter((feedback) => feedback.id !== feedbackId),
+    })),
+  }
 }

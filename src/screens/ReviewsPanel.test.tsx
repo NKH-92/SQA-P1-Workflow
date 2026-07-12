@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPreviewData, previewLeader, previewMember } from '../demoData'
@@ -121,6 +121,19 @@ describe('ReviewsPanel', () => {
     expect(within(dialog).getByText('이 기기에 저장된 초안을 불러왔습니다.')).toBeInTheDocument()
   })
 
+  it('warns that uploaded attachments are not included in system backups', async () => {
+    const user = userEvent.setup()
+    render(
+      <ReviewsPanel profile={previewMember} data={createPreviewData()} mutate={vi.fn()} setData={() => undefined} />,
+    )
+
+    await user.click(screen.getByRole('button', { name: '검토요청 작성' }))
+
+    expect(
+      within(composerDialog()).getByText('첨부 파일은 시스템 백업 대상이 아닙니다. 중요한 원본은 작성자가 별도로 보관해 주세요.'),
+    ).toBeInTheDocument()
+  })
+
   it('saves draft only when the user clicks 초안 저장', async () => {
     const user = userEvent.setup()
     const data = createPreviewData()
@@ -158,5 +171,77 @@ describe('ReviewsPanel', () => {
     expect(screen.getByText('반려하려면 피드백에 사유를 먼저 입력해 주세요.')).toBeInTheDocument()
     expect(rejectSpy).not.toHaveBeenCalled()
     rejectSpy.mockRestore()
+  })
+
+  it('keeps feedback draft local to the selected request and submits the exact comment', async () => {
+    const user = userEvent.setup()
+    const data = createPreviewData()
+    const feedbackSpy = vi.spyOn(dataModule, 'addReviewFeedback').mockResolvedValue(undefined as never)
+    const mutate = vi.fn(async (operation: () => Promise<void>) => {
+      await operation()
+      return true
+    })
+
+    render(
+      <ReviewsPanel profile={previewLeader} data={data} mutate={mutate} setData={() => undefined} />,
+    )
+
+    const detail = screen.getByRole('article')
+    const textarea = within(detail).getByPlaceholderText('이 검토요청에 대해 어떻게 생각하시나요?')
+    await user.type(textarea, '정확한 피드백')
+    await user.click(within(detail).getByRole('button', { name: '피드백 남기기' }))
+
+    expect(feedbackSpy).toHaveBeenCalledWith(expect.anything(), expect.any(String), '정확한 피드백')
+    expect(textarea).toHaveValue('')
+    feedbackSpy.mockRestore()
+  })
+
+  it('keeps the local draft when the feedback mutation is rejected', async () => {
+    const user = userEvent.setup()
+    const mutate = vi.fn(async () => false)
+
+    render(
+      <ReviewsPanel profile={previewLeader} data={createPreviewData()} mutate={mutate} setData={() => undefined} />,
+    )
+
+    const detail = screen.getByRole('article')
+    const textarea = within(detail).getByPlaceholderText('이 검토요청에 대해 어떻게 생각하시나요?')
+    await user.type(textarea, '재시도할 피드백')
+    await user.click(within(detail).getByRole('button', { name: '피드백 남기기' }))
+
+    expect(textarea).toHaveValue('재시도할 피드백')
+  })
+
+  it('locks the reopen action while its mutation is in flight', async () => {
+    const user = userEvent.setup()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const source = createPreviewData()
+    const request = { ...source.reviewRequests[0]!, status: 'approved' as const }
+    const data = { ...source, reviewRequests: [request] }
+    let resolveReopen!: () => void
+    const reopenSpy = vi.spyOn(dataModule, 'reopenReviewRequest').mockImplementation(
+      () => new Promise<void>((resolve) => {
+        resolveReopen = resolve
+      }),
+    )
+    const mutate = vi.fn(async (operation: () => Promise<void>) => {
+      await operation()
+      return true
+    })
+
+    render(<ReviewsPanel profile={previewLeader} data={data} mutate={mutate} setData={() => undefined} />)
+
+    const reopenButton = screen.getByRole('button', { name: '다시 열기' })
+    await user.click(reopenButton)
+    expect(reopenSpy).toHaveBeenCalledTimes(1)
+    expect(reopenButton).toBeDisabled()
+
+    await user.click(reopenButton)
+    expect(reopenSpy).toHaveBeenCalledTimes(1)
+
+    resolveReopen()
+    await waitFor(() => expect(reopenButton).not.toBeDisabled())
+    reopenSpy.mockRestore()
+    confirmSpy.mockRestore()
   })
 })

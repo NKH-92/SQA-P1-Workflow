@@ -39,8 +39,20 @@
 | `202607070005_protect_last_active_leader.sql` | 마지막 active leader 비활성화·강등 방지 |
 | `202607080001_enforce_password_change_and_restore_visibility.sql` | 비밀번호 변경 전 데이터 접근 RLS 차단 + 파트장 이름 view 복구 + last-leader counter 잠금 |
 | `202607090001_realtime_review_requests.sql` | 검토요청 INSERT Realtime 발행 (파트장 브라우저 알림용, RLS 불변) |
+| `202607110001_add_single_assignment_rpcs.sql` | 단건 제품·업무 배정을 스냅샷 전체 교체가 아닌 add-only RPC로 분리 |
+| `202607110002_require_member_for_assignments.sql` | 모든 제품·업무 배정 쓰기 경로에 active member 불변식 강제 |
+| `202607110003_gate_public_leader_profiles.sql` | owner view의 파트장 이름 노출을 현재 app 접근 가능 계정으로 제한 |
+| `202607110004_restrict_review_status_and_audit.sql` | 검토 상태를 RPC 전용으로 제한하고 private 원자적 상태 변경 이력 기록 |
+| `202607110005_private_mutation_audit.sql` | 핵심 master·배정·검토·프로젝트 변경을 private 트리거 감사 이력에 원자적으로 기록 |
+| `202607110006_serialize_last_leader_guard.sql` | 동시 강등·비활성화 검사를 advisory transaction lock으로 직렬화 |
 
 ## Supabase CLI (권장)
+
+| `202607110007_serialize_project_assignment_replace.sql` | Project assignment replacement with `updated_at` optimistic concurrency |
+| `202607110008_reopen_review_requests.sql` | Leader-only reopen RPC for closed review requests with transactional audit |
+| `202607110009_harden_review_member_and_project_assignment_paths.sql` | Password-gated member write closure, feedback author scope, and project OCC invalidation |
+| `202607110010_atomic_review_activity_logs.sql` | Review status and feedback RPC activity logs committed in the same transaction |
+| `202607110011_add_profile_note_private_audit.sql` | Transaction-bound private audit trigger for profile-note mutations |
 
 ```bash
 # 프로젝트 연결 (최초 1회)
@@ -51,11 +63,15 @@ npx supabase link --project-ref <PROJECT_REF>
 npx supabase db push
 ```
 
+이 직접 명령은 운영 정규 경로가 아니라 break-glass 절차입니다. 운영 반영은 보호된 **Actions → DB Migrate**를 사용하고, 직접 실행이 불가피하면 동일한 사전 백업·프로젝트 식별·사후 readiness 증거와 승인 기록을 남깁니다.
+
 push와 핵심 객체(RPC·Storage 버킷·RLS 정책) 존재 확인을 한 번에 하려면 `scripts/apply-pending-migrations.ps1`을 사용합니다.
 
 ## GitHub Actions — DB Migrate (로컬 인증 없이)
 
-로컬에 Supabase 로그인이나 DB 비밀번호가 없어도, Actions → **DB Migrate** → Run workflow로 미적용 마이그레이션을 적용할 수 있습니다. 백업과 동일한 `SUPABASE_DB_URL` Secret을 사용하며, Job Summary에 적용 결과와 realtime publication 확인이 표시됩니다. append-only 정책 그대로 — 이 워크플로도 새 파일만 push합니다.
+로컬에 Supabase 로그인이나 DB 비밀번호가 없어도, Actions → **DB Migrate** → Run workflow로 미적용 마이그레이션을 적용할 수 있습니다. Migration-only 변경을 `main`에 반영한 뒤 같은 `main` SHA에서 **Backup DB**를 schedule 또는 수동 실행하고, 24시간 이내 성공한 run ID를 DB Migrate에 입력해야 합니다. workflow·event(schedule/수동)·branch·commit SHA·성공 상태·암호화 artifact를 모두 확인하며 하나라도 다르면 DB 접속 전에 실패합니다. 비-main ref도 Secret 확인·DB 접근 전에 실패합니다. 백업과 동일한 `SUPABASE_DB_URL` Secret을 사용하며, Job Summary에 적용 결과와 realtime publication 확인이 표시됩니다. append-only 정책 그대로 — 이 워크플로도 새 파일만 push합니다.
+
+`202607110001` 이후 프런트는 신규 add-only RPC를 호출합니다. 짧은 유지보수 창을 공지하고 기존 탭을 새로고침/종료한 뒤, 직전 백업 → DB Migrate → 신규 버전 11개와 RPC 보안 속성·ACL 확인 → 프런트 배포 순으로 진행합니다. 완전 무중단 공존 증명은 선택사항이지만 두 단계를 한 번의 `main` 병합으로 합치지는 않습니다.
 
 ## SQL Editor (수동)
 

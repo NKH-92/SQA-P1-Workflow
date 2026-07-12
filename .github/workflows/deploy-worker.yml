@@ -1,10 +1,15 @@
 name: Deploy Worker
 
 on:
-  push:
-    branches:
-      - main
+  # Production promotion is deliberate and requires the team leader's approval;
+  # main pushes only run CI.
   workflow_dispatch:
+    inputs:
+      deploy_confirm:
+        description: "Confirm that the reviewed RLS/build/readiness evidence is for this SHA"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -14,21 +19,83 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  rls:
     runs-on: ubuntu-latest
+    steps:
+      - name: Require main branch
+        if: ${{ github.ref != 'refs/heads/main' }}
+        run: |
+          echo "::error::Production verification is allowed only from refs/heads/main (received: $GITHUB_REF)."
+          exit 1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
+        with:
+          version: 2.109.1
+      - run: npm ci
+      - name: Start and reset local Supabase
+        run: |
+          supabase start
+          supabase db reset
+      - name: Seed deterministic RLS fixtures
+        run: |
+          eval "$(supabase status -o env)"
+          export SUPABASE_URL="$API_URL"
+          export SUPABASE_ANON_KEY="$ANON_KEY"
+          export SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
+          {
+            echo "SUPABASE_URL=$SUPABASE_URL"
+            echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
+            echo "SUPABASE_DB_URL=$DB_URL"
+            node scripts/setup-rls-fixtures.mjs
+          } >> "$GITHUB_ENV"
+      - run: npm run test:rls
+      - name: Verify private status audit event
+        run: |
+          count=$(psql "$SUPABASE_DB_URL" -tAc "select count(*) from private.review_status_events")
+          [ "$count" -ge 1 ] || { echo "::error::RLS status RPC produced no private audit event"; exit 1; }
+          mutation_count=$(psql "$SUPABASE_DB_URL" -tAc "select count(*) from private.audit_events")
+          [ "$mutation_count" -ge 1 ] || { echo "::error::RLS fixtures produced no private mutation audit event"; exit 1; }
+      - if: ${{ always() }}
+        run: supabase stop --no-backup
+
+  deploy:
+    needs: rls
+    runs-on: ubuntu-latest
+    environment: production
     # 시크릿은 job 레벨에 두지 않는다 — npm ci/test가 실행하는 서드파티 코드에
     # 노출되지 않도록 실제로 쓰는 단계(Build, Deploy)에만 주입한다.
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       WORKER_NAME: ${{ vars.WORKER_NAME }}
+      WORKER_URL: ${{ vars.WORKER_URL }}
       VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
 
     steps:
+      - name: Require main branch
+        if: ${{ github.ref != 'refs/heads/main' }}
+        run: |
+          echo "::error::Production deployment is allowed only from refs/heads/main (received: $GITHUB_REF)."
+          exit 1
+
+      - name: Require explicit deployment confirmation
+        if: ${{ inputs.deploy_confirm != true }}
+        run: |
+          echo "::error::Production deployment requires deploy_confirm=true after reviewing the RLS and DB readiness evidence."
+          exit 1
+
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -49,6 +116,7 @@ jobs:
         env:
           CF_TOKEN_SET: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
           ANON_KEY_SET: ${{ secrets.VITE_SUPABASE_ANON_KEY != '' }}
+          DB_URL_SET: ${{ secrets.SUPABASE_DB_URL != '' }}
         run: |
           missing=()
           if [ "$CF_TOKEN_SET" != "true" ]; then
@@ -60,11 +128,17 @@ jobs:
           if [ -z "$WORKER_NAME" ]; then
             missing+=("WORKER_NAME (variable)")
           fi
+          if [ -z "$WORKER_URL" ]; then
+            missing+=("WORKER_URL (variable; post-deploy health check)")
+          fi
           if [ -z "$VITE_SUPABASE_URL" ]; then
             missing+=("VITE_SUPABASE_URL (variable)")
           fi
           if [ "$ANON_KEY_SET" != "true" ]; then
             missing+=("VITE_SUPABASE_ANON_KEY (secret)")
+          fi
+          if [ "$DB_URL_SET" != "true" ]; then
+            missing+=("SUPABASE_DB_URL (secret; deploy DB-readiness gate)")
           fi
 
           if [ "${#missing[@]}" -gt 0 ]; then
@@ -77,26 +151,183 @@ jobs:
                 echo "- \`$item\`"
               done
               echo ""
-              if [ "${{ github.event_name }}" = "push" ]; then
-                echo "**Result:** this \`main\` push workflow **failed** — build ran, but deployment did not occur."
-                echo "Register the missing Variables/Secrets under Repository Settings > Secrets and variables > Actions, then push again."
-              else
-                echo "**Result:** deployment was **skipped** (test-only). This is allowed for \`workflow_dispatch\`."
-                echo "Register the missing Variables/Secrets before expecting an automatic deploy on \`main\` push."
-              fi
+              echo "**Result:** deployment was **blocked and this workflow failed**. No production deploy occurred."
+              echo "Register the missing Variables/Secrets under Repository Settings > Secrets and variables > Actions, then rerun the confirmed manual deployment."
             } >> "$GITHUB_STEP_SUMMARY"
 
-            if [ "${{ github.event_name }}" = "push" ]; then
-              echo "::error::Deploy configuration missing on main push. See job summary."
-              exit 1
-            fi
-
-            echo "DEPLOY_SKIP=true" >> "$GITHUB_ENV"
-            echo "::warning::Tests will run, but build and deployment will be skipped until variables/secrets are configured."
+            echo "::error::Deploy configuration is incomplete; refusing a green no-op production run. See job summary."
+            exit 1
           fi
 
+      - name: Verify production DB readiness
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          assignment_ready=$(psql "$DATABASE_URL" -tAc \
+            "select
+              exists (select 1 from supabase_migrations.schema_migrations where version = '202607110001')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '202607110002')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '202607110003')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '202607110004')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '202607110005')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '202607110006')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '202607110007')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '202607110008')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '202607110009')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '202607110010')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '202607110011')
+              and not has_table_privilege('authenticated', 'public.project_assignments', 'INSERT')
+              and not has_table_privilege('authenticated', 'public.project_assignments', 'UPDATE')
+              and not has_table_privilege('authenticated', 'public.project_assignments', 'DELETE')
+              and to_regprocedure('public.bump_project_revision_from_assignment()') is not null
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.bump_project_revision_from_assignment()')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.bump_project_revision_from_assignment()')), false)
+              and coalesce((select proacl is not null and proacl::text not like '%{=X%' and proacl::text not like '%,=X%' from pg_proc where oid = to_regprocedure('public.bump_project_revision_from_assignment()')), false)
+              and not coalesce(has_function_privilege('authenticated', to_regprocedure('public.bump_project_revision_from_assignment()'), 'EXECUTE'), true)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.bump_project_revision_from_assignment()'), 'EXECUTE'), true)
+              and exists (select 1 from pg_trigger where tgrelid = 'public.project_assignments'::regclass and tgname = 'project_assignments_bump_project_revision' and tgenabled in ('O', 'A'))
+              and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_requests' and policyname = 'review_requests_update_self_pending' and qual like '%can_use_app()%' and with_check like '%can_use_app()%')
+              and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_feedback' and policyname = 'review_feedback_delete_leader' and qual like '%leader_id = auth.uid()%')
+              and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_feedback' and policyname = 'review_feedback_update_leader' and qual like '%leader_id = auth.uid()%' and with_check like '%leader_id = auth.uid()%')
+              and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_feedback' and policyname = 'review_feedback_insert_leader' and with_check like '%is_active_leader()%' and with_check like '%leader_id = auth.uid()%')
+              and coalesce(pg_get_functiondef(to_regprocedure('public.is_active_leader()')) like '%password_is_current()%', false)
+              and to_regprocedure('public.reopen_review_request(uuid)') is not null
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.reopen_review_request(uuid)')), false)
+              and coalesce(has_function_privilege('authenticated', to_regprocedure('public.reopen_review_request(uuid)'), 'EXECUTE'), false)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.reopen_review_request(uuid)'), 'EXECUTE'), true)
+              and to_regprocedure('public.add_product_assignment(uuid,uuid)') is not null
+              and to_regprocedure('public.add_duty_assignment(uuid,uuid)') is not null
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.add_product_assignment(uuid,uuid)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.add_product_assignment(uuid,uuid)')), false)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.add_product_assignment(uuid,uuid)'), 'EXECUTE'), true)
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.add_duty_assignment(uuid,uuid)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.add_duty_assignment(uuid,uuid)')), false)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.add_duty_assignment(uuid,uuid)'), 'EXECUTE'), true)
+              and coalesce(has_function_privilege('authenticated', to_regprocedure('public.add_product_assignment(uuid,uuid)'), 'EXECUTE'), false)
+              and coalesce(has_function_privilege('authenticated', to_regprocedure('public.add_duty_assignment(uuid,uuid)'), 'EXECUTE'), false)
+              and to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)') is not null
+              and coalesce((select pg_get_function_result(to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)')) = 'timestamp with time zone'), false)
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)')), false)
+              and coalesce(has_function_privilege('authenticated', to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)'), 'EXECUTE'), false)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)'), 'EXECUTE'), true)
+              and to_regprocedure('public.count_active_leaders_except(uuid)') is not null
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.count_active_leaders_except(uuid)')), false)
+              and coalesce((select provolatile = 'v' from pg_proc where oid = to_regprocedure('public.count_active_leaders_except(uuid)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.count_active_leaders_except(uuid)')), false)
+              and not coalesce(has_function_privilege('authenticated', to_regprocedure('public.count_active_leaders_except(uuid)'), 'EXECUTE'), true)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.count_active_leaders_except(uuid)'), 'EXECUTE'), true)
+              and pg_get_functiondef(to_regprocedure('public.guard_last_active_leader_profile()')) like '%pg_advisory_xact_lock%'
+              and pg_get_functiondef(to_regprocedure('public.guard_last_active_leader_allowed_user()')) like '%pg_advisory_xact_lock%'")
+
+          if [ "$assignment_ready" != "t" ]; then
+            echo "::error::Production DB is not ready for this frontend. Apply and verify migrations 202607110001 through 202607110011 first."
+            exit 1
+          fi
+
+          leader_policy_ready=$(psql "$DATABASE_URL" -tAc \
+            "select not exists (
+              select 1 from pg_policies
+               where schemaname = 'public'
+                 and (coalesce(qual, '') like '%is_leader()%' or coalesce(with_check, '') like '%is_leader()%')
+                 and coalesce(qual, '') not like '%is_active_leader()%'
+                 and coalesce(with_check, '') not like '%is_active_leader()%'
+            )")
+          if [ "$leader_policy_ready" != "t" ]; then
+            echo "::error::Production DB has a role-only leader RLS policy; active/password gate is not ready"
+            exit 1
+          fi
+
+          review_contract_ready=$(psql "$DATABASE_URL" -tAc \
+            "select
+              not has_table_privilege('authenticated', 'public.review_requests', 'UPDATE')
+              and has_column_privilege('authenticated', 'public.review_requests', 'title', 'UPDATE')
+              and has_column_privilege('authenticated', 'public.review_requests', 'description', 'UPDATE')
+              and has_column_privilege('authenticated', 'public.review_requests', 'attachment_url', 'UPDATE')
+              and has_column_privilege('authenticated', 'public.review_requests', 'due_date', 'UPDATE')
+              and not has_column_privilege('authenticated', 'public.review_requests', 'status', 'UPDATE')
+              and to_regclass('private.review_status_events') is not null
+              and exists (
+                select 1 from pg_trigger
+                where tgrelid = 'public.review_requests'::regclass
+                  and tgname = 'review_requests_record_status_event'
+                  and tgenabled in ('O', 'A')
+              )")
+          if [ "$review_contract_ready" != "t" ]; then
+            echo "::error::Production DB review status RPC/audit contract is not ready"
+            exit 1
+          fi
+
+          review_activity_ready=$(psql "$DATABASE_URL" -tAc \
+            "select
+              to_regprocedure('public.update_review_request_status(uuid,public.review_status)') is not null
+              and to_regprocedure('public.reject_review_request(uuid,text)') is not null
+              and to_regprocedure('public.add_review_feedback(uuid,text)') is not null
+              and coalesce(pg_get_functiondef(to_regprocedure('public.update_review_request_status(uuid,public.review_status)')) like '%insert into public.activity_logs%', false)
+              and coalesce(pg_get_functiondef(to_regprocedure('public.reject_review_request(uuid,text)')) like '%insert into public.activity_logs%', false)
+              and coalesce(pg_get_functiondef(to_regprocedure('public.add_review_feedback(uuid,text)')) like '%insert into public.activity_logs%', false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.update_review_request_status(uuid,public.review_status)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.reject_review_request(uuid,text)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=""', 'search_path=')) from pg_proc where oid = to_regprocedure('public.add_review_feedback(uuid,text)')), false)
+              and has_function_privilege('authenticated', to_regprocedure('public.update_review_request_status(uuid,public.review_status)'), 'EXECUTE')
+              and has_function_privilege('authenticated', to_regprocedure('public.reject_review_request(uuid,text)'), 'EXECUTE')
+              and has_function_privilege('authenticated', to_regprocedure('public.add_review_feedback(uuid,text)'), 'EXECUTE')
+              and not has_function_privilege('anon', to_regprocedure('public.update_review_request_status(uuid,public.review_status)'), 'EXECUTE')
+              and not has_function_privilege('anon', to_regprocedure('public.reject_review_request(uuid,text)'), 'EXECUTE')
+              and not has_function_privilege('anon', to_regprocedure('public.add_review_feedback(uuid,text)'), 'EXECUTE')")
+          if [ "$review_activity_ready" != "t" ]; then
+            echo "::error::Production DB transactional review activity-log contract is not ready"
+            exit 1
+          fi
+
+          leader_view_ready=$(psql "$DATABASE_URL" -tAc \
+            "select pg_get_viewdef('public.public_leader_profiles'::regclass, true) like '%can_use_app()%'")
+          if [ "$leader_view_ready" != "t" ]; then
+            echo "::error::Production DB leader profile access gate is not ready"
+            exit 1
+          fi
+
+          private_audit_ready=$(psql "$DATABASE_URL" -tAc \
+            "select
+              to_regclass('private.audit_events') is not null
+              and not has_schema_privilege('authenticated', 'private', 'USAGE')
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('private.record_mutation_audit()')), false)
+              and coalesce((select 'search_path=pg_catalog, public, private, pg_temp' = any(proconfig) from pg_proc where oid = to_regprocedure('private.record_mutation_audit()')), false)
+              and (select count(*) >= 12 from pg_trigger
+                   where tgfoid = to_regprocedure('private.record_mutation_audit()')
+                     and tgenabled in ('O', 'A'))
+              and exists (select 1 from pg_trigger
+                   where tgrelid = 'public.profile_notes'::regclass
+                     and tgname = 'profile_notes_private_audit'
+                     and tgfoid = to_regprocedure('private.record_mutation_audit()')
+                     and tgenabled in ('O', 'A'))")
+          if [ "$private_audit_ready" != "t" ]; then
+            echo "::error::Production DB private mutation audit contract is not ready"
+            exit 1
+          fi
+
+      - name: Verify Supabase public configuration
+        env:
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          settings_file=$(mktemp)
+          trap 'rm -f "$settings_file"' EXIT
+          curl --fail --silent --show-error --max-time 20 \
+            --header "apikey: $VITE_SUPABASE_ANON_KEY" \
+            "${VITE_SUPABASE_URL%/}/auth/v1/settings" \
+            -o "$settings_file"
+          jq -e '
+            type == "object"
+            and .disable_signup == true
+            and .mailer_autoconfirm == false
+            and .external.email == true
+            and .external.anonymous_users == false
+          ' "$settings_file" >/dev/null || {
+            echo "::error::Supabase Auth settings drifted: require signup off, email confirmation on, anonymous off, email provider on"
+            exit 1
+          }
+
       - name: Build
-        if: ${{ env.DEPLOY_SKIP != 'true' }}
         run: npm run build
         env:
           VITE_APP_MODE: production
@@ -104,13 +335,40 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - name: Deploy to Cloudflare Workers
-        if: ${{ env.DEPLOY_SKIP != 'true' }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          npx --yes wrangler@4 deploy --name "$WORKER_NAME" --assets dist --keep-vars --compatibility-date 2026-07-04
+          npx --no-install wrangler deploy --name "$WORKER_NAME" --assets dist --keep-vars --compatibility-date 2026-07-04
           {
             echo "## Deploy succeeded"
             echo ""
             echo "Worker \`$WORKER_NAME\` was deployed to Cloudflare."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify deployed Worker health
+        run: |
+          body_file=$(mktemp)
+          headers_file=$(mktemp)
+          trap 'rm -f "$body_file" "$headers_file"' EXIT
+
+          curl --fail --silent --show-error --location \
+            --retry 5 --retry-delay 5 --retry-all-errors --max-time 20 \
+            "$WORKER_URL" -o "$body_file"
+          grep -Fq 'id="root"' "$body_file" || {
+            echo "::error::Worker health check failed: root mount was not found"
+            exit 1
+          }
+
+          curl --fail --silent --show-error --location --head \
+            --retry 5 --retry-delay 5 --retry-all-errors --max-time 20 \
+            "$WORKER_URL" -o "$headers_file"
+          grep -Eqi '^content-security-policy:' "$headers_file" || {
+            echo "::error::Worker health check failed: Content-Security-Policy header is missing"
+            exit 1
+          }
+          grep -Eqi '^x-content-type-options:[[:space:]]*nosniff' "$headers_file" || {
+            echo "::error::Worker health check failed: X-Content-Type-Options nosniff is missing"
+            exit 1
+          }
+
+          echo "- post-deploy health check: root mount and security headers verified" >> "$GITHUB_STEP_SUMMARY"

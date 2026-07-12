@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Inbox } from 'lucide-react'
 import { EmptyState } from '../../../components/ui'
 import type { Profile, ReviewRequest, ReviewStatus } from '../../../types'
@@ -23,7 +24,7 @@ function dueChipTone(dueStatus: ReturnType<typeof dueDateStatus>) {
   return undefined
 }
 
-export function ReviewList({
+export const ReviewList = memo(function ReviewList({
   profile,
   visibleReviewRequests,
   scopedReviewRequests,
@@ -97,4 +98,4 @@ export function ReviewList({
       })}
     </aside>
   )
-}
+})

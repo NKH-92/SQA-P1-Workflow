@@ -44,6 +44,7 @@ export function useAuthProfile(
   setData: React.Dispatch<React.SetStateAction<AppData>>,
   setMessage: React.Dispatch<React.SetStateAction<ToastMessage | null>>,
   resetNavigation: () => void,
+  resetSyncState: () => void,
 ) {
   const previewEnabled = isPreviewMode
 
@@ -51,6 +52,8 @@ export function useAuthProfile(
   const [profile, setProfile] = useState<Profile | null>(previewEnabled ? demoLeader : null)
   const [authReady, setAuthReady] = useState(!hasSupabaseConfig)
   const [sessionWithoutProfile, setSessionWithoutProfile] = useState(false)
+  const [profileLoadError, setProfileLoadError] = useState<string | null>(null)
+  const [profileRetryTick, setProfileRetryTick] = useState(0)
   const [initialLoading, setInitialLoading] = useState(hasSupabaseConfig)
   const bootstrapDoneRef = useRef(false)
   const profileLoadGenerationRef = useRef(0)
@@ -125,11 +128,13 @@ export function useAuthProfile(
   }, [setMessage])
 
   useEffect(() => {
-    if (!supabase || sessionUser === undefined) return
+    if (!supabase || profileEffectKey === 'auth-pending') return
 
-    if (!sessionUser) {
+    if (profileEffectKey === 'signed-out') {
+      resetSyncState()
       setProfile(null)
       setSessionWithoutProfile(false)
+      setProfileLoadError(null)
       setData(emptyData)
       setInitialLoading(false)
       return
@@ -139,6 +144,7 @@ export function useAuthProfile(
     const generation = ++profileLoadGenerationRef.current
     void (async () => {
       setInitialLoading(true)
+      setProfileLoadError(null)
       try {
         const result = await loadProfileForSession()
         if (cancelled || profileLoadGenerationRef.current !== generation) return
@@ -155,20 +161,25 @@ export function useAuthProfile(
         if (result.inactive) {
           setProfile(null)
           setSessionWithoutProfile(true)
+          setProfileLoadError(null)
           return
         }
 
         if (result.profile) {
           setProfile(result.profile)
           setSessionWithoutProfile(false)
+          setProfileLoadError(null)
           await refreshDataRef.current({ initial: true })
         } else {
           setProfile(null)
           setSessionWithoutProfile(true)
+          setProfileLoadError(null)
         }
       } catch (error) {
         if (!cancelled && profileLoadGenerationRef.current === generation) {
-          setMessage({ text: toUserMessage(error), tone: 'error' })
+          const userMessage = toUserMessage(error)
+          setMessage({ text: userMessage, tone: 'error' })
+          setProfileLoadError(userMessage)
           setProfile(null)
           setSessionWithoutProfile(false)
         }
@@ -182,7 +193,12 @@ export function useAuthProfile(
     return () => {
       cancelled = true
     }
-  }, [profileEffectKey, setData, setMessage])
+  }, [profileEffectKey, profileRetryTick, resetSyncState, setData, setMessage])
+
+  const retryProfileLoad = useCallback(() => {
+    setProfileLoadError(null)
+    setProfileRetryTick((value) => value + 1)
+  }, [])
 
   const signOut = useCallback(async () => {
     const profileId = profile?.id
@@ -191,9 +207,10 @@ export function useAuthProfile(
     setSessionUser(null)
     setProfile(previewEnabled ? demoLeader : null)
     setSessionWithoutProfile(false)
+    resetSyncState()
     setData(previewEnabled ? createPreviewData() : emptyData)
     resetNavigation()
-  }, [profile?.id, previewEnabled, resetNavigation, setData])
+  }, [profile?.id, previewEnabled, resetNavigation, resetSyncState, setData])
 
   return {
     sessionUser,
@@ -201,6 +218,8 @@ export function useAuthProfile(
     setProfile,
     authReady,
     sessionWithoutProfile,
+    profileLoadError,
+    retryProfileLoad,
     initialLoading,
     signOut,
   }

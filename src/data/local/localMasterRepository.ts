@@ -1,5 +1,5 @@
 import { recordActivityLog } from '../../lib/activityLog'
-import { UserFacingError } from '../../lib/errors'
+import { assertRecordExists, UserFacingError } from '../../lib/errors'
 import type { RepositoryDeps, MasterRepository } from '../repositories/types'
 import {
   removeAllowedUser,
@@ -10,10 +10,14 @@ import {
 
 export function createLocalMasterRepository(ctx: RepositoryDeps): MasterRepository {
   const { profile, data, setData } = ctx
+  if (profile.role !== 'leader' || profile.is_active === false || profile.must_change_password === true) {
+    throw new UserFacingError('활성 파트장 권한이 필요합니다.')
+  }
 
   return {
     async deleteAllowedUser(id) {
       const invite = data.allowedUsers.find((item) => item.id === id)
+      assertRecordExists(invite)
       setData((current) => removeAllowedUser(current, id))
       await recordActivityLog(setData, {
         actor: profile,
@@ -26,6 +30,7 @@ export function createLocalMasterRepository(ctx: RepositoryDeps): MasterReposito
 
     async deleteProduct(id) {
       const product = data.products.find((item) => item.id === id)
+      assertRecordExists(product)
       setData((current) => removeProduct(current, id))
       await recordActivityLog(setData, {
         actor: profile,
@@ -38,6 +43,7 @@ export function createLocalMasterRepository(ctx: RepositoryDeps): MasterReposito
 
     async deleteDuty(id) {
       const duty = data.duties.find((item) => item.id === id)
+      assertRecordExists(duty)
       setData((current) => removeDuty(current, id))
       await recordActivityLog(setData, {
         actor: profile,
@@ -50,6 +56,7 @@ export function createLocalMasterRepository(ctx: RepositoryDeps): MasterReposito
 
     async deleteDutyMajorCategory(id) {
       const category = data.dutyMajorCategories.find((item) => item.id === id)
+      assertRecordExists(category)
       // Mirror the remote `major_category_id ... on delete restrict`: refuse deletion while
       // duties still belong to the category, instead of silently orphaning them in demo mode.
       if (data.duties.some((item) => item.major_category_id === id)) {

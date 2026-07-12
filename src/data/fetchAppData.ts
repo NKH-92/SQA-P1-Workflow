@@ -18,6 +18,82 @@ export type FetchAppDataResult = AppData & {
   optionalWarnings: string[]
 }
 
+// Pending requests remain visible regardless of age so members can always
+// finish work in progress. Closed requests are intentionally bounded to the
+// same six-month window used by the leader dashboard statistics. This keeps
+// the recurring refresh payload from growing without silently dropping work
+// that is still actionable.
+export const REVIEW_HISTORY_MONTHS = 6
+
+export function reviewHistoryCutoff(now = new Date()): string {
+  const cutoff = new Date(now)
+  const day = cutoff.getUTCDate()
+  cutoff.setUTCDate(1)
+  cutoff.setUTCMonth(cutoff.getUTCMonth() - REVIEW_HISTORY_MONTHS)
+  const lastDay = new Date(Date.UTC(cutoff.getUTCFullYear(), cutoff.getUTCMonth() + 1, 0)).getUTCDate()
+  cutoff.setUTCDate(Math.min(day, lastDay))
+  return cutoff.toISOString()
+}
+
+export function mergeReviewRequests(
+  pending: ReviewRequest[] | null | undefined,
+  recentClosed: ReviewRequest[] | null | undefined,
+): ReviewRequest[] {
+  const byId = new Map<string, ReviewRequest>()
+  for (const request of [...(pending ?? []), ...(recentClosed ?? [])]) {
+    const current = byId.get(request.id)
+    if (!current) {
+      byId.set(request.id, request)
+      continue
+    }
+    const currentFreshness = Date.parse(current.updated_at ?? current.created_at ?? '')
+    const nextFreshness = Date.parse(request.updated_at ?? request.created_at ?? '')
+    const selected =
+      nextFreshness > currentFreshness ||
+      (nextFreshness === currentFreshness && request.status === 'pending' && current.status !== 'pending')
+        ? request
+        : current
+    const feedbackById = new Map<string, NonNullable<ReviewRequest['review_feedback']>[number]>()
+    for (const feedback of [...(current.review_feedback ?? []), ...(request.review_feedback ?? [])]) {
+      const previous = feedbackById.get(feedback.id)
+      if (!previous || Date.parse(feedback.created_at ?? '') >= Date.parse(previous.created_at ?? '')) {
+        feedbackById.set(feedback.id, feedback)
+      }
+    }
+    byId.set(
+      request.id,
+      feedbackById.size > 0
+        ? {
+            ...selected,
+            review_feedback: [...feedbackById.values()].sort(
+              (left, right) => Date.parse(left.created_at ?? '') - Date.parse(right.created_at ?? ''),
+            ),
+          }
+        : selected,
+    )
+  }
+  return [...byId.values()].sort((left, right) =>
+    Date.parse(right.created_at ?? '') - Date.parse(left.created_at ?? ''),
+  )
+}
+
+/**
+ * Fetch a single review on demand for an old/shared deep link. The list query is
+ * intentionally capped for closed history, but a user who already has a link
+ * must not see it treated as a deleted record solely because it is old.
+ */
+export async function fetchReviewRequestById(requestId: string, signal?: AbortSignal): Promise<ReviewRequest | null> {
+  if (!supabase) return null
+  let query = supabase
+    .from('review_requests')
+    .select('*, profiles(name,email), review_feedback(*, profiles(name))')
+    .eq('id', requestId)
+  if (signal) query = query.abortSignal(signal)
+  const { data, error } = await query.maybeSingle()
+  if (error) throw error
+  return (data as ReviewRequest | null) ?? null
+}
+
 function emptyAppData(): AppData {
   return {
     profiles: [],
@@ -80,6 +156,9 @@ export async function fetchAppData(): Promise<FetchAppDataResult> {
     supabase
       .from('review_requests')
       .select('*, profiles(name,email), review_feedback(*, profiles(name))')
+      // One PostgREST statement gives pending + recent closed rows one consistent
+      // snapshot, avoiding a status-transition gap between two independent queries.
+      .or(`status.eq.pending,and(status.in.(approved,rejected),created_at.gte.${reviewHistoryCutoff()})`)
       .order('created_at', { ascending: false })
       // Embedded feedback rows must be chronological — the UI highlights the last item as
       // the newest, which only holds if PostgREST returns them oldest-first.
@@ -147,7 +226,7 @@ export async function fetchAppData(): Promise<FetchAppDataResult> {
     duties: (dutiesResult.data ?? []) as Duty[],
     productAssignments: (productAssignmentsResult.data ?? []) as ProductAssignment[],
     dutyAssignments: (dutyAssignmentsResult.data ?? []) as DutyAssignment[],
-    reviewRequests: (reviewRequestsResult.data ?? []) as ReviewRequest[],
+    reviewRequests: mergeReviewRequests(reviewRequestsResult.data as ReviewRequest[] | null, null),
     projects: (projectsResult.data ?? []) as Project[],
     projectAssignments: (projectAssignmentsResult.data ?? []) as ProjectAssignment[],
     profileNotes: settledData(

@@ -5,7 +5,10 @@ export {
   withdrawReviewRequest,
   rejectReviewRequest,
   updateReviewStatus,
+  reopenReviewRequest,
   addReviewFeedback,
+  updateReviewFeedback,
+  deleteReviewFeedback,
   type ReviewRequestPayload,
 } from './mutations/reviews'
 

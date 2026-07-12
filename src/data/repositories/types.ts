@@ -10,7 +10,10 @@ export type ReviewRepository = {
   withdrawReviewRequest(requestId: string): Promise<void>
   rejectReviewRequest(requestId: string, comment: string): Promise<void>
   updateReviewStatus(requestId: string, status: ReviewStatus): Promise<void>
+  reopenReviewRequest(requestId: string): Promise<void>
   addReviewFeedback(requestId: string, comment: string): Promise<string | null>
+  updateReviewFeedback(feedbackId: string, comment: string): Promise<void>
+  deleteReviewFeedback(feedbackId: string): Promise<void>
 }
 
 export type ProjectRepository = {

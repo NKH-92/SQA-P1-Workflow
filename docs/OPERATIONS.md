@@ -48,20 +48,30 @@ Realtime·데스크톱 알림은 **실패해도 오류를 표시하지 않도록
 | 데스크톱 알림이 안 뜸 | ① 파트장 계정인가 ② 벨 패널에서 옵트인했는가 ③ 브라우저 사이트 권한이 `허용`인가 ④ 창이 **비포커스**였는가 (앱을 보고 있으면 뱃지만 갱신) | 브라우저 사이트 설정에서 알림 권한 허용 후 벨 패널에서 다시 켜기. 모바일 브라우저는 미지원(뱃지만 동작) |
 | Realtime 연결 실패가 의심됨 | Supabase Dashboard → Logs → Realtime | 연결 실패여도 데이터는 폴링으로 갱신된다 — 즉시성만 떨어짐 |
 
-## 주간 백업
+## 매일 백업
 
 ### 자동 백업 (기본) — GitHub Actions
 
-`.github/workflows/backup.yml`이 **매주 일요일 05:00 KST**(cron)에 스키마·데이터를 덤프해 **AES-256으로 암호화한 뒤** 워크플로 아티팩트(보존 90일)로 업로드합니다. Actions 탭에서 **Backup DB > Run workflow**로 수동 실행도 가능합니다.
+`.github/workflows/backup.yml`이 **매일 05:00 KST**(cron)에 스키마·데이터를 덤프해 AES-256 GPG 대칭 암호화(`.gpg`)와 전환 기간용 OpenSSL 형식(`.enc`)으로 만든 뒤, 두 파일을 실제 복호화·tar 검사하고 워크플로 아티팩트(보존 90일)로 업로드합니다. Actions 탭에서 **Backup DB > Run workflow**로 수동 실행도 가능합니다. DB Migrate는 동일 `main` SHA에서 24시간 이내 **schedule 또는 수동 실행**으로 성공한 백업이 없으면 DB 접속 전에 중단됩니다.
+
+Backup job이 실패하면 `[Backup] Daily DB backup failed` issue를 새로 만들거나 기존 open issue에 실패 run 링크를 추가합니다. schedule 자체가 장기간 비활성화되는 경우에는 이 알림도 실행되지 않으므로, 외부 uptime/heartbeat 모니터는 별도로 유지해야 합니다.
 
 | 항목 | 내용 |
 |---|---|
 | 필요 Secrets | `SUPABASE_DB_URL` (Dashboard > Connect의 Session pooler URI), `BACKUP_PASSPHRASE` (암호화 암구호) |
 | 암호화 이유 | 이 저장소가 public인 동안 아티팩트는 누구나 다운로드 가능 — 팀원 이름·이메일이 담긴 덤프는 평문 업로드 금지 |
 | 암구호 보관 | **분실 시 백업 복원 불가.** 비밀번호 관리자 등 통제된 곳에 보관 |
-| 확인 | 주 1회 Actions run이 green인지, Job Summary에 `Backup OK`가 있는지 |
+| 확인 | 매일 Actions run이 green인지, Job Summary에 `Backup OK`가 있는지 |
 
-복원 시 복호화:
+복원 시 복호화 — 신규 `.gpg` 기본 경로:
+
+```bash
+gpg --batch --pinentry-mode loopback --output db-backup.tar.gz \
+  --decrypt db-backup-<date>.tar.gz.gpg
+tar tzf db-backup.tar.gz
+```
+
+기존·전환 기간 `.enc` 호환 경로:
 
 ```bash
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
@@ -107,7 +117,7 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 
 > 운영 프로젝트에는 `disable_signup: true`가 적용되어 있다 (2026-07-09, Management API로 적용·확인). 설정을 되돌리지 않는 한 재확인은 불필요하다.
 
-> **수용한 Auth 설정 — "Require current password when updating"는 OFF로 둔다** (2026-07-09 확정). 이 앱은 `@supabase/supabase-js ^2.53.0`을 사용하는데, 이 버전은 비밀번호 변경 시 현재 비밀번호를 함께 보내는 `current_password` 파라미터를 지원하지 않는다. 이 토글을 ON으로 되돌리면 최초 로그인 비밀번호 변경(`src/screens/PasswordChangePanel.tsx`)이 `Current password required when setting new password` 400 오류로 **막힌다**. `current_password`를 지원하는 버전(supabase-js ≥ 2.102.0)으로 올려 변경 화면에 현재 비밀번호 입력을 추가하기 전에는 이 토글을 켜지 않는다.
+> **수용한 Auth 설정 — "Require current password when updating"는 coordinated rollout 전까지 OFF로 둔다** (2026-07-09 확정). 현재 lockfile은 `@supabase/supabase-js 2.110.0`을 해석해 `current_password`를 지원하지만, 배포된 구형 화면은 이를 보내지 않는다. 따라서 현재 화면·Auth 설정을 함께 교체하고 통합 검증하기 전에는 이 토글을 켜지 않는다.
 
 계정 생성 절차와 임시 비밀번호 규칙은 아래 "임시 비밀번호·첫 로그인" 절을 따릅니다.
 
@@ -125,13 +135,13 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 1. 테스트용 Supabase 프로젝트(또는 로컬 Postgres)를 준비합니다.
 2. 최신 백업 SQL을 `psql` 또는 Supabase SQL Editor로 복원합니다.
 
-   > **복원 순서 — 현재 백업은 그대로 schema → data 순으로 적용하면 됩니다** (2026-07-09 리허설로 확인). `backup.yml`의 `supabase db dump`는 `auth.users`·`auth.identities`·`storage.buckets`를 데이터 덤프에 포함하고, 덤프 선두에 `SET session_replication_role = replica;`가 있어 FK 검사가 꺼진 상태로 적재됩니다. 따라서 `profiles.id → auth.users(id)` FK 순서를 사람이 맞출 필요가 없습니다.
+   > **백업 범위:** `backup.yml`의 기본 `supabase db dump`는 애플리케이션 DB 백업이며 managed `auth`/`storage` 스키마와 Storage 객체 자체를 완전한 복구 계약으로 보장하지 않습니다. Auth 사용자·설정은 별도 내보내기/재생성 절차가, Storage 객체는 위에서 정한 별도 보관 절차가 필요합니다. 실제 덤프에 우연히 포함된 객체를 장래 복구 보장으로 간주하지 않습니다.
    >
    > 예시(schema 먼저, data 나중):
    > ```powershell
    > $env:PGPASSWORD = '<DB_PASSWORD>'
-   > psql "<DATABASE_URL>" -f backup/sqa-p1-workflow-<date>-schema.sql
-   > psql "<DATABASE_URL>" -f backup/sqa-p1-workflow-<date>-data.sql
+   > psql "<DATABASE_URL>" --set ON_ERROR_STOP=1 --single-transaction -f backup/sqa-p1-workflow-<date>-schema.sql
+   > psql "<DATABASE_URL>" --set ON_ERROR_STOP=1 --single-transaction -f backup/sqa-p1-workflow-<date>-data.sql
    > ```
    > **폴백(덤프에 `auth` 스키마가 없을 때만):** 과거·수동 덤프처럼 `auth.users`가 빠진 백업이라면 `profiles` 복원이 FK 위반으로 실패합니다. 이때만 Dashboard > Authentication > Users에서 동일 이메일 계정을 먼저 만든 뒤 `public.profiles` → 나머지 순으로 복원합니다.
 
@@ -141,6 +151,23 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
    - 원격 테스트 DB: 동일 env + `RLS_*` 테스트 계정 변수 설정
    - local/자동화 불가 시 [TEST_PLAN.md](./TEST_PLAN.md)의 RLS 수동 검증 시나리오로 대체
 5. 리허설 날짜·담당·결과를 이 문서 하단 또는 팀 위키에 기록합니다.
+
+### 운영 장애 시 신규 Supabase 프로젝트 전환 런북
+
+운영 DB가 손상됐거나 기존 프로젝트를 신뢰할 수 없을 때는 기존 DB에 덮어쓰지 말고 신규 프로젝트로 전환합니다. 아래 작업은 장애 책임자와 검증 담당자 2인이 함께 수행합니다.
+
+1. 장애 시각을 기록하고 기존 Worker 배포를 중단합니다. 손상된 운영 DB에는 추가 migration이나 복원 SQL을 실행하지 않습니다.
+2. 서울 리전(`ap-northeast-2`)에 신규 Supabase 프로젝트를 생성하고 새 프로젝트의 DB URL·project URL·anon key를 비밀번호 관리자에 보관합니다.
+3. 최신 백업 artifact를 내려받아 암구호로 복호화하고, 파일 크기와 schema의 `CREATE TABLE`, data의 `COPY`/`INSERT`를 확인합니다.
+4. 신규 프로젝트에 schema → data 순서로 복원합니다. 오류가 하나라도 있으면 전환하지 말고 새 프로젝트를 다시 비운 뒤 원인을 해결합니다.
+5. Auth 설정을 재적용합니다: email signup OFF, Site URL/Redirect URL, SMTP·메일 설정, 비밀번호 최소 길이와 현재 비밀번호 요구 정책을 운영 기준과 대조합니다.
+6. GitHub Actions의 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_DB_URL`을 신규 프로젝트 값으로 교체합니다. 이전 값은 즉시 폐기하지 말고 제한된 비상 롤백 기록으로만 보관합니다.
+7. 신규 DB의 `supabase_migrations.schema_migrations`와 로컬 migration 목록을 대조합니다. 복원된 객체를 확인하지 않고 `migration repair --status applied`를 사용하지 않습니다.
+8. RLS smoke test와 핵심 행 수(`profiles`, `products`, `review_requests`, 각 assignment)를 확인하고, leader/member 로그인·권한·첨부 없는 검토요청 작성까지 검증합니다.
+9. Deploy Worker를 수동 실행합니다. 배포 workflow의 DB readiness 및 Worker health check가 모두 green일 때만 사용자에게 전환 완료를 공지합니다.
+10. 이전 프로젝트는 즉시 삭제하지 않습니다. 접근을 제한하고 사고 분석·데이터 대조가 끝날 때까지 보존한 뒤 별도 승인으로 폐기합니다.
+
+전환 기록에는 장애 원인, 사용한 백업 run ID, 복원 행 수, 변경한 GitHub 설정, RLS/로그인/배포 검증 결과, 최종 승인자를 남깁니다. Storage `review-attachments`는 백업 대상이 아니므로 복원되지 않는다는 점도 공지합니다.
 
 ## 사용자 제거 (퇴사·전배자 처리)
 
@@ -184,28 +211,29 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 
 ## 임시 비밀번호·첫 로그인
 
-**공통 임시 비밀번호는 `1234`를 유지**하되, **최초 로그인 시 비밀번호 변경을 강제**합니다(파트장 확정).
+공통 임시 비밀번호를 사용하지 않습니다. 계정마다 **서로 다른 16자 이상의 무작위 임시 비밀번호**를 생성하고 최초 로그인 직후 변경합니다.
 
 1. 파트장이 `allowed_users`에 이메일·이름·역할을 등록합니다.
-2. Supabase Dashboard > Authentication > Users > **Add user** 로 계정을 만듭니다 (앱 가입 UI 없음). 임시 비밀번호는 `1234`.
-   - Dashboard가 최소 비밀번호 길이 제한으로 `1234` 생성을 거부하면 Authentication → Providers → Email의 **Minimum password length**를 일시적으로 4로 낮춥니다. **계정 생성이 끝나면 반드시 6(권장 8) 이상으로 되돌립니다** — 낮춘 채로 두면 이후 모든 비밀번호에 대해 프로젝트 정책이 약해집니다(앱 변경 화면의 8자 강제는 클라이언트 측 검증일 뿐입니다).
-3. 사용자는 `1234`로 로그인한 뒤 `must_change_password` 화면에서 **8자 이상**의 새 비밀번호로 변경합니다. `'1234'` 등 너무 단순한 비밀번호는 새 비밀번호로 거부됩니다.
+2. 비밀번호 관리자에서 계정별 16자 이상의 무작위 임시 비밀번호를 생성한 뒤 Supabase Dashboard > Authentication > Users > **Add user** 로 계정을 만듭니다(앱 가입 UI 없음). 임시 비밀번호를 문서·메신저 단체방·이메일 본문에 기록하지 않습니다.
+   - Authentication → Providers → Email의 **Minimum password length는 8 이상을 유지하며 임시로 낮추지 않습니다.**
+3. 임시 비밀번호는 본인에게 승인된 1:1 보안 채널로 한 번만 전달합니다. 사용자는 즉시 로그인해 `must_change_password` 화면에서 **8자 이상**의 새 비밀번호로 변경합니다.
+4. 온보딩이 끝날 때까지 담당자가 함께 확인하고, 전달 실패·지연 시 기존 임시 비밀번호를 폐기하고 새 무작위 값으로 재설정합니다.
 
-### 최초 변경은 이제 서버(RLS)에서 강제됨
+### 최초 변경 전 데이터 접근 차단과 잔여 우회
 
-`must_change_password=true`인 동안에는 **RLS 레벨에서 데이터 읽기/쓰기가 차단**됩니다(마이그레이션 `202607080001`). 세션을 얻어 화면을 우회하고 REST/RPC를 직접 호출해도, 비밀번호를 바꾸기 전에는 어떤 데이터에도 접근할 수 없습니다. (자기 자신 `profiles` row 조회와 비밀번호 변경 RPC만 예외 — 변경 화면을 그리기 위함)
+`must_change_password=true`인 동안에는 **RLS 레벨에서 데이터 읽기/쓰기가 차단**됩니다(마이그레이션 `202607080001`). 다만 현재 `mark_password_changed()` 완료 RPC는 Auth의 실제 비밀번호 변경과 서버 트랜잭션으로 묶여 있지 않아 단독 호출 우회가 가능합니다. 따라서 이 플래그를 “비밀번호가 실제 변경됐다는 서버 증명”으로 취급하지 않습니다. 서비스 역할만 사용할 수 있는 완료 흐름으로 전환하고 기존 authenticated 실행권을 회수하기 전까지 이 항목은 운영 보안 잔여 위험입니다.
 
 ### 잔여 위험과 완화책
 
-- **잔여 위험(계정 선점):** 임시 비밀번호가 공통 `1234`이므로, 공격자가 **대상 본인보다 먼저 `1234`로 로그인해 비밀번호를 바꿔버리면 계정을 탈취**할 수 있습니다. RLS 강제는 "바꾸기 전엔 접근 불가"를 보장할 뿐, "누가 먼저 바꾸느냐"는 막지 못합니다.
+- **잔여 위험(완료 플래그 우회):** 로그인한 사용자가 Auth 비밀번호를 바꾸지 않고 `mark_password_changed()`만 직접 호출할 수 있습니다.
 - **완화책:**
-  1. **온보딩은 한 명씩** — 계정 생성 **직후 즉시 본인이 로그인해 비밀번호를 변경**하게 합니다. 미사용 상태로 `1234`인 계정을 오래 방치하지 않습니다.
+  1. **온보딩은 한 명씩** — 계정 생성 직후 본인이 로그인해 비밀번호를 변경하게 하고, 미사용 임시 계정을 방치하지 않습니다.
   2. **public sign-up OFF는 필수 전제** — Supabase Dashboard에서 Enable email signup을 반드시 OFF로 둡니다(위 Auth 절 참고).
 
 ## 알려진 한계 (수용한 위험)
 
 - **활동 로그 자기 명의 삽입**: member가 `activity_logs`에 자기 명의(`actor_id=self`)의 임의 로그를 삽입할 수 있다. 타인 사칭·수정·삭제는 불가(append-only)해 위험이 낮고, 차단하려면 모든 뮤테이션의 로그 삽입을 SECURITY DEFINER RPC로 옮기는 큰 변경이 필요해 수용한다. 감사 요구가 생기면 그때 RPC 경유로 좁힌다.
-- **공통 임시 비밀번호 `1234` 선점**: 위 "임시 비밀번호·첫 로그인" 절의 잔여 위험 참고 — "한 명씩 즉시 온보딩 + public sign-up OFF"로 완화한다.
+- **비밀번호 변경 완료 플래그 우회**: 위 “최초 변경 전 데이터 접근 차단과 잔여 우회” 절 참고. 계정별 무작위 임시 비밀번호와 즉시 온보딩은 계정 선점을 줄이지만, 서버측 완료 흐름 전환 전까지 RPC 우회 자체는 남아 있다.
 
 ## 개인정보 처리 (팀 공지 필요)
 
@@ -220,7 +248,7 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 자세한 CI/CD 설정은 [DEPLOYMENT.md](./DEPLOYMENT.md)를 참고하세요.  
 **직접 수행 작업 전체 계획**은 [MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md)를 참고하세요.
 
-새 마이그레이션 적용은 로컬 CLI(`npx supabase db push`) 또는 **Actions → DB Migrate**(workflow_dispatch, `SUPABASE_DB_URL` Secret 사용 — 로컬 Supabase 인증 불필요)로 수행합니다. 절차와 확인 SQL은 [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) 참고.
+새 운영 마이그레이션의 정규 경로는 보호된 **Actions → DB Migrate**(workflow_dispatch)입니다. 로컬 `npx supabase db push`는 Actions를 사용할 수 없는 장애 대응용 break-glass 경로이며, 동일한 백업·대상 프로젝트 확인·검증 증거와 승인 기록 없이는 사용하지 않습니다. 절차와 확인 SQL은 [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) 참고.
 
 Windows에서 `npm ci`가 `EPERM`으로 실패하면, 다른 터미널·에디터에서 `node_modules`를 잠그고 있지 않은지 확인한 뒤 해당 폴더를 삭제하고 다시 실행하세요.
 

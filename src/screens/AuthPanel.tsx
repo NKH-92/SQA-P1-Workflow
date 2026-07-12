@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { TEMP_PASSWORD_MIN_LENGTH } from '../app/constants'
 import { toUserMessage } from '../lib/errors'
 import { supabase } from '../lib/supabase'
 import { Send, ShieldCheck } from 'lucide-react'
@@ -39,10 +38,7 @@ export function AuthPanel() {
       <form className="auth-form" onSubmit={submit}>
         <div>
           <h2>로그인</h2>
-          <p>
-            계정은 파트장 초대 후 Supabase에서 생성됩니다. 로그인만 가능합니다. 파트장이 등록한 이메일만 사용할
-            수 있습니다. 최초 비밀번호는 1234이며, 로그인 후 비밀번호 변경이 필요합니다.
-          </p>
+          <p>계정 또는 로그인 정보가 필요하면 파트장에게 문의하세요. 이 화면에서는 로그인만 지원합니다.</p>
         </div>
         <label>
           이메일
@@ -53,7 +49,6 @@ export function AuthPanel() {
           <input
             type="password"
             value={password}
-            minLength={TEMP_PASSWORD_MIN_LENGTH}
             onChange={(event) => setPassword(event.target.value)}
             required
           />

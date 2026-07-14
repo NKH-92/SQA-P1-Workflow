@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useEffect, useState } from 'react'
 import type { ReviewRequest, ReviewStatus } from '../../../types'
 import { dueDateLabel, dueDateShortLabel, dueUrgency } from '../../../lib/dates'
 
@@ -7,6 +7,8 @@ const COLUMNS: Array<{ status: ReviewStatus; label: string }> = [
   { status: 'approved', label: '완료' },
   { status: 'rejected', label: '반려' },
 ]
+
+const COLLAPSED_ITEM_COUNT = 3
 
 function cardUrgency(request: ReviewRequest): 'urgent' | 'warning' | 'normal' {
   // 종결된 요청은 기한이 지났어도 긴급 표시하지 않는다.
@@ -27,10 +29,27 @@ export const ReviewKanban = memo(function ReviewKanban({
   selectedReviewId: string | null
   onSelectReview: (id: string) => void
 }) {
+  const [expanded, setExpanded] = useState<Record<ReviewStatus, boolean>>({
+    pending: false,
+    approved: false,
+    rejected: false,
+  })
+
+  useEffect(() => {
+    if (!selectedReviewId) return
+    const selected = requests.find((request) => request.id === selectedReviewId)
+    if (!selected) return
+    const statusItems = requests.filter((request) => request.status === selected.status)
+    if (statusItems.findIndex((request) => request.id === selectedReviewId) < COLLAPSED_ITEM_COUNT) return
+    setExpanded((current) => (current[selected.status] ? current : { ...current, [selected.status]: true }))
+  }, [requests, selectedReviewId])
+
   return (
     <div className="kanban">
       {COLUMNS.map((column) => {
         const items = requests.filter((request) => request.status === column.status)
+        const isExpanded = expanded[column.status]
+        const visibleItems = isExpanded ? items : items.slice(0, COLLAPSED_ITEM_COUNT)
         return (
           <section className="kanban-col" data-status={column.status} key={column.status}>
             <div className="kanban-col-head">
@@ -38,7 +57,7 @@ export const ReviewKanban = memo(function ReviewKanban({
               <span className="count">{items.length}</span>
             </div>
             {items.length === 0 && <p className="kanban-col-empty">항목이 없습니다.</p>}
-            {items.map((request) => {
+            {visibleItems.map((request) => {
               const urgency = cardUrgency(request)
               const dueClass = urgency === 'normal' ? '' : urgency
               return (
@@ -69,6 +88,18 @@ export const ReviewKanban = memo(function ReviewKanban({
                 </button>
               )
             })}
+            {items.length > COLLAPSED_ITEM_COUNT && (
+              <button
+                aria-expanded={isExpanded}
+                className="kanban-toggle"
+                onClick={() =>
+                  setExpanded((current) => ({ ...current, [column.status]: !current[column.status] }))
+                }
+                type="button"
+              >
+                {isExpanded ? '접기' : `나머지 ${items.length - COLLAPSED_ITEM_COUNT}개 보기`}
+              </button>
+            )}
           </section>
         )
       })}

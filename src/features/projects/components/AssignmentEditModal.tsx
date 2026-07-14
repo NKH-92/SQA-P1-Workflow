@@ -44,7 +44,7 @@ export function AssignmentEditModal({
             return (
               <button className={selected ? 'assignee-option selected' : 'assignee-option'} key={member.id} onClick={() => onToggle(member.id)} type="button">
                 <span>
-                  <strong>{member.name}</strong>
+                  <strong>{member.name}{member.role === 'leader' ? ' (파트장 본인)' : ''}</strong>
                   <small>현재 배정 {load}건</small>
                 </span>
               </button>

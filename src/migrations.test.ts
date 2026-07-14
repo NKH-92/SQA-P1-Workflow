@@ -298,6 +298,23 @@ describe('Supabase migrations', () => {
     expect(migration).toContain('drop policy if exists "project_assignments_write_leader" on public.project_assignments')
   })
 
+  it('adds atomic product unassigned reasons and current-leader project assignment', () => {
+    const migration = readMigration('20260714075451_leader_ui_improvements.sql')
+
+    expect(migration).toContain('add column if not exists unassigned_reason text')
+    expect(migration).toContain('products_unassigned_reason_length_check')
+    expect(migration).toContain('replace_product_assignments_with_reason')
+    expect(migration).toContain('for update')
+    expect(migration).toContain('product_assignments_clear_unassigned_reason')
+    expect(migration).toContain('validate_product_unassigned_reason')
+    expect(migration).toContain('new.user_id = auth.uid()')
+    expect(migration).toContain("profile_has_role(new.user_id, 'member')")
+    expect(migration).toContain("profile_has_role(new.user_id, 'leader')")
+    expect(migration).toContain("set search_path = ''")
+    expect(migration).toContain('revoke execute on function public.validate_project_assignment_member() from anon, authenticated')
+    expect(migration).toContain('grant execute on function public.replace_product_assignments_with_reason(uuid, uuid[], text) to authenticated')
+  })
+
   it('does not delete duplicate products in uniqueness migration', () => {
     const migration = readMigration('202607060002_p1_product_unique_and_assignment_rpcs.sql')
 

@@ -137,7 +137,7 @@ GitHub 저장소 → **Settings → Secrets and variables → Actions**
 
 ### 적용 범위
 
-`supabase/migrations/`의 **현재 총 41개** migration 파일을 순서대로 적용한다 ([SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) 목록 참고). 운영에는 기존 30개까지 적용되어 있으므로 `202607110001`~`202607110011`은 프런트 배포보다 먼저 별도 migration-only 단계로 적용하고, 적용 직전 백업 및 함수·ACL·RLS 검증을 완료한다.
+`supabase/migrations/`의 **현재 총 44개** migration 파일을 순서대로 적용한다 ([SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) 목록 참고). 이번 변경에서는 `20260714075451`을 프런트 배포보다 먼저 별도 migration 단계로 적용하고, 적용 직전 동일 `main` SHA 백업 및 함수·ACL·RLS 검증을 완료한다.
 
 > 2026-07-09 서명 시점에는 29개였고, 30번째 `202607090001`(Realtime)은 알림 패키지와 함께 추가되었다 — 적용 기록은 하단 "추가 배포 기록" 참조.
 
@@ -328,7 +328,7 @@ Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy confi
   - 파트장 수동: member 간 격리, member 가능 작업이 검토요청 작성뿐임, leader 전체 조회·수정, member 화면 파트장 이름 표시 — 모두 확인
 - **잔여(선택) 항목** — leader 세션이 필요해 자동 검증에서 제외, 앱에서 1분 내 확인 가능:
   - [ ] 마지막 active leader 본인 비활성화/강등 시도 → DB 거부 확인 (202607070005)
-  - [ ] leader를 `project_assignments`에 배정 시도 → 거부 확인
+  - [x] (2026-07-14 정책 변경) 현재 로그인한 활성 leader 본인 배정은 허용, 다른 leader 배정은 거부하는 자동 RLS 테스트 추가
   - [ ] 테스트 계정 `is_active=false` 전환 후 로그인 → 안내 화면만 표시 확인
 - **정리**: 테스트 중 생성한 검토요청·첨부파일은 삭제 완료. 일회용 계정(rls-test)은 Dashboard·초대 목록에서 삭제할 것.
 

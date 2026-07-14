@@ -274,6 +274,7 @@ export function replaceProductAssignments(
   nextMemberIds: string[],
   product: Product | null,
   memberOptions: Array<{ id: string; name: string; email: string }>,
+  unassignedReason: string | null = null,
 ): AppData {
   const desiredIds = [...new Set(nextMemberIds)]
   const currentIds = data.productAssignments
@@ -286,6 +287,14 @@ export function replaceProductAssignments(
 
   return {
     ...data,
+    products: data.products.map((item) =>
+      item.id === productId
+        ? {
+            ...item,
+            unassigned_reason: desiredIds.length === 0 ? unassignedReason?.trim() || null : null,
+          }
+        : item,
+    ),
     productAssignments: [
       ...data.productAssignments.filter((assignment) => !toRemove.some((item) => item.id === assignment.id)),
       ...toAdd.map((memberId) => {
@@ -311,6 +320,9 @@ export function appendProductAssignment(
 ): AppData {
   return {
     ...data,
+    products: data.products.map((item) =>
+      item.id === productId ? { ...item, unassigned_reason: null } : item,
+    ),
     productAssignments: [
       {
         id: makeId('product-assignment'),

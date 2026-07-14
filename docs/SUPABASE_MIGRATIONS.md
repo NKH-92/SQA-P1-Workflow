@@ -45,14 +45,16 @@
 | `202607110004_restrict_review_status_and_audit.sql` | 검토 상태를 RPC 전용으로 제한하고 private 원자적 상태 변경 이력 기록 |
 | `202607110005_private_mutation_audit.sql` | 핵심 master·배정·검토·프로젝트 변경을 private 트리거 감사 이력에 원자적으로 기록 |
 | `202607110006_serialize_last_leader_guard.sql` | 동시 강등·비활성화 검사를 advisory transaction lock으로 직렬화 |
-
-## Supabase CLI (권장)
-
 | `202607110007_serialize_project_assignment_replace.sql` | Project assignment replacement with `updated_at` optimistic concurrency |
 | `202607110008_reopen_review_requests.sql` | Leader-only reopen RPC for closed review requests with transactional audit |
 | `202607110009_harden_review_member_and_project_assignment_paths.sql` | Password-gated member write closure, feedback author scope, and project OCC invalidation |
 | `202607110010_atomic_review_activity_logs.sql` | Review status and feedback RPC activity logs committed in the same transaction |
 | `202607110011_add_profile_note_private_audit.sql` | Transaction-bound private audit trigger for profile-note mutations |
+| `202607120001_revoke_anon_from_add_assignment_rpcs.sql` | add-only 배정 RPC와 파트장 이름 view의 잔여 anon 권한 회수 |
+| `202607120002_drop_role_only_leader_write_policies.sql` | active/password 검증 없는 구형 leader 쓰기 정책 제거 |
+| `20260714075451_leader_ui_improvements.sql` | 제품 미지정 사유 원자적 저장·배정 시 자동 삭제 + 현재 활성 파트장 본인 프로젝트 배정 허용 |
+
+## Supabase CLI (권장)
 
 ```bash
 # 프로젝트 연결 (최초 1회)
@@ -71,7 +73,7 @@ push와 핵심 객체(RPC·Storage 버킷·RLS 정책) 존재 확인을 한 번�
 
 로컬에 Supabase 로그인이나 DB 비밀번호가 없어도, Actions → **DB Migrate** → Run workflow로 미적용 마이그레이션을 적용할 수 있습니다. Migration-only 변경을 `main`에 반영한 뒤 같은 `main` SHA에서 **Backup DB**를 schedule 또는 수동 실행하고, 24시간 이내 성공한 run ID를 DB Migrate에 입력해야 합니다. workflow·event(schedule/수동)·branch·commit SHA·성공 상태·암호화 artifact를 모두 확인하며 하나라도 다르면 DB 접속 전에 실패합니다. 비-main ref도 Secret 확인·DB 접근 전에 실패합니다. 백업과 동일한 `SUPABASE_DB_URL` Secret을 사용하며, Job Summary에 적용 결과와 realtime publication 확인이 표시됩니다. append-only 정책 그대로 — 이 워크플로도 새 파일만 push합니다.
 
-`202607110001` 이후 프런트는 신규 add-only RPC를 호출합니다. 짧은 유지보수 창을 공지하고 기존 탭을 새로고침/종료한 뒤, 직전 백업 → DB Migrate → 신규 버전 11개와 RPC 보안 속성·ACL 확인 → 프런트 배포 순으로 진행합니다. 완전 무중단 공존 증명은 선택사항이지만 두 단계를 한 번의 `main` 병합으로 합치지는 않습니다.
+`202607110001` 이후 프런트는 신규 add-only RPC를 호출합니다. 짧은 유지보수 창을 공지하고 기존 탭을 새로고침/종료한 뒤, 직전 백업 → DB Migrate → 신규 버전과 RPC 보안 속성·ACL 확인 → 프런트 배포 순으로 진행합니다. 완전 무중단 공존 증명은 선택사항이지만 두 단계를 한 번의 `main` 병합으로 합치지는 않습니다.
 
 ## SQL Editor (수동)
 
@@ -127,6 +129,7 @@ where pronamespace = 'public'::regnamespace
     'create_project_with_assignments',
     'replace_project_assignments',
     'replace_product_assignments',
+    'replace_product_assignments_with_reason',
     'replace_duty_assignments',
     'update_review_request_status'
   );
@@ -145,6 +148,21 @@ select exists (
     and schemaname = 'public'
     and tablename = 'review_requests'
 );
+
+-- 20260714075451: 제품 미지정 사유와 자동 정리 trigger
+select column_name
+from information_schema.columns
+where table_schema = 'public'
+  and table_name = 'products'
+  and column_name = 'unassigned_reason';
+
+select tgname
+from pg_trigger
+where tgrelid in ('public.products'::regclass, 'public.product_assignments'::regclass)
+  and tgname in ('products_validate_unassigned_reason', 'product_assignments_clear_unassigned_reason');
+
+select pg_get_functiondef('public.validate_project_assignment_member()'::regprocedure)
+  like '%new.user_id = auth.uid()%' as current_leader_self_allowed;
 ```
 
 ## 로컬 검증

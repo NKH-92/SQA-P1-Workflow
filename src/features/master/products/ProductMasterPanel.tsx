@@ -12,6 +12,7 @@ import {
   createRepositoryContext,
   deleteProduct as deleteProductRecord,
   importProducts as importProductsMutation,
+  saveProductAssignments,
   updateProduct as updateProductMutation,
 } from '../../../data'
 import { selectProductGroups } from '../master.selectors'
@@ -21,18 +22,24 @@ import {
   validateProductUpdate,
 } from '../master.validators'
 import type { MasterSubPanelProps } from '../shared/types'
-import { ProductAssignModal } from './ProductAssignModal'
-import { ProductCard } from './ProductCard'
+import {
+  ProductAssignModal,
+  UNASSIGNED_PRODUCT_USER_ID,
+  type ProductAssignmentForm,
+} from './ProductAssignModal'
+import { ProductCard, type ProductEdit } from './ProductCard'
 import { ProductRegisterModal } from './ProductRegisterModal'
 
 export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSubPanelProps) {
   const [productForm, setProductForm] = useState({ name: '', category: '자사' as ProductCategory, companyName: '자사' })
-  const [productAssignment, setProductAssignment] = useState({ user_id: '', product_id: '' })
+  const [productAssignment, setProductAssignment] = useState<ProductAssignmentForm>({
+    user_id: '',
+    product_id: '',
+    unassigned_reason: '',
+  })
   const [adminSearch, setAdminSearch] = useState('')
   const [pendingDelete, setPendingDelete] = useState<{ table: AdminDeleteTable; id: string } | null>(null)
-  const [productEdits, setProductEdits] = useState<
-    Record<string, { name: string; category: ProductCategory | string; companyName: string }>
-  >({})
+  const [productEdits, setProductEdits] = useState<Record<string, ProductEdit>>({})
   const [productRegisterOpen, setProductRegisterOpen] = useState(false)
   const [productAssignOpen, setProductAssignOpen] = useState(false)
 
@@ -100,14 +107,24 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
   }
 
   const assignProduct = async () => {
+    const isUnassigned = productAssignment.user_id === UNASSIGNED_PRODUCT_USER_ID
     const ok = await mutate(async () => {
-      if (!productAssignment.user_id) return
-      await assignProductMutation(createRepositoryContext(profile, data, setData), {
-        userId: productAssignment.user_id,
-        productId: productAssignment.product_id,
-      })
-      setProductAssignment({ user_id: productAssignment.user_id, product_id: '' })
-    }, '담당 제품을 배정했습니다.')
+      if (!productAssignment.user_id || !productAssignment.product_id) return
+      const ctx = createRepositoryContext(profile, data, setData)
+      if (isUnassigned) {
+        await saveProductAssignments(ctx, {
+          productId: productAssignment.product_id,
+          nextMemberIds: [],
+          unassignedReason: productAssignment.unassigned_reason,
+        })
+      } else {
+        await assignProductMutation(ctx, {
+          userId: productAssignment.user_id,
+          productId: productAssignment.product_id,
+        })
+      }
+      setProductAssignment({ user_id: '', product_id: '', unassigned_reason: '' })
+    }, isUnassigned ? '제품을 미지정 상태로 저장했습니다.' : '담당 제품을 배정했습니다.')
     if (ok) setProductAssignOpen(false)
   }
 
@@ -120,6 +137,9 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
         name,
         category: edit.category || '자사',
         company_name: edit.companyName.trim() || (edit.category === '자사' ? '자사' : ''),
+        unassigned_reason: data.productAssignments.some((assignment) => assignment.product_id === productId)
+          ? null
+          : edit.unassignedReason.trim() || null,
       })
       setProductEdits((current) => {
         const next = { ...current }

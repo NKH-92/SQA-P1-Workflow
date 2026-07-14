@@ -12,7 +12,7 @@ vi.mock('../../lib/supabase', () => ({
   supabase: { rpc: rpcMock, from: fromMock },
 }))
 
-import { assignDuty, assignProduct } from './master'
+import { assignDuty, assignProduct, saveProductAssignments } from './master'
 
 const leader: Profile = {
   id: 'leader-1',
@@ -78,5 +78,19 @@ describe('single assignment RPC contracts (remote)', () => {
     await assignProduct(ctx, { productId: 'product-1', userId: 'member-1' })
 
     expect(rpcMock).toHaveBeenCalledOnce()
+  })
+
+  it('saves the unassigned state and reason through the atomic RPC', async () => {
+    await saveProductAssignments(remoteContext(), {
+      productId: 'product-1',
+      nextMemberIds: [],
+      unassignedReason: '  담당자 협의 중  ',
+    })
+
+    expect(rpcMock).toHaveBeenCalledWith('replace_product_assignments_with_reason', {
+      p_product_id: 'product-1',
+      p_member_ids: [],
+      p_unassigned_reason: '담당자 협의 중',
+    })
   })
 })

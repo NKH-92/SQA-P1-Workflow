@@ -83,6 +83,25 @@ describeRls(`RLS assignments (${RLS_SKIP_NOTE})`, () => {
     expect(error).not.toBeNull()
   })
 
+  it('blocks member from saving an unassigned product reason', async () => {
+    const memberAEmail = process.env.RLS_MEMBER_A_EMAIL
+    const memberAPassword = process.env.RLS_MEMBER_A_PASSWORD
+    const productId = process.env.RLS_TEST_PRODUCT_ID
+    if (!memberAEmail || !memberAPassword || !productId) {
+      expect.fail('Set member A and product RLS fixture variables')
+    }
+
+    const client = createClient(url, anonKey, { auth: { persistSession: false } })
+    await client.auth.signInWithPassword({ email: memberAEmail, password: memberAPassword })
+    const { error } = await client.rpc('replace_product_assignments_with_reason', {
+      p_product_id: productId,
+      p_member_ids: [],
+      p_unassigned_reason: '허용되면 안 됨',
+    })
+
+    expect(error).not.toBeNull()
+  })
+
   it('blocks member from calling the add-only product assignment RPC', async () => {
     const memberAEmail = process.env.RLS_MEMBER_A_EMAIL
     const memberAPassword = process.env.RLS_MEMBER_A_PASSWORD
@@ -156,6 +175,40 @@ describeRls(`RLS assignments (${RLS_SKIP_NOTE})`, () => {
     expect(count).toBe(1)
   })
 
+  it('atomically stores an unassigned reason and clears it on assignment', async () => {
+    const leaderEmail = process.env.RLS_LEADER_EMAIL
+    const leaderPassword = process.env.RLS_LEADER_PASSWORD
+    const memberBUserId = process.env.RLS_MEMBER_B_USER_ID
+    const productId = process.env.RLS_TEST_PRODUCT_ID
+    if (!leaderEmail || !leaderPassword || !memberBUserId || !productId) {
+      expect.fail('Set leader, member B, and product RLS fixture variables')
+    }
+
+    const client = createClient(url, anonKey, { auth: { persistSession: false } })
+    await client.auth.signInWithPassword({ email: leaderEmail, password: leaderPassword })
+
+    const unassign = await client.rpc('replace_product_assignments_with_reason', {
+      p_product_id: productId,
+      p_member_ids: [],
+      p_unassigned_reason: ' 담당 제품군 조정 중 ',
+    })
+    expect(unassign.error).toBeNull()
+
+    const saved = await client.from('products').select('unassigned_reason').eq('id', productId).single()
+    expect(saved.error).toBeNull()
+    expect(saved.data?.unassigned_reason).toBe('담당 제품군 조정 중')
+
+    const assign = await client.rpc('add_product_assignment', {
+      p_product_id: productId,
+      p_user_id: memberBUserId,
+    })
+    expect(assign.error).toBeNull()
+
+    const cleared = await client.from('products').select('unassigned_reason').eq('id', productId).single()
+    expect(cleared.error).toBeNull()
+    expect(cleared.data?.unassigned_reason).toBeNull()
+  })
+
   it('allows a leader to add an active member duty assignment', async () => {
     const leaderEmail = process.env.RLS_LEADER_EMAIL
     const leaderPassword = process.env.RLS_LEADER_PASSWORD
@@ -172,6 +225,56 @@ describeRls(`RLS assignments (${RLS_SKIP_NOTE})`, () => {
       p_user_id: memberBUserId,
     })
     expect(error).toBeNull()
+  })
+
+  it('allows the current active leader to assign a project to themselves', async () => {
+    const leaderEmail = process.env.RLS_LEADER_EMAIL
+    const leaderPassword = process.env.RLS_LEADER_PASSWORD
+    const leaderUserId = process.env.RLS_LEADER_USER_ID
+    if (!leaderEmail || !leaderPassword || !leaderUserId) {
+      expect.fail('Set leader RLS fixture variables')
+    }
+
+    const client = createClient(url, anonKey, { auth: { persistSession: false } })
+    await client.auth.signInWithPassword({ email: leaderEmail, password: leaderPassword })
+    const created = await client.rpc('create_project_with_assignments', {
+      p_name: 'RLS Leader Self Assignment',
+      p_description: 'current leader only',
+      p_deadline: null,
+      p_status: 'planned',
+      p_member_ids: [leaderUserId],
+    })
+
+    expect(created.error).toBeNull()
+    expect(typeof created.data).toBe('string')
+    const assignment = await client
+      .from('project_assignments')
+      .select('user_id')
+      .eq('project_id', created.data as string)
+      .single()
+    expect(assignment.error).toBeNull()
+    expect(assignment.data?.user_id).toBe(leaderUserId)
+  })
+
+  it('blocks a leader from assigning a project to a different leader', async () => {
+    const leaderEmail = process.env.RLS_LEADER_EMAIL
+    const leaderPassword = process.env.RLS_LEADER_PASSWORD
+    const otherLeaderUserId = process.env.RLS_LEADER_B_USER_ID
+    if (!leaderEmail || !leaderPassword || !otherLeaderUserId) {
+      expect.fail('Set both leader RLS fixture variables')
+    }
+
+    const client = createClient(url, anonKey, { auth: { persistSession: false } })
+    await client.auth.signInWithPassword({ email: leaderEmail, password: leaderPassword })
+    const { error } = await client.rpc('create_project_with_assignments', {
+      p_name: 'RLS Other Leader Assignment',
+      p_description: 'must fail',
+      p_deadline: null,
+      p_status: 'planned',
+      p_member_ids: [otherLeaderUserId],
+    })
+
+    expect(error).not.toBeNull()
   })
 
   it('rejects a stale project assignment replacement after the first save advances the revision', async () => {
@@ -236,6 +339,19 @@ describeRls(`RLS assignments (${RLS_SKIP_NOTE})`, () => {
     const { error } = await client.rpc('add_product_assignment', {
       p_product_id: productId,
       p_user_id: memberBUserId,
+    })
+    expect(error).not.toBeNull()
+  })
+
+  it('does not expose the product unassigned-reason RPC to anonymous callers', async () => {
+    const productId = process.env.RLS_TEST_PRODUCT_ID
+    if (!productId) expect.fail('Set product RLS fixture variables')
+
+    const client = createClient(url, anonKey, { auth: { persistSession: false } })
+    const { error } = await client.rpc('replace_product_assignments_with_reason', {
+      p_product_id: productId,
+      p_member_ids: [],
+      p_unassigned_reason: 'anonymous',
     })
     expect(error).not.toBeNull()
   })

@@ -30,6 +30,14 @@ function assertLocalAssignmentLeader(ctx: RepositoryContext) {
 
 const assertLocalLeader = assertLocalAssignmentLeader
 
+function normalizeUnassignedReason(value: string | null | undefined): string | null {
+  const reason = value?.trim() || null
+  if (reason && reason.length > 1000) {
+    throw new UserFacingError('담당자 미지정 사유는 1000자 이하로 입력해 주세요.')
+  }
+  return reason
+}
+
 function assertLocalAssignmentMembers(ctx: RepositoryContext, memberIds: string[]) {
   for (const memberId of new Set(memberIds)) {
     const member = ctx.data.profiles.find((item) => item.id === memberId)
@@ -229,17 +237,20 @@ export async function saveProductAssignments(
   input: {
     productId: string
     nextMemberIds: string[]
+    unassignedReason?: string | null
     product?: Product | null
     memberOptions?: Array<{ id: string; name: string; email: string }>
   },
 ): Promise<void> {
   const { data, setData } = ctx
-  const { productId, nextMemberIds, product, memberOptions } = input
+  const { productId, nextMemberIds, unassignedReason, product, memberOptions } = input
+  const normalizedReason = normalizeUnassignedReason(unassignedReason)
 
   if (ctx.isRemote) {
-    const { error } = await supabase!.rpc('replace_product_assignments', {
+    const { error } = await supabase!.rpc('replace_product_assignments_with_reason', {
       p_product_id: productId,
       p_member_ids: nextMemberIds,
+      p_unassigned_reason: normalizedReason,
     })
     if (error) throw error
   } else {
@@ -251,10 +262,13 @@ export async function saveProductAssignments(
       memberOptions?.map((item) => item) ??
       data.profiles.map((item) => ({ id: item.id, name: item.name, email: item.email }))
     setData((current) =>
-      replaceProductAssignments(current, productId, nextMemberIds, resolvedProduct, members),
+      replaceProductAssignments(current, productId, nextMemberIds, resolvedProduct, members, normalizedReason),
     )
   }
-  await logMasterActivity(ctx, 'product_assignment', 'updated', '제품 배정을 조정했습니다.', productId, { assigned_user_ids: nextMemberIds })
+  await logMasterActivity(ctx, 'product_assignment', 'updated', '제품 배정을 조정했습니다.', productId, {
+    assigned_user_ids: nextMemberIds,
+    unassigned_reason: nextMemberIds.length === 0 ? normalizedReason : null,
+  })
 }
 
 export async function saveDutyAssignments(
@@ -386,18 +400,27 @@ export async function assignDuty(
 export async function updateProduct(
   ctx: RepositoryContext,
   productId: string,
-  payload: { name: string; category?: ProductCategory | string | null; company_name?: string | null; sort_order?: number | null },
+  payload: {
+    name: string
+    category?: ProductCategory | string | null
+    company_name?: string | null
+    unassigned_reason?: string | null
+    sort_order?: number | null
+  },
 ): Promise<void> {
   const { data, setData } = ctx
+  const normalizedPayload = payload.unassigned_reason === undefined
+    ? payload
+    : { ...payload, unassigned_reason: normalizeUnassignedReason(payload.unassigned_reason) }
   if (ctx.isRemote) {
-    const { data: affected, error } = await supabase!.from('products').update(payload).eq('id', productId).select('id')
+    const { data: affected, error } = await supabase!.from('products').update(normalizedPayload).eq('id', productId).select('id')
     if (error) throw error
     assertAffectedRows(affected)
   } else {
     assertRecordExists(data.products.find((item) => item.id === productId))
-    setData((current) => updateProductRow(current, productId, payload))
+    setData((current) => updateProductRow(current, productId, normalizedPayload))
   }
-  await logMasterActivity(ctx, 'product', 'updated', '제품 정보를 수정했습니다.', productId, payload)
+  await logMasterActivity(ctx, 'product', 'updated', '제품 정보를 수정했습니다.', productId, normalizedPayload)
 }
 
 export async function updateDutyMajorCategory(

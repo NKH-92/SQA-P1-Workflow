@@ -17,12 +17,16 @@ export function canCreateProject(profile: Pick<Profile, 'role'> | null | undefin
   return isLeader(profile)
 }
 
-export function canAssignProjectTo(profile: Pick<Profile, 'role' | 'is_active'> | null | undefined): boolean {
-  return profile?.role === 'member' && profile.is_active !== false
+export function canAssignProjectTo(
+  profile: Pick<Profile, 'id' | 'role' | 'is_active'> | null | undefined,
+  currentProfileId: string,
+): boolean {
+  if (!profile || profile.is_active === false) return false
+  return profile.role === 'member' || (profile.role === 'leader' && profile.id === currentProfileId)
 }
 
 export function canReceiveAssignment(profile: Pick<Profile, 'role' | 'is_active'> | null | undefined): boolean {
-  return canAssignProjectTo(profile)
+  return profile?.role === 'member' && profile.is_active !== false
 }
 
 export function canViewProfile(current: Profile, target: Pick<Profile, 'id'>): boolean {

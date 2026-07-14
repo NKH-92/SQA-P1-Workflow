@@ -25,7 +25,9 @@ function selectMasterSearchMatches(query: string, ...values: Array<string | null
 }
 
 function selectFilteredProducts(data: AppData, query: string) {
-  return data.products.filter((item) => selectMasterSearchMatches(query, item.name, item.category, item.company_name))
+  return data.products.filter((item) =>
+    selectMasterSearchMatches(query, item.name, item.category, item.company_name, item.unassigned_reason),
+  )
 }
 
 function selectFilteredDuties(data: AppData, query: string) {

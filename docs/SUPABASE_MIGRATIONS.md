@@ -53,6 +53,7 @@
 | `202607120001_revoke_anon_from_add_assignment_rpcs.sql` | add-only 배정 RPC와 파트장 이름 view의 잔여 anon 권한 회수 |
 | `202607120002_drop_role_only_leader_write_policies.sql` | active/password 검증 없는 구형 leader 쓰기 정책 제거 |
 | `20260714075451_leader_ui_improvements.sql` | 제품 미지정 사유 원자적 저장·배정 시 자동 삭제 + 현재 활성 파트장 본인 프로젝트 배정 허용 |
+| `20260714082821_optimize_leader_project_assignment_rls.sql` | 파트장 본인 프로젝트 배정 RLS의 사용자 ID 평가를 쿼리당 1회로 최적화 |
 
 ## Supabase CLI (권장)
 

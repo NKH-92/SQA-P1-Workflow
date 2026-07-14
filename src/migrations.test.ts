@@ -315,6 +315,15 @@ describe('Supabase migrations', () => {
     expect(migration).toContain('grant execute on function public.replace_product_assignments_with_reason(uuid, uuid[], text) to authenticated')
   })
 
+  it('evaluates the current user once in leader project assignment policies', () => {
+    const migration = readMigration('20260714082821_optimize_leader_project_assignment_rls.sql')
+
+    expect(migration).toContain('project_assignments_insert_leader_member')
+    expect(migration).toContain('project_assignments_update_leader_member')
+    expect(migration).toContain('user_id = (select auth.uid())')
+    expect(migration).not.toContain('user_id = auth.uid()')
+  })
+
   it('does not delete duplicate products in uniqueness migration', () => {
     const migration = readMigration('202607060002_p1_product_unique_and_assignment_rpcs.sql')
 

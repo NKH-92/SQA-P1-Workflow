@@ -7,7 +7,7 @@ const workflows = import.meta.glob('../.github/workflows/*.yml', {
 }) as Record<string, string>
 
 function readWorkflow(name: string) {
-  return workflows[`../.github/workflows/${name}`] ?? ''
+  return (workflows[`../.github/workflows/${name}`] ?? '').replace(/\r\n/g, '\n')
 }
 
 describe('production workflow guards', () => {
@@ -92,6 +92,7 @@ describe('production workflow guards', () => {
     expect(workflow).toContain("version = '202607110009'")
     expect(workflow).toContain("version = '202607110010'")
     expect(workflow).toContain("version = '202607110011'")
+    expect(workflow).toContain("version = '20260714075451'")
     expect(workflow).toContain("to_regprocedure('public.add_product_assignment(uuid,uuid)')")
     expect(workflow).toContain("to_regprocedure('public.add_duty_assignment(uuid,uuid)')")
     expect(workflow).toContain("to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)')")
@@ -127,6 +128,10 @@ describe('production workflow guards', () => {
     expect(workflow).toContain("policyname = 'review_feedback_insert_leader'")
     expect(workflow).toContain("pg_get_functiondef(to_regprocedure('public.is_active_leader()')) like '%password_is_current()%'")
     expect(workflow).toContain('role-only leader RLS policy')
+    expect(workflow).toContain('leader_ui_gate=')
+    expect(workflow).toContain("to_regprocedure('public.replace_product_assignments_with_reason(uuid,uuid[],text)')")
+    expect(workflow).toContain('product_assignments_clear_unassigned_reason')
+    expect(workflow).toContain("to_regprocedure('public.validate_project_assignment_member()')")
     expect(workflow).not.toContain("proacl::text not like '%=X%'")
   })
 
@@ -146,6 +151,7 @@ describe('production workflow guards', () => {
     expect(workflow).toContain("version = '202607110009'")
     expect(workflow).toContain("version = '202607110010'")
     expect(workflow).toContain("version = '202607110011'")
+    expect(workflow).toContain("version = '20260714075451'")
     expect(workflow).toContain("to_regprocedure('public.add_product_assignment(uuid,uuid)')")
     expect(workflow).toContain("to_regprocedure('public.add_duty_assignment(uuid,uuid)')")
     expect(workflow).toContain("to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)')")
@@ -164,6 +170,10 @@ describe('production workflow guards', () => {
     expect(workflow).toContain("tgname = 'profile_notes_private_audit'")
     expect(workflow).toContain("policyname = 'review_feedback_insert_leader'")
     expect(workflow).toContain('role-only leader RLS policy')
+    expect(workflow).toContain('leader_ui_ready=')
+    expect(workflow).toContain("to_regprocedure('public.replace_product_assignments_with_reason(uuid,uuid[],text)')")
+    expect(workflow).toContain('product_assignments_clear_unassigned_reason')
+    expect(workflow).toContain("to_regprocedure('public.validate_project_assignment_member()')")
   })
 
   it('keeps production Worker promotion manual and explicitly confirmed', () => {

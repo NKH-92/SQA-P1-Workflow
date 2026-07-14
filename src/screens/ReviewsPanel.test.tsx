@@ -97,7 +97,7 @@ describe('ReviewsPanel', () => {
   it('restores a saved draft when opening the composer', async () => {
     const user = userEvent.setup()
     const data = createPreviewData()
-    const now = new Date('2026-07-06T12:00:00.000Z')
+    const now = new Date()
     const draft = {
       title: '초안 제목',
       description: '초안 설명',

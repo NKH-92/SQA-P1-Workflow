@@ -63,7 +63,12 @@ export function ProjectsPanel({
   const leaderMode = profile.role === 'leader'
   // 파트원은 자기 프로젝트만 보므로 사람별 보기가 의미 없다 — 항상 프로젝트별로 고정한다.
   const effectiveViewMode = leaderMode ? viewMode : 'project'
-  const memberOptions = data.profiles.filter(canAssignProjectTo)
+  const projectCandidateProfiles = data.profiles.some((candidate) => candidate.id === profile.id)
+    ? data.profiles
+    : [profile, ...data.profiles]
+  const memberOptions = projectCandidateProfiles.filter((candidate) =>
+    canAssignProjectTo(candidate, profile.id),
+  )
   const visibleProjectAssignments = selectVisibleProjectAssignments(data, profile, leaderMode)
   const projectFilter = { query: projectQuery, status: statusFilter }
   const filteredProjectAssignments = selectFilteredProjectAssignments(data, visibleProjectAssignments, projectFilter)
@@ -211,7 +216,7 @@ export function ProjectsPanel({
         <label className="search-field">
           <Search size={16} />
           <input
-            placeholder="프로젝트, 파트원, 메모 검색"
+            placeholder="프로젝트, 담당자, 메모 검색"
             value={projectQuery}
             onChange={(event) => setProjectQuery(event.target.value)}
           />
@@ -376,7 +381,7 @@ export function ProjectsPanel({
                     </div>
                   )}
                   <Rows
-                    empty="아직 배정된 파트원이 없습니다."
+                    empty="아직 배정된 담당자가 없습니다."
                     rows={assignments.map((assignment) => ({
                       title: assignment.profiles?.name ?? assignment.user_id,
                       meta: `${project.deadline ? `마감 ${formatDate(project.deadline)}` : '마감일 없음'}${
@@ -393,7 +398,7 @@ export function ProjectsPanel({
             {memberGroups.length === 0 && (
               <EmptyState
                 icon={<Users size={22} />}
-                title="조건에 맞는 파트원 배정이 없습니다."
+                title="조건에 맞는 담당자 배정이 없습니다."
                 description="검색어나 상태 필터를 바꿔 보세요."
               />
             )}

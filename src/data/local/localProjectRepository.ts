@@ -17,8 +17,8 @@ export function createLocalProjectRepository(ctx: RepositoryDeps): ProjectReposi
     for (const memberId of new Set(memberIds)) {
       const member = data.profiles.find((item) => item.id === memberId)
       assertRecordExists(member)
-      if (!canAssignProjectTo(member)) {
-        throw new UserFacingError('활성 상태인 파트원에게만 프로젝트를 배정할 수 있습니다.')
+      if (!canAssignProjectTo(member, profile.id)) {
+        throw new UserFacingError('활성 파트원 또는 현재 파트장 본인에게만 프로젝트를 배정할 수 있습니다.')
       }
     }
   }

@@ -225,6 +225,34 @@ jobs:
             exit 1
           fi
 
+          leader_ui_ready=$(psql "$DATABASE_URL" -tAc \
+            "select
+              exists (select 1 from supabase_migrations.schema_migrations where version = '20260714075451')
+              and exists (select 1 from pg_attribute where attrelid = 'public.products'::regclass and attname = 'unassigned_reason' and not attisdropped)
+              and exists (select 1 from pg_constraint where conrelid = 'public.products'::regclass and conname = 'products_unassigned_reason_length_check' and convalidated)
+              and to_regprocedure('public.replace_product_assignments_with_reason(uuid,uuid[],text)') is not null
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.replace_product_assignments_with_reason(uuid,uuid[],text)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.replace_product_assignments_with_reason(uuid,uuid[],text)')), false)
+              and coalesce(has_function_privilege('authenticated', to_regprocedure('public.replace_product_assignments_with_reason(uuid,uuid[],text)'), 'EXECUTE'), false)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.replace_product_assignments_with_reason(uuid,uuid[],text)'), 'EXECUTE'), true)
+              and to_regprocedure('public.clear_product_unassigned_reason()') is not null
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.clear_product_unassigned_reason()')), false)
+              and not coalesce(has_function_privilege('authenticated', to_regprocedure('public.clear_product_unassigned_reason()'), 'EXECUTE'), true)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.clear_product_unassigned_reason()'), 'EXECUTE'), true)
+              and exists (select 1 from pg_trigger where tgrelid = 'public.product_assignments'::regclass and tgname = 'product_assignments_clear_unassigned_reason' and tgfoid = to_regprocedure('public.clear_product_unassigned_reason()') and tgenabled in ('O', 'A'))
+              and to_regprocedure('public.validate_project_assignment_member()') is not null
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.validate_project_assignment_member()')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.validate_project_assignment_member()')), false)
+              and not coalesce(has_function_privilege('authenticated', to_regprocedure('public.validate_project_assignment_member()'), 'EXECUTE'), true)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.validate_project_assignment_member()'), 'EXECUTE'), true)
+              and coalesce(pg_get_functiondef(to_regprocedure('public.validate_project_assignment_member()')) like '%new.user_id = auth.uid()%', false)
+              and coalesce(pg_get_functiondef(to_regprocedure('public.validate_project_assignment_member()')) like '%profile_has_role(new.user_id, ''member''%', false)
+              and coalesce(pg_get_functiondef(to_regprocedure('public.validate_project_assignment_member()')) like '%is_active_leader()%', false)")
+          if [ "$leader_ui_ready" != "t" ]; then
+            echo "::error::Production DB product-reason/current-leader assignment contract is not ready"
+            exit 1
+          fi
+
           leader_policy_ready=$(psql "$DATABASE_URL" -tAc \
             "select not exists (
               select 1 from pg_policies

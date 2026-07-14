@@ -39,6 +39,7 @@ export interface Product {
   name: string
   category?: ProductCategory | string | null
   company_name?: string | null
+  unassigned_reason?: string | null
   sort_order?: number | null
   created_at?: string
   updated_at?: string

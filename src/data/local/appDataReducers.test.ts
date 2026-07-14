@@ -90,6 +90,26 @@ describe('appDataReducers', () => {
     expect(dutyNext.dutyAssignments.filter((item) => item.duty_id === duty.id && item.user_id === previewMember.id)).toHaveLength(1)
   })
 
+  it('keeps product unassigned reason consistent with assignment rows', () => {
+    const data = createPreviewData()
+    const product = data.products.find(
+      (item) => !data.productAssignments.some((assignment) => assignment.product_id === item.id),
+    )!
+
+    const unassigned = replaceProductAssignments(data, product.id, [], product, [previewMember], ' 담당자 협의 중 ')
+    expect(unassigned.products.find((item) => item.id === product.id)?.unassigned_reason).toBe('담당자 협의 중')
+
+    const assigned = replaceProductAssignments(
+      unassigned,
+      product.id,
+      [previewMember.id],
+      product,
+      [previewMember],
+      '남아 있으면 안 됨',
+    )
+    expect(assigned.products.find((item) => item.id === product.id)?.unassigned_reason).toBeNull()
+  })
+
   it('removes a product and its assignments', () => {
     const data = createPreviewData()
     const product = data.products[0]

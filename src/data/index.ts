@@ -29,6 +29,7 @@ export {
   addDuty,
   assignProduct,
   assignDuty,
+  saveProductAssignments,
   updateProduct,
   updateDutyMajorCategory,
   updateDuty,

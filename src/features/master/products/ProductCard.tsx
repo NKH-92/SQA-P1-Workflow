@@ -4,7 +4,12 @@ import type { AppData, ProductCategory } from '../../../types'
 import type { AdminDeleteTable } from '../../../app/types'
 import { DeleteConfirmAction } from '../shared/DeleteConfirmAction'
 
-type ProductEdit = { name: string; category: ProductCategory | string; companyName: string }
+export type ProductEdit = {
+  name: string
+  category: ProductCategory | string
+  companyName: string
+  unassignedReason: string
+}
 
 export function ProductCard({
   product,
@@ -70,6 +75,23 @@ export function ProductCard({
               }
             />
           </label>
+          {assignments.length === 0 && (
+            <label className="wide">
+              비고 · 담당자 미지정 사유 (선택)
+              <textarea
+                maxLength={1000}
+                placeholder="예: 담당 제품군 조정 중"
+                value={edit.unassignedReason}
+                onChange={(event) =>
+                  setProductEdits({
+                    ...productEdits,
+                    [product.id]: { ...edit, unassignedReason: event.target.value },
+                  })
+                }
+              />
+              <small>{edit.unassignedReason.length}/1000자</small>
+            </label>
+          )}
           <div className="inline-actions">
             <button className="primary compact" disabled={!edit.name.trim()} onClick={() => onSave(product.id)} type="button">
               <Save size={16} />
@@ -109,6 +131,7 @@ export function ProductCard({
                       name: product.name,
                       category: product.category ?? '자사',
                       companyName: product.company_name ?? (product.category === '자사' ? '자사' : ''),
+                      unassignedReason: product.unassigned_reason ?? '',
                     },
                   })
                 }
@@ -135,8 +158,14 @@ export function ProductCard({
             {assignments.map((assignment) => (
               <span key={assignment.id}>{assignment.profiles?.name ?? assignment.user_id}</span>
             ))}
-            {assignments.length === 0 && <span className="pill-warn">배정 필요</span>}
+            {assignments.length === 0 && <span className="pill-warn">미지정</span>}
           </div>
+          {assignments.length === 0 && (
+            <p className="product-unassigned-note">
+              <strong>비고</strong>
+              {product.unassigned_reason || '담당자 미지정 사유가 입력되지 않았습니다.'}
+            </p>
+          )}
         </>
       )}
     </article>

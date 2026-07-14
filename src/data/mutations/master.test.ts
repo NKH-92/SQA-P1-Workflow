@@ -65,6 +65,26 @@ describe('local assignment replacement parity', () => {
     expect(ctx.setData).toHaveBeenCalled()
   })
 
+  it('stores an unassigned reason locally and clears it when a member is assigned', async () => {
+    const ctx = localContext()
+    let nextData = ctx.data
+    ctx.setData = (updater) => {
+      nextData = typeof updater === 'function' ? updater(nextData) : updater
+    }
+
+    await saveProductAssignments(ctx, {
+      productId: 'product-1',
+      nextMemberIds: [],
+      unassignedReason: '담당 제품군 조정 중',
+    })
+    expect(nextData.products[0]?.unassigned_reason).toBe('담당 제품군 조정 중')
+
+    ctx.data = nextData
+    await assignProduct(ctx, { productId: 'product-1', userId: 'member-1' })
+    expect(nextData.products[0]?.unassigned_reason).toBeNull()
+    expect(nextData.productAssignments).toHaveLength(1)
+  })
+
   it('requires an active leader for single assignment mutations', async () => {
     const ctx = localContext(member)
 

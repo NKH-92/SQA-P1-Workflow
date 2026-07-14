@@ -190,6 +190,45 @@ jobs:
                   and tgenabled in ('O', 'A')
                   and pg_get_triggerdef(oid) like '%BEFORE INSERT OR UPDATE OF user_id%'
               )")
+          leader_ui_gate=$(psql "$DATABASE_URL" -tAc \
+            "select
+              exists (select 1 from supabase_migrations.schema_migrations where version = '20260714075451')
+              and exists (
+                select 1 from pg_attribute
+                 where attrelid = 'public.products'::regclass
+                   and attname = 'unassigned_reason'
+                   and not attisdropped
+              )
+              and exists (
+                select 1 from pg_constraint
+                 where conrelid = 'public.products'::regclass
+                   and conname = 'products_unassigned_reason_length_check'
+                   and convalidated
+              )
+              and to_regprocedure('public.replace_product_assignments_with_reason(uuid,uuid[],text)') is not null
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.replace_product_assignments_with_reason(uuid,uuid[],text)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.replace_product_assignments_with_reason(uuid,uuid[],text)')), false)
+              and coalesce(has_function_privilege('authenticated', to_regprocedure('public.replace_product_assignments_with_reason(uuid,uuid[],text)'), 'EXECUTE'), false)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.replace_product_assignments_with_reason(uuid,uuid[],text)'), 'EXECUTE'), true)
+              and to_regprocedure('public.clear_product_unassigned_reason()') is not null
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.clear_product_unassigned_reason()')), false)
+              and not coalesce(has_function_privilege('authenticated', to_regprocedure('public.clear_product_unassigned_reason()'), 'EXECUTE'), true)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.clear_product_unassigned_reason()'), 'EXECUTE'), true)
+              and exists (
+                select 1 from pg_trigger
+                 where tgrelid = 'public.product_assignments'::regclass
+                   and tgname = 'product_assignments_clear_unassigned_reason'
+                   and tgfoid = to_regprocedure('public.clear_product_unassigned_reason()')
+                   and tgenabled in ('O', 'A')
+              )
+              and to_regprocedure('public.validate_project_assignment_member()') is not null
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.validate_project_assignment_member()')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.validate_project_assignment_member()')), false)
+              and not coalesce(has_function_privilege('authenticated', to_regprocedure('public.validate_project_assignment_member()'), 'EXECUTE'), true)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.validate_project_assignment_member()'), 'EXECUTE'), true)
+              and coalesce(pg_get_functiondef(to_regprocedure('public.validate_project_assignment_member()')) like '%new.user_id = auth.uid()%', false)
+              and coalesce(pg_get_functiondef(to_regprocedure('public.validate_project_assignment_member()')) like '%profile_has_role(new.user_id, ''member''%', false)
+              and coalesce(pg_get_functiondef(to_regprocedure('public.validate_project_assignment_member()')) like '%is_active_leader()%', false)")
           leader_view_gate=$(psql "$DATABASE_URL" -tAc \
             "select pg_get_viewdef('public.public_leader_profiles'::regclass, true) like '%can_use_app()%'")
           review_status_gate=$(psql "$DATABASE_URL" -tAc \
@@ -312,6 +351,11 @@ jobs:
             exit 1
           fi
 
+          if [ "$leader_ui_gate" != "t" ]; then
+            echo "::error::leader UI product-reason/current-leader assignment contract verification failed (received: $leader_ui_gate)"
+            exit 1
+          fi
+
           if [ "$leader_view_gate" != "t" ]; then
             echo "::error::public_leader_profiles access gate verification failed (received: $leader_view_gate)"
             exit 1
@@ -357,6 +401,7 @@ jobs:
           echo "assignment migration versions: $assignment_versions" >> "$GITHUB_STEP_SUMMARY"
           echo "assignment RPC security/ACL checks: $assignment_rpcs" >> "$GITHUB_STEP_SUMMARY"
           echo "assignment member/active trigger checks: $assignment_guard" >> "$GITHUB_STEP_SUMMARY"
+          echo "leader UI product reason/current-leader assignment gate: $leader_ui_gate" >> "$GITHUB_STEP_SUMMARY"
           echo "leader profile view app-access gate: $leader_view_gate" >> "$GITHUB_STEP_SUMMARY"
           echo "review status RPC-only/audit gate: $review_status_gate" >> "$GITHUB_STEP_SUMMARY"
           echo "private mutation audit gate: $private_audit_gate" >> "$GITHUB_STEP_SUMMARY"

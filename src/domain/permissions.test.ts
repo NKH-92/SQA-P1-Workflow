@@ -23,9 +23,10 @@ describe('role visibility rules mirrored by RLS', () => {
   it('keeps project creation and assignment role-specific', () => {
     expect(canCreateProject(leader)).toBe(true)
     expect(canCreateProject(memberA)).toBe(false)
-    expect(canAssignProjectTo(memberA)).toBe(true)
-    expect(canAssignProjectTo(leader)).toBe(false)
-    expect(canAssignProjectTo({ ...memberA, is_active: false })).toBe(false)
+    expect(canAssignProjectTo(memberA, leader.id)).toBe(true)
+    expect(canAssignProjectTo(leader, leader.id)).toBe(true)
+    expect(canAssignProjectTo({ ...leader, id: 'leader-2' }, leader.id)).toBe(false)
+    expect(canAssignProjectTo({ ...memberA, is_active: false }, leader.id)).toBe(false)
   })
 
   it('keeps member profile visibility scoped to self', () => {

@@ -104,7 +104,7 @@ export function ProjectComposerModal({
                 value={form.description}
                 onChange={(event) => setForm({ ...form, description: event.target.value })}
               />
-              <p>목표, 산출물, 포함 범위를 짧게 적으면 배정 받은 파트원이 바로 움직일 수 있습니다.</p>
+              <p>목표, 산출물, 포함 범위를 짧게 적으면 배정 받은 담당자가 바로 움직일 수 있습니다.</p>
             </div>
             <div className="project-form-row">
               <div className="modal-field-stack">
@@ -133,13 +133,13 @@ export function ProjectComposerModal({
               </div>
             </div>
             <div className="modal-field-stack">
-              <label>파트원 배정</label>
+              <label>담당자 배정</label>
               <div className="assignee-chip-box">
                 {memberOptions
                   .filter((member) => selectedMemberIds.includes(member.id))
                   .map((member) => (
                     <button key={member.id} onClick={() => onToggleMember(member.id)} type="button">
-                      {member.name}
+                      {member.name}{member.role === 'leader' ? ' (파트장 본인)' : ''}
                       <X size={13} />
                     </button>
                   ))}
@@ -158,7 +158,7 @@ export function ProjectComposerModal({
                     >
                       <span className="check-mark">{selected && <Check size={13} />}</span>
                       <span>
-                        <strong>{member.name}</strong>
+                        <strong>{member.name}{member.role === 'leader' ? ' (파트장 본인)' : ''}</strong>
                         <small>현재 과제 {currentLoad}개 · 담당 제품 {data.productAssignments.filter((assignment) => assignment.user_id === member.id).length}개</small>
                       </span>
                       {currentLoad >= 3 && <Badge status="due_soon">부하</Badge>}
@@ -181,7 +181,7 @@ export function ProjectComposerModal({
                   return (
                     <article key={member.id}>
                       <header>
-                        <strong>{member.name}</strong>
+                        <strong>{member.name}{member.role === 'leader' ? ' (파트장 본인)' : ''}</strong>
                         <Badge status={overloaded ? 'due_soon' : 'approved'}>{overloaded ? '부하 주의' : '여유'}</Badge>
                       </header>
                       <div className={overloaded ? 'load-transition warning' : 'load-transition'}>
@@ -203,12 +203,12 @@ export function ProjectComposerModal({
                     </article>
                   )
                 })}
-              {selectedMemberIds.length === 0 && <p className="empty">배정할 파트원을 선택하세요.</p>}
+              {selectedMemberIds.length === 0 && <p className="empty">배정할 담당자를 선택하세요.</p>}
             </div>
             <div className="workload-total">
               <span>팀 총 배정</span>
               <strong>{selectedMemberIds.length}명</strong>
-              <p>생성과 동시에 선택한 파트원에게 프로젝트가 배정됩니다.</p>
+              <p>생성과 동시에 선택한 담당자에게 프로젝트가 배정됩니다.</p>
             </div>
           </aside>
           <footer className="modal-footer project-modal-footer">

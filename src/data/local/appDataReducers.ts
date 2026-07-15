@@ -53,6 +53,7 @@ export function createReviewRequest(
   reviewId: string,
   payload: ReviewRequestPayload,
 ): AppData {
+  const now = new Date().toISOString()
   const request: ReviewRequest = {
     id: reviewId,
     requester_id: profile.id,
@@ -61,8 +62,11 @@ export function createReviewRequest(
     attachment_url: payload.attachment_url,
     due_date: payload.due_date,
     status: 'pending',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    review_round: 1,
+    rejection_count: 0,
+    last_submitted_at: now,
+    created_at: now,
+    updated_at: now,
     profiles: { name: profile.name, email: profile.email },
     review_feedback: [],
   }
@@ -102,6 +106,7 @@ export function rejectReviewRequest(
     id: feedbackId,
     review_request_id: requestId,
     leader_id: profile.id,
+    author_role: 'leader',
     comment,
     created_at: new Date().toISOString(),
     profiles: { name: profile.name },
@@ -113,8 +118,43 @@ export function rejectReviewRequest(
         ? {
             ...row,
             status: 'rejected',
+            rejection_count: (row.rejection_count ?? 0) + 1,
             // Match the remote trigger so demo processing-time stats aren't computed as 0 days.
             updated_at: new Date().toISOString(),
+            review_feedback: [...(row.review_feedback ?? []), item],
+          }
+        : row,
+    ),
+  }
+}
+
+export function resubmitReviewRequest(
+  data: AppData,
+  requestId: string,
+  profile: Profile,
+  comment: string,
+  feedbackId: string,
+): AppData {
+  const now = new Date().toISOString()
+  const item: ReviewFeedback = {
+    id: feedbackId,
+    review_request_id: requestId,
+    leader_id: profile.id,
+    author_role: 'member',
+    comment,
+    created_at: now,
+    profiles: { name: profile.name },
+  }
+  return {
+    ...data,
+    reviewRequests: data.reviewRequests.map((row) =>
+      row.id === requestId
+        ? {
+            ...row,
+            status: 'pending',
+            review_round: (row.review_round ?? 1) + 1,
+            last_submitted_at: now,
+            updated_at: now,
             review_feedback: [...(row.review_feedback ?? []), item],
           }
         : row,

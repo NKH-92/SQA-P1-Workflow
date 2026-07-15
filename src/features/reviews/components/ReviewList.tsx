@@ -67,6 +67,10 @@ export const ReviewList = memo(function ReviewList({
         const dueStatus = dueDateStatus(request.due_date)
         const dueChip = request.status === 'pending' ? dueDateShortLabel(request.due_date) : null
         const unread = unreadIds?.has(request.id) ?? false
+        const reviewRound = request.review_round ?? 1
+        const submittedAt = reviewRound > 1
+          ? request.last_submitted_at ?? request.created_at
+          : request.created_at
         return (
           <button
             className={selectedReviewId === request.id ? 'review-list-item selected' : 'review-list-item'}
@@ -86,12 +90,14 @@ export const ReviewList = memo(function ReviewList({
             </span>
             <span className="review-list-line2">
               <span className="status-word" data-status={request.status}>
-                {reviewStatusLabels[request.status]}
+                {request.status === 'pending' && reviewRound > 1
+                  ? '재검토 요청'
+                  : reviewStatusLabels[request.status]}
               </span>
               <span className="dot-sep" aria-hidden="true" />
               {request.profiles?.name ?? '요청자'}
               <span className="dot-sep" aria-hidden="true" />
-              <time title={formatDate(request.created_at)}>{relativeDateLabel(request.created_at)}</time>
+              <time title={formatDate(submittedAt)}>{relativeDateLabel(submittedAt)}</time>
             </span>
           </button>
         )

@@ -2215,6 +2215,18 @@ button.review-preview-row:hover {
   color: var(--paper-faint);
 }
 
+.review-history-chip {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid rgba(148, 73, 75, 0.24);
+  border-radius: var(--radius-full);
+  background: var(--paper-reject-bg);
+  color: var(--paper-reject);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .request-actions {
   display: flex;
   flex-wrap: wrap;
@@ -2506,13 +2518,20 @@ button.review-preview-row:hover {
 }
 
 .feedback-composer-head {
-  display: block;
+  display: grid;
+  gap: 3px;
 }
 
 .feedback-composer-head strong {
   color: var(--paper-text);
   font-size: 13px;
   font-weight: 500;
+}
+
+.feedback-composer-head span {
+  color: var(--paper-dim);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .feedback-composer textarea {

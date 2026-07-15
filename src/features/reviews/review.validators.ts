@@ -36,6 +36,18 @@ export function assertCanReopen(current: ReviewStatus) {
   }
 }
 
+export function assertCanResubmit(current: ReviewStatus) {
+  if (current !== 'rejected') {
+    throw new UserFacingError('반려된 검토요청만 재요청할 수 있습니다.')
+  }
+}
+
+export function assertActiveMember(profile: Pick<Profile, 'role' | 'is_active'>) {
+  if (profile.role !== 'member' || profile.is_active === false) {
+    throw new UserFacingError('활성 파트원 권한이 필요합니다.')
+  }
+}
+
 export function assertFeedbackComment(comment: string) {
   if (!comment.trim()) {
     throw new UserFacingError('피드백을 입력해 주세요.')

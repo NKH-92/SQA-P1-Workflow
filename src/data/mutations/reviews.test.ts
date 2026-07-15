@@ -7,6 +7,7 @@ import {
   addReviewFeedback,
   rejectReviewRequest,
   reopenReviewRequest,
+  resubmitReviewRequest,
   saveReviewRequest,
   updateReviewFeedback,
   updateReviewStatus,
@@ -217,6 +218,72 @@ describe('reopenReviewRequest and feedback correction (demo)', () => {
     expect(updated?.status).toBe('pending')
     expect(updated?.review_feedback).toEqual([])
     expect(next.activityLogs.some((log) => log.action === 'reopened')).toBe(true)
+  })
+})
+
+describe('resubmitReviewRequest (demo)', () => {
+  it('reuses the rejected request id and appends an immutable member history entry', async () => {
+    const data = createPreviewData()
+    const source = data.reviewRequests[0]!
+    const rejected = {
+      ...source,
+      status: 'rejected' as const,
+      review_round: 1,
+      rejection_count: 1,
+      review_feedback: [],
+    }
+    let next = { ...data, reviewRequests: [rejected, ...data.reviewRequests.slice(1)] }
+    const ctx: RepositoryContext = {
+      isRemote: false,
+      profile: previewMember,
+      data: next,
+      setData: (updater) => {
+        next = typeof updater === 'function' ? updater(next) : updater
+      },
+    }
+
+    await resubmitReviewRequest(ctx, source.id, '수정 내용을 반영했습니다.')
+
+    const updated = next.reviewRequests.find((item) => item.id === source.id)
+    expect(next.reviewRequests).toHaveLength(data.reviewRequests.length)
+    expect(updated?.status).toBe('pending')
+    expect(updated?.review_round).toBe(2)
+    expect(updated?.rejection_count).toBe(1)
+    expect(updated?.last_submitted_at).toBeTruthy()
+    expect(updated?.review_feedback).toEqual([
+      expect.objectContaining({
+        leader_id: previewMember.id,
+        author_role: 'member',
+        comment: '수정 내용을 반영했습니다.',
+      }),
+    ])
+    expect(next.activityLogs.some((log) => log.action === 'resubmitted')).toBe(true)
+  })
+
+  it('allows the requester to edit rejected content before resubmitting', async () => {
+    const data = createPreviewData()
+    const source = { ...data.reviewRequests[0]!, status: 'rejected' as const }
+    let next = { ...data, reviewRequests: [source, ...data.reviewRequests.slice(1)] }
+    const ctx: RepositoryContext = {
+      isRemote: false,
+      profile: previewMember,
+      data: next,
+      setData: (updater) => {
+        next = typeof updater === 'function' ? updater(next) : updater
+      },
+    }
+
+    await saveReviewRequest(ctx, {
+      editingReviewId: source.id,
+      payload: {
+        title: '반려 내용 수정',
+        description: source.description,
+        attachment_url: source.attachment_url,
+        due_date: source.due_date,
+      },
+    })
+
+    expect(next.reviewRequests.find((item) => item.id === source.id)?.title).toBe('반려 내용 수정')
   })
 })
 

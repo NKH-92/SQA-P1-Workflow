@@ -18,7 +18,9 @@
 - 파트원 대시보드의 `내 알림/리마인더`에는 본인 검토요청 기한과 미완료 프로젝트 마감이 보인다.
 - 기초데이터 삭제 아이콘은 첫 클릭에서 바로 삭제하지 않고, 같은 행의 `삭제 확인`을 눌렀을 때만 삭제한다.
 - 파트원이 `pending` 상태의 본인 검토요청을 수정·회수할 수 있고, 회수 후 파트장 우선처리 큐와 목록에서 사라진다.
-- `approved` 또는 `rejected` 상태의 검토요청은 파트원이 수정·회수할 수 없다.
+- `rejected` 상태의 본인 검토요청은 파트원이 내용을 수정할 수 있지만 회수할 수는 없다. `approved` 상태는 수정·회수할 수 없다.
+- 파트원은 반려된 요청에 수정 내용을 피드백으로 남기고 `피드백 작성 후 재검토 요청`을 누를 수 있다. 새 요청이 생기지 않고 같은 ID가 `pending`으로 돌아오며 `재검토 요청`과 누적 `반려 이력 N회`가 표시된다.
+- 같은 요청을 두 번 이상 반려·재요청해도 `review_round`, `rejection_count`, 파트장·파트원 피드백 이력이 한 요청에 순서대로 누적된다.
 - 파트장이 검토요청을 `반려`할 때 피드백(사유) 없이는 상태 전환이 되지 않는다.
 - 파트장 홈 우선처리 큐에서 검토요청을 클릭하면 검토요청 탭 해당 항목 상세가 바로 선택된다.
 - URL 해시(`#/reviews?id=...`)로 새로고침해도 같은 탭·항목이 유지된다.
@@ -45,7 +47,7 @@
 
 - 검토요청 상세와 프로젝트 카드의 `링크 복사`가 클립보드에 해시 딥링크(`#/reviews?id=...` 등)를 넣고, 그 링크로 열면 해당 항목이 바로 선택된다.
 - 창을 백그라운드에 두고 다른 계정으로 데이터를 바꾼 뒤 창에 복귀하면(마지막 갱신 30초 경과 시) 자동 재조회된다. 아무 조작 없이도 5분마다 갱신된다.
-- (Realtime) member가 검토요청을 생성하면 파트장 화면에 새로고침 없이 수 초 내 나타난다.
+- (Realtime) member가 검토요청을 생성하거나 반려 요청을 재요청하면 파트장 화면에 새로고침 없이 수 초 내 나타난다.
 - (데스크톱 알림) 파트장이 벨 패널에서 알림을 켜고 창을 비포커스로 둔 상태에서 새 대기 요청이 오면 OS 알림이 뜨고, 클릭 시 해당 검토요청 상세로 이동한다. 앱을 보고 있는 동안에는 OS 알림 대신 벨 뱃지만 갱신된다.
 - 데스크톱 알림 생성이 불가능한 환경(Chromium 계열 Android 등)에서도 앱이 오류 화면으로 떨어지지 않는다 — 벨 뱃지·목록 갱신만 동작.
 
@@ -64,10 +66,11 @@ Supabase에 최소 3명(`leader`, `member A`, `member B`)을 등록한 뒤 각 �
 - `leader`는 `project_assignments.user_id`에 현재 로그인한 본인 계정을 넣을 수 있어야 하고, 다른 leader 계정을 넣으면 DB trigger/RLS가 거부해야 한다.
 - `member`·anon은 제품 미지정 사유 RPC를 호출할 수 없어야 하며, 활성 leader가 사유를 저장한 뒤 제품을 배정하면 DB trigger가 사유를 `null`로 정리해야 한다.
 - `leader`가 `projects.created_by`에 member 계정을 넣어 프로젝트를 만들려 하면 DB trigger/RLS가 거부해야 한다.
-- `profile_notes.profile_id`는 member, `profile_notes.leader_id`와 `review_feedback.leader_id`는 leader만 허용되는지 확인한다.
+- `profile_notes.profile_id`는 member, `profile_notes.leader_id`는 leader만 허용되는지 확인한다. `review_feedback.leader_id`는 호환성을 위해 유지된 작성자 ID이며 `author_role`과 실제 프로필 역할이 일치해야 한다.
 - `activity_logs`는 leader가 전체를 조회하고, member는 본인이 actor이거나 target인 로그만 조회할 수 있어야 한다.
 - `member`가 `activity_logs.target_user_id`를 임의로 지정해 insert하려 하면 RLS가 거부해야 한다.
-- `member A`가 본인 `pending` 검토요청을 수정·삭제할 수 있고, `member B`의 요청이나 `approved`/`rejected` 요청은 수정·삭제할 수 없어야 한다.
+- `member A`가 본인 `pending` 요청을 수정·삭제하고 본인 `rejected` 요청은 수정만 할 수 있어야 한다. `member B`의 요청이나 `approved` 요청은 수정·삭제할 수 없어야 한다.
+- 본인 아닌 member의 `resubmit_review_request` 호출은 거부되고, 본인 rejected 요청은 같은 ID로 재요청되어야 한다. 동시 재요청은 하나만 성공해야 한다.
 - 활성 파트장은 종결 검토요청을 재오픈할 수 있고, member·비활성 파트장·미인증 호출은 `reopen_review_request` RPC에서 거부되어야 한다.
 - 같은 종결 요청에 대한 동시 재오픈 호출은 하나만 성공하고, 최종 상태는 `pending`이며 status audit 이벤트는 한 건이어야 한다.
 - `member`는 `review-attachments` 버킷에 본인 경로(`{user_id}/...`)로만 업로드할 수 있고, 다른 사용자 파일은 조회·삭제할 수 없어야 한다.

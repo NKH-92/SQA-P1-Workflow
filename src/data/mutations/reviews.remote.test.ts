@@ -55,6 +55,7 @@ import {
   addReviewFeedback,
   deleteReviewFeedback,
   reopenReviewRequest,
+  resubmitReviewRequest,
   rejectReviewRequest,
   saveReviewRequest,
   updateReviewFeedback,
@@ -152,6 +153,25 @@ describe('review mutation contracts (remote)', () => {
 
     expect(mocks.rpc).toHaveBeenCalledWith('reopen_review_request', {
       p_review_request_id: closed.id,
+    })
+    expect(mocks.recordActivityLog).not.toHaveBeenCalled()
+  })
+
+  it('maps member resubmission to the atomic same-request RPC', async () => {
+    const rejected = {
+      ...review,
+      status: 'rejected' as const,
+      review_round: 1,
+      rejection_count: 1,
+    }
+    const ctx = remoteContext(member)
+    ctx.data.reviewRequests = [rejected]
+
+    await resubmitReviewRequest(ctx, rejected.id, '  changes applied  ')
+
+    expect(mocks.rpc).toHaveBeenCalledWith('resubmit_review_request', {
+      p_review_request_id: rejected.id,
+      p_comment: 'changes applied',
     })
     expect(mocks.recordActivityLog).not.toHaveBeenCalled()
   })

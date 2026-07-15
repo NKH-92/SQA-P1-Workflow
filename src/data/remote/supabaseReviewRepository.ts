@@ -4,6 +4,8 @@ import { UserFacingError } from '../../lib/errors'
 import {
   assertCanReject,
   assertCanReopen,
+  assertCanResubmit,
+  assertActiveMember,
   assertFeedbackComment,
   assertReviewStatusTransition,
   assertStorageAttachmentOnly,
@@ -32,8 +34,8 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
           .eq('updated_at', previous.updated_at)
           .select('id')
         if (error) throw error
-        // RLS allows editing only the requester's own pending row. Zero rows means the
-          // leader already closed it while the editor was open — surface it instead of a
+        // RLS allows editing the requester's own pending or rejected row. Zero rows means
+        // the request changed while the editor was open — surface it instead of a
         // misleading success toast.
         if (!updated || updated.length === 0) {
           throw new UserFacingError('이미 처리된 요청이라 수정할 수 없습니다. 목록을 새로고침해 주세요.')
@@ -126,6 +128,23 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
       // The RPC writes the authoritative activity log in the same transaction.
     },
 
+    async resubmitReviewRequest(requestId, comment) {
+      assertActiveMember(profile)
+      assertFeedbackComment(comment)
+      const request = data.reviewRequests.find((item) => item.id === requestId)
+      if (!request) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
+      if (request.requester_id !== profile.id) {
+        throw new UserFacingError('본인의 요청만 재요청할 수 있습니다.')
+      }
+      assertCanResubmit(request.status)
+      const { error } = await supabase!.rpc('resubmit_review_request', {
+        p_review_request_id: requestId,
+        p_comment: comment.trim(),
+      })
+      if (error) throw error
+      // The RPC appends the member feedback, reopens the same row, and writes its audit log.
+    },
+
     async addReviewFeedback(requestId, comment) {
       assertFeedbackComment(comment)
       const { data: createdId, error } = await supabase!.rpc('add_review_feedback', {
@@ -143,7 +162,9 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
         .flatMap((request) => request.review_feedback ?? [])
         .find((item) => item.id === feedbackId)
       if (!feedback) throw new UserFacingError('피드백을 찾을 수 없습니다.')
-      if (feedback.leader_id !== profile.id) throw new UserFacingError('본인이 작성한 피드백만 수정할 수 있습니다.')
+      if ((feedback.author_role ?? 'leader') !== 'leader' || feedback.leader_id !== profile.id) {
+        throw new UserFacingError('본인이 작성한 파트장 피드백만 수정할 수 있습니다.')
+      }
       const request = data.reviewRequests.find((item) => item.id === feedback.review_request_id)
       const { data: updated, error } = await supabase!
         .from('review_feedback')
@@ -170,7 +191,9 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
         .flatMap((request) => request.review_feedback ?? [])
         .find((item) => item.id === feedbackId)
       if (!feedback) throw new UserFacingError('피드백을 찾을 수 없습니다.')
-      if (feedback.leader_id !== profile.id) throw new UserFacingError('본인이 작성한 피드백만 삭제할 수 있습니다.')
+      if ((feedback.author_role ?? 'leader') !== 'leader' || feedback.leader_id !== profile.id) {
+        throw new UserFacingError('본인이 작성한 파트장 피드백만 삭제할 수 있습니다.')
+      }
       const request = data.reviewRequests.find((item) => item.id === feedback.review_request_id)
       const { data: deleted, error } = await supabase!
         .from('review_feedback')

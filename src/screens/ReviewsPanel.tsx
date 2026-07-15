@@ -7,6 +7,7 @@ import {
   createRepositoryContext,
   deleteReviewFeedback,
   reopenReviewRequest,
+  resubmitReviewRequest,
   rejectReviewRequest,
   saveReviewRequest,
   updateReviewStatus,
@@ -225,6 +226,13 @@ export function ReviewsPanel({
       await reopenReviewRequest(createRepositoryContext(profile, data, setData), id)
     }, '검토요청을 다시 열었습니다.')
 
+  const resubmitReview = async (id: string, comment: string): Promise<boolean> =>
+    mutate(async () => {
+      const trimmedComment = comment.trim()
+      if (!trimmedComment) throw new UserFacingError('재검토 요청 피드백을 입력해 주세요.')
+      await resubmitReviewRequest(createRepositoryContext(profile, data, setData), id, trimmedComment)
+    }, '같은 검토요청으로 재검토를 요청했습니다.')
+
   const updateFeedback = async (feedbackId: string, comment: string): Promise<boolean> =>
     mutate(async () => {
       await updateReviewFeedback(createRepositoryContext(profile, data, setData), feedbackId, comment)
@@ -319,6 +327,7 @@ export function ReviewsPanel({
                 profile={profile}
                 rejectReview={rejectReview}
                 reopenReview={reopenReview}
+                resubmitReview={resubmitReview}
                 updateFeedback={updateFeedback}
                 deleteFeedback={deleteFeedback}
                 selectedReview={selectedReview}
@@ -349,6 +358,7 @@ export function ReviewsPanel({
             profile={profile}
             rejectReview={rejectReview}
             reopenReview={reopenReview}
+            resubmitReview={resubmitReview}
             updateFeedback={updateFeedback}
             deleteFeedback={deleteFeedback}
             selectedReview={selectedReview}

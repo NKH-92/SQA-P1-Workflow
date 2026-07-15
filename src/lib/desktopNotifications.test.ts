@@ -40,6 +40,7 @@ describe('selectNewPendingReviews', () => {
     expect(alerts.map((alert) => alert.id)).toEqual(['new-early', 'new-late'])
     expect(alerts[0].requesterName).toBe('김파트')
     expect(alerts[0].title).toBe('검토 제목')
+    expect(alerts[0].isResubmission).toBe(false)
   })
 
   it('returns nothing without a baseline — prevents a notification burst on first load', () => {
@@ -56,10 +57,34 @@ describe('selectNewPendingReviews', () => {
     const alerts = selectNewPendingReviews(
       { reviewRequests: [review({ id: 'r-1', status: 'pending', created_at: '2026-07-09T09:10:00.000Z' })] },
       cutoff,
-      new Set(['r-1']),
+      new Set([`r-1:${Date.parse('2026-07-09T09:10:00.000Z')}`]),
     )
 
     expect(alerts).toEqual([])
+  })
+
+  it('picks a same-row resubmission using last_submitted_at', () => {
+    const alerts = selectNewPendingReviews(
+      {
+        reviewRequests: [review({
+          id: 'r-1',
+          status: 'pending',
+          created_at: '2026-07-01T00:00:00.000Z',
+          review_round: 2,
+          last_submitted_at: '2026-07-09T09:10:00.000Z',
+        })],
+      },
+      cutoff,
+      new Set(),
+    )
+
+    expect(alerts).toEqual([
+      expect.objectContaining({
+        id: 'r-1',
+        notificationKey: `r-1:${Date.parse('2026-07-09T09:10:00.000Z')}`,
+        isResubmission: true,
+      }),
+    ])
   })
 })
 
@@ -86,7 +111,14 @@ describe('initialNotifiedUpTo', () => {
 })
 
 describe('showPendingReviewNotification', () => {
-  const alert = { id: 'r-1', title: '검토 제목', requesterName: '김파트', at: 0 }
+  const alert = {
+    id: 'r-1',
+    notificationKey: 'r-1:0',
+    title: '검토 제목',
+    requesterName: '김파트',
+    isResubmission: false,
+    at: 0,
+  }
 
   afterEach(() => {
     vi.unstubAllGlobals()

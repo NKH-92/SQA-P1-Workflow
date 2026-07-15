@@ -51,6 +51,7 @@ export function ReviewRequestItem({
   profile,
   rejectReview,
   reopenReview,
+  resubmitReview,
   updateFeedback,
   deleteFeedback,
   request,
@@ -64,6 +65,7 @@ export function ReviewRequestItem({
   profile: Profile
   rejectReview: (requestId: string, comment: string) => Promise<boolean>
   reopenReview: (requestId: string) => Promise<boolean>
+  resubmitReview: (requestId: string, comment: string) => Promise<boolean>
   updateFeedback: (feedbackId: string, comment: string) => Promise<boolean>
   deleteFeedback: (feedbackId: string) => Promise<boolean>
   request: ReviewRequest
@@ -81,7 +83,15 @@ export function ReviewRequestItem({
   const feedbackInputRef = useRef<HTMLTextAreaElement>(null)
   const timelineSteps = getTimelineSteps(request.status)
   const requestFeedback = request.review_feedback ?? []
-  const canEditOwn = profile.id === request.requester_id && request.status === 'pending'
+  const ownsRequest = profile.id === request.requester_id
+  const canEditOwn = ownsRequest && (request.status === 'pending' || request.status === 'rejected')
+  const canWithdrawOwn = ownsRequest && request.status === 'pending'
+  const isMemberResubmission = profile.role === 'member' && ownsRequest && request.status === 'rejected'
+  const reviewRound = request.review_round ?? 1
+  const rejectionCount = request.rejection_count ?? (request.status === 'rejected' ? 1 : 0)
+  const statusLabel = request.status === 'pending' && reviewRound > 1
+    ? '재검토 요청'
+    : reviewStatusLabels[request.status]
   const urgency = dueUrgency(request.due_date)
   const dueUrgent = urgency === 'urgent'
 
@@ -146,11 +156,20 @@ export function ReviewRequestItem({
   const submitFeedback = async () => {
     if (isSubmitting || !feedbackDraft.trim()) return
     const submittedComment = feedbackDraft
+    if (isMemberResubmission && !window.confirm('피드백을 남기고 같은 검토요청으로 재검토를 요청하시겠습니까?')) {
+      return
+    }
     setIsSubmitting(true)
     try {
-      const ok = await addFeedback(request.id, submittedComment)
+      const ok = isMemberResubmission
+        ? await resubmitReview(request.id, submittedComment)
+        : await addFeedback(request.id, submittedComment)
       if (ok) {
         setFeedbackDraft((current) => (current === submittedComment ? '' : current))
+        if (isMemberResubmission) {
+          setTransitionNotice({ text: '같은 검토요청으로 재검토를 요청했습니다.', tone: 'pending' })
+          window.setTimeout(() => setTransitionNotice(null), 2600)
+        }
       }
     } finally {
       setIsSubmitting(false)
@@ -196,7 +215,8 @@ export function ReviewRequestItem({
       )}
 
       <div className="request-topline">
-        <Badge status={request.status}>{reviewStatusLabels[request.status]}</Badge>
+        <Badge status={request.status}>{statusLabel}</Badge>
+        {rejectionCount > 0 && <span className="review-history-chip">반려 이력 {rejectionCount}회</span>}
         <span className="request-meta-inline">
           {request.profiles?.name ?? '요청자'} · 접수 {ageInDays(request.created_at)}일
         </span>
@@ -231,7 +251,7 @@ export function ReviewRequestItem({
               <Pencil size={14} />
               수정
             </button>
-            {pendingWithdraw ? (
+            {canWithdrawOwn && pendingWithdraw ? (
               <>
                 <button className="danger compact" onClick={() => void withdrawReview(request.id)} type="button">
                   회수 확인
@@ -240,12 +260,12 @@ export function ReviewRequestItem({
                   취소
                 </button>
               </>
-            ) : (
+            ) : canWithdrawOwn ? (
               <button className="ghost compact" onClick={() => onWithdraw(request.id)} type="button">
                 <Trash2 size={14} />
                 회수
               </button>
-            )}
+            ) : null}
             <CopyLinkButton tab="reviews" entityId={request.id} />
           </div>
         )}
@@ -276,8 +296,8 @@ export function ReviewRequestItem({
           </strong>
         </div>
         <div>
-          <span>요청일</span>
-          <strong>{formatDate(request.created_at)}</strong>
+          <span>{reviewRound > 1 ? '최종 재요청' : '요청일'}</span>
+          <strong>{formatDate(request.last_submitted_at ?? request.created_at)}</strong>
         </div>
         <div>
           <span>마감</span>
@@ -325,7 +345,9 @@ export function ReviewRequestItem({
             {requestFeedback.map((item, index) => (
               <div className={index === requestFeedback.length - 1 ? 'feedback feedback-new' : 'feedback'} key={item.id}>
                 <span>
-                  {item.profiles?.name ?? '파트장'} · {formatDate(item.created_at)}
+                  {item.profiles?.name ?? ((item.author_role ?? 'leader') === 'leader' ? '파트장' : '파트원')}
+                  {' · '}{(item.author_role ?? 'leader') === 'leader' ? '파트장' : '파트원'}
+                  {' · '}{formatDate(item.created_at)}
                 </span>
                 {editingFeedbackId === item.id ? (
                   <div className="feedback-edit-form">
@@ -346,7 +368,9 @@ export function ReviewRequestItem({
                 ) : (
                   <>
                     <p>{item.comment}</p>
-                    {profile.role === 'leader' && item.leader_id === profile.id && (
+                    {profile.role === 'leader' &&
+                      (item.author_role ?? 'leader') === 'leader' &&
+                      item.leader_id === profile.id && (
                       <div className="feedback-actions">
                         <button className="ghost compact" onClick={() => startFeedbackEdit(item.id, item.comment)} type="button">
                           수정
@@ -362,16 +386,19 @@ export function ReviewRequestItem({
             ))}
           </div>
         )}
-        {profile.role === 'leader' && (
+        {(profile.role === 'leader' || isMemberResubmission) && (
           <div className="feedback-composer">
             <div className="feedback-composer-head">
               <strong>{profile.name}</strong>
+              {isMemberResubmission && <span>반려 피드백을 반영한 내용을 남기면 이 요청이 다시 파트장에게 전달됩니다.</span>}
             </div>
             <textarea
               maxLength={2000}
               disabled={isSubmitting}
               ref={feedbackInputRef}
-              placeholder="이 검토요청에 대해 어떻게 생각하시나요?"
+              placeholder={isMemberResubmission
+                ? '수정한 내용과 확인받을 사항을 파트장에게 알려주세요.'
+                : '이 검토요청에 대해 어떻게 생각하시나요?'}
               value={feedbackDraft}
               onChange={(event) => {
                 setFeedbackDraft(event.target.value)
@@ -397,7 +424,7 @@ export function ReviewRequestItem({
                 type="button"
               >
                 <Send size={14} />
-                피드백 남기기
+                {isMemberResubmission ? '피드백 작성 후 재검토 요청' : '피드백 남기기'}
               </button>
             </div>
           </div>

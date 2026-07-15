@@ -40,14 +40,19 @@ export function saveDesktopNotificationSettings(userId: string, settings: Deskto
  * 클라이언트 시계가 서버보다 뒤처져 있어도 기존 대기 건이 새 요청으로 재발화하지 않는다.
  */
 export function initialNotifiedUpTo(data: Pick<AppData, 'reviewRequests'>, now = Date.now()): string {
-  const latest = data.reviewRequests.reduce((max, request) => Math.max(max, eventTime(request.created_at)), 0)
+  const latest = data.reviewRequests.reduce(
+    (max, request) => Math.max(max, eventTime(request.last_submitted_at ?? request.created_at)),
+    0,
+  )
   return new Date(Math.max(now, latest)).toISOString()
 }
 
 export type PendingReviewAlert = {
   id: string
+  notificationKey: string
   title: string
   requesterName: string
+  isResubmission: boolean
   /** epoch ms — 기준선 전진에 쓴다. */
   at: number
 }
@@ -60,7 +65,7 @@ export type PendingReviewAlert = {
  */
 export function showPendingReviewNotification(alert: PendingReviewAlert, onClick: () => void): void {
   try {
-    const notification = new Notification(`새 검토요청 · ${alert.requesterName}`, {
+    const notification = new Notification(`${alert.isResubmission ? '재검토 요청' : '새 검토요청'} · ${alert.requesterName}`, {
       body: alert.title,
       // 같은 요청은 탭이 여러 개 열려 있어도 하나로 합쳐진다.
       tag: `review-${alert.id}`,
@@ -87,13 +92,18 @@ export function selectNewPendingReviews(
   if (cutoff === 0) return []
   return data.reviewRequests
     .filter((request) => request.status === 'pending')
-    .filter((request) => !alreadyNotifiedIds.has(request.id))
-    .map((request) => ({
-      id: request.id,
-      title: request.title,
-      requesterName: request.profiles?.name ?? '파트원',
-      at: eventTime(request.created_at),
-    }))
+    .map((request) => {
+      const at = eventTime(request.last_submitted_at ?? request.created_at)
+      return {
+        id: request.id,
+        notificationKey: `${request.id}:${at}`,
+        title: request.title,
+        requesterName: request.profiles?.name ?? '파트원',
+        isResubmission: (request.review_round ?? 1) > 1,
+        at,
+      }
+    })
+    .filter((alert) => !alreadyNotifiedIds.has(alert.notificationKey))
     .filter((alert) => alert.at > cutoff)
     .sort((left, right) => left.at - right.at)
 }

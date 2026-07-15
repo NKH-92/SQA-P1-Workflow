@@ -55,11 +55,12 @@ export function buildNotifications(
     data.reviewRequests
       .filter((request) => request.status === 'pending')
       .forEach((request) => {
-        const at = eventTime(request.created_at)
+        const reviewRound = request.review_round ?? 1
+        const at = eventTime(request.last_submitted_at ?? request.created_at)
         items.push({
           id: `review-${request.id}`,
           actor: request.profiles?.name?.trim().charAt(0) || '?',
-          title: `${request.profiles?.name ?? '파트원'}님이 “${request.title}” 검토를 요청했습니다.`,
+          title: `${request.profiles?.name ?? '파트원'}님이 “${request.title}” ${reviewRound > 1 ? '재검토를' : '검토를'} 요청했습니다.`,
           when: relativeTime(at, now),
           kind: '검토요청',
           urgency: dueUrgency(request.due_date),
@@ -74,7 +75,9 @@ export function buildNotifications(
       .filter((request) => request.requester_id === profile.id)
       .forEach((request) => {
         const requestItems: AppNotification[] = []
-        const feedback = request.review_feedback ?? []
+        const feedback = (request.review_feedback ?? []).filter(
+          (item) => (item.author_role ?? 'leader') === 'leader',
+        )
         const latest = feedback[feedback.length - 1]
         const feedbackAt = eventTime(latest?.created_at)
         if (latest && feedbackAt > 0) {

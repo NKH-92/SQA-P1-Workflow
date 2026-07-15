@@ -2485,6 +2485,7 @@ button.review-preview-row:hover {
   font-family: var(--font-serif);
   font-size: 14px;
   line-height: 1.55;
+  white-space: pre-wrap;
 }
 
 .feedback p::before {

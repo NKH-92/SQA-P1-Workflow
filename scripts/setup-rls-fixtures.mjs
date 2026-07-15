@@ -76,28 +76,40 @@ if (projectError || !project) throw projectError ?? new Error('Failed to create 
 const { data: reviews, error: reviewsError } = await admin
   .from('review_requests')
   .insert([
-    { requester_id: created.memberA.id, title: 'Member A pending', description: 'RLS fixture', status: 'pending' },
-    { requester_id: created.memberB.id, title: 'Member B pending', description: 'RLS fixture', status: 'pending' },
-    { requester_id: created.memberA.id, title: 'Closed concurrency fixture', description: 'RLS fixture', status: 'rejected' },
-    { requester_id: created.memberA.id, title: 'Closed leader fixture', description: 'RLS fixture', status: 'rejected' },
-    { requester_id: created.memberA.id, title: 'Closed member fixture', description: 'RLS fixture', status: 'rejected' },
+    { requester_id: created.memberA.id, title: 'Member A pending', description: 'RLS fixture', status: 'pending', rejection_count: 0 },
+    { requester_id: created.memberB.id, title: 'Member B pending', description: 'RLS fixture', status: 'pending', rejection_count: 0 },
+    { requester_id: created.memberA.id, title: 'Closed concurrency fixture', description: 'RLS fixture', status: 'rejected', rejection_count: 1 },
+    { requester_id: created.memberA.id, title: 'Closed leader fixture', description: 'RLS fixture', status: 'rejected', rejection_count: 1 },
+    { requester_id: created.memberA.id, title: 'Closed member fixture', description: 'RLS fixture', status: 'rejected', rejection_count: 1 },
+    { requester_id: created.memberA.id, title: 'Resubmit history fixture', description: 'RLS fixture', status: 'rejected', rejection_count: 1 },
+    { requester_id: created.memberA.id, title: 'Resubmit concurrency fixture', description: 'RLS fixture', status: 'rejected', rejection_count: 1 },
   ])
-  .select('id, requester_id')
+  .select('id, requester_id, title')
 if (reviewsError || !reviews) throw reviewsError ?? new Error('Failed to create review fixtures')
 
-const memberAReview = reviews.find((item) => item.requester_id === created.memberA.id)
-const memberBReview = reviews.find((item) => item.requester_id === created.memberB.id)
-const closedReviews = reviews.filter((item) => item.requester_id === created.memberA.id).slice(1)
-if (!memberAReview || !memberBReview || closedReviews.length !== 3) throw new Error('Review fixture ids are incomplete')
+const reviewByTitle = new Map(reviews.map((item) => [item.title, item]))
+const memberAReview = reviewByTitle.get('Member A pending')
+const memberBReview = reviewByTitle.get('Member B pending')
+const closedConcurrencyReview = reviewByTitle.get('Closed concurrency fixture')
+const closedLeaderReview = reviewByTitle.get('Closed leader fixture')
+const closedMemberReview = reviewByTitle.get('Closed member fixture')
+const resubmitHistoryReview = reviewByTitle.get('Resubmit history fixture')
+const resubmitConcurrencyReview = reviewByTitle.get('Resubmit concurrency fixture')
+if (
+  !memberAReview || !memberBReview || !closedConcurrencyReview || !closedLeaderReview ||
+  !closedMemberReview || !resubmitHistoryReview || !resubmitConcurrencyReview
+) throw new Error('Review fixture ids are incomplete')
 
 const { data: feedbackRows, error: feedbackError } = await admin
   .from('review_feedback')
   .insert([
-    { review_request_id: closedReviews[1].id, leader_id: created.leader.id, comment: 'Owner feedback' },
-    { review_request_id: closedReviews[2].id, leader_id: created.leaderB.id, comment: 'Other leader feedback' },
+    { review_request_id: closedLeaderReview.id, leader_id: created.leader.id, comment: 'Owner feedback' },
+    { review_request_id: closedMemberReview.id, leader_id: created.leaderB.id, comment: 'Other leader feedback' },
+    { review_request_id: resubmitHistoryReview.id, leader_id: created.leader.id, comment: 'Initial rejection reason' },
+    { review_request_id: resubmitConcurrencyReview.id, leader_id: created.leader.id, comment: 'Concurrency rejection reason' },
   ])
   .select('id, review_request_id, leader_id')
-if (feedbackError || !feedbackRows || feedbackRows.length !== 2) {
+if (feedbackError || !feedbackRows || feedbackRows.length !== 4) {
   throw feedbackError ?? new Error('Feedback fixture ids are incomplete')
 }
 
@@ -109,6 +121,8 @@ const output = {
   RLS_MEMBER_A_PASSWORD: password,
   RLS_MEMBER_A_USER_ID: created.memberA.id,
   RLS_MEMBER_B_USER_ID: created.memberB.id,
+  RLS_MEMBER_B_EMAIL: users[2].email,
+  RLS_MEMBER_B_PASSWORD: password,
   RLS_INACTIVE_MEMBER_EMAIL: users[3].email,
   RLS_INACTIVE_MEMBER_PASSWORD: password,
   RLS_INACTIVE_MEMBER_USER_ID: created.inactive.id,
@@ -121,9 +135,11 @@ const output = {
   RLS_TEST_PROJECT_UPDATED_AT: project.updated_at,
   RLS_MEMBER_A_PENDING_REVIEW_REQUEST_ID: memberAReview.id,
   RLS_MEMBER_B_REVIEW_REQUEST_ID: memberBReview.id,
-  RLS_CLOSED_CONCURRENCY_REVIEW_REQUEST_ID: closedReviews[0].id,
-  RLS_CLOSED_LEADER_REVIEW_REQUEST_ID: closedReviews[1].id,
-  RLS_CLOSED_MEMBER_REVIEW_REQUEST_ID: closedReviews[2].id,
+  RLS_CLOSED_CONCURRENCY_REVIEW_REQUEST_ID: closedConcurrencyReview.id,
+  RLS_CLOSED_LEADER_REVIEW_REQUEST_ID: closedLeaderReview.id,
+  RLS_CLOSED_MEMBER_REVIEW_REQUEST_ID: closedMemberReview.id,
+  RLS_RESUBMIT_HISTORY_REVIEW_REQUEST_ID: resubmitHistoryReview.id,
+  RLS_RESUBMIT_CONCURRENCY_REVIEW_REQUEST_ID: resubmitConcurrencyReview.id,
   RLS_FEEDBACK_OWNER_ID: feedbackRows[0].id,
   RLS_FEEDBACK_OTHER_AUTHOR_ID: feedbackRows[1].id,
   RLS_LEADER_B_EMAIL: users.find((user) => user.key === 'leaderB').email,

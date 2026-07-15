@@ -5,7 +5,9 @@ import { reviewStatusLabels } from '../../lib/format'
 import {
   assertCanReject,
   assertCanReopen,
+  assertCanResubmit,
   assertActiveLeader,
+  assertActiveMember,
   assertFeedbackComment,
   assertReviewStatusTransition,
   assertStorageAttachmentOnly,
@@ -17,6 +19,7 @@ import {
   createReviewRequest,
   newId,
   rejectReviewRequest as rejectReviewRequestReducer,
+  resubmitReviewRequest as resubmitReviewRequestReducer,
   removeReviewFeedback,
   removeReviewRequest,
   setReviewStatus,
@@ -35,13 +38,13 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       if (attachmentError) throw new UserFacingError(attachmentError)
 
       if (editingReviewId) {
-        // Parity with the remote pending-only RLS: don't let demo edit a closed request.
+        // Parity with remote RLS: a requester may correct a pending or rejected request.
         const target = data.reviewRequests.find((item) => item.id === editingReviewId)
         if (!target) {
           throw new UserFacingError('검토요청을 찾을 수 없습니다.')
         }
-        if (target.status !== 'pending') {
-          throw new UserFacingError('이미 처리된 요청이라 수정할 수 없습니다. 목록을 새로고침해 주세요.')
+        if (target.status !== 'pending' && target.status !== 'rejected') {
+          throw new UserFacingError('완료된 요청은 수정할 수 없습니다. 목록을 새로고침해 주세요.')
         }
         if (target.requester_id !== profile.id) {
           throw new UserFacingError('본인의 요청만 수정할 수 있습니다.')
@@ -145,6 +148,33 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       })
     },
 
+    async resubmitReviewRequest(requestId, comment) {
+      assertActiveMember(profile)
+      assertFeedbackComment(comment)
+      const request = data.reviewRequests.find((item) => item.id === requestId)
+      if (!request) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
+      if (request.requester_id !== profile.id) {
+        throw new UserFacingError('본인의 요청만 재요청할 수 있습니다.')
+      }
+      assertCanResubmit(request.status)
+      const feedbackId = newId('feedback')
+      setData((current) =>
+        resubmitReviewRequestReducer(current, requestId, profile, comment.trim(), feedbackId),
+      )
+      await recordActivityLog(setData, {
+        actor: profile,
+        entityType: 'review_request',
+        entityId: requestId,
+        action: 'resubmitted',
+        summary: `${request.title} 검토를 다시 요청했습니다.`,
+        metadata: {
+          from_status: 'rejected',
+          status: 'pending',
+          review_round: (request.review_round ?? 1) + 1,
+        },
+      })
+    },
+
     async addReviewFeedback(requestId, comment) {
       assertActiveLeader(profile)
       assertFeedbackComment(comment)
@@ -155,6 +185,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
         id: feedbackId,
         review_request_id: requestId,
         leader_id: profile.id,
+        author_role: 'leader',
         comment: comment.trim(),
         created_at: new Date().toISOString(),
         profiles: { name: profile.name },
@@ -179,7 +210,9 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
         .flatMap((request) => request.review_feedback ?? [])
         .find((item) => item.id === feedbackId)
       if (!feedback) throw new UserFacingError('피드백을 찾을 수 없습니다.')
-      if (feedback.leader_id !== profile.id) throw new UserFacingError('본인이 작성한 피드백만 수정할 수 있습니다.')
+      if ((feedback.author_role ?? 'leader') !== 'leader' || feedback.leader_id !== profile.id) {
+        throw new UserFacingError('본인이 작성한 파트장 피드백만 수정할 수 있습니다.')
+      }
       const request = data.reviewRequests.find((item) => item.id === feedback.review_request_id)
       const trimmedComment = comment.trim()
       setData((current) => updateReviewFeedback(current, feedbackId, trimmedComment))
@@ -200,7 +233,9 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
         .flatMap((request) => request.review_feedback ?? [])
         .find((item) => item.id === feedbackId)
       if (!feedback) throw new UserFacingError('피드백을 찾을 수 없습니다.')
-      if (feedback.leader_id !== profile.id) throw new UserFacingError('본인이 작성한 피드백만 삭제할 수 있습니다.')
+      if ((feedback.author_role ?? 'leader') !== 'leader' || feedback.leader_id !== profile.id) {
+        throw new UserFacingError('본인이 작성한 파트장 피드백만 삭제할 수 있습니다.')
+      }
       const request = data.reviewRequests.find((item) => item.id === feedback.review_request_id)
       setData((current) => removeReviewFeedback(current, feedbackId))
       await recordActivityLog(setData, {

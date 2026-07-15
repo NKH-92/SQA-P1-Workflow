@@ -44,6 +44,14 @@ export async function reopenReviewRequest(ctx: RepositoryContext, requestId: str
   return reviewRepository(ctx).reopenReviewRequest(requestId)
 }
 
+export async function resubmitReviewRequest(
+  ctx: RepositoryContext,
+  requestId: string,
+  comment: string,
+): Promise<void> {
+  return reviewRepository(ctx).resubmitReviewRequest(requestId, comment)
+}
+
 export async function addReviewFeedback(
   ctx: RepositoryContext,
   requestId: string,

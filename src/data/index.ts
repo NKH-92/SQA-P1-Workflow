@@ -6,6 +6,7 @@ export {
   rejectReviewRequest,
   updateReviewStatus,
   reopenReviewRequest,
+  resubmitReviewRequest,
   addReviewFeedback,
   updateReviewFeedback,
   deleteReviewFeedback,

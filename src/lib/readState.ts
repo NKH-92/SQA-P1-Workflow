@@ -41,14 +41,16 @@ export function isReviewUnread(
 ): boolean {
   const seenAt = eventTime(seenAtIso)
   if (leaderMode) {
-    // Unread for the leader = new incoming requests to review. Feedback is authored by the
-    // leader themselves (RLS restricts feedback inserts to leaders), so it must not count.
-    return request.status === 'pending' && eventTime(request.created_at) > seenAt
+    // A member resubmission updates the same row, so use its submission timestamp rather
+    // than created_at. Content-only edits do not create false unread items.
+    return request.status === 'pending' && eventTime(request.last_submitted_at ?? request.created_at) > seenAt
   }
   // Unread for the member = the leader acted on their request: new feedback, or a final
   // (approved/rejected) status change. The member's own new pending request must not count.
   if (request.requester_id !== profile.id) return false
-  const newFeedback = request.review_feedback?.some((item) => eventTime(item.created_at) > seenAt)
+  const newFeedback = request.review_feedback?.some(
+    (item) => (item.author_role ?? 'leader') === 'leader' && eventTime(item.created_at) > seenAt,
+  )
   const closedUpdate = request.status !== 'pending' && eventTime(request.updated_at ?? request.created_at) > seenAt
   return Boolean(newFeedback) || closedUpdate
 }

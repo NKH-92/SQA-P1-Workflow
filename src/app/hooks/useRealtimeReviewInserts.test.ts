@@ -4,8 +4,10 @@ import { useRealtimeReviewInserts } from './useRealtimeReviewInserts'
 
 type ChannelRecord = {
   name: string
-  onArgs: [string, Record<string, string>] | null
-  insertHandler: (() => void) | null
+  subscriptions: Array<{
+    args: [string, Record<string, string>]
+    handler: () => void
+  }>
   statusCallback: ((status: string) => void) | null
 }
 
@@ -17,12 +19,11 @@ const state = vi.hoisted(() => ({
 vi.mock('../../lib/supabase', () => ({
   supabase: {
     channel(name: string) {
-      const record: ChannelRecord = { name, onArgs: null, insertHandler: null, statusCallback: null }
+      const record: ChannelRecord = { name, subscriptions: [], statusCallback: null }
       state.channels.push(record)
       const builder = {
         on(type: string, filter: Record<string, string>, handler: () => void) {
-          record.onArgs = [type, filter]
-          record.insertHandler = handler
+          record.subscriptions.push({ args: [type, filter], handler })
           return builder
         },
         subscribe(callback?: (status: string) => void) {
@@ -43,18 +44,18 @@ afterEach(() => {
 })
 
 describe('useRealtimeReviewInserts', () => {
-  it('subscribes to review_requests INSERT events when enabled', () => {
-    const onInsert = vi.fn()
-    renderHook(() => useRealtimeReviewInserts(true, onInsert))
+  it('subscribes to review_requests INSERT and UPDATE events when enabled', () => {
+    const onChange = vi.fn()
+    renderHook(() => useRealtimeReviewInserts(true, onChange))
 
     expect(state.channels).toHaveLength(1)
-    expect(state.channels[0].name).toBe('review-requests-inserts')
-    expect(state.channels[0].onArgs).toEqual([
-      'postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'review_requests' },
+    expect(state.channels[0].name).toBe('review-requests-changes')
+    expect(state.channels[0].subscriptions.map((item) => item.args)).toEqual([
+      ['postgres_changes', { event: 'INSERT', schema: 'public', table: 'review_requests' }],
+      ['postgres_changes', { event: 'UPDATE', schema: 'public', table: 'review_requests' }],
     ])
     // 최초 SUBSCRIBED만으로는 재조회하지 않는다 (초기 로드가 이미 최신).
-    expect(onInsert).not.toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
   })
 
   it('does not subscribe when disabled', () => {
@@ -63,14 +64,14 @@ describe('useRealtimeReviewInserts', () => {
     expect(state.channels).toHaveLength(0)
   })
 
-  it('triggers the refetch callback on each INSERT event', () => {
-    const onInsert = vi.fn()
-    renderHook(() => useRealtimeReviewInserts(true, onInsert))
+  it('triggers the refetch callback on INSERT and UPDATE events', () => {
+    const onChange = vi.fn()
+    renderHook(() => useRealtimeReviewInserts(true, onChange))
 
-    state.channels[0].insertHandler?.()
-    state.channels[0].insertHandler?.()
+    state.channels[0].subscriptions[0]?.handler()
+    state.channels[0].subscriptions[1]?.handler()
 
-    expect(onInsert).toHaveBeenCalledTimes(2)
+    expect(onChange).toHaveBeenCalledTimes(2)
   })
 
   it('refetches once after a disconnect-reconnect cycle to fill the gap', () => {
@@ -96,7 +97,7 @@ describe('useRealtimeReviewInserts', () => {
     })
 
     rerender({ onInsert: second })
-    state.channels[0].insertHandler?.()
+    state.channels[0].subscriptions[0]?.handler()
 
     expect(first).not.toHaveBeenCalled()
     expect(second).toHaveBeenCalledTimes(1)

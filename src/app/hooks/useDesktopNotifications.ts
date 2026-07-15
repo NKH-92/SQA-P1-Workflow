@@ -58,7 +58,7 @@ export function useDesktopNotifications(
     }
     const fresh = selectNewPendingReviews(data, notifiedUpToRef.current, notifiedIdsRef.current)
     if (fresh.length === 0) return
-    fresh.forEach((alert) => notifiedIdsRef.current.add(alert.id))
+    fresh.forEach((alert) => notifiedIdsRef.current.add(alert.notificationKey))
     notifiedUpToRef.current = new Date(fresh[fresh.length - 1].at).toISOString()
     saveDesktopNotificationSettings(profileId, { enabled: true, notifiedUpToIso: notifiedUpToRef.current })
     // 앱을 보고 있는 중엔 벨 뱃지로 충분하다 — 창이 뒤에 있을 때만 띄운다.

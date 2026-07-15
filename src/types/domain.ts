@@ -89,7 +89,9 @@ export interface DutyAssignment {
 export interface ReviewFeedback {
   id: string
   review_request_id: string
+  /** Legacy DB column name; represents the feedback author id. */
   leader_id: string
+  author_role?: Role
   comment: string
   created_at?: string
   profiles?: Pick<Profile, 'name'> | null
@@ -103,6 +105,9 @@ export interface ReviewRequest {
   attachment_url: string | null
   due_date: string | null
   status: ReviewStatus
+  review_round?: number
+  rejection_count?: number
+  last_submitted_at?: string
   created_at?: string
   updated_at?: string
   profiles?: Pick<Profile, 'name' | 'email'> | null

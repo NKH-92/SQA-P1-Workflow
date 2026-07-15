@@ -276,7 +276,7 @@ jobs:
               and pg_get_functiondef(to_regprocedure('public.guard_last_active_leader_allowed_user()')) like '%pg_advisory_xact_lock%'")
           direct_write_gate=$(psql "$DATABASE_URL" -tAc \
             "select
-              exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_requests' and policyname = 'review_requests_update_self_pending' and qual like '%can_use_app()%' and with_check like '%can_use_app()%')
+              exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_requests' and policyname = 'review_requests_update_self_pending_or_rejected' and qual like '%can_use_app()%' and qual like '%requester_id%' and qual like '%rejected%' and with_check like '%can_use_app()%' and with_check like '%requester_id%' and with_check like '%rejected%')
               and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_requests' and policyname = 'review_requests_delete_self_pending' and qual like '%can_use_app()%')
               and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_feedback' and policyname = 'review_feedback_update_leader' and qual like '%leader_id = auth.uid()%' and with_check like '%leader_id = auth.uid()%')
               and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_feedback' and policyname = 'review_feedback_delete_leader' and qual like '%leader_id = auth.uid()%')
@@ -292,6 +292,29 @@ jobs:
               and not coalesce(has_function_privilege('authenticated', to_regprocedure('public.bump_project_revision_from_assignment()'), 'EXECUTE'), true)
               and not coalesce(has_function_privilege('anon', to_regprocedure('public.bump_project_revision_from_assignment()'), 'EXECUTE'), true)
               and exists (select 1 from pg_trigger where tgrelid = 'public.project_assignments'::regclass and tgname = 'project_assignments_bump_project_revision' and tgenabled in ('O', 'A'))")
+          review_resubmission_gate=$(psql "$DATABASE_URL" -tAc \
+            "select
+              exists (select 1 from supabase_migrations.schema_migrations where version = '20260715013615')
+              and exists (select 1 from pg_attribute where attrelid = 'public.review_requests'::regclass and attname = 'review_round' and attnotnull and not attisdropped)
+              and exists (select 1 from pg_attribute where attrelid = 'public.review_requests'::regclass and attname = 'rejection_count' and attnotnull and not attisdropped)
+              and exists (select 1 from pg_attribute where attrelid = 'public.review_requests'::regclass and attname = 'last_submitted_at' and attnotnull and not attisdropped)
+              and exists (select 1 from pg_constraint where conrelid = 'public.review_requests'::regclass and conname = 'review_requests_review_round_check' and convalidated)
+              and exists (select 1 from pg_constraint where conrelid = 'public.review_requests'::regclass and conname = 'review_requests_rejection_count_check' and convalidated)
+              and exists (select 1 from pg_attribute where attrelid = 'public.review_feedback'::regclass and attname = 'author_role' and attnotnull and not attisdropped)
+              and exists (select 1 from pg_trigger where tgrelid = 'public.review_feedback'::regclass and tgname = 'review_feedback_validate_leader' and tgfoid = to_regprocedure('public.validate_review_feedback_leader()') and tgenabled in ('O', 'A'))
+              and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_requests' and policyname = 'review_requests_update_self_pending_or_rejected' and qual like '%can_use_app()%' and qual like '%requester_id%' and qual like '%rejected%' and with_check like '%can_use_app()%' and with_check like '%requester_id%' and with_check like '%rejected%')
+              and not has_column_privilege('authenticated', 'public.review_requests', 'review_round', 'UPDATE')
+              and not has_column_privilege('authenticated', 'public.review_requests', 'rejection_count', 'UPDATE')
+              and not has_column_privilege('authenticated', 'public.review_requests', 'last_submitted_at', 'UPDATE')
+              and to_regprocedure('public.resubmit_review_request(uuid,text)') is not null
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.resubmit_review_request(uuid,text)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.resubmit_review_request(uuid,text)')), false)
+              and coalesce((select proacl is not null and proacl::text not like '%{=X%' and proacl::text not like '%,=X%' from pg_proc where oid = to_regprocedure('public.resubmit_review_request(uuid,text)')), false)
+              and coalesce(has_function_privilege('authenticated', to_regprocedure('public.resubmit_review_request(uuid,text)'), 'EXECUTE'), false)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.resubmit_review_request(uuid,text)'), 'EXECUTE'), true)
+              and coalesce(pg_get_functiondef(to_regprocedure('public.resubmit_review_request(uuid,text)')) like '%for update%', false)
+              and coalesce(pg_get_functiondef(to_regprocedure('public.resubmit_review_request(uuid,text)')) like '%insert into public.review_feedback%', false)
+              and coalesce(pg_get_functiondef(to_regprocedure('public.resubmit_review_request(uuid,text)')) like '%insert into public.activity_logs%', false)")
           leader_policy_gate=$(psql "$DATABASE_URL" -tAc \
             "select not exists (
               select 1 from pg_policies
@@ -381,6 +404,11 @@ jobs:
             exit 1
           fi
 
+          if [ "$review_resubmission_gate" != "t" ]; then
+            echo "::error::review resubmission/history contract verification failed (received: $review_resubmission_gate)"
+            exit 1
+          fi
+
           if [ "$review_activity_gate" != "t" ]; then
             echo "::error::transactional review activity-log verification failed (received: $review_activity_gate)"
             exit 1
@@ -407,6 +435,7 @@ jobs:
           echo "private mutation audit gate: $private_audit_gate" >> "$GITHUB_STEP_SUMMARY"
           echo "last-active-leader serialization gate: $last_leader_gate" >> "$GITHUB_STEP_SUMMARY"
           echo "direct write/OCC hardening gate: $direct_write_gate" >> "$GITHUB_STEP_SUMMARY"
+          echo "review resubmission/history gate: $review_resubmission_gate" >> "$GITHUB_STEP_SUMMARY"
           echo "transactional review activity-log gate: $review_activity_gate" >> "$GITHUB_STEP_SUMMARY"
           echo "active/password leader policy gate: $leader_policy_gate" >> "$GITHUB_STEP_SUMMARY"
 

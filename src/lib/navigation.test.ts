@@ -6,6 +6,10 @@ describe('parseAppHash', () => {
     expect(parseAppHash('#/reviews?id=abc')).toEqual({ tab: 'reviews', entityId: 'abc' })
   })
 
+  it('parses the leader-only review statistics tab', () => {
+    expect(parseAppHash('#/review-stats')).toEqual({ tab: 'review-stats', entityId: null })
+  })
+
   it('falls back to dashboard on unknown tab while keeping the entity id', () => {
     expect(parseAppHash('#/unknown?id=1')).toEqual({ tab: 'dashboard', entityId: '1' })
   })
@@ -34,16 +38,18 @@ describe('buildShareUrl', () => {
 })
 
 describe('sanitizeTabForRole', () => {
-  it('keeps members off leader tabs', () => {
+  it('keeps members off leader tabs including review statistics', () => {
     expect(sanitizeTabForRole('team', false)).toBe('dashboard')
+    expect(sanitizeTabForRole('review-stats', false)).toBe('dashboard')
   })
 
   it('keeps leaders off the member work tab', () => {
     expect(sanitizeTabForRole('work', true)).toBe('dashboard')
   })
 
-  it('passes shared tabs through unchanged', () => {
+  it('passes shared tabs and the leader statistics tab for authorized roles', () => {
     expect(sanitizeTabForRole('reviews', false)).toBe('reviews')
     expect(sanitizeTabForRole('reviews', true)).toBe('reviews')
+    expect(sanitizeTabForRole('review-stats', true)).toBe('review-stats')
   })
 })

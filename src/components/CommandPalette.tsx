@@ -23,6 +23,7 @@ function navItems(leaderMode: boolean): Array<{ tab: TabId; title: string }> {
     return [
       { tab: 'dashboard', title: '홈' },
       { tab: 'reviews', title: '검토요청' },
+      { tab: 'review-stats', title: '검토 통계' },
       { tab: 'projects', title: '프로젝트' },
       { tab: 'team', title: '파트원' },
       { tab: 'activity', title: '활동 로그' },
@@ -179,7 +180,7 @@ export function CommandPalette({
         aria-modal="true"
         className="cmd-card"
         onKeyDown={onKeyDown}
-        onMouseDown={(event) => event.stopPropagation()}
+        onMouseDown={(event: React.MouseEvent<HTMLDivElement>) => event.stopPropagation()}
         role="dialog"
       >
         <div className="cmd-input-row">
@@ -188,7 +189,7 @@ export function CommandPalette({
           </span>
           <input
             aria-label="화면, 검토요청, 파트원 검색"
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event: React.ChangeEvent<HTMLInputElement>) => setQuery(event.target.value)}
             placeholder="이동하려는 화면, 검토요청, 파트원을 검색하세요..."
             ref={inputRef}
             value={query}

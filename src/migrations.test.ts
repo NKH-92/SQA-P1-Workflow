@@ -324,6 +324,24 @@ describe('Supabase migrations', () => {
     expect(migration).not.toContain('user_id = auth.uid()')
   })
 
+  it('keeps reject and resubmit cycles on one review request with atomic history', () => {
+    const migration = readMigration('20260715013615_review_resubmission_history.sql')
+
+    expect(migration).toContain('review_round integer')
+    expect(migration).toContain('rejection_count integer')
+    expect(migration).toContain('last_submitted_at timestamptz')
+    expect(migration).toContain('author_role public.app_role')
+    expect(migration).toContain('review_requests_update_self_pending_or_rejected')
+    expect(migration).toContain('create or replace function public.resubmit_review_request')
+    expect(migration).toContain('for update')
+    expect(migration).toContain("set status = 'pending'::public.review_status")
+    expect(migration).toContain('review_round = review_round + 1')
+    expect(migration).toContain("'member'::public.app_role")
+    expect(migration).toContain("'resubmitted'")
+    expect(migration).toContain('grant execute on function public.resubmit_review_request(uuid, text) to authenticated')
+    expect(migration).not.toContain('rename column leader_id')
+  })
+
   it('does not delete duplicate products in uniqueness migration', () => {
     const migration = readMigration('202607060002_p1_product_unique_and_assignment_rpcs.sql')
 

@@ -38,7 +38,7 @@
 | `202607070004_extend_activity_log_entity_types.sql` | activity_logs entity_type check에 product/duty/duty_major_category 추가 |
 | `202607070005_protect_last_active_leader.sql` | 마지막 active leader 비활성화·강등 방지 |
 | `202607080001_enforce_password_change_and_restore_visibility.sql` | 비밀번호 변경 전 데이터 접근 RLS 차단 + 파트장 이름 view 복구 + last-leader counter 잠금 |
-| `202607090001_realtime_review_requests.sql` | 검토요청 INSERT Realtime 발행 (파트장 브라우저 알림용, RLS 불변) |
+| `202607090001_realtime_review_requests.sql` | 검토요청 Realtime 발행 (신규·재요청 파트장 브라우저 알림용, RLS 불변) |
 | `202607110001_add_single_assignment_rpcs.sql` | 단건 제품·업무 배정을 스냅샷 전체 교체가 아닌 add-only RPC로 분리 |
 | `202607110002_require_member_for_assignments.sql` | 모든 제품·업무 배정 쓰기 경로에 active member 불변식 강제 |
 | `202607110003_gate_public_leader_profiles.sql` | owner view의 파트장 이름 노출을 현재 app 접근 가능 계정으로 제한 |
@@ -54,6 +54,7 @@
 | `202607120002_drop_role_only_leader_write_policies.sql` | active/password 검증 없는 구형 leader 쓰기 정책 제거 |
 | `20260714075451_leader_ui_improvements.sql` | 제품 미지정 사유 원자적 저장·배정 시 자동 삭제 + 현재 활성 파트장 본인 프로젝트 배정 허용 |
 | `20260714082821_optimize_leader_project_assignment_rls.sql` | 파트장 본인 프로젝트 배정 RLS의 사용자 ID 평가를 쿼리당 1회로 최적화 |
+| `20260715013615_review_resubmission_history.sql` | 반려 요청의 동일-ID 재요청, 회차·반려 횟수·작성자 역할 이력, 원자적 `resubmit_review_request` RPC |
 
 ## Supabase CLI (권장)
 
@@ -126,6 +127,7 @@ select proname from pg_proc
 where pronamespace = 'public'::regnamespace
   and proname in (
     'reject_review_request',
+    'resubmit_review_request',
     'add_review_feedback',
     'create_project_with_assignments',
     'replace_project_assignments',
@@ -164,6 +166,22 @@ where tgrelid in ('public.products'::regclass, 'public.product_assignments'::reg
 
 select pg_get_functiondef('public.validate_project_assignment_member()'::regprocedure)
   like '%new.user_id = auth.uid()%' as current_leader_self_allowed;
+
+-- 20260715013615: 동일 요청 재요청 이력과 RPC
+select column_name
+from information_schema.columns
+where table_schema = 'public'
+  and table_name = 'review_requests'
+  and column_name in ('review_round', 'rejection_count', 'last_submitted_at');
+
+select column_name
+from information_schema.columns
+where table_schema = 'public'
+  and table_name = 'review_feedback'
+  and column_name = 'author_role';
+
+select has_function_privilege('authenticated', 'public.resubmit_review_request(uuid, text)', 'execute')
+  as authenticated_can_resubmit;
 ```
 
 ## 로컬 검증

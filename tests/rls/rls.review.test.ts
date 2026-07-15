@@ -149,6 +149,110 @@ describeRls(`RLS review requests (${RLS_SKIP_NOTE})`, () => {
     expect(data?.status).toBe('pending')
   })
 
+  it('keeps repeated reject/resubmit cycles on one request with ordered author history', async () => {
+    const memberEmail = process.env.RLS_MEMBER_A_EMAIL
+    const memberPassword = process.env.RLS_MEMBER_A_PASSWORD
+    const otherMemberEmail = process.env.RLS_MEMBER_B_EMAIL
+    const otherMemberPassword = process.env.RLS_MEMBER_B_PASSWORD
+    const leaderEmail = process.env.RLS_LEADER_EMAIL
+    const leaderPassword = process.env.RLS_LEADER_PASSWORD
+    const requestId = process.env.RLS_RESUBMIT_HISTORY_REVIEW_REQUEST_ID
+    if (
+      !memberEmail || !memberPassword || !otherMemberEmail || !otherMemberPassword ||
+      !leaderEmail || !leaderPassword || !requestId
+    ) {
+      expect.fail('Set member, other-member, leader credentials and resubmit history fixture')
+    }
+
+    const otherMember = createClient(url, anonKey, { auth: { persistSession: false } })
+    await otherMember.auth.signInWithPassword({ email: otherMemberEmail, password: otherMemberPassword })
+    const foreignAttempt = await otherMember.rpc('resubmit_review_request', {
+      p_review_request_id: requestId,
+      p_comment: 'foreign resubmit',
+    })
+    expect(foreignAttempt.error).not.toBeNull()
+
+    const member = createClient(url, anonKey, { auth: { persistSession: false } })
+    await member.auth.signInWithPassword({ email: memberEmail, password: memberPassword })
+    const edit = await member
+      .from('review_requests')
+      .update({ title: 'Resubmit history fixture corrected' })
+      .eq('id', requestId)
+      .eq('status', 'rejected')
+      .select('id')
+    expect(edit.error).toBeNull()
+    expect(edit.data).toEqual([{ id: requestId }])
+
+    const firstResubmit = await member.rpc('resubmit_review_request', {
+      p_review_request_id: requestId,
+      p_comment: 'first correction complete',
+    })
+    expect(firstResubmit.error).toBeNull()
+
+    const leader = createClient(url, anonKey, { auth: { persistSession: false } })
+    await leader.auth.signInWithPassword({ email: leaderEmail, password: leaderPassword })
+    const secondReject = await leader.rpc('reject_review_request', {
+      p_review_request_id: requestId,
+      p_comment: 'second rejection reason',
+    })
+    expect(secondReject.error).toBeNull()
+
+    const secondResubmit = await member.rpc('resubmit_review_request', {
+      p_review_request_id: requestId,
+      p_comment: 'second correction complete',
+    })
+    expect(secondResubmit.error).toBeNull()
+
+    const { data, error } = await member
+      .from('review_requests')
+      .select('id,title,status,review_round,rejection_count,review_feedback(id,author_role,comment,created_at)')
+      .eq('id', requestId)
+      .single()
+    expect(error).toBeNull()
+    expect(data?.id).toBe(requestId)
+    expect(data?.title).toBe('Resubmit history fixture corrected')
+    expect(data?.status).toBe('pending')
+    expect(data?.review_round).toBe(3)
+    expect(data?.rejection_count).toBe(2)
+    expect(data?.review_feedback).toHaveLength(4)
+    expect(data?.review_feedback.filter((item) => item.author_role === 'leader')).toHaveLength(2)
+    expect(data?.review_feedback.filter((item) => item.author_role === 'member')).toHaveLength(2)
+  })
+
+  it('serializes concurrent member resubmission attempts so only one succeeds', async () => {
+    const memberEmail = process.env.RLS_MEMBER_A_EMAIL
+    const memberPassword = process.env.RLS_MEMBER_A_PASSWORD
+    const requestId = process.env.RLS_RESUBMIT_CONCURRENCY_REVIEW_REQUEST_ID
+    if (!memberEmail || !memberPassword || !requestId) {
+      expect.fail('Set member credentials and resubmit concurrency fixture')
+    }
+
+    const member = createClient(url, anonKey, { auth: { persistSession: false } })
+    await member.auth.signInWithPassword({ email: memberEmail, password: memberPassword })
+    const results = await Promise.all([
+      member.rpc('resubmit_review_request', {
+        p_review_request_id: requestId,
+        p_comment: 'concurrent correction A',
+      }),
+      member.rpc('resubmit_review_request', {
+        p_review_request_id: requestId,
+        p_comment: 'concurrent correction B',
+      }),
+    ])
+    expect(results.filter((result) => !result.error)).toHaveLength(1)
+
+    const { data, error } = await member
+      .from('review_requests')
+      .select('id,status,review_round,review_feedback(id,author_role)')
+      .eq('id', requestId)
+      .single()
+    expect(error).toBeNull()
+    expect(data?.id).toBe(requestId)
+    expect(data?.status).toBe('pending')
+    expect(data?.review_round).toBe(2)
+    expect(data?.review_feedback.filter((item) => item.author_role === 'member')).toHaveLength(1)
+  })
+
   it('scopes feedback correction to the author and comment column', async () => {
     const leaderEmail = process.env.RLS_LEADER_EMAIL
     const leaderPassword = process.env.RLS_LEADER_PASSWORD

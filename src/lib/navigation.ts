@@ -1,6 +1,7 @@
 export const APP_TABS = [
   'dashboard',
   'reviews',
+  'review-stats',
   'projects',
   'team',
   'products',
@@ -37,7 +38,14 @@ export function buildShareUrl(
 }
 
 export function isLeaderTab(tab: TabId) {
-  return tab === 'team' || tab === 'products' || tab === 'duties' || tab === 'invites' || tab === 'activity'
+  return (
+    tab === 'review-stats' ||
+    tab === 'team' ||
+    tab === 'products' ||
+    tab === 'duties' ||
+    tab === 'invites' ||
+    tab === 'activity'
+  )
 }
 
 export function sanitizeTabForRole(tab: TabId, leaderMode: boolean): TabId {

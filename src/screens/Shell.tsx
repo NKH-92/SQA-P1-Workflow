@@ -6,6 +6,7 @@ import type { AppNotification } from '../lib/notifications'
 import type { DesktopNotificationControls } from '../app/hooks/useDesktopNotifications'
 import { NotificationPanel } from '../components/NotificationPanel'
 import {
+  BarChart3,
   Bell,
   Check,
   ClipboardList,
@@ -109,6 +110,7 @@ export function Shell({
               count: unreadReviewsCount > 0 ? unreadReviewsCount : pendingCount,
               unread: unreadReviewsCount > 0,
             },
+            { id: 'review-stats', label: '검토 통계', icon: <BarChart3 size={18} /> },
             { id: 'projects', label: '프로젝트', icon: <FolderKanban size={18} />, count: data.projects.length },
             { id: 'team', label: '파트원', icon: <Users size={18} />, count: memberCount },
             { id: 'activity', label: '활동 로그', icon: <MessageSquare size={18} />, count: data.activityLogs.length },
@@ -142,6 +144,10 @@ export function Shell({
     reviews: {
       label: leaderMode ? '워크스페이스 / 검토요청' : '내 업무 / 검토요청',
       description: leaderMode ? '검토 대기 항목과 피드백 흐름' : '내가 요청한 검토와 답변',
+    },
+    'review-stats': {
+      label: '워크스페이스 / 검토 통계',
+      description: '요청자별 검토량, 제출 횟수와 상태 추이',
     },
     projects: {
       label: leaderMode ? '워크스페이스 / 프로젝트' : '내 업무 / 프로젝트',
@@ -310,4 +316,3 @@ export function Shell({
     </div>
   )
 }
-

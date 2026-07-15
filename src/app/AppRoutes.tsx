@@ -8,6 +8,7 @@ import {
   MasterPanel,
   MyWorkPanel,
   ProjectsPanel,
+  ReviewStatsPanel,
   ReviewsPanel,
   TeamPanel,
 } from '../screens'
@@ -36,7 +37,7 @@ export function AppRoutes({
   setActiveTab,
   reviewsUnreadCutoff,
 }: AppRoutesProps) {
-  const leaderMode = canManageTeamData(profile)
+  const leaderMode = profile.is_active !== false && canManageTeamData(profile)
 
   return (
     <>
@@ -58,6 +59,7 @@ export function AppRoutes({
           reviewsUnreadCutoff={reviewsUnreadCutoff}
         />
       )}
+      {activeTab === 'review-stats' && leaderMode && <ReviewStatsPanel data={data} />}
       {activeTab === 'projects' && (
         <ProjectsPanel
           profile={profile}

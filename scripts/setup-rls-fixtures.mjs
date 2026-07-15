@@ -76,11 +76,11 @@ if (projectError || !project) throw projectError ?? new Error('Failed to create 
 const { data: reviews, error: reviewsError } = await admin
   .from('review_requests')
   .insert([
-    { requester_id: created.memberA.id, title: 'Member A pending', description: 'RLS fixture', status: 'pending' },
-    { requester_id: created.memberB.id, title: 'Member B pending', description: 'RLS fixture', status: 'pending' },
-    { requester_id: created.memberA.id, title: 'Closed concurrency fixture', description: 'RLS fixture', status: 'rejected' },
-    { requester_id: created.memberA.id, title: 'Closed leader fixture', description: 'RLS fixture', status: 'rejected' },
-    { requester_id: created.memberA.id, title: 'Closed member fixture', description: 'RLS fixture', status: 'rejected' },
+    { requester_id: created.memberA.id, title: 'Member A pending', description: 'RLS fixture', status: 'pending', rejection_count: 0 },
+    { requester_id: created.memberB.id, title: 'Member B pending', description: 'RLS fixture', status: 'pending', rejection_count: 0 },
+    { requester_id: created.memberA.id, title: 'Closed concurrency fixture', description: 'RLS fixture', status: 'rejected', rejection_count: 1 },
+    { requester_id: created.memberA.id, title: 'Closed leader fixture', description: 'RLS fixture', status: 'rejected', rejection_count: 1 },
+    { requester_id: created.memberA.id, title: 'Closed member fixture', description: 'RLS fixture', status: 'rejected', rejection_count: 1 },
     { requester_id: created.memberA.id, title: 'Resubmit history fixture', description: 'RLS fixture', status: 'rejected', rejection_count: 1 },
     { requester_id: created.memberA.id, title: 'Resubmit concurrency fixture', description: 'RLS fixture', status: 'rejected', rejection_count: 1 },
   ])

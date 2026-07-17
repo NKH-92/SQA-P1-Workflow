@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertTriangle, CheckCircle2, RefreshCw, UserRoundCog, XCircle } from 'lucide-react'
+import { AlertTriangle, Archive, ArchiveRestore, CheckCircle2, RefreshCw, UserRoundCog, XCircle } from 'lucide-react'
 import { Modal } from '../../../components/ui'
 import type { AppData, ChangeApplication, ProductChangeTask, Profile } from '../../../types'
 
@@ -10,6 +10,8 @@ export type ChangeActionDialog =
   | { kind: 'reassign'; task: ProductChangeTask }
   | { kind: 'cancel_task'; task: ProductChangeTask }
   | { kind: 'cancel_application'; application: ChangeApplication }
+  | { kind: 'archive_application'; application: ChangeApplication }
+  | { kind: 'restore_application'; application: ChangeApplication }
 
 export type ChangeActionDialogResult = {
   note: string
@@ -60,6 +62,20 @@ const copy = {
     description: '처리되지 않은 제품 업무가 함께 취소되며 완료·해당 없음 이력은 유지됩니다.',
     submit: '변경건 취소',
     icon: <XCircle size={18} />,
+  },
+  archive_application: {
+    eyebrow: '변경건 보관',
+    title: '완료된 변경건을 보관할까요?',
+    description: '기록은 삭제되지 않으며 보관 목록에서 언제든 다시 확인하고 복원할 수 있습니다.',
+    submit: '변경건 보관',
+    icon: <Archive size={18} />,
+  },
+  restore_application: {
+    eyebrow: '변경건 복원',
+    title: '이 변경건을 활성 목록으로 복원할까요?',
+    description: '보관 이력과 기존 제품 처리 기록은 그대로 유지됩니다.',
+    submit: '활성 목록으로 복원',
+    icon: <ArchiveRestore size={18} />,
   },
 } as const
 
@@ -142,7 +158,17 @@ export function ChangeActionModal({
 
         {needsReason && (
           <label>
-            {dialog.kind === 'not_applicable' ? '해당 없음 사유' : dialog.kind === 'reopen' ? '재개 사유' : dialog.kind === 'reassign' ? '재배정 사유' : '취소 사유'} <span className="required">*</span>
+            {dialog.kind === 'not_applicable'
+              ? '해당 없음 사유'
+              : dialog.kind === 'reopen'
+                ? '재개 사유'
+                : dialog.kind === 'reassign'
+                  ? '재배정 사유'
+                  : dialog.kind === 'archive_application'
+                    ? '보관 사유'
+                    : dialog.kind === 'restore_application'
+                      ? '복원 사유'
+                      : '취소 사유'} <span className="required">*</span>
             <textarea autoFocus maxLength={2000} placeholder="처리 사유를 입력해 주세요." value={reason} onChange={(event) => setReason(event.target.value)} />
           </label>
         )}

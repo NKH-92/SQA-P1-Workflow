@@ -74,7 +74,7 @@ export function selectMyProductChangeTaskContexts(data: AppData, profile: Profil
   return selectProductChangeTaskContexts(data)
     .filter(
       ({ task, application }) =>
-        application.status === 'published' && task.assignee_id === profile.id,
+        application.status === 'published' && !application.archived_at && task.assignee_id === profile.id,
     )
     .sort((left, right) => {
       if (left.task.status === 'pending' && right.task.status !== 'pending') return -1
@@ -126,6 +126,7 @@ export function canEditChangeApplication(
   profile: Profile,
 ) {
   return application.status !== 'cancelled'
+    && !application.archived_at
     && (profile.role === 'leader' || application.created_by === profile.id)
     && !application.content_locked_at
     && !hasContentLockingProductTask(contexts)

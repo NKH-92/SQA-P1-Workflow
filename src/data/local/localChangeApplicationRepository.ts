@@ -66,6 +66,7 @@ function saveLocalData(
       throw new UserFacingError(CHANGE_APPLICATION_STALE_MESSAGE)
     }
     if (existing.status === 'cancelled') throw new UserFacingError('취소된 변경건은 수정할 수 없습니다.')
+    if (existing.archived_at) throw new UserFacingError('보관된 변경건은 수정할 수 없습니다. 먼저 복원해 주세요.')
     if (existing.created_by !== profile.id && profile.role !== 'leader') {
       throw new UserFacingError('등록자 또는 파트장만 변경건을 수정할 수 있습니다.')
     }
@@ -95,6 +96,9 @@ function saveLocalData(
     effective_date: input.effective_date,
     status: publish ? 'published' : 'draft',
     content_locked_at: existing?.content_locked_at ?? null,
+    archived_at: existing?.archived_at ?? null,
+    archived_by: existing?.archived_by ?? null,
+    archive_reason: existing?.archive_reason ?? null,
     created_by: existing?.created_by ?? profile.id,
     published_at: publish ? existing?.published_at ?? now : null,
     cancelled_at: null,
@@ -214,6 +218,20 @@ export function createLocalChangeApplicationRepository(
       throw new UserFacingError('파트장이 대신 처리할 때는 대리 처리 사유가 필요합니다.')
     }
   }
+  const willAutoArchive = (
+    applicationId: string,
+    taskId: string,
+    nextStatus: ProductChangeTask['status'],
+  ) => {
+    const application = data.changeApplications.find((item) => item.id === applicationId)
+    if (!application || application.status !== 'published' || application.archived_at) return false
+    const contexts = selectProductChangeTaskContexts(data).filter(
+      (context) => context.application.id === applicationId,
+    )
+    return contexts.length > 0
+      && ['completed', 'not_applicable'].includes(nextStatus)
+      && contexts.every(({ task }) => (task.id === taskId ? nextStatus : task.status) !== 'pending')
+  }
 
   return {
     async saveChangeApplication(input, publish) {
@@ -240,11 +258,15 @@ export function createLocalChangeApplicationRepository(
       }
       assertCanProcess(task, proxyReason)
       const now = new Date().toISOString()
+      const autoArchive = willAutoArchive(application.id, taskId, 'completed')
       setData((current) => ({
         ...current,
         changeApplications: current.changeApplications.map((item) => item.id === application.id ? {
           ...item,
           content_locked_at: item.content_locked_at ?? now,
+          archived_at: autoArchive ? now : item.archived_at ?? null,
+          archived_by: autoArchive ? profile.id : item.archived_by ?? null,
+          archive_reason: autoArchive ? '모든 제품 적용업무가 처리되어 자동 보관됨' : item.archive_reason ?? null,
           updated_at: now,
         } : item),
         productChangeTasks: current.productChangeTasks.map((item) => item.id === taskId ? {
@@ -268,6 +290,16 @@ export function createLocalChangeApplicationRepository(
         summary: `${profile.name}님이 ${task.product_name} 변경 적용을 완료했습니다.`,
         metadata: { completion_note: completionNote || null, proxy_reason: proxyReason || null },
       })
+      if (autoArchive) {
+        await recordActivityLog(setData, {
+          actor: profile,
+          entityType: 'change_application',
+          entityId: application.id,
+          action: 'auto_archived',
+          summary: `${application.change_number} 변경건의 모든 제품 적용업무가 처리되어 자동 보관되었습니다.`,
+          metadata: { task_id: taskId, final_task_status: 'completed' },
+        })
+      }
     },
 
     async markProductTaskNotApplicable(taskId, reason, proxyReason) {
@@ -278,11 +310,15 @@ export function createLocalChangeApplicationRepository(
       }
       assertCanProcess(task, proxyReason)
       const now = new Date().toISOString()
+      const autoArchive = willAutoArchive(application.id, taskId, 'not_applicable')
       setData((current) => ({
         ...current,
         changeApplications: current.changeApplications.map((item) => item.id === application.id ? {
           ...item,
           content_locked_at: item.content_locked_at ?? now,
+          archived_at: autoArchive ? now : item.archived_at ?? null,
+          archived_by: autoArchive ? profile.id : item.archived_by ?? null,
+          archive_reason: autoArchive ? '모든 제품 적용업무가 처리되어 자동 보관됨' : item.archive_reason ?? null,
           updated_at: now,
         } : item),
         productChangeTasks: current.productChangeTasks.map((item) => item.id === taskId ? {
@@ -306,6 +342,16 @@ export function createLocalChangeApplicationRepository(
         summary: `${profile.name}님이 ${task.product_name} 변경 적용을 해당 없음으로 처리했습니다.`,
         metadata: { reason, proxy_reason: proxyReason || null },
       })
+      if (autoArchive) {
+        await recordActivityLog(setData, {
+          actor: profile,
+          entityType: 'change_application',
+          entityId: application.id,
+          action: 'auto_archived',
+          summary: `${application.change_number} 변경건의 모든 제품 적용업무가 처리되어 자동 보관되었습니다.`,
+          metadata: { task_id: taskId, final_task_status: 'not_applicable' },
+        })
+      }
     },
 
     async reopenProductTask(taskId, reason) {
@@ -318,6 +364,7 @@ export function createLocalChangeApplicationRepository(
         throw new UserFacingError('파트장 또는 직전 처리자만 업무를 다시 열 수 있습니다.')
       }
       const now = new Date().toISOString()
+      const wasArchived = Boolean(application.archived_at)
       const previous = {
         status: task.status,
         completed_at: task.completed_at,
@@ -326,6 +373,13 @@ export function createLocalChangeApplicationRepository(
       }
       setData((current) => ({
         ...current,
+        changeApplications: current.changeApplications.map((item) => item.id === application.id ? {
+          ...item,
+          archived_at: null,
+          archived_by: null,
+          archive_reason: null,
+          updated_at: now,
+        } : item),
         productChangeTasks: current.productChangeTasks.map((item) => item.id === taskId ? {
           ...item,
           status: 'pending',
@@ -351,6 +405,16 @@ export function createLocalChangeApplicationRepository(
         summary: `${profile.name}님이 ${task.product_name} 변경 적용업무를 다시 열었습니다.`,
         metadata: { ...previous, reason },
       })
+      if (wasArchived) {
+        await recordActivityLog(setData, {
+          actor: profile,
+          entityType: 'change_application',
+          entityId: application.id,
+          action: 'archive_restored_automatically',
+          summary: `${profile.name}님이 제품 업무를 다시 열어 ${application.change_number} 변경건의 보관이 자동 해제되었습니다.`,
+          metadata: { task_id: taskId, reason },
+        })
+      }
     },
 
     async reassignProductTasks(taskIds, assigneeId, reason) {
@@ -461,6 +525,71 @@ export function createLocalChangeApplicationRepository(
         action: 'cancelled',
         summary: `${profile.name}님이 ${application.change_number} 변경건을 취소했습니다.`,
         metadata: { reason },
+      })
+    },
+
+    async archiveChangeApplication(changeApplicationId, reason) {
+      assertActive(profile)
+      if (profile.role !== 'leader') throw new UserFacingError('파트장만 변경건을 보관할 수 있습니다.')
+      const application = data.changeApplications.find((item) => item.id === changeApplicationId)
+      if (!application) throw new UserFacingError('변경건을 찾을 수 없습니다.')
+      if (application.archived_at) throw new UserFacingError('이미 보관된 변경건입니다.')
+      const contexts = selectProductChangeTaskContexts(data).filter(
+        (context) => context.application.id === changeApplicationId,
+      )
+      if (contexts.length === 0) throw new UserFacingError('제품 적용업무가 없는 변경건은 보관할 수 없습니다.')
+      if (contexts.some(({ task }) => task.status === 'pending')) {
+        throw new UserFacingError('미완료 제품 업무가 남아 있어 보관할 수 없습니다.')
+      }
+      const now = new Date().toISOString()
+      setData((current) => ({
+        ...current,
+        changeApplications: current.changeApplications.map((item) => item.id === changeApplicationId ? {
+          ...item,
+          archived_at: now,
+          archived_by: profile.id,
+          archive_reason: reason,
+          updated_at: now,
+        } : item),
+      }))
+      await recordActivityLog(setData, {
+        actor: profile,
+        entityType: 'change_application',
+        entityId: changeApplicationId,
+        action: 'archived',
+        summary: `${profile.name}님이 ${application.change_number} 변경건을 보관했습니다.`,
+        metadata: { reason },
+      })
+    },
+
+    async restoreChangeApplication(changeApplicationId, reason) {
+      assertActive(profile)
+      if (profile.role !== 'leader') throw new UserFacingError('파트장만 변경건을 복원할 수 있습니다.')
+      const application = data.changeApplications.find((item) => item.id === changeApplicationId)
+      if (!application) throw new UserFacingError('변경건을 찾을 수 없습니다.')
+      if (!application.archived_at) throw new UserFacingError('보관되지 않은 변경건입니다.')
+      const now = new Date().toISOString()
+      setData((current) => ({
+        ...current,
+        changeApplications: current.changeApplications.map((item) => item.id === changeApplicationId ? {
+          ...item,
+          archived_at: null,
+          archived_by: null,
+          archive_reason: null,
+          updated_at: now,
+        } : item),
+      }))
+      await recordActivityLog(setData, {
+        actor: profile,
+        entityType: 'change_application',
+        entityId: changeApplicationId,
+        action: 'restored',
+        summary: `${profile.name}님이 ${application.change_number} 변경건을 보관함에서 복원했습니다.`,
+        metadata: {
+          reason,
+          previous_archive_reason: application.archive_reason ?? null,
+          previous_archived_at: application.archived_at,
+        },
       })
     },
   }

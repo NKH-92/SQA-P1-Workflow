@@ -125,10 +125,20 @@ describeRls(`RLS change applications (${RLS_SKIP_NOTE})`, () => {
 
     const lockedSnapshot = await memberA
       .from('change_applications')
-      .select('updated_at')
+      .select('updated_at,archived_at,archived_by,archive_reason')
       .eq('id', applicationId)
       .single()
     expect(lockedSnapshot.error).toBeNull()
+    expect(lockedSnapshot.data).toMatchObject({
+      archived_by: memberAId,
+      archive_reason: '모든 제품 적용업무가 처리되어 자동 보관됨',
+    })
+    expect(lockedSnapshot.data?.archived_at).toBeTruthy()
+    const nonLeaderRestore = await memberA.rpc('restore_change_application', {
+      p_change_application_id: applicationId,
+      p_reason: 'RLS non-leader restore rejection',
+    })
+    expect(nonLeaderRestore.error).not.toBeNull()
     const lockedEdit = await memberA.rpc('publish_change_application', {
       ...payload,
       p_change_application_id: applicationId,
@@ -154,6 +164,17 @@ describeRls(`RLS change applications (${RLS_SKIP_NOTE})`, () => {
       completed_by: null,
       completed_at: null,
       reopen_reason: 'RLS reopen verification',
+    })
+    const automaticallyRestored = await memberA
+      .from('change_applications')
+      .select('archived_at,archived_by,archive_reason')
+      .eq('id', applicationId)
+      .single()
+    expect(automaticallyRestored.error).toBeNull()
+    expect(automaticallyRestored.data).toEqual({
+      archived_at: null,
+      archived_by: null,
+      archive_reason: null,
     })
 
     const reopenedSnapshot = await memberA
@@ -193,6 +214,46 @@ describeRls(`RLS change applications (${RLS_SKIP_NOTE})`, () => {
       p_proxy_reason: null,
     })
     expect(newAssigneeCompletion.error).toBeNull()
+
+    const automaticallyArchivedAgain = await memberB
+      .from('change_applications')
+      .select('archived_at,archived_by,archive_reason')
+      .eq('id', applicationId)
+      .single()
+    expect(automaticallyArchivedAgain.error).toBeNull()
+    expect(automaticallyArchivedAgain.data).toMatchObject({
+      archived_by: memberBId,
+      archive_reason: '모든 제품 적용업무가 처리되어 자동 보관됨',
+    })
+    expect(automaticallyArchivedAgain.data?.archived_at).toBeTruthy()
+
+    const leaderRestore = await leader.rpc('restore_change_application', {
+      p_change_application_id: applicationId,
+      p_reason: 'RLS manual restore verification',
+    })
+    expect(leaderRestore.error).toBeNull()
+    const nonLeaderArchive = await memberB.rpc('archive_change_application', {
+      p_change_application_id: applicationId,
+      p_reason: 'RLS non-leader archive rejection',
+    })
+    expect(nonLeaderArchive.error).not.toBeNull()
+    const leaderArchive = await leader.rpc('archive_change_application', {
+      p_change_application_id: applicationId,
+      p_reason: 'RLS manual archive verification',
+    })
+    expect(leaderArchive.error).toBeNull()
+    const manuallyArchived = await leader
+      .from('change_applications')
+      .select('archived_at,archive_reason')
+      .eq('id', applicationId)
+      .single()
+    expect(manuallyArchived.error).toBeNull()
+    expect(manuallyArchived.data?.archive_reason).toBe('RLS manual archive verification')
+    const finalRestore = await leader.rpc('restore_change_application', {
+      p_change_application_id: applicationId,
+      p_reason: 'Continue cancellation coverage',
+    })
+    expect(finalRestore.error).toBeNull()
 
     const cancelledApplication = await leader.rpc('cancel_change_application', {
       p_change_application_id: applicationId,

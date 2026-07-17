@@ -61,4 +61,6 @@ export {
   reassignProductChangeTasks,
   cancelProductChangeTask,
   cancelChangeApplication,
+  archiveChangeApplication,
+  restoreChangeApplication,
 } from './mutations/changeApplications'

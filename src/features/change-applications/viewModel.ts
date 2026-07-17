@@ -11,12 +11,14 @@ import type { ProductChangeTaskContext } from './selectors'
 export type ChangeApplicationViewMode = 'change' | 'product' | 'assignee'
 export type ChangeTaskStatusFilter = 'all' | ProductChangeTaskStatus
 export type ChangeApplicationStatusFilter = 'all' | 'draft' | 'published' | 'cancelled'
+export type ChangeApplicationArchiveFilter = 'active' | 'archived' | 'all'
 export type ChangeActionKindFilter = 'all' | ChangeActionKind
 export type ChangeAttentionFilter = 'all' | 'overdue' | 'due_soon' | 'unassigned'
 
 export type ChangeApplicationFilters = {
   status: ChangeTaskStatusFilter
   application: ChangeApplicationStatusFilter
+  archive: ChangeApplicationArchiveFilter
   actionKind: ChangeActionKindFilter
   attention: ChangeAttentionFilter
   query: string
@@ -61,6 +63,8 @@ export function filterChangeTaskContexts(
 ) {
   const normalized = filters.query.trim().toLowerCase()
   return contexts.filter(({ task, actionItem, application }) => {
+    if (filters.archive === 'active' && application.archived_at) return false
+    if (filters.archive === 'archived' && !application.archived_at) return false
     if (filters.status !== 'all' && task.status !== filters.status) return false
     if (filters.application !== 'all' && application.status !== filters.application) return false
     if (filters.actionKind !== 'all' && actionItem.kind !== filters.actionKind) return false
@@ -89,6 +93,8 @@ export function filterChangeApplications(
   const normalized = filters.query.trim().toLowerCase()
   return applications.filter((application) => {
     if (!leaderMode && application.status === 'draft' && application.created_by !== profileId) return false
+    if (filters.archive === 'active' && application.archived_at) return false
+    if (filters.archive === 'archived' && !application.archived_at) return false
     if (filters.application !== 'all' && application.status !== filters.application) return false
     if (normalized && !`${application.change_number} ${application.title} ${application.summary}`.toLowerCase().includes(normalized)) {
       return taskContexts.some(({ application: item }) => item.id === application.id)
@@ -106,7 +112,10 @@ export function calculateChangeApplicationKpis(
   profileId: string,
 ) {
   const publishedOwnContexts = contexts.filter(
-    ({ task, application }) => application.status === 'published' && (leaderMode || task.assignee_id === profileId),
+    ({ task, application }) =>
+      application.status === 'published'
+      && !application.archived_at
+      && (leaderMode || task.assignee_id === profileId),
   )
   const pendingContexts = publishedOwnContexts.filter(({ task }) => task.status === 'pending')
   const overdueCount = pendingContexts.filter(({ actionItem }) => (daysUntil(actionItem.due_date) ?? 0) < 0).length
@@ -117,7 +126,7 @@ export function calculateChangeApplicationKpis(
   const unassignedCount = leaderMode
     ? contexts.filter(
         ({ task, application }) =>
-          application.status === 'published' && task.status === 'pending' && !task.assignee_id,
+          application.status === 'published' && !application.archived_at && task.status === 'pending' && !task.assignee_id,
       ).length
     : 0
 

@@ -144,6 +144,8 @@ export type ChangeApplicationRepository = {
   reassignProductTasks(taskIds: string[], assigneeId: string | null, reason: string): Promise<void>
   cancelProductTask(taskId: string, reason: string): Promise<void>
   cancelChangeApplication(changeApplicationId: string, reason: string): Promise<void>
+  archiveChangeApplication(changeApplicationId: string, reason: string): Promise<void>
+  restoreChangeApplication(changeApplicationId: string, reason: string): Promise<void>
 }
 
 /** local·remote repository가 공통으로 받는 의존성 (RepositoryContext에서 isRemote를 뺀 형태). */

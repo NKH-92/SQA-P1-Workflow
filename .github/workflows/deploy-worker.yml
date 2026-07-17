@@ -421,6 +421,7 @@ jobs:
           change_applications_ready=$(psql "$DATABASE_URL" -tAc \
             "select
               exists (select 1 from supabase_migrations.schema_migrations where version = '202607170001')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '20260717123840')
               and to_regclass('public.change_applications') is not null
               and to_regclass('public.change_action_items') is not null
               and to_regclass('public.product_change_tasks') is not null
@@ -428,6 +429,10 @@ jobs:
               and coalesce((select relrowsecurity from pg_class where oid = to_regclass('public.change_action_items')), false)
               and coalesce((select relrowsecurity from pg_class where oid = to_regclass('public.product_change_tasks')), false)
               and exists (select 1 from pg_constraint where conrelid = to_regclass('public.change_applications') and conname = 'change_applications_source_url_scheme_check' and convalidated)
+              and exists (select 1 from pg_constraint where conrelid = to_regclass('public.change_applications') and conname = 'change_applications_archive_state_check' and convalidated)
+              and exists (select 1 from pg_constraint where conrelid = to_regclass('public.change_applications') and conname = 'change_applications_archive_reason_length_check' and convalidated)
+              and (select count(*) = 3 from information_schema.columns where table_schema = 'public' and table_name = 'change_applications' and column_name in ('archived_at', 'archived_by', 'archive_reason'))
+              and exists (select 1 from pg_class where oid = to_regclass('public.change_applications_archived_at_idx') and relkind = 'i')
               and coalesce(has_table_privilege('authenticated', to_regclass('public.change_applications'), 'SELECT'), false)
               and coalesce(has_table_privilege('authenticated', to_regclass('public.change_action_items'), 'SELECT'), false)
               and coalesce(has_table_privilege('authenticated', to_regclass('public.product_change_tasks'), 'SELECT'), false)
@@ -459,6 +464,8 @@ jobs:
                     to_regprocedure('public.reassign_product_change_tasks(uuid[],uuid,text)'),
                     to_regprocedure('public.cancel_product_change_task(uuid,text)'),
                     to_regprocedure('public.cancel_change_application(uuid,text)'),
+                    to_regprocedure('public.archive_change_application(uuid,text)'),
+                    to_regprocedure('public.restore_change_application(uuid,text)'),
                     to_regprocedure('public.assign_product_and_transfer_change_tasks(uuid,uuid,boolean,text)')
                   ]) required_rpc(function_oid)
                  where function_oid is null
@@ -478,9 +485,17 @@ jobs:
               and coalesce(pg_get_functiondef(to_regprocedure('private.persist_change_application(uuid,timestamp with time zone,text,public.change_application_source,text,text,text,date,public.change_action_kind,text,text,date,jsonb,boolean)')) like '%p_expected_updated_at is null%', false)
               and coalesce(pg_get_functiondef(to_regprocedure('private.persist_change_application(uuid,timestamp with time zone,text,public.change_application_source,text,text,text,date,public.change_action_kind,text,text,date,jsonb,boolean)')) like '%v_application.updated_at is distinct from p_expected_updated_at%', false)
               and coalesce(pg_get_functiondef(to_regprocedure('private.persist_change_application(uuid,timestamp with time zone,text,public.change_application_source,text,text,text,date,public.change_action_kind,text,text,date,jsonb,boolean)')) like '%change application was modified by another user%', false)
+              and to_regprocedure('private.sync_change_application_archive()') is not null
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('private.sync_change_application_archive()')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('private.sync_change_application_archive()')), false)
+              and not coalesce(has_function_privilege('authenticated', to_regprocedure('private.sync_change_application_archive()'), 'EXECUTE'), true)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('private.sync_change_application_archive()'), 'EXECUTE'), true)
+              and coalesce(pg_get_functiondef(to_regprocedure('private.sync_change_application_archive()')) like '%new.status in (''completed'', ''not_applicable'')%', false)
+              and coalesce(pg_get_functiondef(to_regprocedure('private.sync_change_application_archive()')) like '%new.status = ''pending''%', false)
               and exists (select 1 from pg_trigger where tgrelid = to_regclass('public.change_applications') and tgname = 'change_applications_private_audit' and tgfoid = to_regprocedure('private.record_mutation_audit()') and tgenabled in ('O', 'A'))
               and exists (select 1 from pg_trigger where tgrelid = to_regclass('public.change_action_items') and tgname = 'change_action_items_private_audit' and tgfoid = to_regprocedure('private.record_mutation_audit()') and tgenabled in ('O', 'A'))
-              and exists (select 1 from pg_trigger where tgrelid = to_regclass('public.product_change_tasks') and tgname = 'product_change_tasks_private_audit' and tgfoid = to_regprocedure('private.record_mutation_audit()') and tgenabled in ('O', 'A'))")
+              and exists (select 1 from pg_trigger where tgrelid = to_regclass('public.product_change_tasks') and tgname = 'product_change_tasks_private_audit' and tgfoid = to_regprocedure('private.record_mutation_audit()') and tgenabled in ('O', 'A'))
+              and exists (select 1 from pg_trigger where tgrelid = to_regclass('public.product_change_tasks') and tgname = 'product_change_tasks_sync_application_archive' and tgfoid = to_regprocedure('private.sync_change_application_archive()') and tgenabled in ('O', 'A'))")
           if [ "$change_applications_ready" != "t" ]; then
             echo "::error::Production DB change application schema/RLS/grants/RPC/audit contract is not ready"
             exit 1

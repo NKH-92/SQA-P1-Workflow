@@ -76,3 +76,17 @@ export function cancelChangeApplication(ctx: RepositoryContext, changeApplicatio
     normalizeTaskReason(reason, '취소 사유'),
   )
 }
+
+export function archiveChangeApplication(ctx: RepositoryContext, changeApplicationId: string, reason: string) {
+  return repository(ctx).archiveChangeApplication(
+    changeApplicationId,
+    normalizeTaskReason(reason, '보관 사유'),
+  )
+}
+
+export function restoreChangeApplication(ctx: RepositoryContext, changeApplicationId: string, reason: string) {
+  return repository(ctx).restoreChangeApplication(
+    changeApplicationId,
+    normalizeTaskReason(reason, '복원 사유'),
+  )
+}

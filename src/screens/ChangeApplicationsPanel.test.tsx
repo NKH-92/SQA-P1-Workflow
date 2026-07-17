@@ -274,4 +274,91 @@ describe('ChangeApplicationsPanel', () => {
     expect(screen.getByRole('button', { name: '전체 이력 불러오기' })).toBeEnabled()
     expect(screen.queryByText(/처리 0 \/ 0제품/)).not.toBeInTheDocument()
   })
+
+  it('hides archived changes by default and lets a leader restore them from the archive filter', async () => {
+    const source = createPreviewData()
+    const archived = source.changeApplications.find((item) => item.id === 'change-application-01')!
+    const data = {
+      ...source,
+      changeApplications: source.changeApplications.map((application) => application.id === archived.id ? {
+        ...application,
+        archived_at: '2026-07-17T03:00:00.000Z',
+        archived_by: previewLeader.id,
+        archive_reason: '모든 제품 업무 완료',
+      } : application),
+    }
+    const restoreSpy = vi.spyOn(dataModule, 'restoreChangeApplication').mockResolvedValue()
+    const mutate = vi.fn(async (operation: () => Promise<void>) => {
+      await operation()
+      return true
+    })
+
+    render(
+      <ChangeApplicationsPanel
+        profile={previewLeader}
+        data={data}
+        mutate={mutate}
+        setData={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByText('원료 제조원 변경')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('보관 상태')).toHaveValue('active')
+    fireEvent.change(screen.getByLabelText('보관 상태'), { target: { value: 'archived' } })
+    expect(screen.getAllByText('원료 제조원 변경').length).toBeGreaterThan(0)
+    expect(screen.getByText('보관 사유: 모든 제품 업무 완료')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '복원' }))
+    fireEvent.change(screen.getByLabelText(/복원 사유/), { target: { value: '추가 반영 필요' } })
+    fireEvent.click(screen.getByRole('button', { name: '활성 목록으로 복원' }))
+
+    await waitFor(() => expect(restoreSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      archived.id,
+      '추가 반영 필요',
+    ))
+  })
+
+  it('lets a leader archive a change only when every visible product task is terminal', async () => {
+    const source = createPreviewData()
+    const application = source.changeApplications.find((item) => item.id === 'change-application-01')!
+    const actionIds = new Set(
+      source.changeActionItems
+        .filter((item) => item.change_application_id === application.id)
+        .map((item) => item.id),
+    )
+    const data = {
+      ...source,
+      productChangeTasks: source.productChangeTasks.map((task) => actionIds.has(task.action_item_id) ? {
+        ...task,
+        status: 'cancelled' as const,
+        completed_by: null,
+        completed_at: null,
+      } : task),
+    }
+    const archiveSpy = vi.spyOn(dataModule, 'archiveChangeApplication').mockResolvedValue()
+    const mutate = vi.fn(async (operation: () => Promise<void>) => {
+      await operation()
+      return true
+    })
+
+    render(
+      <ChangeApplicationsPanel
+        profile={previewLeader}
+        data={data}
+        mutate={mutate}
+        setData={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '보관' }))
+    fireEvent.change(screen.getByLabelText(/보관 사유/), { target: { value: '종결 이력 정리' } })
+    fireEvent.click(screen.getByRole('button', { name: '변경건 보관' }))
+
+    await waitFor(() => expect(archiveSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      application.id,
+      '종결 이력 정리',
+    ))
+  })
 })

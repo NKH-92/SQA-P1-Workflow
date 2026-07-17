@@ -16,7 +16,7 @@ vi.mock('../../lib/supabase', () => ({
   supabase: { rpc: mocks.rpc },
 }))
 
-import { saveChangeApplication } from './changeApplications'
+import { archiveChangeApplication, restoreChangeApplication, saveChangeApplication } from './changeApplications'
 
 function remoteContext(data = createPreviewData()): RepositoryContext {
   return {
@@ -112,5 +112,21 @@ describe('change application mutation contracts (remote)', () => {
     await expect(saveChangeApplication(ctx, input, false)).rejects.toThrow(
       '다른 사용자가 변경건을 수정했습니다. 새로고침 후 다시 시도해 주세요.',
     )
+  })
+
+  it('uses explicit archive and restore RPC contracts', async () => {
+    const ctx = remoteContext()
+
+    await archiveChangeApplication(ctx, 'application-1', '모든 제품 처리 완료')
+    expect(mocks.rpc).toHaveBeenLastCalledWith('archive_change_application', {
+      p_change_application_id: 'application-1',
+      p_reason: '모든 제품 처리 완료',
+    })
+
+    await restoreChangeApplication(ctx, 'application-1', '추가 반영 필요')
+    expect(mocks.rpc).toHaveBeenLastCalledWith('restore_change_application', {
+      p_change_application_id: 'application-1',
+      p_reason: '추가 반영 필요',
+    })
   })
 })

@@ -563,4 +563,23 @@ describe('Supabase migrations', () => {
     expect(migration).toContain("private.record_mutation_audit('product_change_task')")
     expect(migration).toContain("'announcement', 'change_application'")
   })
+
+  it('adds reversible change application archiving with automatic terminal-state handling', () => {
+    const migration = readMigration('20260717123840_change_application_archiving.sql')
+
+    expect(migration).toContain('add column archived_at timestamptz')
+    expect(migration).toContain('change_applications_archive_state_check')
+    expect(migration).toContain('change_applications_archive_reason_length_check')
+    expect(migration).toContain('create or replace function private.sync_change_application_archive()')
+    expect(migration).toContain('after update of status on public.product_change_tasks')
+    expect(migration).toContain("new.status in ('completed', 'not_applicable')")
+    expect(migration).toContain("new.status = 'pending'")
+    expect(migration).toContain('create or replace function public.archive_change_application')
+    expect(migration).toContain('create or replace function public.restore_change_application')
+    expect(migration).toContain("set search_path = ''")
+    expect(migration).toContain('revoke all on function private.sync_change_application_archive() from public, anon, authenticated')
+    expect(migration).toContain('grant execute on function public.archive_change_application(uuid, text) to authenticated')
+    expect(migration).toContain("task.status in ('completed', 'not_applicable')")
+    expect(migration).not.toContain('delete from public.change_applications')
+  })
 })

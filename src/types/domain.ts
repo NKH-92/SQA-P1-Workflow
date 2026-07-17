@@ -172,6 +172,9 @@ export interface ChangeApplication {
   effective_date: string | null
   status: ChangeApplicationStatus
   content_locked_at?: string | null
+  archived_at?: string | null
+  archived_by?: string | null
+  archive_reason?: string | null
   created_by: string
   published_at: string | null
   cancelled_at: string | null

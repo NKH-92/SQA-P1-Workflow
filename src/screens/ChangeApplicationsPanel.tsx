@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
+  Archive,
+  ArchiveRestore,
   CalendarClock,
   CheckCircle2,
   ClipboardList,
@@ -19,6 +21,7 @@ import type { MutateFn } from '../app/types'
 import { CopyLinkButton } from '../components/ui/CopyLinkButton'
 import { Badge, EmptyState, Section } from '../components/ui'
 import {
+  archiveChangeApplication,
   cancelChangeApplication,
   cancelProductChangeTask,
   completeProductChangeTask,
@@ -27,6 +30,7 @@ import {
   markProductChangeTaskNotApplicable,
   reassignProductChangeTasks,
   reopenProductChangeTask,
+  restoreChangeApplication,
   saveChangeApplication,
 } from '../data'
 import { ChangeActionModal, type ChangeActionDialog, type ChangeActionDialogResult } from '../features/change-applications/components/ChangeActionModal'
@@ -53,6 +57,7 @@ import {
   groupChangeTaskContexts,
   mergeProductChangeTasks,
   type ChangeActionKindFilter,
+  type ChangeApplicationArchiveFilter,
   type ChangeApplicationStatusFilter,
   type ChangeApplicationViewMode,
   type ChangeAttentionFilter,
@@ -90,6 +95,7 @@ export function ChangeApplicationsPanel({
   const [viewMode, setViewMode] = useState<ChangeApplicationViewMode>(leaderMode ? 'change' : 'product')
   const [statusFilter, setStatusFilter] = useState<ChangeTaskStatusFilter>(leaderMode ? 'all' : 'pending')
   const [applicationFilter, setApplicationFilter] = useState<ChangeApplicationStatusFilter>(leaderMode ? 'all' : 'published')
+  const [archiveFilter, setArchiveFilter] = useState<ChangeApplicationArchiveFilter>('active')
   const [actionKindFilter, setActionKindFilter] = useState<ChangeActionKindFilter>('all')
   const [attentionFilter, setAttentionFilter] = useState<ChangeAttentionFilter>('all')
   const [query, setQuery] = useState('')
@@ -108,7 +114,10 @@ export function ChangeApplicationsPanel({
     setActionKindFilter('all')
     setAttentionFilter('all')
     const application = data.changeApplications.find((item) => item.id === initialSelectedId)
-    if (application) setApplicationFilter(application.status)
+    if (application) {
+      setApplicationFilter(application.status)
+      setArchiveFilter(application.archived_at ? 'archived' : 'active')
+    }
     onInitialSelectionApplied?.()
   }, [data.changeApplications, initialSelectedId, onInitialSelectionApplied])
 
@@ -147,21 +156,23 @@ export function ChangeApplicationsPanel({
     return filterChangeTaskContexts(scopedContexts, {
       status: statusFilter,
       application: applicationFilter,
+      archive: archiveFilter,
       actionKind: actionKindFilter,
       attention: attentionFilter,
       query,
     })
-  }, [actionKindFilter, applicationFilter, attentionFilter, query, scopedContexts, statusFilter])
+  }, [actionKindFilter, applicationFilter, archiveFilter, attentionFilter, query, scopedContexts, statusFilter])
 
   const applications = useMemo(() => {
     return filterChangeApplications(data.changeApplications, taskContexts, {
       status: statusFilter,
       application: applicationFilter,
+      archive: archiveFilter,
       actionKind: actionKindFilter,
       attention: attentionFilter,
       query,
     }, leaderMode, profile.id)
-  }, [actionKindFilter, applicationFilter, attentionFilter, data.changeApplications, leaderMode, profile.id, query, statusFilter, taskContexts])
+  }, [actionKindFilter, applicationFilter, archiveFilter, attentionFilter, data.changeApplications, leaderMode, profile.id, query, statusFilter, taskContexts])
 
   const {
     pendingContexts,
@@ -185,7 +196,10 @@ export function ChangeApplicationsPanel({
     setStatusFilter('all')
     setActionKindFilter('all')
     setAttentionFilter('all')
-    if (application) setApplicationFilter(application.status)
+    if (application) {
+      setApplicationFilter(application.status)
+      setArchiveFilter(application.archived_at ? 'archived' : 'active')
+    }
   }
 
   const loadFullHistory = async () => {
@@ -223,6 +237,7 @@ export function ChangeApplicationsPanel({
     setStatusFilter('all')
     setActionKindFilter('all')
     setAttentionFilter('all')
+    setArchiveFilter('active')
     setApplicationFilter(publish ? 'published' : 'draft')
   }, publish ? '변경 적용업무를 등록했습니다.' : '변경 적용업무 초안을 저장했습니다.')
 
@@ -259,6 +274,18 @@ export function ChangeApplicationsPanel({
         `${dialog.task.product_name} 적용업무를 취소했습니다.`,
       )
     }
+    if (dialog.kind === 'archive_application') {
+      return mutate(
+        () => archiveChangeApplication(ctx, dialog.application.id, result.reason),
+        `${dialog.application.change_number} 변경건을 보관했습니다.`,
+      )
+    }
+    if (dialog.kind === 'restore_application') {
+      return mutate(
+        () => restoreChangeApplication(ctx, dialog.application.id, result.reason),
+        `${dialog.application.change_number} 변경건을 활성 목록으로 복원했습니다.`,
+      )
+    }
     return mutate(
       () => cancelChangeApplication(ctx, dialog.application.id, result.reason),
       `${dialog.application.change_number} 변경건을 취소했습니다.`,
@@ -267,12 +294,14 @@ export function ChangeApplicationsPanel({
 
   const taskRow = ({ task, actionItem, application }: ProductChangeTaskContext) => {
     const canProcess = application.status === 'published'
+      && !application.archived_at
       && task.status === 'pending'
       && (leaderMode || task.assignee_id === profile.id)
     const canReopen = application.status === 'published'
       && ['completed', 'not_applicable'].includes(task.status)
       && (leaderMode || task.completed_by === profile.id)
     const canManageTask = application.status === 'published'
+      && !application.archived_at
       && task.status === 'pending'
       && (leaderMode || application.created_by === profile.id)
     const days = daysUntil(actionItem.due_date)
@@ -302,7 +331,7 @@ export function ChangeApplicationsPanel({
               <button className="primary compact" onClick={() => setDialog({ kind: 'complete', task })} type="button">적용 완료</button>
             </>
           )}
-          {leaderMode && application.status === 'published' && task.status === 'pending' && (
+          {leaderMode && application.status === 'published' && !application.archived_at && task.status === 'pending' && (
             <button aria-label={`${task.product_name} 담당자 변경`} className="icon-button" onClick={() => setDialog({ kind: 'reassign', task })} title="담당자 변경" type="button"><UserRoundCog size={15} /></button>
           )}
           {canManageTask && (
@@ -335,25 +364,25 @@ export function ChangeApplicationsPanel({
       </div>
 
       <div className="kpi-strip change-kpis">
-        <button className="kpi-stat" onClick={() => { setStatusFilter('pending'); setApplicationFilter('published'); setAttentionFilter('all') }} type="button">
+        <button className="kpi-stat" onClick={() => { setStatusFilter('pending'); setApplicationFilter('published'); setArchiveFilter('active'); setAttentionFilter('all') }} type="button">
           <span className="kpi-stat-label">{leaderMode ? '전체 미적용' : '내 미적용'}<ClipboardList size={15} /></span>
           <strong className="kpi-stat-value">{pendingContexts.length}<span className="unit">건</span></strong>
         </button>
-        <button className="kpi-stat" data-tone={overdueCount > 0 ? 'warning' : undefined} onClick={() => { setStatusFilter('pending'); setApplicationFilter('published'); setAttentionFilter('overdue') }} type="button">
+        <button className="kpi-stat" data-tone={overdueCount > 0 ? 'warning' : undefined} onClick={() => { setStatusFilter('pending'); setApplicationFilter('published'); setArchiveFilter('active'); setAttentionFilter('overdue') }} type="button">
           <span className="kpi-stat-label">기한 초과<AlertTriangle size={15} /></span>
           <strong className="kpi-stat-value">{overdueCount}<span className="unit">건</span></strong>
         </button>
-        <button className="kpi-stat" data-tone={dueSoonCount > 0 ? 'warning' : undefined} onClick={() => { setStatusFilter('pending'); setApplicationFilter('published'); setAttentionFilter('due_soon') }} type="button">
+        <button className="kpi-stat" data-tone={dueSoonCount > 0 ? 'warning' : undefined} onClick={() => { setStatusFilter('pending'); setApplicationFilter('published'); setArchiveFilter('active'); setAttentionFilter('due_soon') }} type="button">
           <span className="kpi-stat-label">D-3 이내<CalendarClock size={15} /></span>
           <strong className="kpi-stat-value">{dueSoonCount}<span className="unit">건</span></strong>
         </button>
         {leaderMode ? (
-          <button className="kpi-stat" data-tone={unassignedCount > 0 ? 'warning' : undefined} onClick={() => { setViewMode('assignee'); setStatusFilter('pending'); setApplicationFilter('published'); setAttentionFilter('unassigned') }} type="button">
+          <button className="kpi-stat" data-tone={unassignedCount > 0 ? 'warning' : undefined} onClick={() => { setViewMode('assignee'); setStatusFilter('pending'); setApplicationFilter('published'); setArchiveFilter('active'); setAttentionFilter('unassigned') }} type="button">
             <span className="kpi-stat-label">담당 미지정<Users size={15} /></span>
             <strong className="kpi-stat-value">{unassignedCount}<span className="unit">건</span></strong>
           </button>
         ) : (
-          <button className="kpi-stat" onClick={() => { setStatusFilter('completed'); setApplicationFilter('published'); setAttentionFilter('all') }} type="button">
+          <button className="kpi-stat" onClick={() => { setStatusFilter('completed'); setApplicationFilter('published'); setArchiveFilter('active'); setAttentionFilter('all') }} type="button">
             <span className="kpi-stat-label">완료 이력<CheckCircle2 size={15} /></span>
             <strong className="kpi-stat-value">{completedCount}<span className="unit">건</span></strong>
           </button>
@@ -411,6 +440,11 @@ export function ChangeApplicationsPanel({
             <option value="draft">초안</option>
             <option value="cancelled">취소</option>
           </select>
+          <select aria-label="보관 상태" value={archiveFilter} onChange={(event) => setArchiveFilter(event.target.value as ChangeApplicationArchiveFilter)}>
+            <option value="active">활성 변경건</option>
+            <option value="archived">보관된 변경건</option>
+            <option value="all">보관 상태 전체</option>
+          </select>
         </div>
 
         {viewMode === 'change' ? (
@@ -426,7 +460,7 @@ export function ChangeApplicationsPanel({
                   && !isHistoryLoaded(application.id)
                 return (
                   <button className={selected ? 'change-application-card selected' : 'change-application-card'} key={application.id} onClick={() => setSelectedApplicationId(application.id)} type="button">
-                    <span className="change-application-card-top"><Badge status={application.status}>{applicationStatusLabel(application.status)}</Badge><span>{application.change_number}</span></span>
+                    <span className="change-application-card-top"><span><Badge status={application.status}>{applicationStatusLabel(application.status)}</Badge>{application.archived_at && <Badge>보관</Badge>}</span><span>{application.change_number}</span></span>
                     <strong>{application.title}</strong>
                     <small>{applicationCreatorName(data, application)} · 시행 {formatDate(application.effective_date)}</small>
                     {canShowProgress && needsFullHistory ? (
@@ -467,15 +501,19 @@ export function ChangeApplicationsPanel({
                           : isHistoryLoaded(selectedApplication.id) ? '전체 이력 확인됨' : '전체 이력 불러오기'}
                       </button>
                       {canEditChangeApplication(selectedApplication, selectedContexts, profile) && <button className="ghost compact" onClick={() => setComposer({ editingId: selectedApplication.id })} type="button"><FilePenLine size={14} />{selectedApplication.status === 'draft' ? '초안 이어쓰기' : '수정'}</button>}
-                      {selectedApplication.status !== 'cancelled' && (leaderMode || selectedApplication.created_by === profile.id) && <button className="ghost compact" onClick={() => setDialog({ kind: 'cancel_application', application: selectedApplication })} type="button"><XCircle size={14} />취소</button>}
+                      {leaderMode && !selectedApplication.archived_at && selectedContexts.length > 0 && selectedContexts.every(({ task }) => task.status !== 'pending') && <button className="ghost compact" onClick={() => setDialog({ kind: 'archive_application', application: selectedApplication })} type="button"><Archive size={14} />보관</button>}
+                      {leaderMode && selectedApplication.archived_at && <button className="ghost compact" onClick={() => setDialog({ kind: 'restore_application', application: selectedApplication })} type="button"><ArchiveRestore size={14} />복원</button>}
+                      {!selectedApplication.archived_at && selectedApplication.status !== 'cancelled' && (leaderMode || selectedApplication.created_by === profile.id) && <button className="ghost compact" onClick={() => setDialog({ kind: 'cancel_application', application: selectedApplication })} type="button"><XCircle size={14} />취소</button>}
                     </div>
                   </header>
                   <div className="change-detail-meta">
                     <span>등록자 <strong>{applicationCreatorName(data, selectedApplication)}</strong></span>
                     <span>시행일 <strong>{formatDate(selectedApplication.effective_date)}</strong></span>
                     <span>상태 <strong>{applicationStatusLabel(selectedApplication.status)}</strong></span>
+                    {selectedApplication.archived_at && <span>보관일 <strong>{formatDate(selectedApplication.archived_at)}</strong></span>}
                     {selectedApplication.source_url && <a href={selectedApplication.source_url} rel="noreferrer" target="_blank">공식 문서 열기</a>}
                   </div>
+                  {selectedApplication.archived_at && <p className="change-task-note">보관 사유: {selectedApplication.archive_reason}</p>}
                   {historyError && <p className="field-error" role="alert">{historyError}</p>}
                   {data.changeActionItems.filter((item) => item.change_application_id === selectedApplication.id).map((item) => <div className="change-action-summary" key={item.id}><Badge>{changeActionLabel(item)}</Badge><strong>{item.content}</strong><span>적용기한 {formatDate(item.due_date)}</span></div>)}
                   {(leaderMode || selectedApplication.created_by === profile.id || selectedContexts.length > 0) ? (

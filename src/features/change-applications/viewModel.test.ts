@@ -17,6 +17,7 @@ function context({
   applicationStatus = 'published',
   creatorId = 'creator-1',
   dueDate = '2026-07-20',
+  archived = false,
 }: {
   id: string
   productName: string
@@ -26,6 +27,7 @@ function context({
   applicationStatus?: ProductChangeTaskContext['application']['status']
   creatorId?: string
   dueDate?: string
+  archived?: boolean
 }): ProductChangeTaskContext {
   return {
     application: {
@@ -38,6 +40,9 @@ function context({
       effective_date: '2026-07-17',
       status: applicationStatus,
       content_locked_at: null,
+      archived_at: archived ? '2026-07-17T01:00:00.000Z' : null,
+      archived_by: archived ? 'leader-1' : null,
+      archive_reason: archived ? '완료 보관' : null,
       created_by: creatorId,
       published_at: applicationStatus === 'draft' ? null : '2026-07-17T00:00:00.000Z',
       cancelled_at: applicationStatus === 'cancelled' ? '2026-07-17T00:00:00.000Z' : null,
@@ -108,6 +113,7 @@ describe('change application view model', () => {
     const result = filterChangeTaskContexts([today, dayThree, dayFour, overdue], {
       status: 'pending',
       application: 'published',
+      archive: 'active',
       actionKind: 'all',
       attention: 'due_soon',
       query: '',
@@ -124,6 +130,7 @@ describe('change application view model', () => {
     const filters = {
       status: 'all' as const,
       application: 'all' as const,
+      archive: 'active' as const,
       actionKind: 'all' as const,
       attention: 'all' as const,
       query: '특별제품',
@@ -145,6 +152,27 @@ describe('change application view model', () => {
     expect(member.unassignedCount).toBe(0)
     expect(leader.pendingContexts).toHaveLength(3)
     expect(leader.unassignedCount).toBe(1)
+  })
+
+  it('keeps archived changes out of the active queue and KPI counts', () => {
+    const active = context({ id: 'active', productName: '가' })
+    const archived = context({ id: 'archived', productName: '나', archived: true })
+    const filters = {
+      status: 'all' as const,
+      application: 'all' as const,
+      archive: 'active' as const,
+      actionKind: 'all' as const,
+      attention: 'all' as const,
+      query: '',
+    }
+
+    expect(filterChangeTaskContexts([active, archived], filters)).toEqual([active])
+    expect(filterChangeApplications([active.application, archived.application], [active], filters, true, 'leader-1'))
+      .toEqual([active.application])
+    expect(filterChangeTaskContexts([active, archived], { ...filters, archive: 'archived' }))
+      .toEqual([archived])
+    expect(calculateChangeApplicationKpis([active, archived], true, 'leader-1').pendingContexts)
+      .toEqual([active])
   })
 
   it('sorts groups by Korean title while preserving task order inside each group', () => {

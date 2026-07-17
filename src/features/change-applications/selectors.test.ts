@@ -118,6 +118,12 @@ describe('change application selectors', () => {
     const data = dataWithTasks([other, own])
 
     expect(selectMyProductChangeTaskContexts(data, member).map(({ task: item }) => item.id)).toEqual(['own'])
+
+    const archivedData = {
+      ...data,
+      changeApplications: [{ ...application, archived_at: '2026-07-17T00:00:00.000Z' }],
+    }
+    expect(selectMyProductChangeTaskContexts(archivedData, member)).toEqual([])
   })
 
   it('locks content editing after a completed, not-applicable, or cancelled task', () => {
@@ -131,5 +137,6 @@ describe('change application selectors', () => {
     expect(canEditChangeApplication(application, completed, owner)).toBe(false)
     expect(canEditChangeApplication(application, notApplicable, owner)).toBe(false)
     expect(canEditChangeApplication(application, cancelled, owner)).toBe(false)
+    expect(canEditChangeApplication({ ...application, archived_at: '2026-07-17T00:00:00.000Z' }, editable, owner)).toBe(false)
   })
 })

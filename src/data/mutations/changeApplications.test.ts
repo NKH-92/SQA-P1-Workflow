@@ -8,7 +8,7 @@ import {
   reopenProductChangeTask,
   saveChangeApplication,
 } from './changeApplications'
-import type { ChangeApplicationInput } from '../../features/change-applications/types'
+import type { ChangeApplicationInput } from '../contracts'
 import { createLocalChangeApplicationRepository } from '../local/localChangeApplicationRepository'
 
 function harness(initial = createPreviewData()) {

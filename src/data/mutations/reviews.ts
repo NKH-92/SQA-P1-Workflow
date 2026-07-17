@@ -1,8 +1,8 @@
 import type { ReviewStatus } from '../../types'
+import type { ReviewRequestPayload } from '../contracts'
 import type { RepositoryContext } from '../repositoryContext'
 import { createLocalReviewRepository } from '../local/localReviewRepository'
 import { createSupabaseReviewRepository } from '../remote/supabaseReviewRepository'
-import type { ReviewRequestPayload } from '../local/appDataReducers'
 
 export type { ReviewRequestPayload }
 

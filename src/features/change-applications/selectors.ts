@@ -2,10 +2,15 @@ import type {
   AppData,
   ChangeActionItem,
   ChangeApplication,
-  ProductChangeTask,
   Profile,
 } from '../../types'
 import { daysUntil } from '../../lib/dates'
+import {
+  selectProductChangeTaskContexts,
+  type ProductChangeTaskContext,
+} from '../../data/selectors/changeTaskContexts'
+
+export { selectProductChangeTaskContexts, type ProductChangeTaskContext }
 
 export type ChangeScopeProduct = {
   id: string
@@ -14,12 +19,6 @@ export type ChangeScopeProduct = {
   companyName: string | null
   sortOrder: number | null
   assignees: Array<{ id: string; name: string }>
-}
-
-export type ProductChangeTaskContext = {
-  task: ProductChangeTask
-  actionItem: ChangeActionItem
-  application: ChangeApplication
 }
 
 export function selectChangeScopeProducts(data: AppData): ChangeScopeProduct[] {
@@ -63,16 +62,6 @@ export function selectChangeScopeProducts(data: AppData): ChangeScopeProduct[] {
       (left.sortOrder ?? Number.MAX_SAFE_INTEGER) - (right.sortOrder ?? Number.MAX_SAFE_INTEGER)
       || left.name.localeCompare(right.name, 'ko'),
   )
-}
-
-export function selectProductChangeTaskContexts(data: AppData): ProductChangeTaskContext[] {
-  const actionItems = new Map(data.changeActionItems.map((item) => [item.id, item]))
-  const applications = new Map(data.changeApplications.map((item) => [item.id, item]))
-  return data.productChangeTasks.flatMap((task) => {
-    const actionItem = actionItems.get(task.action_item_id)
-    const application = actionItem ? applications.get(actionItem.change_application_id) : null
-    return actionItem && application ? [{ task, actionItem, application }] : []
-  })
 }
 
 export function selectApplicationTaskContexts(data: AppData, applicationId: string) {

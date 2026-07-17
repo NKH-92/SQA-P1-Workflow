@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPreviewData, previewLeader } from '../../demoData'
-import type { ChangeApplicationInput } from '../../features/change-applications/types'
+import type { ChangeApplicationInput } from '../contracts'
 import type { AppData } from '../../types'
 import type { RepositoryContext } from '../repositoryContext'
 

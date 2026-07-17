@@ -1,5 +1,6 @@
 export { createRepositoryContext, type RepositoryContext } from './repositoryContext'
 export { fetchProductChangeTaskHistory } from './fetchAppData'
+export type { ChangeApplicationInput, ChangeTaskDraft } from './contracts'
 
 export {
   saveAnnouncement,

@@ -1,9 +1,3 @@
-import {
-  hasContentLockingProductTask,
-  selectProductChangeTaskContexts,
-} from '../../features/change-applications/selectors'
-import type { ChangeApplicationInput } from '../../features/change-applications/types'
-import { CHANGE_APPLICATION_STALE_MESSAGE } from '../../features/change-applications/validators'
 import { recordActivityLog } from '../../lib/activityLog'
 import { UserFacingError } from '../../lib/errors'
 import { makeId } from '../../lib/format'
@@ -13,7 +7,10 @@ import type {
   ChangeApplication,
   ProductChangeTask,
 } from '../../types'
+import type { ChangeApplicationInput } from '../contracts'
 import type { ChangeApplicationRepository, RepositoryDeps } from '../repositories/types'
+import { selectProductChangeTaskContexts } from '../selectors/changeTaskContexts'
+import { CHANGE_APPLICATION_STALE_MESSAGE } from '../validation/changeApplications'
 
 function assertActive(profile: RepositoryDeps['profile']) {
   if (profile.is_active === false || profile.must_change_password === true) {
@@ -78,7 +75,10 @@ function saveLocalData(
     const contexts = selectProductChangeTaskContexts(data).filter(
       (context) => context.application.id === existing.id,
     )
-    if (existing.content_locked_at || hasContentLockingProductTask(contexts)) {
+    if (existing.content_locked_at || contexts.some(({ task }) =>
+      task.status === 'completed'
+      || task.status === 'not_applicable'
+      || task.status === 'cancelled')) {
       throw new UserFacingError('한 제품이라도 처리된 뒤에는 변경 내용을 수정할 수 없습니다.')
     }
   }

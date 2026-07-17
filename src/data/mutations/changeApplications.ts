@@ -1,9 +1,9 @@
-import type { ChangeApplicationInput } from '../../features/change-applications/types'
+import type { ChangeApplicationInput } from '../contracts'
 import {
   normalizeChangeApplicationInput,
   normalizeOptionalTaskNote,
   normalizeTaskReason,
-} from '../../features/change-applications/validators'
+} from '../validation/changeApplications'
 import { createLocalChangeApplicationRepository } from '../local/localChangeApplicationRepository'
 import { createSupabaseChangeApplicationRepository } from '../remote/supabaseChangeApplicationRepository'
 import type { RepositoryContext } from '../repositoryContext'

@@ -1,7 +1,7 @@
 import { UserFacingError } from '../../lib/errors'
-import { CHANGE_APPLICATION_STALE_MESSAGE } from '../../features/change-applications/validators'
 import { supabase } from '../../lib/supabase'
 import type { ChangeApplicationRepository, RepositoryDeps } from '../repositories/types'
+import { CHANGE_APPLICATION_STALE_MESSAGE } from '../validation/changeApplications'
 
 function translateChangeError(error: { message?: string }) {
   const message = error.message ?? ''

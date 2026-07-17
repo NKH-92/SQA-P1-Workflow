@@ -1,30 +1,15 @@
 import type {
-  ActivityLog,
-  AllowedUser,
   Announcement,
-  AppData,
-  ChangeActionItem,
-  ChangeApplication,
-  ChangeAssigneeOption,
-  ChangeProductScopeRow,
-  Duty,
-  DutyAssignment,
-  DutyMajorCategory,
-  Product,
-  ProductAssignment,
   ProductChangeTask,
-  Profile,
-  Project,
-  ProjectAssignment,
   ReviewRequest,
 } from '../types'
 import { supabase } from '../lib/supabase'
+import { assembleAppData, emptyAppData } from './fetch/assembleAppData'
+import type { AssembledAppData } from './fetch/assembleAppData'
 
 export { mergeAnnouncements, sortAnnouncements } from './announcementCollection'
 
-export type FetchAppDataResult = AppData & {
-  optionalWarnings: string[]
-}
+export type FetchAppDataResult = AssembledAppData
 
 // Pending requests remain visible regardless of age so members can always
 // finish work in progress. Closed requests are intentionally bounded to the
@@ -149,37 +134,6 @@ export async function fetchProductChangeTaskHistory(
   return (data ?? []) as ProductChangeTask[]
 }
 
-function emptyAppData(): AppData {
-  return {
-    announcements: [],
-    changeApplications: [],
-    changeActionItems: [],
-    productChangeTasks: [],
-    changeProductScope: [],
-    changeAssigneeOptions: [],
-    profiles: [],
-    allowedUsers: [],
-    products: [],
-    dutyMajorCategories: [],
-    duties: [],
-    productAssignments: [],
-    dutyAssignments: [],
-    reviewRequests: [],
-    projects: [],
-    projectAssignments: [],
-    profileNotes: [],
-    activityLogs: [],
-  }
-}
-
-function settledData<T>(result: PromiseSettledResult<{ data: T | null; error: unknown }>, label: string, warnings: string[]): T {
-  if (result.status === 'rejected' || result.value.error) {
-    warnings.push(`${label} 조회에 실패했습니다.`)
-    return [] as T
-  }
-  return (result.value.data ?? []) as T
-}
-
 export async function fetchAppData(): Promise<FetchAppDataResult> {
   if (!supabase) return { ...emptyAppData(), optionalWarnings: [] }
 
@@ -264,7 +218,6 @@ export async function fetchAppData(): Promise<FetchAppDataResult> {
   const failedCore = coreResults.find((result) => result.error)
   if (failedCore?.error) throw failedCore.error
 
-  const optionalWarnings: string[] = []
   const optionalResults = await Promise.allSettled([
     supabase.from('allowed_users').select('*').order('created_at', { ascending: false }),
     supabase.from('profile_notes').select('*').order('created_at', { ascending: false }),
@@ -280,63 +233,24 @@ export async function fetchAppData(): Promise<FetchAppDataResult> {
       .limit(200),
   ])
 
-  let profiles = (profilesResult.data ?? []) as Profile[]
-  const leaderProfiles = settledData(
-    optionalResults[3] as PromiseSettledResult<{ data: Array<Pick<Profile, 'id' | 'name'>> | null; error: unknown }>,
-    '파트장 프로필',
-    optionalWarnings,
+  return assembleAppData(
+    {
+      profilesResult,
+      productsResult,
+      dutyMajorCategoriesResult,
+      dutiesResult,
+      productAssignmentsResult,
+      dutyAssignmentsResult,
+      reviewRequestsResult,
+      projectsResult,
+      projectAssignmentsResult,
+      changeApplicationsResult,
+      changeActionItemsResult,
+      productChangeTasksResult,
+      changeProductScopeResult,
+      changeAssigneeOptionsResult,
+    },
+    optionalResults,
+    mergeReviewRequests,
   )
-  if (leaderProfiles.length > 0) {
-    const knownIds = new Set(profiles.map((item) => item.id))
-    profiles = [
-      ...profiles,
-      ...leaderProfiles
-        .filter((leader) => !knownIds.has(leader.id))
-        .map((leader) => ({
-          id: leader.id,
-          name: leader.name,
-          email: '',
-          role: 'leader' as const,
-          is_active: true,
-        })),
-    ]
-  }
-
-  return {
-    announcements: settledData(
-      optionalResults[4] as PromiseSettledResult<{ data: Announcement[] | null; error: unknown }>,
-      '공지',
-      optionalWarnings,
-    ),
-    changeApplications: (changeApplicationsResult.data ?? []) as ChangeApplication[],
-    changeActionItems: (changeActionItemsResult.data ?? []) as ChangeActionItem[],
-    productChangeTasks: (productChangeTasksResult.data ?? []) as ProductChangeTask[],
-    changeProductScope: (changeProductScopeResult.data ?? []) as ChangeProductScopeRow[],
-    changeAssigneeOptions: (changeAssigneeOptionsResult.data ?? []) as ChangeAssigneeOption[],
-    profiles,
-    allowedUsers: settledData(
-      optionalResults[0] as PromiseSettledResult<{ data: AllowedUser[] | null; error: unknown }>,
-      '초대 목록',
-      optionalWarnings,
-    ),
-    products: (productsResult.data ?? []) as Product[],
-    dutyMajorCategories: (dutyMajorCategoriesResult.data ?? []) as DutyMajorCategory[],
-    duties: (dutiesResult.data ?? []) as Duty[],
-    productAssignments: (productAssignmentsResult.data ?? []) as ProductAssignment[],
-    dutyAssignments: (dutyAssignmentsResult.data ?? []) as DutyAssignment[],
-    reviewRequests: mergeReviewRequests(reviewRequestsResult.data as ReviewRequest[] | null, null),
-    projects: (projectsResult.data ?? []) as Project[],
-    projectAssignments: (projectAssignmentsResult.data ?? []) as ProjectAssignment[],
-    profileNotes: settledData(
-      optionalResults[1] as PromiseSettledResult<{ data: AppData['profileNotes'] | null; error: unknown }>,
-      '프로필 메모',
-      optionalWarnings,
-    ),
-    activityLogs: settledData(
-      optionalResults[2] as PromiseSettledResult<{ data: ActivityLog[] | null; error: unknown }>,
-      '활동 로그',
-      optionalWarnings,
-    ),
-    optionalWarnings,
-  }
 }

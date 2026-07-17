@@ -4,27 +4,7 @@ import type {
   ProductChangeTaskStatus,
 } from '../../types'
 
-export type ChangeTaskDraft = {
-  product_id: string
-  assignee_id: string | null
-  product_note?: string | null
-}
-
-export type ChangeApplicationInput = {
-  changeApplicationId: string | null
-  expected_updated_at: string | null
-  change_number: string
-  source: ChangeApplicationSource
-  title: string
-  summary: string
-  source_url: string | null
-  effective_date: string
-  action_kind: ChangeActionKind
-  custom_kind_name: string | null
-  action_content: string
-  due_date: string
-  tasks: ChangeTaskDraft[]
-}
+export type { ChangeApplicationInput, ChangeTaskDraft } from '../../data/contracts'
 
 export type ProductTaskAction =
   | { kind: 'complete'; completionNote: string; proxyReason: string }

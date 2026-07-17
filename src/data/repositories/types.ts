@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { Announcement, AppData, Profile, Project, ReviewStatus } from '../../types'
 import type { AnnouncementPayload, ReviewRequestPayload, ProjectInput } from '../local/appDataReducers'
+import type { ChangeApplicationInput } from '../../features/change-applications/types'
 
 export type ReviewRepository = {
   saveReviewRequest(input: {
@@ -47,6 +48,16 @@ export type AnnouncementRepository = {
   }): Promise<void>
   toggleAnnouncementPin(announcement: Announcement): Promise<void>
   deleteAnnouncement(announcement: Announcement): Promise<void>
+}
+
+export type ChangeApplicationRepository = {
+  saveChangeApplication(input: ChangeApplicationInput, publish: boolean): Promise<string>
+  completeProductTask(taskId: string, completionNote: string, proxyReason: string): Promise<void>
+  markProductTaskNotApplicable(taskId: string, reason: string, proxyReason: string): Promise<void>
+  reopenProductTask(taskId: string, reason: string): Promise<void>
+  reassignProductTasks(taskIds: string[], assigneeId: string | null, reason: string): Promise<void>
+  cancelProductTask(taskId: string, reason: string): Promise<void>
+  cancelChangeApplication(changeApplicationId: string, reason: string): Promise<void>
 }
 
 /** local·remote repository가 공통으로 받는 의존성 (RepositoryContext에서 isRemote를 뺀 형태). */

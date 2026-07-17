@@ -3,6 +3,7 @@ export const APP_TABS = [
   'announcements',
   'reviews',
   'review-stats',
+  'change-applications',
   'projects',
   'team',
   'products',

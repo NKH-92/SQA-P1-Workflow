@@ -24,6 +24,7 @@ describe('ProductAssignModal', () => {
         user_id: '',
         product_id: '',
         unassigned_reason: '',
+        transfer_pending_tasks: false,
       })
       return (
         <ProductAssignModal
@@ -49,5 +50,43 @@ describe('ProductAssignModal', () => {
 
     await user.click(screen.getByRole('button', { name: '미지정으로 저장' }))
     expect(onSubmit).toHaveBeenCalledOnce()
+  })
+
+  it('previews and explicitly opts into pending change-task transfer', async () => {
+    const user = userEvent.setup()
+    const data = createPreviewData()
+    const pendingTask = data.productChangeTasks.find((task) => task.status === 'pending' && task.assignee_id)!
+    const nextMember = data.profiles.find(
+      (profile) => profile.role === 'member' && profile.id !== pendingTask.assignee_id,
+    )!
+
+    function Harness() {
+      const [form, setForm] = useState<ProductAssignmentForm>({
+        user_id: '',
+        product_id: '',
+        unassigned_reason: '',
+        transfer_pending_tasks: false,
+      })
+      return (
+        <ProductAssignModal
+          open
+          onClose={vi.fn()}
+          data={data}
+          memberOptions={data.profiles.filter((profile) => profile.role === 'member')}
+          productAssignment={form}
+          setProductAssignment={setForm}
+          onSubmit={vi.fn()}
+        />
+      )
+    }
+
+    render(<Harness />)
+    await user.selectOptions(screen.getByLabelText('제품'), pendingTask.product_id)
+    await user.selectOptions(screen.getByLabelText('담당 상태'), nextMember.id)
+
+    expect(screen.getByText(/미완료 변경 적용업무/)).toHaveTextContent('1건')
+    const transfer = screen.getByRole('checkbox', { name: /미완료 적용업무도 새 담당자에게 이관/ })
+    await user.click(transfer)
+    expect(transfer).toBeChecked()
   })
 })

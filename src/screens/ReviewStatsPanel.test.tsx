@@ -8,6 +8,11 @@ import { ReviewStatsPanel } from './ReviewStatsPanel'
 function emptyData(): AppData {
   return {
     announcements: [],
+    changeApplications: [],
+    changeActionItems: [],
+    productChangeTasks: [],
+    changeProductScope: [],
+    changeAssigneeOptions: [],
     profiles: [],
     allowedUsers: [],
     products: [],

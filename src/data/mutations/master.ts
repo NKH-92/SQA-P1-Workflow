@@ -3,6 +3,7 @@ import { assertAffectedRows, assertRecordExists, UserFacingError } from '../../l
 import { recordActivityLog } from '../../lib/activityLog'
 import { canReceiveAssignment } from '../../domain/permissions'
 import { supabase } from '../../lib/supabase'
+import { selectProductChangeTaskContexts } from '../../features/change-applications/selectors'
 import type { Product, ProductCategory, Role, DutyMajorCategory } from '../../types'
 import type { RepositoryContext } from '../repositoryContext'
 import {
@@ -313,11 +314,28 @@ export async function saveDutyAssignments(
 
 export async function assignProduct(
   ctx: RepositoryContext,
-  input: { userId: string; productId: string },
+  input: {
+    userId: string
+    productId: string
+    transferPendingChangeTasks?: boolean
+    transferReason?: string
+  },
 ): Promise<void> {
   const { data, setData } = ctx
+  const transferPending = input.transferPendingChangeTasks === true
+  const transferReason = input.transferReason?.trim() || null
   if (!ctx.isRemote) assertLocalLeader(ctx)
   if (ctx.isRemote) {
+    if (transferPending) {
+      const { error } = await supabase!.rpc('assign_product_and_transfer_change_tasks', {
+        p_product_id: input.productId,
+        p_user_id: input.userId,
+        p_transfer_pending: true,
+        p_reason: transferReason,
+      })
+      if (error) throw error
+      return
+    }
     const { error } = await supabase!.rpc('add_product_assignment', {
       p_product_id: input.productId,
       p_user_id: input.userId,
@@ -330,7 +348,6 @@ export async function assignProduct(
   const alreadyAssigned = data.productAssignments.some(
     (assignment) => assignment.product_id === input.productId && assignment.user_id === input.userId,
   )
-  if (alreadyAssigned) return
   const member = data.profiles.find((item) => item.id === input.userId)
   const product = data.products.find((item) => item.id === input.productId)
   assertRecordExists(member)
@@ -338,8 +355,61 @@ export async function assignProduct(
   if (!canReceiveAssignment(member)) {
     throw new UserFacingError('활성 상태인 파트원에게만 제품을 배정할 수 있습니다.')
   }
-  setData((current) => appendProductAssignment(current, input.userId, input.productId, member, product))
-  await logMasterActivity(ctx, 'product_assignment', 'created', '제품을 배정했습니다.', input.productId, { user_id: input.userId })
+  if (transferPending && !transferReason) {
+    throw new UserFacingError('미완료 변경 적용업무 이관 사유가 필요합니다.')
+  }
+  if (alreadyAssigned && !transferPending) return
+
+  const transferContexts = transferPending
+    ? selectProductChangeTaskContexts(data).filter(
+        ({ task, application }) =>
+          task.product_id === input.productId
+          && task.status === 'pending'
+          && task.assignee_id !== input.userId
+          && application.status === 'published',
+      )
+    : []
+  const transferTaskIds = new Set(transferContexts.map(({ task }) => task.id))
+  const now = new Date().toISOString()
+  setData((current) => {
+    const assigned = alreadyAssigned
+      ? current
+      : appendProductAssignment(current, input.userId, input.productId, member, product)
+    if (!transferPending) return assigned
+    return {
+      ...assigned,
+      productChangeTasks: assigned.productChangeTasks.map((task) => transferTaskIds.has(task.id) ? {
+        ...task,
+        assignee_id: input.userId,
+        assignee_name: member.name,
+        updated_at: now,
+      } : task),
+    }
+  })
+  await logMasterActivity(
+    ctx,
+    'product_assignment',
+    alreadyAssigned ? 'updated' : 'created',
+    transferPending ? '제품을 배정하고 미완료 변경 적용업무를 이관했습니다.' : '제품을 배정했습니다.',
+    input.productId,
+    { user_id: input.userId, transferred_task_count: transferContexts.length },
+  )
+  for (const { task } of transferContexts) {
+    await recordActivityLog(setData, {
+      actor: ctx.profile,
+      targetUserId: input.userId,
+      entityType: 'product_change_task',
+      entityId: task.id,
+      action: 'reassigned',
+      summary: `${ctx.profile.name}님이 ${task.product_name} 변경 적용 담당자를 ${member.name}님으로 이관했습니다.`,
+      metadata: {
+        from_assignee_id: task.assignee_id,
+        to_assignee_id: input.userId,
+        reason: transferReason,
+        source: 'product_assignment_change',
+      },
+    })
+  }
 }
 
 async function logMasterActivity(

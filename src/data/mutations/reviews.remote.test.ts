@@ -93,6 +93,11 @@ const review: ReviewRequest = {
 function remoteContext(profile: Profile = member): RepositoryContext {
   const data: AppData = {
     announcements: [],
+    changeApplications: [],
+    changeActionItems: [],
+    productChangeTasks: [],
+    changeProductScope: [],
+    changeAssigneeOptions: [],
     profiles: [member],
     allowedUsers: [],
     products: [],

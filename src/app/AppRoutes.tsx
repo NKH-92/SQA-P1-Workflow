@@ -4,6 +4,7 @@ import type { MutateFn, TabId } from './types'
 import {
   ActivityPanel,
   AnnouncementsPanel,
+  ChangeApplicationsPanel,
   Dashboard,
   LeaderDashboard,
   MasterPanel,
@@ -71,6 +72,16 @@ export function AppRoutes({
         />
       )}
       {activeTab === 'review-stats' && leaderMode && <ReviewStatsPanel data={data} />}
+      {activeTab === 'change-applications' && (
+        <ChangeApplicationsPanel
+          profile={profile}
+          data={data}
+          mutate={mutate}
+          setData={setData}
+          initialSelectedId={navEntityId}
+          onInitialSelectionApplied={() => setNavEntityId(null)}
+        />
+      )}
       {activeTab === 'projects' && (
         <ProjectsPanel
           profile={profile}

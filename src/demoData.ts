@@ -2,11 +2,16 @@ import type {
   AllowedUser,
   Announcement,
   AppData,
+  ChangeActionItem,
+  ChangeApplication,
+  ChangeAssigneeOption,
+  ChangeProductScopeRow,
   Duty,
   DutyAssignment,
   DutyMajorCategory,
   Product,
   ProductAssignment,
+  ProductChangeTask,
   Profile,
   ProfileNote,
   Project,
@@ -172,6 +177,160 @@ export function createPreviewData(): AppData {
     ]
   })
 
+  const changeApplications: ChangeApplication[] = [
+    {
+      id: 'change-application-01',
+      change_number: 'CC-2026-014',
+      source: 'official',
+      title: '원료 제조원 변경',
+      summary: '공급처 변경에 따라 제품표준서의 원료 제조원 정보를 변경합니다.',
+      source_url: 'https://example.com/change/CC-2026-014',
+      effective_date: '2026-08-01',
+      status: 'published',
+      content_locked_at: '2026-07-18T04:00:00.000Z',
+      created_by: previewLeader.id,
+      published_at: '2026-07-15T01:00:00.000Z',
+      cancelled_at: null,
+      cancellation_reason: null,
+      created_at: '2026-07-15T01:00:00.000Z',
+      updated_at: '2026-07-15T01:00:00.000Z',
+      profiles: { name: previewLeader.name },
+    },
+    {
+      id: 'change-application-draft-01',
+      change_number: 'INT-2026-0001',
+      source: 'internal',
+      title: '표시기재 내부 점검',
+      summary: '다음 배포 전에 제품별 표시기재를 확인합니다.',
+      source_url: null,
+      effective_date: '2026-08-10',
+      status: 'draft',
+      created_by: previewLeader.id,
+      published_at: null,
+      cancelled_at: null,
+      cancellation_reason: null,
+      created_at: '2026-07-16T02:00:00.000Z',
+      updated_at: '2026-07-16T02:00:00.000Z',
+      profiles: { name: previewLeader.name },
+    },
+  ]
+
+  const changeActionItems: ChangeActionItem[] = [
+    {
+      id: 'change-action-01',
+      change_application_id: 'change-application-01',
+      kind: 'product_standard',
+      custom_kind_name: null,
+      content: '원료 제조원 및 소재지 정보를 제품표준서에 반영합니다.',
+      due_date: '2026-07-28',
+      sort_order: 1,
+      created_at: '2026-07-15T01:00:00.000Z',
+      updated_at: '2026-07-15T01:00:00.000Z',
+    },
+    {
+      id: 'change-action-draft-01',
+      change_application_id: 'change-application-draft-01',
+      kind: 'other',
+      custom_kind_name: '표시기재',
+      content: '제품별 표시기재 최신본을 확인합니다.',
+      due_date: '2026-08-05',
+      sort_order: 1,
+      created_at: '2026-07-16T02:00:00.000Z',
+      updated_at: '2026-07-16T02:00:00.000Z',
+    },
+  ]
+
+  const productChangeTasks: ProductChangeTask[] = products.slice(0, 12).map((product, index) => {
+    const assignment = productAssignments.find((item) => item.product_id === product.id)
+    const assignee = previewProfiles.find((item) => item.id === assignment?.user_id)
+    const status = index === 0 ? 'completed' : index === 2 ? 'not_applicable' : 'pending'
+    const completed = status !== 'pending'
+    return {
+      id: `product-change-task-${String(index + 1).padStart(2, '0')}`,
+      action_item_id: 'change-action-01',
+      product_id: product.id,
+      product_name: product.name,
+      assignee_id: assignee?.id ?? null,
+      assignee_name: assignee?.name ?? null,
+      status,
+      product_note: null,
+      completion_note: status === 'completed' ? '제품표준서 Rev.12 반영' : null,
+      resolution_reason: status === 'not_applicable' ? '기존 제조원을 사용하지 않는 제품' : null,
+      proxy_reason: null,
+      completed_by: completed ? assignee?.id ?? previewLeader.id : null,
+      completed_by_name: completed ? assignee?.name ?? previewLeader.name : null,
+      completed_at: completed ? `2026-07-${String(18 + index).padStart(2, '0')}T04:00:00.000Z` : null,
+      reopened_by: null,
+      reopened_by_name: null,
+      reopened_at: null,
+      reopen_reason: null,
+      created_at: '2026-07-15T01:00:00.000Z',
+      updated_at: completed ? `2026-07-${String(18 + index).padStart(2, '0')}T04:00:00.000Z` : '2026-07-15T01:00:00.000Z',
+      products: {
+        name: product.name,
+        category: product.category,
+        company_name: product.company_name,
+        sort_order: product.sort_order,
+      },
+    }
+  })
+
+  products.slice(-2).forEach((product, index) => {
+    const assignment = productAssignments.find((item) => item.product_id === product.id)
+    const assignee = previewProfiles.find((item) => item.id === assignment?.user_id)
+    productChangeTasks.push({
+      id: `product-change-draft-task-${index + 1}`,
+      action_item_id: 'change-action-draft-01',
+      product_id: product.id,
+      product_name: product.name,
+      assignee_id: assignee?.id ?? null,
+      assignee_name: assignee?.name ?? null,
+      status: 'pending',
+      product_note: null,
+      completion_note: null,
+      resolution_reason: null,
+      proxy_reason: null,
+      completed_by: null,
+      completed_by_name: null,
+      completed_at: null,
+      reopened_by: null,
+      reopened_by_name: null,
+      reopened_at: null,
+      reopen_reason: null,
+      created_at: '2026-07-16T02:00:00.000Z',
+      updated_at: '2026-07-16T02:00:00.000Z',
+      products: {
+        name: product.name,
+        category: product.category,
+        company_name: product.company_name,
+        sort_order: product.sort_order,
+      },
+    })
+  })
+
+  const changeProductScope: ChangeProductScopeRow[] = products.flatMap((product) => {
+    const assignments = productAssignments.filter((item) => item.product_id === product.id)
+    const rows = assignments.length > 0 ? assignments : [null]
+    return rows.map((assignment) => {
+      const assignee = previewProfiles.find((item) => item.id === assignment?.user_id)
+      return {
+        product_id: product.id,
+        product_name: product.name,
+        category: product.category ?? null,
+        company_name: product.company_name ?? null,
+        sort_order: product.sort_order ?? null,
+        assignee_id: assignee?.id ?? null,
+        assignee_name: assignee?.name ?? null,
+      }
+    })
+  })
+
+  const changeAssigneeOptions: ChangeAssigneeOption[] = [previewLeader, ...previewProfiles].map((profile) => ({
+    id: profile.id,
+    name: profile.name,
+    role: profile.role,
+  }))
+
   const dutyAssignments: DutyAssignment[] = demoDutyAllocationRows.flatMap((row, index) => {
     if (!isDirectDutyAssignee(row.assigneeName)) return []
     const member = previewProfileByName(row.assigneeName)
@@ -335,6 +494,11 @@ export function createPreviewData(): AppData {
 
   return {
     announcements,
+    changeApplications,
+    changeActionItems,
+    productChangeTasks,
+    changeProductScope,
+    changeAssigneeOptions,
     profiles: [previewLeader, ...previewProfiles].map((profile) => ({ ...profile, created_at: createdAt })),
     allowedUsers,
     products,

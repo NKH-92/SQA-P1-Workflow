@@ -3,6 +3,10 @@ export type {
   ReviewStatus,
   ProjectStatus,
   ProductCategory,
+  ChangeApplicationSource,
+  ChangeApplicationStatus,
+  ChangeActionKind,
+  ProductChangeTaskStatus,
   ActivityEntityType,
   Profile,
   AllowedUser,
@@ -17,6 +21,11 @@ export type {
   ProjectAssignment,
   ProfileNote,
   Announcement,
+  ChangeApplication,
+  ChangeActionItem,
+  ProductChangeTask,
+  ChangeProductScopeRow,
+  ChangeAssigneeOption,
   ActivityLog,
 } from './types/domain'
 

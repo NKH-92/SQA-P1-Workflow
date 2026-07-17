@@ -18,7 +18,12 @@ describe('createProject (demo)', () => {
       role: 'member',
     }
     const data: AppData = {
-      announcements: [],
+    announcements: [],
+    changeApplications: [],
+    changeActionItems: [],
+    productChangeTasks: [],
+    changeProductScope: [],
+    changeAssigneeOptions: [],
       profiles: [leader, member],
       allowedUsers: [],
       products: [],
@@ -93,6 +98,11 @@ describe('saveProjectAssignments (demo)', () => {
     }
     const data: AppData = {
       announcements: [],
+      changeApplications: [],
+      changeActionItems: [],
+      productChangeTasks: [],
+      changeProductScope: [],
+      changeAssigneeOptions: [],
       profiles: [leader, memberA, memberB],
       allowedUsers: [],
       products: [],

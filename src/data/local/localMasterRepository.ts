@@ -31,6 +31,9 @@ export function createLocalMasterRepository(ctx: RepositoryDeps): MasterReposito
     async deleteProduct(id) {
       const product = data.products.find((item) => item.id === id)
       assertRecordExists(product)
+      if (data.productChangeTasks.some((task) => task.product_id === id)) {
+        throw new UserFacingError('변경 적용 이력이 있는 제품은 삭제할 수 없습니다. 제품 이력을 유지해 주세요.')
+      }
       setData((current) => removeProduct(current, id))
       await recordActivityLog(setData, {
         actor: profile,

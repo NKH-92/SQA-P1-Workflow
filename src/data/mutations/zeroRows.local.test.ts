@@ -26,6 +26,11 @@ const missingProject: Project = {
 function localContext(): RepositoryContext {
   const data: AppData = {
     announcements: [],
+    changeApplications: [],
+    changeActionItems: [],
+    productChangeTasks: [],
+    changeProductScope: [],
+    changeAssigneeOptions: [],
     profiles: [leader],
     allowedUsers: [],
     products: [],

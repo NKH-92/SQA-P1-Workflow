@@ -1,5 +1,5 @@
 import { recordActivityLog } from '../../lib/activityLog'
-import { assertAffectedRows } from '../../lib/errors'
+import { assertAffectedRows, UserFacingError } from '../../lib/errors'
 import { supabase } from '../../lib/supabase'
 import type { RepositoryDeps, MasterRepository } from '../repositories/types'
 
@@ -24,6 +24,9 @@ export function createSupabaseMasterRepository(ctx: RepositoryDeps): MasterRepos
     async deleteProduct(id) {
       const product = data.products.find((item) => item.id === id)
       const { data: affected, error } = await supabase!.from('products').delete().eq('id', id).select('id')
+      if (error?.code === '23503') {
+        throw new UserFacingError('변경 적용 이력이 있는 제품은 삭제할 수 없습니다. 제품 이력을 유지해 주세요.')
+      }
       if (error) throw error
       assertAffectedRows(affected)
       await recordActivityLog(setData, {

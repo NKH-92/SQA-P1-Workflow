@@ -23,6 +23,11 @@ const member: Profile = {
 function emptyData(): AppData {
   return {
     announcements: [],
+    changeApplications: [],
+    changeActionItems: [],
+    productChangeTasks: [],
+    changeProductScope: [],
+    changeAssigneeOptions: [],
     profiles: [leader, member],
     allowedUsers: [],
     products: [],

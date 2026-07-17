@@ -25,6 +25,7 @@ function navItems(leaderMode: boolean): Array<{ tab: TabId; title: string }> {
       { tab: 'announcements', title: '공지' },
       { tab: 'reviews', title: '검토요청' },
       { tab: 'review-stats', title: '검토 통계' },
+      { tab: 'change-applications', title: '변경 적용' },
       { tab: 'projects', title: '프로젝트' },
       { tab: 'team', title: '파트원' },
       { tab: 'activity', title: '활동 로그' },
@@ -37,6 +38,7 @@ function navItems(leaderMode: boolean): Array<{ tab: TabId; title: string }> {
     { tab: 'dashboard', title: '홈' },
     { tab: 'announcements', title: '공지' },
     { tab: 'reviews', title: '내 검토요청' },
+    { tab: 'change-applications', title: '변경 적용' },
     { tab: 'projects', title: '내 프로젝트' },
     { tab: 'work', title: '내 담당' },
   ]

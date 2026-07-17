@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => {
     select: ReturnType<typeof vi.fn>
     order: ReturnType<typeof vi.fn>
     or: ReturnType<typeof vi.fn>
+    in: ReturnType<typeof vi.fn>
     limit: ReturnType<typeof vi.fn>
   }> = {}
   const from = vi.fn((table: string) => {
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => {
       select: vi.fn(),
       order: vi.fn(),
       or: vi.fn(),
+      in: vi.fn(),
       limit: vi.fn(),
       then: (
         resolve: (value: { data: unknown[] | null; error: unknown }) => unknown,
@@ -23,18 +25,20 @@ const mocks = vi.hoisted(() => {
     query.select.mockReturnValue(query)
     query.order.mockReturnValue(query)
     query.or.mockReturnValue(query)
+    query.in.mockReturnValue(query)
     query.limit.mockReturnValue(query)
     queries[table] = query
     return query
   })
-  return { results, queries, from }
+  const rpc = vi.fn(() => Promise.resolve({ data: [], error: null }))
+  return { results, queries, from, rpc }
 })
 
 vi.mock('../lib/supabase', () => ({
-  supabase: { from: mocks.from },
+  supabase: { from: mocks.from, rpc: mocks.rpc },
 }))
 
-import { fetchAppData } from './fetchAppData'
+import { fetchAppData, fetchProductChangeTaskHistory } from './fetchAppData'
 
 const announcement: Announcement = {
   id: 'announcement-1',
@@ -50,6 +54,7 @@ const announcement: Announcement = {
 describe('fetchAppData announcements', () => {
   beforeEach(() => {
     mocks.from.mockClear()
+    mocks.rpc.mockClear()
     Object.keys(mocks.results).forEach((key) => delete mocks.results[key])
     Object.keys(mocks.queries).forEach((key) => delete mocks.queries[key])
   })
@@ -76,5 +81,21 @@ describe('fetchAppData announcements', () => {
 
     expect(result.announcements).toEqual([])
     expect(result.optionalWarnings).toHaveLength(1)
+  })
+
+  it('loads a selected change task history on demand without duplicate action ids', async () => {
+    mocks.results.product_change_tasks = { data: [{ id: 'old-task' }], error: null }
+
+    const result = await fetchProductChangeTaskHistory(['action-1', 'action-1', 'action-2'])
+
+    expect(result).toEqual([{ id: 'old-task' }])
+    expect(mocks.queries.product_change_tasks?.in).toHaveBeenCalledWith(
+      'action_item_id',
+      ['action-1', 'action-2'],
+    )
+    expect(mocks.queries.product_change_tasks?.order).toHaveBeenCalledWith(
+      'updated_at',
+      { ascending: false },
+    )
   })
 })

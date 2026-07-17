@@ -154,6 +154,8 @@ function App() {
         ? selectScopedReviewRequests(data, profile).some((request) => request.id === navEntityId)
         : navActiveTab === 'announcements'
           ? data.announcements.some((announcement) => announcement.id === navEntityId)
+        : navActiveTab === 'change-applications'
+          ? data.changeApplications.some((application) => application.id === navEntityId)
         : navActiveTab === 'projects'
           ? data.projects.some((project) => project.id === navEntityId)
           : navActiveTab === 'team'

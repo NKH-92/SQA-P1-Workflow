@@ -3,11 +3,16 @@ import type {
   AllowedUser,
   Announcement,
   AppData,
+  ChangeActionItem,
+  ChangeApplication,
+  ChangeAssigneeOption,
+  ChangeProductScopeRow,
   Duty,
   DutyAssignment,
   DutyMajorCategory,
   Product,
   ProductAssignment,
+  ProductChangeTask,
   Profile,
   Project,
   ProjectAssignment,
@@ -27,12 +32,23 @@ export type FetchAppDataResult = AppData & {
 // the recurring refresh payload from growing without silently dropping work
 // that is still actionable.
 export const REVIEW_HISTORY_MONTHS = 6
+export const CHANGE_TASK_HISTORY_MONTHS = 6
 
 export function reviewHistoryCutoff(now = new Date()): string {
   const cutoff = new Date(now)
   const day = cutoff.getUTCDate()
   cutoff.setUTCDate(1)
   cutoff.setUTCMonth(cutoff.getUTCMonth() - REVIEW_HISTORY_MONTHS)
+  const lastDay = new Date(Date.UTC(cutoff.getUTCFullYear(), cutoff.getUTCMonth() + 1, 0)).getUTCDate()
+  cutoff.setUTCDate(Math.min(day, lastDay))
+  return cutoff.toISOString()
+}
+
+export function changeTaskHistoryCutoff(now = new Date()): string {
+  const cutoff = new Date(now)
+  const day = cutoff.getUTCDate()
+  cutoff.setUTCDate(1)
+  cutoff.setUTCMonth(cutoff.getUTCMonth() - CHANGE_TASK_HISTORY_MONTHS)
   const lastDay = new Date(Date.UTC(cutoff.getUTCFullYear(), cutoff.getUTCMonth() + 1, 0)).getUTCDate()
   cutoff.setUTCDate(Math.min(day, lastDay))
   return cutoff.toISOString()
@@ -112,9 +128,35 @@ export async function fetchAnnouncementById(
   return (data as Announcement | null) ?? null
 }
 
+/**
+ * Closed change tasks are bounded in the recurring app refresh. A user can
+ * explicitly request the complete history for one change without making every
+ * normal refresh grow forever.
+ */
+export async function fetchProductChangeTaskHistory(
+  actionItemIds: string[],
+  signal?: AbortSignal,
+): Promise<ProductChangeTask[]> {
+  if (!supabase || actionItemIds.length === 0) return []
+  let query = supabase
+    .from('product_change_tasks')
+    .select('*, products(name,category,company_name,sort_order)')
+    .in('action_item_id', [...new Set(actionItemIds)])
+    .order('updated_at', { ascending: false })
+  if (signal) query = query.abortSignal(signal)
+  const { data, error } = await query
+  if (error) throw error
+  return (data ?? []) as ProductChangeTask[]
+}
+
 function emptyAppData(): AppData {
   return {
     announcements: [],
+    changeApplications: [],
+    changeActionItems: [],
+    productChangeTasks: [],
+    changeProductScope: [],
+    changeAssigneeOptions: [],
     profiles: [],
     allowedUsers: [],
     products: [],
@@ -151,6 +193,11 @@ export async function fetchAppData(): Promise<FetchAppDataResult> {
     reviewRequestsResult,
     projectsResult,
     projectAssignmentsResult,
+    changeApplicationsResult,
+    changeActionItemsResult,
+    productChangeTasksResult,
+    changeProductScopeResult,
+    changeAssigneeOptionsResult,
   ] = await Promise.all([
     supabase.from('profiles').select('*').order('name'),
     supabase.from('products').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('name'),
@@ -187,6 +234,15 @@ export async function fetchAppData(): Promise<FetchAppDataResult> {
       .from('project_assignments')
       .select('*, profiles(name,email), projects(name,description,deadline,status)')
       .order('created_at', { ascending: false }),
+    supabase.from('change_applications').select('*').order('created_at', { ascending: false }),
+    supabase.from('change_action_items').select('*').order('sort_order', { ascending: true }),
+    supabase
+      .from('product_change_tasks')
+      .select('*, products(name,category,company_name,sort_order)')
+      .or(`status.eq.pending,updated_at.gte.${changeTaskHistoryCutoff()}`)
+      .order('updated_at', { ascending: false }),
+    supabase.rpc('list_change_application_product_scope'),
+    supabase.rpc('list_change_application_assignees'),
   ])
 
   const coreResults = [
@@ -199,6 +255,11 @@ export async function fetchAppData(): Promise<FetchAppDataResult> {
     reviewRequestsResult,
     projectsResult,
     projectAssignmentsResult,
+    changeApplicationsResult,
+    changeActionItemsResult,
+    productChangeTasksResult,
+    changeProductScopeResult,
+    changeAssigneeOptionsResult,
   ]
   const failedCore = coreResults.find((result) => result.error)
   if (failedCore?.error) throw failedCore.error
@@ -247,6 +308,11 @@ export async function fetchAppData(): Promise<FetchAppDataResult> {
       '공지',
       optionalWarnings,
     ),
+    changeApplications: (changeApplicationsResult.data ?? []) as ChangeApplication[],
+    changeActionItems: (changeActionItemsResult.data ?? []) as ChangeActionItem[],
+    productChangeTasks: (productChangeTasksResult.data ?? []) as ProductChangeTask[],
+    changeProductScope: (changeProductScopeResult.data ?? []) as ChangeProductScopeRow[],
+    changeAssigneeOptions: (changeAssigneeOptionsResult.data ?? []) as ChangeAssigneeOption[],
     profiles,
     allowedUsers: settledData(
       optionalResults[0] as PromiseSettledResult<{ data: AllowedUser[] | null; error: unknown }>,

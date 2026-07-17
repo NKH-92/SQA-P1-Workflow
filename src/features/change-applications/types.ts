@@ -1,0 +1,51 @@
+import type {
+  ChangeActionKind,
+  ChangeApplicationSource,
+  ProductChangeTaskStatus,
+} from '../../types'
+
+export type ChangeTaskDraft = {
+  product_id: string
+  assignee_id: string | null
+  product_note?: string | null
+}
+
+export type ChangeApplicationInput = {
+  changeApplicationId: string | null
+  expected_updated_at: string | null
+  change_number: string
+  source: ChangeApplicationSource
+  title: string
+  summary: string
+  source_url: string | null
+  effective_date: string
+  action_kind: ChangeActionKind
+  custom_kind_name: string | null
+  action_content: string
+  due_date: string
+  tasks: ChangeTaskDraft[]
+}
+
+export type ProductTaskAction =
+  | { kind: 'complete'; completionNote: string; proxyReason: string }
+  | { kind: 'not_applicable'; reason: string; proxyReason: string }
+  | { kind: 'reopen'; reason: string }
+  | { kind: 'cancel'; reason: string }
+
+export const changeApplicationSourceLabels: Record<ChangeApplicationSource, string> = {
+  official: '공식 변경관리',
+  internal: '내부 조치사항',
+  other: '기타',
+}
+
+export const changeActionKindLabels: Record<ChangeActionKind, string> = {
+  product_standard: '제품표준서',
+  other: '기타',
+}
+
+export const productChangeTaskStatusLabels: Record<ProductChangeTaskStatus, string> = {
+  pending: '미적용',
+  completed: '적용 완료',
+  not_applicable: '해당 없음',
+  cancelled: '취소',
+}

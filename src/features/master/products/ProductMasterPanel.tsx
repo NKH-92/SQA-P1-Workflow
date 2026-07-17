@@ -16,6 +16,7 @@ import {
   updateProduct as updateProductMutation,
 } from '../../../data'
 import { selectProductGroups } from '../master.selectors'
+import { selectProductChangeTaskContexts } from '../../change-applications/selectors'
 import {
   validateProductCreate,
   validateProductImport,
@@ -36,6 +37,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
     user_id: '',
     product_id: '',
     unassigned_reason: '',
+    transfer_pending_tasks: false,
   })
   const [adminSearch, setAdminSearch] = useState('')
   const [pendingDelete, setPendingDelete] = useState<{ table: AdminDeleteTable; id: string } | null>(null)
@@ -108,6 +110,15 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
 
   const assignProduct = async () => {
     const isUnassigned = productAssignment.user_id === UNASSIGNED_PRODUCT_USER_ID
+    const transferCount = productAssignment.transfer_pending_tasks
+      ? selectProductChangeTaskContexts(data).filter(
+          ({ task, application }) =>
+            task.product_id === productAssignment.product_id
+            && task.status === 'pending'
+            && task.assignee_id !== productAssignment.user_id
+            && application.status === 'published',
+        ).length
+      : 0
     const ok = await mutate(async () => {
       if (!productAssignment.user_id || !productAssignment.product_id) return
       const ctx = createRepositoryContext(profile, data, setData)
@@ -121,10 +132,18 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
         await assignProductMutation(ctx, {
           userId: productAssignment.user_id,
           productId: productAssignment.product_id,
+          transferPendingChangeTasks: productAssignment.transfer_pending_tasks,
+          transferReason: productAssignment.transfer_pending_tasks
+            ? '제품 담당자 배정 변경에 따른 미완료 적용업무 이관'
+            : undefined,
         })
       }
-      setProductAssignment({ user_id: '', product_id: '', unassigned_reason: '' })
-    }, isUnassigned ? '제품을 미지정 상태로 저장했습니다.' : '담당 제품을 배정했습니다.')
+      setProductAssignment({ user_id: '', product_id: '', unassigned_reason: '', transfer_pending_tasks: false })
+    }, isUnassigned
+      ? '제품을 미지정 상태로 저장했습니다.'
+      : transferCount > 0
+        ? `담당 제품을 배정하고 미완료 적용업무 ${transferCount}건을 이관했습니다.`
+        : '담당 제품을 배정했습니다.')
     if (ok) setProductAssignOpen(false)
   }
 

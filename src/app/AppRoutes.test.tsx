@@ -9,6 +9,9 @@ vi.mock('../screens', () => ({
   AnnouncementsPanel: ({ initialSelectedId }: { initialSelectedId?: string | null }) => (
     <div data-testid="announcements-screen">{initialSelectedId ?? 'announcement-list'}</div>
   ),
+  ChangeApplicationsPanel: ({ initialSelectedId }: { initialSelectedId?: string | null }) => (
+    <div data-testid="change-applications-screen">{initialSelectedId ?? 'change-list'}</div>
+  ),
   Dashboard: () => null,
   LeaderDashboard: () => null,
   MasterPanel: () => null,
@@ -22,6 +25,11 @@ vi.mock('../screens', () => ({
 function emptyData(): AppData {
   return {
     announcements: [],
+    changeApplications: [],
+    changeActionItems: [],
+    productChangeTasks: [],
+    changeProductScope: [],
+    changeAssigneeOptions: [],
     profiles: [],
     allowedUsers: [],
     products: [],
@@ -39,7 +47,7 @@ function emptyData(): AppData {
 
 function renderRoute(
   profile: Profile,
-  activeTab: 'review-stats' | 'announcements' = 'review-stats',
+  activeTab: 'review-stats' | 'announcements' | 'change-applications' = 'review-stats',
   navEntityId: string | null = null,
 ) {
   render(
@@ -90,5 +98,22 @@ describe('AppRoutes announcements route', () => {
     )
 
     expect(screen.getByTestId('announcements-screen')).toHaveTextContent('notice-1')
+  })
+})
+
+describe('AppRoutes change applications route', () => {
+  afterEach(cleanup)
+
+  it.each([
+    { id: 'leader', role: 'leader' as const },
+    { id: 'member', role: 'member' as const },
+  ])('renders change applications for an active $role', ({ id, role }) => {
+    renderRoute(
+      { id, email: `${id}@example.com`, name: id, role, is_active: true },
+      'change-applications',
+      'change-1',
+    )
+
+    expect(screen.getByTestId('change-applications-screen')).toHaveTextContent('change-1')
   })
 })

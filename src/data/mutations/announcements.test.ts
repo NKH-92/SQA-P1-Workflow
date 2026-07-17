@@ -26,6 +26,11 @@ const announcement: Announcement = {
 function createContext(profile: Profile = leader, announcements: Announcement[] = [announcement]) {
   let current: AppData = {
     announcements,
+    changeApplications: [],
+    changeActionItems: [],
+    productChangeTasks: [],
+    changeProductScope: [],
+    changeAssigneeOptions: [],
     profiles: [leader],
     allowedUsers: [],
     products: [],

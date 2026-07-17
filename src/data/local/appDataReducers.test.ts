@@ -124,6 +124,7 @@ describe('appDataReducers', () => {
 describe('master delete activity logging (demo)', () => {
   it('records activity when deleting a product locally', async () => {
     const data = createPreviewData()
+    data.productChangeTasks = []
     const product = data.products[0]
     expect(product).toBeTruthy()
 
@@ -144,6 +145,24 @@ describe('master delete activity logging (demo)', () => {
 
     expect(next.products.some((item) => item.id === product!.id)).toBe(false)
     expect(next.activityLogs.some((log) => log.entity_type === 'product' && log.action === 'deleted')).toBe(true)
+  })
+
+  it('protects products that have retained change-application history', async () => {
+    const data = createPreviewData()
+    const product = data.products.find((item) =>
+      data.productChangeTasks.some((task) => task.product_id === item.id),
+    )!
+    const { deleteProduct } = await import('../mutations/master')
+
+    await expect(deleteProduct(
+      {
+        isRemote: false,
+        profile: previewLeader,
+        data,
+        setData: () => undefined,
+      },
+      product.id,
+    )).rejects.toThrow('변경 적용 이력이 있는 제품은 삭제할 수 없습니다')
   })
 
   it('records activity when deleting an allowed user locally', async () => {

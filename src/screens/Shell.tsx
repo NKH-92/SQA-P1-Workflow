@@ -10,6 +10,7 @@ import {
   Bell,
   Check,
   ClipboardList,
+  ClipboardPenLine,
   FolderKanban,
   LogOut,
   Megaphone,
@@ -95,6 +96,9 @@ export function Shell({
   const memberProjectCount = data.projectAssignments.filter((assignment) => assignment.user_id === profile.id).length
   const memberProductCount = data.productAssignments.filter((assignment) => assignment.user_id === profile.id).length
   const memberDutyCount = data.dutyAssignments.filter((assignment) => assignment.user_id === profile.id).length
+  const pendingChangeTaskCount = data.productChangeTasks.filter(
+    (task) => task.status === 'pending' && (leaderMode || task.assignee_id === profile.id),
+  ).length
   const navSections: Array<{
     label: string
     items: Array<{ id: TabId; label: string; icon: React.ReactNode; count?: number; unread?: boolean }>
@@ -113,6 +117,7 @@ export function Shell({
               unread: unreadReviewsCount > 0,
             },
             { id: 'review-stats', label: '검토 통계', icon: <BarChart3 size={18} /> },
+            { id: 'change-applications', label: '변경 적용', icon: <ClipboardPenLine size={18} />, count: pendingChangeTaskCount },
             { id: 'projects', label: '프로젝트', icon: <FolderKanban size={18} />, count: data.projects.length },
             { id: 'team', label: '파트원', icon: <Users size={18} />, count: memberCount },
             { id: 'activity', label: '활동 로그', icon: <MessageSquare size={18} />, count: data.activityLogs.length },
@@ -134,6 +139,7 @@ export function Shell({
             { id: 'dashboard', label: '홈', icon: <ClipboardList size={18} /> },
             { id: 'announcements', label: '공지', icon: <Megaphone size={18} />, count: data.announcements.length },
             { id: 'reviews', label: '내 검토요청', icon: <Check size={18} />, count: unreadReviewsCount > 0 ? unreadReviewsCount : memberReviewCount, unread: unreadReviewsCount > 0 },
+            { id: 'change-applications', label: '변경 적용', icon: <ClipboardPenLine size={18} />, count: pendingChangeTaskCount },
             { id: 'projects', label: '내 프로젝트', icon: <FolderKanban size={18} />, count: memberProjectCount },
             { id: 'work', label: '내 담당', icon: <Package size={18} />, count: memberProductCount + memberDutyCount },
           ],
@@ -155,6 +161,10 @@ export function Shell({
     'review-stats': {
       label: '워크스페이스 / 검토 통계',
       description: '요청자별 검토량, 제출 횟수와 상태 추이',
+    },
+    'change-applications': {
+      label: leaderMode ? '워크스페이스 / 변경 적용' : '내 업무 / 변경 적용',
+      description: leaderMode ? '변경건별 제품 적용률과 담당 공백' : '내 제품의 미적용 업무와 완료 이력',
     },
     projects: {
       label: leaderMode ? '워크스페이스 / 프로젝트' : '내 업무 / 프로젝트',

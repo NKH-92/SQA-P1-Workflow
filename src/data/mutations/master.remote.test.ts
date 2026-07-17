@@ -24,6 +24,11 @@ const leader: Profile = {
 function remoteContext(): RepositoryContext {
   const data: AppData = {
     announcements: [],
+    changeApplications: [],
+    changeActionItems: [],
+    productChangeTasks: [],
+    changeProductScope: [],
+    changeAssigneeOptions: [],
     profiles: [leader],
     allowedUsers: [],
     products: [],
@@ -64,6 +69,23 @@ describe('single assignment RPC contracts (remote)', () => {
       p_user_id: 'member-1',
     })
     expect(rpcMock).not.toHaveBeenCalledWith('replace_duty_assignments', expect.anything())
+  })
+
+  it('uses the atomic product-assignment transfer RPC when the leader opts in', async () => {
+    await assignProduct(remoteContext(), {
+      productId: 'product-1',
+      userId: 'member-2',
+      transferPendingChangeTasks: true,
+      transferReason: '제품 담당자 변경에 따른 이관',
+    })
+
+    expect(rpcMock).toHaveBeenCalledWith('assign_product_and_transfer_change_tasks', {
+      p_product_id: 'product-1',
+      p_user_id: 'member-2',
+      p_transfer_pending: true,
+      p_reason: '제품 담당자 변경에 따른 이관',
+    })
+    expect(rpcMock).not.toHaveBeenCalledWith('add_product_assignment', expect.anything())
   })
 
   it('does not trust a stale local duplicate when adding remotely', async () => {

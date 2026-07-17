@@ -9,12 +9,18 @@ vi.mock('../../lib/activityLog', () => ({
 
 const leader: Profile = { id: 'leader-1', email: 'leader@example.com', name: 'Leader', role: 'leader', is_active: true }
 const member: Profile = { id: 'member-1', email: 'member@example.com', name: 'Member', role: 'member', is_active: true }
+const previousMember: Profile = { id: 'member-2', email: 'previous@example.com', name: 'Previous', role: 'member', is_active: true }
 const inactiveMember: Profile = { ...member, id: 'member-inactive', is_active: false }
 
 function localContext(profile: Profile = leader): RepositoryContext {
   const data: AppData = {
     announcements: [],
-    profiles: [leader, member, inactiveMember],
+    changeApplications: [],
+    changeActionItems: [],
+    productChangeTasks: [],
+    changeProductScope: [],
+    changeAssigneeOptions: [],
+    profiles: [leader, member, previousMember, inactiveMember],
     allowedUsers: [],
     products: [{ id: 'product-1', name: 'Product', category: '자사', company_name: '자사', sort_order: 1 }],
     duties: [{ id: 'duty-1', name: 'Duty', major_category_id: 'category-1', sort_order: 1, duty_major_categories: null }],
@@ -96,6 +102,79 @@ describe('local assignment replacement parity', () => {
       '활성 파트장 권한이 필요합니다.',
     )
     expect(ctx.setData).not.toHaveBeenCalled()
+  })
+
+  it('atomically mirrors opted-in pending change-task transfer in preview data', async () => {
+    const ctx = localContext()
+    ctx.data.changeApplications = [{
+      id: 'change-1',
+      change_number: 'CC-LOCAL-TRANSFER',
+      source: 'official',
+      title: 'Transfer fixture',
+      summary: 'Transfer fixture',
+      source_url: null,
+      effective_date: '2026-08-01',
+      status: 'published',
+      created_by: leader.id,
+      published_at: '2026-07-01T00:00:00.000Z',
+      cancelled_at: null,
+      cancellation_reason: null,
+      created_at: '2026-07-01T00:00:00.000Z',
+      updated_at: '2026-07-01T00:00:00.000Z',
+    }]
+    ctx.data.changeActionItems = [{
+      id: 'action-1',
+      change_application_id: 'change-1',
+      kind: 'product_standard',
+      custom_kind_name: null,
+      content: 'Apply it',
+      due_date: '2026-08-01',
+      sort_order: 1,
+      created_at: '2026-07-01T00:00:00.000Z',
+      updated_at: '2026-07-01T00:00:00.000Z',
+    }]
+    ctx.data.productChangeTasks = [{
+      id: 'task-1',
+      action_item_id: 'action-1',
+      product_id: 'product-1',
+      product_name: 'Product',
+      assignee_id: previousMember.id,
+      assignee_name: previousMember.name,
+      status: 'pending',
+      product_note: null,
+      completion_note: null,
+      resolution_reason: null,
+      proxy_reason: null,
+      completed_by: null,
+      completed_by_name: null,
+      completed_at: null,
+      reopened_by: null,
+      reopened_by_name: null,
+      reopened_at: null,
+      reopen_reason: null,
+      created_at: '2026-07-01T00:00:00.000Z',
+      updated_at: '2026-07-01T00:00:00.000Z',
+    }]
+    let nextData = ctx.data
+    ctx.setData = (updater) => {
+      nextData = typeof updater === 'function' ? updater(nextData) : updater
+    }
+
+    await assignProduct(ctx, {
+      productId: 'product-1',
+      userId: member.id,
+      transferPendingChangeTasks: true,
+      transferReason: '제품 담당자 변경에 따른 이관',
+    })
+
+    expect(nextData.productAssignments.some(
+      (assignment) => assignment.product_id === 'product-1' && assignment.user_id === member.id,
+    )).toBe(true)
+    expect(nextData.productChangeTasks[0]).toMatchObject({
+      status: 'pending',
+      assignee_id: member.id,
+      assignee_name: member.name,
+    })
   })
 
   it('does not allow local preview to deactivate the last active leader', async () => {

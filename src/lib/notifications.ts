@@ -2,6 +2,7 @@ import type { AppData, Profile } from '../types'
 import type { TabId } from '../app/types'
 import { daysUntil, dueUrgency, eventTime, relativeDateLabel, relativeDaysAgo } from './dates'
 import { isReviewUnread, loadReadState } from './readState'
+import { selectProductChangeTaskContexts } from '../features/change-applications/selectors'
 
 export type AppNotification = {
   id: string
@@ -114,6 +115,40 @@ export function buildNotifications(
         }
         items.push(...requestItems)
       })
+  }
+
+  // 변경 적용은 제품 행 단위로 알리지 않는다. 한 변경건에 담당 제품이 15개여도
+  // 사용자에게는 변경건별 요약 한 건만 보여줘 알림 폭주를 막는다.
+  const changeGroups = new Map<string, ReturnType<typeof selectProductChangeTaskContexts>>()
+  for (const context of selectProductChangeTaskContexts(data)) {
+    if (context.application.status !== 'published' || context.task.status !== 'pending') continue
+    if (!leaderMode && context.task.assignee_id !== profile.id) continue
+    const group = changeGroups.get(context.application.id) ?? []
+    group.push(context)
+    changeGroups.set(context.application.id, group)
+  }
+  for (const contexts of changeGroups.values()) {
+    const application = contexts[0].application
+    const earliest = contexts.reduce((left, right) =>
+      right.actionItem.due_date < left.actionItem.due_date ? right : left,
+    )
+    const days = daysUntil(earliest.actionItem.due_date)
+    const unassigned = contexts.filter(({ task }) => !task.assignee_id).length
+    if (leaderMode && (days == null || days > 3) && unassigned === 0) continue
+    items.push({
+      id: `change-${application.id}`,
+      actor: application.change_number.trim().charAt(0) || '변',
+      title: leaderMode
+        ? `“${application.title}” 미적용 ${contexts.length}건${unassigned > 0 ? ` · 담당 미지정 ${unassigned}건` : ''}`
+        : `“${application.title}” 변경 적용업무 ${contexts.length}건`,
+      when: days == null ? '기한 확인' : days < 0 ? `D+${Math.abs(days)}` : days === 0 ? '오늘 마감' : `D-${days}`,
+      kind: '변경 적용',
+      urgency: dueUrgency(earliest.actionItem.due_date),
+      unread: false,
+      tab: 'change-applications',
+      entityId: application.id,
+      at: eventTime(application.published_at ?? application.created_at),
+    })
   }
 
   // 마감 임박 프로젝트 — 프로젝트 단위로 만든다. 배정 행 단위로 만들면 담당자 수만큼

@@ -7,7 +7,12 @@ import { buildProductAllocationCsvRows } from './productAllocationCsv'
 describe('buildProductAllocationCsvRows', () => {
   it('exports products in the requested allocation format including unassigned rows', () => {
     const data = {
-      announcements: [],
+    announcements: [],
+    changeApplications: [],
+    changeActionItems: [],
+    productChangeTasks: [],
+    changeProductScope: [],
+    changeAssigneeOptions: [],
       profiles: [{ id: 'member-01', email: 'member@example.com', name: '담당자', role: 'member' }],
       allowedUsers: [],
       products: [

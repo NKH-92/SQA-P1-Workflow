@@ -736,3 +736,35 @@ npm run test:rls
 ## 11. 첫 실행 단위
 
 첫 리팩토링 PR은 RF-02가 아니라 RF-00이다. 현재 미커밋 변경 신청 기능을 기능 자체의 테스트와 RLS로 완결하고 기준 커밋을 만든 뒤, RF-01 특성화 테스트만 담은 PR부터 시작한다. 이 순서를 지키는 것이 기능 변경과 구조 변경을 분리하는 가장 중요한 안전장치다.
+
+## 12. 실행 기록 (2026-07-17)
+
+기능 기준선 커밋과 계획 커밋을 먼저 분리한 뒤, 관찰 동작을 고정하는 특성화 테스트를 추가하고 다음 저위험 구조 개선을 적용했다.
+
+- RF-01: 데이터 로더의 핵심 실패, 선택 실패, 경고 순서, 병합·중복 제거 동작을 특성화 테스트로 고정
+- RF-02: 데이터 계약·검증·selector를 `src/data` 소유로 이동하고 기존 feature 경로는 호환 re-export로 유지
+- RF-03: `master.ts`를 공개 facade로 유지하면서 local/remote persistence를 repository로 분리
+- RF-04: local reducer를 announcement, review, project, master 도메인으로 분리하고 기존 barrel 경로 유지
+- RF-05: 역할별 탐색 메타데이터를 단일 소스로 통합하되 탭 순서와 sidebar, palette, header 문구를 각각 보존
+- RF-06: 딥링크 effect와 화면 계산 모델을 테스트 가능한 순수 단위로 추출하되 기존 JSX, DOM/ARIA, hook dependency를 유지
+- 데이터 로더 조립 로직을 순수 함수로 분리하되 요청 병렬성, 쿼리 순서·상한, 첫 오류 선택 규칙을 유지
+
+이번 실행에서는 CSS 분리, route 동적 분할, `createPreviewData` 분해, generic I/O/DI 도입, 대형 JSX 재구성을 제외했다. 이 작업들은 시각·타이밍·초기화 순서 회귀 위험이 더 크므로 별도 기준선과 독립 PR이 준비된 뒤에만 진행한다.
+
+### 12.1 검증 결과
+
+```text
+npm run typecheck              PASS
+npm run lint                   PASS
+npm test -- --reporter=dot     PASS (82 files passed, 6 skipped; 423 passed, 39 skipped)
+npm run build                  PASS (bundle budget 포함)
+git diff --check               PASS
+```
+
+- 의존성, 패키지 잠금, TypeScript/Vite 설정 변경 없음
+- `src/data`에서 `src/features`로 향하는 역참조 0건이며 경계 테스트로 고정
+- local/remote mutation의 guard, 로깅, RPC 인자·순서, 오류 의미를 contract 테스트로 확인
+- 변경 신청 화면을 전후 캡처로 비교해 레이아웃, 문구, 카운트, 행 순서가 동일함을 확인
+- 명령 팔레트의 역할별 항목, 순서, 접근성 이름을 확인
+- 개발 브라우저 콘솔 오류 없음
+- 로컬 Supabase 실행 환경이 없어 RLS 테스트는 건너뛰었으며, 병합 전 GitHub Actions의 RLS 작업 성공을 필수 조건으로 둔다.

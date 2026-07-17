@@ -39,6 +39,7 @@ function request(overrides: Partial<ReviewRequest> = {}): ReviewRequest {
 
 function appData(reviewRequests: ReviewRequest[]): AppData {
   return {
+    announcements: [],
     profiles: [member, leader],
     allowedUsers: [],
     products: [],

@@ -30,6 +30,7 @@ const project: Project = {
 
 function remoteContext(): RepositoryContext {
   const data: AppData = {
+    announcements: [],
     profiles: [leader],
     allowedUsers: [],
     products: [],

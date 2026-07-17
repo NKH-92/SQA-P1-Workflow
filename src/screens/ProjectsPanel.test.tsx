@@ -11,6 +11,7 @@ describe('ProjectsPanel', () => {
   it('offers the current leader as a project assignee even when the profile list omits self', async () => {
     const user = userEvent.setup()
     const data = createPreviewData()
+    data.profiles = data.profiles.filter((profile) => profile.id !== previewLeader.id)
     expect(data.profiles.some((profile) => profile.id === previewLeader.id)).toBe(false)
 
     render(

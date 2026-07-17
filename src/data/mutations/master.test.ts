@@ -13,6 +13,7 @@ const inactiveMember: Profile = { ...member, id: 'member-inactive', is_active: f
 
 function localContext(profile: Profile = leader): RepositoryContext {
   const data: AppData = {
+    announcements: [],
     profiles: [leader, member, inactiveMember],
     allowedUsers: [],
     products: [{ id: 'product-1', name: 'Product', category: '자사', company_name: '자사', sort_order: 1 }],

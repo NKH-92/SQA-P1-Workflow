@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPreviewData } from '../../demoData'
-import { fetchAppData, fetchReviewRequestById, mergeReviewRequests } from '../../data/fetchAppData'
+import {
+  fetchAnnouncementById,
+  fetchAppData,
+  fetchReviewRequestById,
+  mergeAnnouncements,
+  mergeReviewRequests,
+} from '../../data/fetchAppData'
 import { isPreviewMode, supabase } from '../../lib/supabase'
 import type { AppData } from '../../types'
 import { emptyData } from '../constants'
@@ -54,6 +60,19 @@ export function useAppData(reportWarnings?: (warnings: string[]) => void) {
     return true
   }, [])
 
+  const loadAnnouncement = useCallback(async (announcementId: string, signal?: AbortSignal): Promise<boolean | null> => {
+    if (!supabase) return false
+    const generation = generationRef.current
+    const announcement = await fetchAnnouncementById(announcementId, signal)
+    if (generation !== generationRef.current) return null
+    if (!announcement) return false
+    setData((current) => ({
+      ...current,
+      announcements: mergeAnnouncements(current.announcements, [announcement]),
+    }))
+    return true
+  }, [])
+
   const resetSyncState = useCallback(() => {
     // Invalidate an in-flight response from the previous session so it cannot repopulate
     // data or make a new login look ready before its own initial refresh completes.
@@ -62,5 +81,14 @@ export function useAppData(reportWarnings?: (warnings: string[]) => void) {
     setLastSyncedAt(null)
   }, [])
 
-  return { data, setData, refreshing, lastSyncedAt, refreshData, loadReviewRequest, resetSyncState }
+  return {
+    data,
+    setData,
+    refreshing,
+    lastSyncedAt,
+    refreshData,
+    loadReviewRequest,
+    loadAnnouncement,
+    resetSyncState,
+  }
 }

@@ -1,4 +1,5 @@
 export { ActivityPanel } from './ActivityPanel'
+export { AnnouncementsPanel } from './AnnouncementsPanel'
 export { AuthPanel } from './AuthPanel'
 export { BlockedProfile } from './BlockedProfile'
 export { ConfigErrorScreen } from './ConfigErrorScreen'

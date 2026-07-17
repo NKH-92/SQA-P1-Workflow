@@ -10,6 +10,13 @@ describe('parseAppHash', () => {
     expect(parseAppHash('#/review-stats')).toEqual({ tab: 'review-stats', entityId: null })
   })
 
+  it('parses an announcement detail deep link', () => {
+    expect(parseAppHash('#/announcements?id=notice-1')).toEqual({
+      tab: 'announcements',
+      entityId: 'notice-1',
+    })
+  })
+
   it('falls back to dashboard on unknown tab while keeping the entity id', () => {
     expect(parseAppHash('#/unknown?id=1')).toEqual({ tab: 'dashboard', entityId: '1' })
   })
@@ -48,6 +55,8 @@ describe('sanitizeTabForRole', () => {
   })
 
   it('passes shared tabs and the leader statistics tab for authorized roles', () => {
+    expect(sanitizeTabForRole('announcements', false)).toBe('announcements')
+    expect(sanitizeTabForRole('announcements', true)).toBe('announcements')
     expect(sanitizeTabForRole('reviews', false)).toBe('reviews')
     expect(sanitizeTabForRole('reviews', true)).toBe('reviews')
     expect(sanitizeTabForRole('review-stats', true)).toBe('review-stats')

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createPreviewData } from './demoData'
+import { createPreviewData, previewLeader } from './demoData'
 import {
   demoDutyAllocationRows,
   isDirectDutyAssignee,
@@ -31,6 +31,10 @@ describe('createPreviewData', () => {
     expect(data.profileNotes).toHaveLength(0)
     expect(data.reviewRequests).toHaveLength(3)
     expect(data.activityLogs).toHaveLength(3)
+    expect(data.profiles.some((profile) => profile.id === previewLeader.id)).toBe(true)
+    expect(data.announcements.every((announcement) =>
+      data.profiles.some((profile) => profile.id === announcement.created_by),
+    )).toBe(true)
     expect(data.reviewRequests.some((request) => request.due_date === null)).toBe(true)
     expect(data.reviewRequests.some((request) => request.due_date === '2026-07-05')).toBe(true)
 

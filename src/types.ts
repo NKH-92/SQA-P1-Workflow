@@ -16,6 +16,7 @@ export type {
   Project,
   ProjectAssignment,
   ProfileNote,
+  Announcement,
   ActivityLog,
 } from './types/domain'
 

@@ -49,6 +49,7 @@ const project: Project = {
 
 function remoteContext(): RepositoryContext {
   const data: AppData = {
+    announcements: [],
     profiles: [leader],
     allowedUsers: [],
     products: [{ id: 'product-1', name: 'Product', category: '자사', company_name: '자사' }],

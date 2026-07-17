@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
 import { emptyData } from '../app/constants'
@@ -19,6 +19,12 @@ const supabaseFlags = vi.hoisted(() => ({
   hasSupabaseConfig: false,
   isPreviewMode: false,
   isProductionMode: true,
+}))
+
+const appDataState = vi.hoisted(() => ({
+  lastSyncedAt: null as Date | null,
+  loadReviewRequest: vi.fn(),
+  loadAnnouncement: vi.fn(),
 }))
 
 vi.mock('../lib/supabase', () => ({
@@ -53,8 +59,11 @@ vi.mock('../app/hooks/useAppData', () => ({
     data: supabaseFlags.isPreviewMode ? createPreviewData() : emptyData,
     setData: vi.fn(),
     refreshing: false,
-    lastSyncedAt: null,
+    lastSyncedAt: appDataState.lastSyncedAt,
     refreshData: vi.fn(),
+    loadReviewRequest: appDataState.loadReviewRequest,
+    loadAnnouncement: appDataState.loadAnnouncement,
+    resetSyncState: vi.fn(),
   }),
 }))
 
@@ -81,11 +90,18 @@ function resetSupabaseFlags() {
   supabaseFlags.isProductionMode = true
 }
 
+function resetAppDataState() {
+  appDataState.lastSyncedAt = null
+  appDataState.loadReviewRequest.mockReset()
+  appDataState.loadAnnouncement.mockReset()
+}
+
 describe('auth route guards', () => {
   beforeEach(() => {
     resetAuthState()
     resetSupabaseFlags()
-    window.location.hash = '#/dashboard'
+    resetAppDataState()
+    window.history.replaceState(null, '', '#/dashboard')
   })
 
   afterEach(() => {
@@ -128,6 +144,24 @@ describe('auth route guards', () => {
     render(<App />)
 
     expect(screen.getByRole('heading', { name: '비밀번호 변경 필요' })).toBeInTheDocument()
+  })
+
+  it('loads an announcement deep link outside the capped board query on demand', async () => {
+    supabaseFlags.hasSupabaseConfig = true
+    authState.profile = { ...previewMember, id: 'member-1', is_active: true }
+    appDataState.lastSyncedAt = new Date('2026-07-16T00:00:00.000Z')
+    appDataState.loadAnnouncement.mockResolvedValueOnce(false)
+    window.history.replaceState(null, '', '#/announcements?id=old-announcement')
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(appDataState.loadAnnouncement).toHaveBeenCalledTimes(1)
+      expect(appDataState.loadAnnouncement).toHaveBeenCalledWith(
+        'old-announcement',
+        expect.any(AbortSignal),
+      )
+    })
   })
 
   it('sanitizes member deep links away from leader-only tabs', () => {

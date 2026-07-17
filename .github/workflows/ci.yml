@@ -75,6 +75,7 @@ jobs:
           {
             echo "SUPABASE_URL=$SUPABASE_URL"
             echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY"
             echo "SUPABASE_DB_URL=$DB_URL"
             node scripts/setup-rls-fixtures.mjs
           } >> "$GITHUB_ENV"

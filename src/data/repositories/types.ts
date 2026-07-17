@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
-import type { AppData, Profile, Project, ReviewStatus } from '../../types'
-import type { ReviewRequestPayload, ProjectInput } from '../local/appDataReducers'
+import type { Announcement, AppData, Profile, Project, ReviewStatus } from '../../types'
+import type { AnnouncementPayload, ReviewRequestPayload, ProjectInput } from '../local/appDataReducers'
 
 export type ReviewRepository = {
   saveReviewRequest(input: {
@@ -37,6 +37,16 @@ export type MasterRepository = {
   deleteProduct(id: string): Promise<void>
   deleteDuty(id: string): Promise<void>
   deleteDutyMajorCategory(id: string): Promise<void>
+}
+
+export type AnnouncementRepository = {
+  saveAnnouncement(input: {
+    editingAnnouncementId: string | null
+    expectedUpdatedAt: string | null
+    payload: AnnouncementPayload
+  }): Promise<void>
+  toggleAnnouncementPin(announcement: Announcement): Promise<void>
+  deleteAnnouncement(announcement: Announcement): Promise<void>
 }
 
 /** local·remote repository가 공통으로 받는 의존성 (RepositoryContext에서 isRemote를 뺀 형태). */

@@ -22,6 +22,7 @@ const member: Profile = {
 
 function emptyData(): AppData {
   return {
+    announcements: [],
     profiles: [leader, member],
     allowedUsers: [],
     products: [],
@@ -81,5 +82,17 @@ describe('Shell review statistics navigation', () => {
   it('does not show review statistics in member navigation', () => {
     renderShell(member, false)
     expect(screen.queryByRole('button', { name: '검토 통계' })).not.toBeInTheDocument()
+  })
+})
+
+describe('Shell announcements navigation', () => {
+  afterEach(cleanup)
+
+  it.each([
+    { profile: leader, leaderMode: true },
+    { profile: member, leaderMode: false },
+  ])('shows the shared announcements tab for $profile.role', ({ profile, leaderMode }) => {
+    renderShell(profile, leaderMode)
+    expect(screen.getByRole('button', { name: /^공지0$/ })).toBeInTheDocument()
   })
 })

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AppData } from '../../types'
 
 const emptyResult: AppData & { optionalWarnings: string[] } = {
+  announcements: [],
   profiles: [],
   allowedUsers: [],
   products: [],
@@ -18,9 +19,10 @@ const emptyResult: AppData & { optionalWarnings: string[] } = {
   optionalWarnings: [],
 }
 
-const { fetchAppDataMock, fetchReviewRequestByIdMock } = vi.hoisted(() => ({
+const { fetchAppDataMock, fetchReviewRequestByIdMock, fetchAnnouncementByIdMock } = vi.hoisted(() => ({
   fetchAppDataMock: vi.fn(),
   fetchReviewRequestByIdMock: vi.fn(),
+  fetchAnnouncementByIdMock: vi.fn(),
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -31,7 +33,9 @@ vi.mock('../../lib/supabase', () => ({
 vi.mock('../../data/fetchAppData', () => ({
   fetchAppData: fetchAppDataMock,
   fetchReviewRequestById: fetchReviewRequestByIdMock,
+  fetchAnnouncementById: fetchAnnouncementByIdMock,
   mergeReviewRequests: (current: AppData['reviewRequests'], incoming: AppData['reviewRequests']) => [...current, ...incoming],
+  mergeAnnouncements: (current: AppData['announcements'], incoming: AppData['announcements']) => [...current, ...incoming],
 }))
 
 import { useAppData } from './useAppData'
@@ -94,5 +98,27 @@ describe('useAppData session reset', () => {
     expect(loaded).toBe(true)
     expect(result.current.data.reviewRequests).toContainEqual(oldReview)
     expect(fetchReviewRequestByIdMock).toHaveBeenCalledWith('old-review', undefined)
+  })
+
+  it('loads a deep-linked announcement outside the capped board query', async () => {
+    const oldAnnouncement = {
+      id: 'old-announcement',
+      title: 'Old announcement',
+      body: 'Historical detail',
+      is_pinned: false,
+      pinned_at: null,
+      created_by: 'leader-1',
+      created_at: '2024-01-01T00:00:00.000Z',
+      updated_at: '2024-01-02T00:00:00.000Z',
+    }
+    fetchAnnouncementByIdMock.mockResolvedValueOnce(oldAnnouncement)
+    const { result } = renderHook(() => useAppData())
+
+    let loaded: boolean | null = false
+    await act(async () => { loaded = await result.current.loadAnnouncement('old-announcement') })
+
+    expect(loaded).toBe(true)
+    expect(result.current.data.announcements).toContainEqual(oldAnnouncement)
+    expect(fetchAnnouncementByIdMock).toHaveBeenCalledWith('old-announcement', undefined)
   })
 })

@@ -6,6 +6,9 @@ import { AppRoutes } from './AppRoutes'
 
 vi.mock('../screens', () => ({
   ActivityPanel: () => null,
+  AnnouncementsPanel: ({ initialSelectedId }: { initialSelectedId?: string | null }) => (
+    <div data-testid="announcements-screen">{initialSelectedId ?? 'announcement-list'}</div>
+  ),
   Dashboard: () => null,
   LeaderDashboard: () => null,
   MasterPanel: () => null,
@@ -18,6 +21,7 @@ vi.mock('../screens', () => ({
 
 function emptyData(): AppData {
   return {
+    announcements: [],
     profiles: [],
     allowedUsers: [],
     products: [],
@@ -33,13 +37,17 @@ function emptyData(): AppData {
   }
 }
 
-function renderRoute(profile: Profile) {
+function renderRoute(
+  profile: Profile,
+  activeTab: 'review-stats' | 'announcements' = 'review-stats',
+  navEntityId: string | null = null,
+) {
   render(
     <AppRoutes
-      activeTab="review-stats"
+      activeTab={activeTab}
       data={emptyData()}
       mutate={vi.fn(async () => true)}
-      navEntityId={null}
+      navEntityId={navEntityId}
       profile={profile}
       reviewsUnreadCutoff={null}
       setActiveTab={vi.fn()}
@@ -65,5 +73,22 @@ describe('AppRoutes review statistics guard', () => {
   it('does not render review statistics for an inactive leader', () => {
     renderRoute({ id: 'inactive', email: 'inactive@example.com', name: '비활성 파트장', role: 'leader', is_active: false })
     expect(screen.queryByTestId('review-stats-screen')).not.toBeInTheDocument()
+  })
+})
+
+describe('AppRoutes announcements route', () => {
+  afterEach(cleanup)
+
+  it.each([
+    { id: 'leader', role: 'leader' as const },
+    { id: 'member', role: 'member' as const },
+  ])('renders announcements for an active $role', ({ id, role }) => {
+    renderRoute(
+      { id, email: `${id}@example.com`, name: id, role, is_active: true },
+      'announcements',
+      'notice-1',
+    )
+
+    expect(screen.getByTestId('announcements-screen')).toHaveTextContent('notice-1')
   })
 })

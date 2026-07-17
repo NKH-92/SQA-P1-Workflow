@@ -48,4 +48,23 @@ describe('CommandPalette review statistics navigation', () => {
     const dialog = screen.getByRole('dialog', { name: '빠른 이동' })
     expect(within(dialog).queryByRole('button', { name: /검토 통계/ })).not.toBeInTheDocument()
   })
+
+  it.each([
+    { profile: previewLeader, leaderMode: true },
+    { profile: previewMember, leaderMode: false },
+  ])('shows announcements to $profile.role users', ({ profile, leaderMode }) => {
+    render(
+      <CommandPalette
+        data={createPreviewData()}
+        leaderMode={leaderMode}
+        onClose={vi.fn()}
+        open
+        profile={profile}
+        setActiveTab={vi.fn()}
+      />,
+    )
+
+    const dialog = screen.getByRole('dialog', { name: '빠른 이동' })
+    expect(within(dialog).getByRole('button', { name: /공지\s*announcements 화면으로 이동/ })).toBeInTheDocument()
+  })
 })

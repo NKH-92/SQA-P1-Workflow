@@ -191,3 +191,50 @@ select has_function_privilege('authenticated', 'public.resubmit_review_request(u
 ```bash
 npm test -- src/migrations.test.ts
 ```
+
+## 20260716200422 announcement board
+
+`20260716200422_create_announcements_board.sql` adds the announcement board,
+pinned ordering, active-leader-only writes, explicit Data API grants, immutable
+creation fields, and the private mutation-audit trigger.
+
+```sql
+select to_regclass('public.announcements') is not null as announcements_exists,
+       coalesce((
+         select relrowsecurity
+         from pg_class
+         where oid = to_regclass('public.announcements')
+       ), false) as announcements_rls_enabled;
+
+select conname, pg_get_constraintdef(oid)
+from pg_constraint
+where conrelid = to_regclass('public.announcements')
+  and conname in (
+    'announcements_title_length_check',
+    'announcements_body_length_check',
+    'announcements_pin_state_check'
+  );
+
+select policyname, cmd, qual, with_check
+from pg_policies
+where schemaname = 'public'
+  and tablename = 'announcements'
+order by policyname;
+
+select has_table_privilege('authenticated', 'public.announcements', 'select') as authenticated_select,
+       has_table_privilege('authenticated', 'public.announcements', 'delete') as authenticated_delete,
+       has_table_privilege('authenticated', 'public.announcements', 'insert') as authenticated_table_insert,
+       has_column_privilege('authenticated', 'public.announcements', 'title', 'insert') as authenticated_title_insert,
+       has_column_privilege('authenticated', 'public.announcements', 'pinned_at', 'update') as authenticated_pinned_at_update,
+       has_table_privilege('anon', 'public.announcements', 'select') as anon_select;
+
+select tgname
+from pg_trigger
+where tgrelid = to_regclass('public.announcements')
+  and tgname in (
+    'announcements_enforce_invariants',
+    'announcements_set_updated_at',
+    'announcements_private_audit'
+  )
+order by tgname;
+```

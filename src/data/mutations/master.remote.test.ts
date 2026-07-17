@@ -23,6 +23,7 @@ const leader: Profile = {
 
 function remoteContext(): RepositoryContext {
   const data: AppData = {
+    announcements: [],
     profiles: [leader],
     allowedUsers: [],
     products: [],

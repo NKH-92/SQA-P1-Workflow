@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react'
 import type { AppData, Profile, Role } from '../types'
 import type { TabId, ToastMessage } from '../app/types'
 import { roleLabels } from '../lib/format'
+import { navigationItemsForRole, tabHeaderLabel } from '../lib/navigation'
 import type { AppNotification } from '../lib/notifications'
 import type { DesktopNotificationControls } from '../app/hooks/useDesktopNotifications'
 import { NotificationPanel } from '../components/NotificationPanel'
+import { buildShellModel } from './shellModel'
 import {
   BarChart3,
   Bell,
@@ -90,94 +92,63 @@ export function Shell({
       // 저장이 막힌 환경(사생활 보호 모드 등)에서도 토글 자체는 동작해야 한다.
     }
   }, [density])
-  const unreadNotifications = notifications.filter((item) => item.unread).length
-  const memberCount = data.profiles.filter((item) => item.role === 'member').length
-  const memberReviewCount = data.reviewRequests.filter((request) => request.requester_id === profile.id).length
-  const memberProjectCount = data.projectAssignments.filter((assignment) => assignment.user_id === profile.id).length
-  const memberProductCount = data.productAssignments.filter((assignment) => assignment.user_id === profile.id).length
-  const memberDutyCount = data.dutyAssignments.filter((assignment) => assignment.user_id === profile.id).length
-  const pendingChangeTaskCount = data.productChangeTasks.filter(
-    (task) => task.status === 'pending' && (leaderMode || task.assignee_id === profile.id),
-  ).length
+  const { memberCount, unreadNotifications, tabs } = buildShellModel({
+    data,
+    profile,
+    leaderMode,
+    pendingCount,
+    unreadReviewsCount,
+    notifications,
+  })
+  const tabIcons: Record<TabId, React.ReactNode> = {
+    dashboard: <ClipboardList size={18} />,
+    announcements: <Megaphone size={18} />,
+    reviews: <Check size={18} />,
+    'review-stats': <BarChart3 size={18} />,
+    'change-applications': <ClipboardPenLine size={18} />,
+    projects: <FolderKanban size={18} />,
+    team: <Users size={18} />,
+    products: <Package size={18} />,
+    duties: <ClipboardList size={18} />,
+    invites: <ShieldCheck size={18} />,
+    work: <Package size={18} />,
+    activity: <MessageSquare size={18} />,
+  }
   const navSections: Array<{
     label: string
     items: Array<{ id: TabId; label: string; icon: React.ReactNode; count?: number; unread?: boolean }>
-  }> = leaderMode
-    ? [
-        {
-          label: '워크스페이스',
-          items: [
-            { id: 'dashboard', label: '홈', icon: <ClipboardList size={18} /> },
-            { id: 'announcements', label: '공지', icon: <Megaphone size={18} />, count: data.announcements.length },
-            {
-              id: 'reviews',
-              label: '검토요청',
-              icon: <Check size={18} />,
-              count: unreadReviewsCount > 0 ? unreadReviewsCount : pendingCount,
-              unread: unreadReviewsCount > 0,
-            },
-            { id: 'review-stats', label: '검토 통계', icon: <BarChart3 size={18} /> },
-            { id: 'change-applications', label: '변경 적용', icon: <ClipboardPenLine size={18} />, count: pendingChangeTaskCount },
-            { id: 'projects', label: '프로젝트', icon: <FolderKanban size={18} />, count: data.projects.length },
-            { id: 'team', label: '파트원', icon: <Users size={18} />, count: memberCount },
-            { id: 'activity', label: '활동 로그', icon: <MessageSquare size={18} />, count: data.activityLogs.length },
-          ],
-        },
-        {
-          label: '마스터',
-          items: [
-            { id: 'products', label: '제품', icon: <Package size={18} />, count: data.products.length },
-            { id: 'duties', label: '업무 카테고리', icon: <ClipboardList size={18} />, count: data.duties.length },
-            { id: 'invites', label: '초대 관리', icon: <ShieldCheck size={18} />, count: data.allowedUsers.length },
-          ],
-        },
-      ]
-    : [
-        {
-          label: '내 업무',
-          items: [
-            { id: 'dashboard', label: '홈', icon: <ClipboardList size={18} /> },
-            { id: 'announcements', label: '공지', icon: <Megaphone size={18} />, count: data.announcements.length },
-            { id: 'reviews', label: '내 검토요청', icon: <Check size={18} />, count: unreadReviewsCount > 0 ? unreadReviewsCount : memberReviewCount, unread: unreadReviewsCount > 0 },
-            { id: 'change-applications', label: '변경 적용', icon: <ClipboardPenLine size={18} />, count: pendingChangeTaskCount },
-            { id: 'projects', label: '내 프로젝트', icon: <FolderKanban size={18} />, count: memberProjectCount },
-            { id: 'work', label: '내 담당', icon: <Package size={18} />, count: memberProductCount + memberDutyCount },
-          ],
-        },
-      ]
-  const tabDescriptions: Record<TabId, { label: string; description: string }> = {
-    dashboard: {
-      label: '홈',
-      description: leaderMode ? `대기 검토 ${pendingCount}건 · 파트원 ${memberCount}명` : `${profile.name}님의 오늘 업무`,
-    },
-    announcements: {
-      label: '워크스페이스 / 공지',
-      description: '파트 공지와 상단 고정 안내',
-    },
-    reviews: {
-      label: leaderMode ? '워크스페이스 / 검토요청' : '내 업무 / 검토요청',
-      description: leaderMode ? '검토 대기 항목과 피드백 흐름' : '내가 요청한 검토와 답변',
-    },
-    'review-stats': {
-      label: '워크스페이스 / 검토 통계',
-      description: '요청자별 검토량, 제출 횟수와 상태 추이',
-    },
-    'change-applications': {
-      label: leaderMode ? '워크스페이스 / 변경 적용' : '내 업무 / 변경 적용',
-      description: leaderMode ? '변경건별 제품 적용률과 담당 공백' : '내 제품의 미적용 업무와 완료 이력',
-    },
-    projects: {
-      label: leaderMode ? '워크스페이스 / 프로젝트' : '내 업무 / 프로젝트',
-      description: leaderMode ? '상태별 프로젝트와 담당자 배정' : '내게 배정된 프로젝트',
-    },
-    team: { label: '워크스페이스 / 파트원', description: '파트원별 담당 제품, 업무, 프로젝트' },
-    products: { label: '마스터 / 제품', description: '제품 등록과 담당자 배정 기준' },
-    duties: { label: '마스터 / 업무 카테고리', description: '업무 카테고리와 담당 범위' },
-    invites: { label: '마스터 / 초대 관리', description: '초대 대상과 역할 관리' },
-    activity: { label: '워크스페이스 / 활동 로그', description: '팀 전체 활동 이력' },
-    work: { label: '내 업무 / 내 담당', description: '내 담당 제품과 정기 업무' },
+  }> = []
+  for (const item of navigationItemsForRole(leaderMode)) {
+    let section = navSections[navSections.length - 1]
+    if (!section || section.label !== item.section) {
+      section = { label: item.section, items: [] }
+      navSections.push(section)
+    }
+    section.items.push({
+      id: item.tab,
+      label: item.sidebarLabel,
+      icon: tabIcons[item.tab],
+      ...tabs[item.tab],
+    })
   }
-  const activeDescription = tabDescriptions[activeTab]
+  const tabDescriptions: Record<TabId, string> = {
+    dashboard: leaderMode ? `대기 검토 ${pendingCount}건 · 파트원 ${memberCount}명` : `${profile.name}님의 오늘 업무`,
+    announcements: '파트 공지와 상단 고정 안내',
+    reviews: leaderMode ? '검토 대기 항목과 피드백 흐름' : '내가 요청한 검토와 답변',
+    'review-stats': '요청자별 검토량, 제출 횟수와 상태 추이',
+    'change-applications': leaderMode ? '변경건별 제품 적용률과 담당 공백' : '내 제품의 미적용 업무와 완료 이력',
+    projects: leaderMode ? '상태별 프로젝트와 담당자 배정' : '내게 배정된 프로젝트',
+    team: '파트원별 담당 제품, 업무, 프로젝트',
+    products: '제품 등록과 담당자 배정 기준',
+    duties: '업무 카테고리와 담당 범위',
+    invites: '초대 대상과 역할 관리',
+    activity: '팀 전체 활동 이력',
+    work: '내 담당 제품과 정기 업무',
+  }
+  const activeDescription = {
+    label: tabHeaderLabel(activeTab, leaderMode),
+    description: tabDescriptions[activeTab],
+  }
   const syncLabel = lastSyncedAt
     ? `마지막 동기화 ${lastSyncedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`
     : null

@@ -8,11 +8,11 @@ import { useRealtimeReviewInserts } from './app/hooks/useRealtimeReviewInserts'
 import { useAuthProfile } from './app/hooks/useAuthProfile'
 import { useHashNavigation } from './app/hooks/useHashNavigation'
 import { useMutationRunner } from './app/hooks/useMutationRunner'
+import { useDeepLinkEntity } from './app/hooks/useDeepLinkEntity'
 import { shouldMarkReviewsSeen } from './app/reviewNavigation'
 import { reconciledProfile } from './app/profileSync'
 import { CommandPalette } from './components/CommandPalette'
 import { canManageTeamData } from './domain/permissions'
-import { selectScopedReviewRequests } from './features/reviews/review.selectors'
 import { toUserMessage } from './lib/errors'
 import { buildNotifications } from './lib/notifications'
 import { countUnreadReviews, loadReadState, markReviewsSeen } from './lib/readState'
@@ -133,82 +133,17 @@ function App() {
   // 그래도 없으면(삭제·권한 밖) 조용히 첫 항목으로 폴백되는 대신 안내한다.
   // 대상이 존재하면 각 패널의 소비 effect(자식)가 먼저 실행되어 선택을 적용한다.
   const dataReady = isPreviewMode || lastSyncedAt != null
-  const { navEntityId, activeTab: navActiveTab, setNavEntityId } = navigation
-  const historyLookupRef = useRef<string | null>(null)
-  const historyAbortRef = useRef<AbortController | null>(null)
-  useEffect(() => {
-    if (!navEntityId) {
-      historyAbortRef.current?.abort()
-      historyAbortRef.current = null
-      historyLookupRef.current = null
-      return
-    }
-    if (!profile || !dataReady) {
-      historyAbortRef.current?.abort()
-      historyAbortRef.current = null
-      historyLookupRef.current = null
-      return
-    }
-    const found =
-      navActiveTab === 'reviews'
-        ? selectScopedReviewRequests(data, profile).some((request) => request.id === navEntityId)
-        : navActiveTab === 'announcements'
-          ? data.announcements.some((announcement) => announcement.id === navEntityId)
-        : navActiveTab === 'change-applications'
-          ? data.changeApplications.some((application) => application.id === navEntityId)
-        : navActiveTab === 'projects'
-          ? data.projects.some((project) => project.id === navEntityId)
-          : navActiveTab === 'team'
-            ? data.profiles.some((item) => item.id === navEntityId)
-            : true
-    if (found) {
-      historyAbortRef.current?.abort()
-      historyAbortRef.current = null
-      historyLookupRef.current = null
-      return
-    }
-    if (navActiveTab === 'reviews' || navActiveTab === 'announcements') {
-      const lookupKey = `${navActiveTab}:${navEntityId}`
-      if (historyLookupRef.current === lookupKey) return
-      historyAbortRef.current?.abort()
-      const abortController = new AbortController()
-      historyAbortRef.current = abortController
-      historyLookupRef.current = lookupKey
-      const loadEntity = navActiveTab === 'reviews' ? loadReviewRequest : loadAnnouncement
-      void loadEntity(navEntityId, abortController.signal)
-        .then((loaded) => {
-          if (historyLookupRef.current !== lookupKey) return
-          if (loaded === null) {
-            historyLookupRef.current = null
-            return
-          }
-          if (loaded) return
-          setNavEntityId(null)
-          setMessage({ text: '링크 대상을 찾을 수 없습니다. 삭제되었거나 접근 권한이 없는 항목일 수 있습니다.', tone: 'warning' })
-        })
-        .catch((error) => {
-          if (historyLookupRef.current !== lookupKey) return
-          historyLookupRef.current = null
-          setMessage({ text: toUserMessage(error), tone: 'warning' })
-        })
-      return
-    }
-    historyAbortRef.current?.abort()
-    historyAbortRef.current = null
-    historyLookupRef.current = null
-    setNavEntityId(null)
-    setMessage({ text: '링크 대상을 찾을 수 없습니다. 삭제되었거나 접근 권한이 없는 항목일 수 있습니다.', tone: 'warning' })
-  }, [
-    navEntityId,
-    navActiveTab,
-    setNavEntityId,
+  useDeepLinkEntity({
+    entityId: navigation.navEntityId,
+    activeTab: navigation.activeTab,
     data,
     profile,
     dataReady,
+    setEntityId: navigation.setNavEntityId,
     loadReviewRequest,
     loadAnnouncement,
     setMessage,
-  ])
+  })
 
   // 팔레트는 인증 완료 후 메인 화면에서만 렌더된다. 로그인·비밀번호 변경 화면에서
   // 단축키를 받으면 브라우저 기본 동작만 뺏고 열림 상태가 뒤에서 토글되어,

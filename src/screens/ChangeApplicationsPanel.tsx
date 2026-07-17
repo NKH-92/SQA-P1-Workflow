@@ -43,59 +43,32 @@ import {
   productChangeTaskStatusLabels,
   type ChangeApplicationInput,
 } from '../features/change-applications/types'
+import {
+  applicationCreatorName,
+  applicationStatusLabel,
+  calculateChangeApplicationKpis,
+  changeApplicationActionItemKey,
+  filterChangeApplications,
+  filterChangeTaskContexts,
+  groupChangeTaskContexts,
+  mergeProductChangeTasks,
+  type ChangeActionKindFilter,
+  type ChangeApplicationStatusFilter,
+  type ChangeApplicationViewMode,
+  type ChangeAttentionFilter,
+  type ChangeTaskStatusFilter,
+} from '../features/change-applications/viewModel'
 import { daysUntil, dueDateLabel } from '../lib/dates'
 import { formatDate } from '../lib/format'
 import type {
   AppData,
-  ChangeActionKind,
-  ChangeApplication,
   ProductChangeTask,
-  ProductChangeTaskStatus,
   Profile,
 } from '../types'
-
-type ViewMode = 'change' | 'product' | 'assignee'
-type StatusFilter = 'all' | ProductChangeTaskStatus
-type ApplicationFilter = 'all' | 'draft' | 'published' | 'cancelled'
-type ActionKindFilter = 'all' | ChangeActionKind
-type AttentionFilter = 'all' | 'overdue' | 'due_soon' | 'unassigned'
 
 type HistoryCacheEntry = {
   actionItemKey: string
   tasks: ProductChangeTask[]
-}
-
-function changeApplicationActionItemKey(data: AppData, applicationId: string) {
-  return data.changeActionItems
-    .filter((item) => item.change_application_id === applicationId)
-    .map((item) => item.id)
-    .sort()
-    .join('|')
-}
-
-function mergeProductChangeTasks(
-  current: ProductChangeTask[],
-  incoming: ProductChangeTask[],
-  replaceExisting: boolean,
-) {
-  const byId = new Map(current.map((task) => [task.id, task]))
-  for (const task of incoming) {
-    if (replaceExisting || !byId.has(task.id)) byId.set(task.id, task)
-  }
-  return [...byId.values()]
-}
-
-function applicationStatusLabel(status: ChangeApplication['status']) {
-  if (status === 'draft') return '초안'
-  if (status === 'published') return '배포'
-  return '취소'
-}
-
-function applicationCreatorName(data: AppData, application: ChangeApplication) {
-  return application.profiles?.name
-    ?? data.changeAssigneeOptions.find((item) => item.id === application.created_by)?.name
-    ?? data.profiles.find((item) => item.id === application.created_by)?.name
-    ?? '등록자'
 }
 
 export function ChangeApplicationsPanel({
@@ -114,11 +87,11 @@ export function ChangeApplicationsPanel({
   onInitialSelectionApplied?: () => void
 }) {
   const leaderMode = profile.role === 'leader'
-  const [viewMode, setViewMode] = useState<ViewMode>(leaderMode ? 'change' : 'product')
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>(leaderMode ? 'all' : 'pending')
-  const [applicationFilter, setApplicationFilter] = useState<ApplicationFilter>(leaderMode ? 'all' : 'published')
-  const [actionKindFilter, setActionKindFilter] = useState<ActionKindFilter>('all')
-  const [attentionFilter, setAttentionFilter] = useState<AttentionFilter>('all')
+  const [viewMode, setViewMode] = useState<ChangeApplicationViewMode>(leaderMode ? 'change' : 'product')
+  const [statusFilter, setStatusFilter] = useState<ChangeTaskStatusFilter>(leaderMode ? 'all' : 'pending')
+  const [applicationFilter, setApplicationFilter] = useState<ChangeApplicationStatusFilter>(leaderMode ? 'all' : 'published')
+  const [actionKindFilter, setActionKindFilter] = useState<ChangeActionKindFilter>('all')
+  const [attentionFilter, setAttentionFilter] = useState<ChangeAttentionFilter>('all')
   const [query, setQuery] = useState('')
   const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(initialSelectedId ?? null)
   const [composer, setComposer] = useState<{ editingId: string | null } | null>(null)
@@ -171,53 +144,32 @@ export function ChangeApplicationsPanel({
     [allContexts, leaderMode, profile.id],
   )
   const taskContexts = useMemo(() => {
-    const normalized = query.trim().toLowerCase()
-    return scopedContexts.filter(({ task, actionItem, application }) => {
-      if (statusFilter !== 'all' && task.status !== statusFilter) return false
-      if (applicationFilter !== 'all' && application.status !== applicationFilter) return false
-      if (actionKindFilter !== 'all' && actionItem.kind !== actionKindFilter) return false
-      if (attentionFilter !== 'all') {
-        const days = daysUntil(actionItem.due_date)
-        if (application.status !== 'published') return false
-        if (task.status !== 'pending') return false
-        if (attentionFilter === 'overdue' && (days == null || days >= 0)) return false
-        if (attentionFilter === 'due_soon' && (days == null || days < 0 || days > 3)) return false
-        if (attentionFilter === 'unassigned' && task.assignee_id) return false
-      }
-      if (!normalized) return true
-      return `${application.change_number} ${application.title} ${actionItem.content} ${task.product_name} ${task.assignee_name ?? ''}`
-        .toLowerCase()
-        .includes(normalized)
+    return filterChangeTaskContexts(scopedContexts, {
+      status: statusFilter,
+      application: applicationFilter,
+      actionKind: actionKindFilter,
+      attention: attentionFilter,
+      query,
     })
   }, [actionKindFilter, applicationFilter, attentionFilter, query, scopedContexts, statusFilter])
 
   const applications = useMemo(() => {
-    const normalized = query.trim().toLowerCase()
-    return data.changeApplications.filter((application) => {
-      if (!leaderMode && application.status === 'draft' && application.created_by !== profile.id) return false
-      if (applicationFilter !== 'all' && application.status !== applicationFilter) return false
-      if (normalized && !`${application.change_number} ${application.title} ${application.summary}`.toLowerCase().includes(normalized)) {
-        return taskContexts.some(({ application: item }) => item.id === application.id)
-      }
-      if (statusFilter !== 'all' || actionKindFilter !== 'all' || attentionFilter !== 'all') {
-        return taskContexts.some(({ application: item }) => item.id === application.id)
-      }
-      return true
-    })
+    return filterChangeApplications(data.changeApplications, taskContexts, {
+      status: statusFilter,
+      application: applicationFilter,
+      actionKind: actionKindFilter,
+      attention: attentionFilter,
+      query,
+    }, leaderMode, profile.id)
   }, [actionKindFilter, applicationFilter, attentionFilter, data.changeApplications, leaderMode, profile.id, query, statusFilter, taskContexts])
 
-  const publishedOwnContexts = allContexts.filter(
-    ({ task, application }) => application.status === 'published' && (leaderMode || task.assignee_id === profile.id),
-  )
-  const pendingContexts = publishedOwnContexts.filter(({ task }) => task.status === 'pending')
-  const overdueCount = pendingContexts.filter(({ actionItem }) => (daysUntil(actionItem.due_date) ?? 0) < 0).length
-  const dueSoonCount = pendingContexts.filter(({ actionItem }) => {
-    const days = daysUntil(actionItem.due_date)
-    return days != null && days >= 0 && days <= 3
-  }).length
-  const unassignedCount = leaderMode
-    ? allContexts.filter(({ task, application }) => application.status === 'published' && task.status === 'pending' && !task.assignee_id).length
-    : 0
+  const {
+    pendingContexts,
+    overdueCount,
+    dueSoonCount,
+    unassignedCount,
+    completedCount,
+  } = calculateChangeApplicationKpis(allContexts, leaderMode, profile.id)
 
   const selectedApplication = applications.find((item) => item.id === selectedApplicationId)
     ?? applications[0]
@@ -367,22 +319,7 @@ export function ChangeApplicationsPanel({
 
   const groupedContexts = useMemo(() => {
     if (viewMode === 'change') return []
-    const groups = new Map<string, { title: string; sub: string; items: ProductChangeTaskContext[] }>()
-    for (const context of taskContexts) {
-      const key = viewMode === 'product'
-        ? context.task.product_id
-        : context.task.assignee_id ?? '__unassigned__'
-      const title = viewMode === 'product'
-        ? context.task.product_name
-        : context.task.assignee_name ?? '담당 미지정'
-      const sub = viewMode === 'product'
-        ? context.task.products?.category ?? '제품'
-        : `${context.task.assignee_id ? '적용 책임자' : '파트장 확인 필요'}`
-      const group = groups.get(key) ?? { title, sub, items: [] }
-      group.items.push(context)
-      groups.set(key, group)
-    }
-    return [...groups.values()].sort((left, right) => left.title.localeCompare(right.title, 'ko'))
+    return groupChangeTaskContexts(taskContexts, viewMode)
   }, [taskContexts, viewMode])
 
   return (
@@ -418,7 +355,7 @@ export function ChangeApplicationsPanel({
         ) : (
           <button className="kpi-stat" onClick={() => { setStatusFilter('completed'); setApplicationFilter('published'); setAttentionFilter('all') }} type="button">
             <span className="kpi-stat-label">완료 이력<CheckCircle2 size={15} /></span>
-            <strong className="kpi-stat-value">{publishedOwnContexts.filter(({ task }) => task.status === 'completed').length}<span className="unit">건</span></strong>
+            <strong className="kpi-stat-value">{completedCount}<span className="unit">건</span></strong>
           </button>
         )}
       </div>
@@ -435,7 +372,7 @@ export function ChangeApplicationsPanel({
             aria-label="업무 상태"
             value={statusFilter}
             onChange={(event) => {
-              const next = event.target.value as StatusFilter
+              const next = event.target.value as ChangeTaskStatusFilter
               setStatusFilter(next)
               if (next !== 'pending') setAttentionFilter('all')
             }}
@@ -446,7 +383,7 @@ export function ChangeApplicationsPanel({
             <option value="not_applicable">해당 없음</option>
             <option value="cancelled">취소</option>
           </select>
-          <select aria-label="목록 적용 구분" value={actionKindFilter} onChange={(event) => setActionKindFilter(event.target.value as ActionKindFilter)}>
+          <select aria-label="목록 적용 구분" value={actionKindFilter} onChange={(event) => setActionKindFilter(event.target.value as ChangeActionKindFilter)}>
             <option value="all">적용 구분 전체</option>
             <option value="product_standard">제품표준서</option>
             <option value="other">기타</option>
@@ -455,7 +392,7 @@ export function ChangeApplicationsPanel({
             aria-label="주의 조건"
             value={attentionFilter}
             onChange={(event) => {
-              const next = event.target.value as AttentionFilter
+              const next = event.target.value as ChangeAttentionFilter
               setAttentionFilter(next)
               if (next !== 'all') {
                 setStatusFilter('pending')
@@ -468,7 +405,7 @@ export function ChangeApplicationsPanel({
             <option value="due_soon">D-3 이내</option>
             {leaderMode && <option value="unassigned">담당 미지정</option>}
           </select>
-          <select aria-label="변경건 상태" value={applicationFilter} onChange={(event) => setApplicationFilter(event.target.value as ApplicationFilter)}>
+          <select aria-label="변경건 상태" value={applicationFilter} onChange={(event) => setApplicationFilter(event.target.value as ChangeApplicationStatusFilter)}>
             <option value="all">변경건 전체</option>
             <option value="published">배포</option>
             <option value="draft">초안</option>

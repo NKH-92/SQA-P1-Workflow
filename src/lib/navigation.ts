@@ -1,5 +1,6 @@
 export const APP_TABS = [
   'dashboard',
+  'announcements',
   'reviews',
   'review-stats',
   'projects',

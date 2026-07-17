@@ -1,6 +1,7 @@
 import type {
   ActivityLog,
   AllowedUser,
+  Announcement,
   Duty,
   DutyAssignment,
   DutyMajorCategory,
@@ -14,6 +15,7 @@ import type {
 } from './domain'
 
 export interface AppData {
+  announcements: Announcement[]
   profiles: Profile[]
   allowedUsers: AllowedUser[]
   products: Product[]

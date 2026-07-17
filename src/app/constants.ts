@@ -4,6 +4,7 @@ import type { AppData } from '../types'
 export const PASSWORD_MIN_LENGTH = 8
 
 export const emptyData: AppData = {
+  announcements: [],
   profiles: [],
   allowedUsers: [],
   products: [],

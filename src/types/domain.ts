@@ -144,6 +144,17 @@ export interface ProfileNote {
   created_at?: string
 }
 
+export interface Announcement {
+  id: string
+  title: string
+  body: string
+  is_pinned: boolean
+  pinned_at: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
 export interface ActivityLog {
   id: string
   actor_id: string

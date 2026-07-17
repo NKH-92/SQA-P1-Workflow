@@ -1,5 +1,6 @@
 import type {
   AllowedUser,
+  Announcement,
   AppData,
   Duty,
   DutyAssignment,
@@ -273,6 +274,29 @@ export function createPreviewData(): AppData {
 
   const profileNotes: ProfileNote[] = []
 
+  const announcements: Announcement[] = [
+    {
+      id: 'announcement-01',
+      title: '주간 운영 안내',
+      body: '이번 주 우선 검토 대상과 마감 일정을 확인해 주세요.',
+      is_pinned: true,
+      pinned_at: '2026-07-03T08:00:00.000Z',
+      created_by: previewLeader.id,
+      created_at: '2026-07-03T08:00:00.000Z',
+      updated_at: '2026-07-03T08:00:00.000Z',
+    },
+    {
+      id: 'announcement-02',
+      title: '검토 요청 작성 기준',
+      body: '제목과 설명에 변경 범위와 확인이 필요한 내용을 함께 작성해 주세요.',
+      is_pinned: false,
+      pinned_at: null,
+      created_by: previewLeader.id,
+      created_at: '2026-07-02T08:00:00.000Z',
+      updated_at: '2026-07-02T08:00:00.000Z',
+    },
+  ]
+
   const activityLogs: ActivityLog[] = [
     {
       id: 'activity-01',
@@ -310,7 +334,8 @@ export function createPreviewData(): AppData {
   ]
 
   return {
-    profiles: previewProfiles.map((profile) => ({ ...profile, created_at: createdAt })),
+    announcements,
+    profiles: [previewLeader, ...previewProfiles].map((profile) => ({ ...profile, created_at: createdAt })),
     allowedUsers,
     products,
     dutyMajorCategories,

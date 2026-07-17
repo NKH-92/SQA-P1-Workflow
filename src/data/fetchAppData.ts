@@ -1,6 +1,7 @@
 import type {
   ActivityLog,
   AllowedUser,
+  Announcement,
   AppData,
   Duty,
   DutyAssignment,
@@ -13,6 +14,8 @@ import type {
   ReviewRequest,
 } from '../types'
 import { supabase } from '../lib/supabase'
+
+export { mergeAnnouncements, sortAnnouncements } from './announcementCollection'
 
 export type FetchAppDataResult = AppData & {
   optionalWarnings: string[]
@@ -94,8 +97,24 @@ export async function fetchReviewRequestById(requestId: string, signal?: AbortSi
   return (data as ReviewRequest | null) ?? null
 }
 
+export async function fetchAnnouncementById(
+  announcementId: string,
+  signal?: AbortSignal,
+): Promise<Announcement | null> {
+  if (!supabase) return null
+  let query = supabase
+    .from('announcements')
+    .select('*')
+    .eq('id', announcementId)
+  if (signal) query = query.abortSignal(signal)
+  const { data, error } = await query.maybeSingle()
+  if (error) throw error
+  return (data as Announcement | null) ?? null
+}
+
 function emptyAppData(): AppData {
   return {
+    announcements: [],
     profiles: [],
     allowedUsers: [],
     products: [],
@@ -190,6 +209,14 @@ export async function fetchAppData(): Promise<FetchAppDataResult> {
     supabase.from('profile_notes').select('*').order('created_at', { ascending: false }),
     supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(100),
     supabase.from('public_leader_profiles').select('id,name'),
+    supabase
+      .from('announcements')
+      .select('*')
+      .order('is_pinned', { ascending: false })
+      .order('pinned_at', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(200),
   ])
 
   let profiles = (profilesResult.data ?? []) as Profile[]
@@ -215,6 +242,11 @@ export async function fetchAppData(): Promise<FetchAppDataResult> {
   }
 
   return {
+    announcements: settledData(
+      optionalResults[4] as PromiseSettledResult<{ data: Announcement[] | null; error: unknown }>,
+      '공지',
+      optionalWarnings,
+    ),
     profiles,
     allowedUsers: settledData(
       optionalResults[0] as PromiseSettledResult<{ data: AllowedUser[] | null; error: unknown }>,

@@ -36,7 +36,16 @@ function App() {
   const [reviewsUnreadCutoff, setReviewsUnreadCutoff] = useState<string | null>(null)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const reportWarningsRef = useRef<(warnings: string[]) => void>(() => {})
-  const { data, setData, refreshing, lastSyncedAt, refreshData, loadReviewRequest, resetSyncState } = useAppData((warnings) =>
+  const {
+    data,
+    setData,
+    refreshing,
+    lastSyncedAt,
+    refreshData,
+    loadReviewRequest,
+    loadAnnouncement,
+    resetSyncState,
+  } = useAppData((warnings) =>
     reportWarningsRef.current(warnings),
   )
   const { saving, message, setMessage, mutate } = useMutationRunner(refreshData)
@@ -120,7 +129,7 @@ function App() {
     setReadTick((value) => value + 1)
   }, [navigation.activeTab, profile])
 
-  // 딥링크 대상이 현재 capped 목록에 없으면 검토요청만 on-demand로 한 번 조회한다.
+  // 딥링크 대상이 현재 capped 목록에 없으면 검토요청·공지를 on-demand로 한 번 조회한다.
   // 그래도 없으면(삭제·권한 밖) 조용히 첫 항목으로 폴백되는 대신 안내한다.
   // 대상이 존재하면 각 패널의 소비 effect(자식)가 먼저 실행되어 선택을 적용한다.
   const dataReady = isPreviewMode || lastSyncedAt != null
@@ -143,6 +152,8 @@ function App() {
     const found =
       navActiveTab === 'reviews'
         ? selectScopedReviewRequests(data, profile).some((request) => request.id === navEntityId)
+        : navActiveTab === 'announcements'
+          ? data.announcements.some((announcement) => announcement.id === navEntityId)
         : navActiveTab === 'projects'
           ? data.projects.some((project) => project.id === navEntityId)
           : navActiveTab === 'team'
@@ -154,24 +165,27 @@ function App() {
       historyLookupRef.current = null
       return
     }
-    if (navActiveTab === 'reviews') {
-      if (historyLookupRef.current === navEntityId) return
+    if (navActiveTab === 'reviews' || navActiveTab === 'announcements') {
+      const lookupKey = `${navActiveTab}:${navEntityId}`
+      if (historyLookupRef.current === lookupKey) return
       historyAbortRef.current?.abort()
       const abortController = new AbortController()
       historyAbortRef.current = abortController
-      historyLookupRef.current = navEntityId
-      void loadReviewRequest(navEntityId, abortController.signal)
+      historyLookupRef.current = lookupKey
+      const loadEntity = navActiveTab === 'reviews' ? loadReviewRequest : loadAnnouncement
+      void loadEntity(navEntityId, abortController.signal)
         .then((loaded) => {
+          if (historyLookupRef.current !== lookupKey) return
           if (loaded === null) {
             historyLookupRef.current = null
             return
           }
-          if (loaded || historyLookupRef.current !== navEntityId) return
+          if (loaded) return
           setNavEntityId(null)
           setMessage({ text: '링크 대상을 찾을 수 없습니다. 삭제되었거나 접근 권한이 없는 항목일 수 있습니다.', tone: 'warning' })
         })
         .catch((error) => {
-          if (historyLookupRef.current !== navEntityId) return
+          if (historyLookupRef.current !== lookupKey) return
           historyLookupRef.current = null
           setMessage({ text: toUserMessage(error), tone: 'warning' })
         })
@@ -182,7 +196,17 @@ function App() {
     historyLookupRef.current = null
     setNavEntityId(null)
     setMessage({ text: '링크 대상을 찾을 수 없습니다. 삭제되었거나 접근 권한이 없는 항목일 수 있습니다.', tone: 'warning' })
-  }, [navEntityId, navActiveTab, setNavEntityId, data, profile, dataReady, loadReviewRequest, setMessage])
+  }, [
+    navEntityId,
+    navActiveTab,
+    setNavEntityId,
+    data,
+    profile,
+    dataReady,
+    loadReviewRequest,
+    loadAnnouncement,
+    setMessage,
+  ])
 
   // 팔레트는 인증 완료 후 메인 화면에서만 렌더된다. 로그인·비밀번호 변경 화면에서
   // 단축키를 받으면 브라우저 기본 동작만 뺏고 열림 상태가 뒤에서 토글되어,

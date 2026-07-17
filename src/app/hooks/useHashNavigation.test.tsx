@@ -31,6 +31,16 @@ describe('useHashNavigation', () => {
     expect(replaceState).not.toHaveBeenCalled()
   })
 
+  it('keeps an announcement detail deep link available to members', () => {
+    window.history.replaceState(null, '', '#/announcements?id=notice-1')
+
+    const { result } = renderHook(() => useHashNavigation(false, true))
+
+    expect(result.current.activeTab).toBe('announcements')
+    expect(result.current.navEntityId).toBe('notice-1')
+    expect(window.location.hash).toBe('#/announcements?id=notice-1')
+  })
+
   it('exposes a safe dashboard immediately when a loaded member lands on the leader statistics hash', () => {
     window.history.replaceState(null, '', '#/review-stats?id=private-user')
 

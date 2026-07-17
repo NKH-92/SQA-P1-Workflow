@@ -18,6 +18,7 @@ describe('createProject (demo)', () => {
       role: 'member',
     }
     const data: AppData = {
+      announcements: [],
       profiles: [leader, member],
       allowedUsers: [],
       products: [],
@@ -91,6 +92,7 @@ describe('saveProjectAssignments (demo)', () => {
       updated_at: new Date().toISOString(),
     }
     const data: AppData = {
+      announcements: [],
       profiles: [leader, memberA, memberB],
       allowedUsers: [],
       products: [],

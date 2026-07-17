@@ -3,6 +3,7 @@ import type { AppData, Profile } from '../types'
 import type { MutateFn, TabId } from './types'
 import {
   ActivityPanel,
+  AnnouncementsPanel,
   Dashboard,
   LeaderDashboard,
   MasterPanel,
@@ -47,6 +48,16 @@ export function AppRoutes({
         ) : (
           <Dashboard profile={profile} data={data} setActiveTab={setActiveTab} />
         ))}
+      {activeTab === 'announcements' && (
+        <AnnouncementsPanel
+          profile={profile}
+          data={data}
+          mutate={mutate}
+          setData={setData}
+          initialSelectedId={navEntityId}
+          onInitialSelectionApplied={() => setNavEntityId(null)}
+        />
+      )}
       {activeTab === 'work' && !leaderMode && <MyWorkPanel profile={profile} data={data} />}
       {activeTab === 'reviews' && (
         <ReviewsPanel

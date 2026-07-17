@@ -85,17 +85,68 @@ select 'active_leader_password_gate_ok' where
 select 'profile_note_private_audit_ok' where
   exists (
     select 1 from pg_trigger
-    where tgrelid = 'public.profile_notes'::regclass
+    where tgrelid = to_regclass('public.profile_notes')
       and tgname = 'profile_notes_private_audit'
       and not tgisinternal
   )
+  and exists (
+    select 1 from pg_trigger
+    where tgrelid = to_regclass('public.announcements')
+      and tgname = 'announcements_private_audit'
+      and tgfoid = to_regprocedure('private.record_mutation_audit()')
+      and not tgisinternal
+  )
   and (
-    select count(*) >= 12 from pg_trigger
+    select count(*) >= 13 from pg_trigger
     where tgfoid = to_regprocedure('private.record_mutation_audit()')
       and not tgisinternal
   );
+select 'announcement_board_ok' where
+  exists (select 1 from supabase_migrations.schema_migrations where version = '20260716200422')
+  and to_regclass('public.announcements') is not null
+  and coalesce((select relrowsecurity from pg_class where oid = to_regclass('public.announcements')), false)
+  and exists (select 1 from pg_constraint where conrelid = to_regclass('public.announcements') and conname = 'announcements_title_length_check' and convalidated)
+  and exists (select 1 from pg_constraint where conrelid = to_regclass('public.announcements') and conname = 'announcements_body_length_check' and convalidated)
+  and exists (select 1 from pg_constraint where conrelid = to_regclass('public.announcements') and conname = 'announcements_pin_state_check' and convalidated)
+  and exists (select 1 from pg_class where oid = to_regclass('public.announcements_created_by_idx') and relkind = 'i')
+  and exists (select 1 from pg_class where oid = to_regclass('public.announcements_board_order_idx') and relkind = 'i')
+  and exists (select 1 from pg_trigger where tgrelid = to_regclass('public.announcements') and tgname = 'announcements_enforce_invariants' and tgfoid = to_regprocedure('private.enforce_announcement_invariants()') and tgenabled in ('O', 'A'))
+  and exists (select 1 from pg_trigger where tgrelid = to_regclass('public.announcements') and tgname = 'announcements_set_updated_at' and tgfoid = to_regprocedure('public.set_updated_at()') and tgenabled in ('O', 'A'))
+  and exists (select 1 from pg_trigger where tgrelid = to_regclass('public.announcements') and tgname = 'announcements_private_audit' and tgfoid = to_regprocedure('private.record_mutation_audit()') and tgenabled in ('O', 'A'))
+  and to_regprocedure('private.enforce_announcement_invariants()') is not null
+  and not coalesce((select prosecdef from pg_proc where oid = to_regprocedure('private.enforce_announcement_invariants()')), true)
+  and coalesce((select 'search_path=pg_catalog, public, private, pg_temp' = any(proconfig) from pg_proc where oid = to_regprocedure('private.enforce_announcement_invariants()')), false)
+  and not coalesce(has_function_privilege('authenticated', to_regprocedure('private.enforce_announcement_invariants()'), 'EXECUTE'), true)
+  and not coalesce(has_function_privilege('anon', to_regprocedure('private.enforce_announcement_invariants()'), 'EXECUTE'), true)
+  and coalesce(pg_get_functiondef(to_regprocedure('private.enforce_announcement_invariants()')) like '%new.title := btrim(new.title)%', false)
+  and coalesce(pg_get_functiondef(to_regprocedure('private.enforce_announcement_invariants()')) like '%new.created_by is distinct from old.created_by%', false)
+  and coalesce(pg_get_functiondef(to_regprocedure('private.enforce_announcement_invariants()')) like '%new.created_at is distinct from old.created_at%', false)
+  and coalesce(pg_get_functiondef(to_regprocedure('private.enforce_announcement_invariants()')) like '%new.pinned_at := now()%', false)
+  and coalesce(has_table_privilege('authenticated', to_regclass('public.announcements'), 'SELECT'), false)
+  and coalesce(has_table_privilege('authenticated', to_regclass('public.announcements'), 'DELETE'), false)
+  and not coalesce(has_table_privilege('authenticated', to_regclass('public.announcements'), 'INSERT'), true)
+  and not coalesce(has_table_privilege('authenticated', to_regclass('public.announcements'), 'UPDATE'), true)
+  and coalesce(has_column_privilege('authenticated', to_regclass('public.announcements'), 'title', 'INSERT'), false)
+  and coalesce(has_column_privilege('authenticated', to_regclass('public.announcements'), 'body', 'INSERT'), false)
+  and coalesce(has_column_privilege('authenticated', to_regclass('public.announcements'), 'is_pinned', 'INSERT'), false)
+  and coalesce(has_column_privilege('authenticated', to_regclass('public.announcements'), 'title', 'UPDATE'), false)
+  and coalesce(has_column_privilege('authenticated', to_regclass('public.announcements'), 'body', 'UPDATE'), false)
+  and coalesce(has_column_privilege('authenticated', to_regclass('public.announcements'), 'is_pinned', 'UPDATE'), false)
+  and not coalesce(has_column_privilege('authenticated', to_regclass('public.announcements'), 'pinned_at', 'INSERT'), true)
+  and not coalesce(has_column_privilege('authenticated', to_regclass('public.announcements'), 'pinned_at', 'UPDATE'), true)
+  and not coalesce(has_column_privilege('authenticated', to_regclass('public.announcements'), 'created_by', 'INSERT'), true)
+  and not coalesce(has_column_privilege('authenticated', to_regclass('public.announcements'), 'created_by', 'UPDATE'), true)
+  and not coalesce(has_column_privilege('authenticated', to_regclass('public.announcements'), 'created_at', 'UPDATE'), true)
+  and not coalesce(has_table_privilege('anon', to_regclass('public.announcements'), 'SELECT'), true)
+  and not coalesce(has_table_privilege('anon', to_regclass('public.announcements'), 'INSERT'), true)
+  and not coalesce(has_table_privilege('anon', to_regclass('public.announcements'), 'UPDATE'), true)
+  and not coalesce(has_table_privilege('anon', to_regclass('public.announcements'), 'DELETE'), true)
+  and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'announcements' and policyname = 'announcements_select_app_user' and qual like '%is_active_self()%' and qual not like '%can_use_app()%')
+  and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'announcements' and policyname = 'announcements_insert_leader' and with_check like '%is_active_leader()%' and with_check like '%created_by%' and with_check like '%auth.uid()%')
+  and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'announcements' and policyname = 'announcements_update_leader' and qual like '%is_active_leader()%' and with_check like '%is_active_leader()%')
+  and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'announcements' and policyname = 'announcements_delete_leader' and qual like '%is_active_leader()%');
 select 'latest_migration_version_ok' where
-  exists (select 1 from supabase_migrations.schema_migrations where version = '202607120002');
+  exists (select 1 from supabase_migrations.schema_migrations where version = '20260716200422');
 select id from storage.buckets where id = 'review-attachments';
 select policyname from pg_policies where tablename = 'review_requests' and policyname in ('review_requests_update_self_pending', 'review_requests_delete_self_pending');
 select 'realtime_pub_' || tablename from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'review_requests';
@@ -105,7 +156,7 @@ $tempSql = Join-Path ([System.IO.Path]::GetTempPath()) ("supabase-verify-{0}.sql
 try {
   Set-Content -Path $tempSql -Value $verificationSql -Encoding UTF8
 
-  Write-Host "Verifying RPC functions, storage bucket, and review RLS policies..."
+  Write-Host "Verifying RPC functions, storage bucket, review RLS, and announcement-board invariants..."
   $verifyOutput = npx --yes "supabase@$SupabaseCliVersion" db query --linked --file $tempSql 2>&1 | Out-String
 
   if ($LASTEXITCODE -ne 0) {
@@ -129,6 +180,7 @@ try {
     'active_leader_password_gate_ok',
     'assignment_rpc_security_ok',
     'profile_note_private_audit_ok',
+    'announcement_board_ok',
     'latest_migration_version_ok'
   )
   $expectedPolicies = @(
@@ -144,7 +196,7 @@ try {
   if ($missingRpc.Count -gt 0 -or $missingBucket -or $missingPolicies.Count -gt 0 -or $missingRealtime) {
     Write-Warning "Verification incomplete — check results:"
     if ($missingRpc.Count -gt 0) {
-      Write-Warning "  Missing RPC: $($missingRpc -join ', ')"
+      Write-Warning "  Missing verification marker: $($missingRpc -join ', ')"
     }
     if ($missingBucket) {
       Write-Warning "  Missing storage bucket: review-attachments"

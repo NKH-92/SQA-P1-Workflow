@@ -10,6 +10,7 @@ function member(id: string, name: string): Profile {
 
 function emptyData(): AppData {
   return {
+    announcements: [],
     profiles: [],
     allowedUsers: [],
     products: [],

@@ -12,6 +12,7 @@ import {
   ClipboardList,
   FolderKanban,
   LogOut,
+  Megaphone,
   Menu,
   MessageSquare,
   Package,
@@ -103,6 +104,7 @@ export function Shell({
           label: '워크스페이스',
           items: [
             { id: 'dashboard', label: '홈', icon: <ClipboardList size={18} /> },
+            { id: 'announcements', label: '공지', icon: <Megaphone size={18} />, count: data.announcements.length },
             {
               id: 'reviews',
               label: '검토요청',
@@ -130,6 +132,7 @@ export function Shell({
           label: '내 업무',
           items: [
             { id: 'dashboard', label: '홈', icon: <ClipboardList size={18} /> },
+            { id: 'announcements', label: '공지', icon: <Megaphone size={18} />, count: data.announcements.length },
             { id: 'reviews', label: '내 검토요청', icon: <Check size={18} />, count: unreadReviewsCount > 0 ? unreadReviewsCount : memberReviewCount, unread: unreadReviewsCount > 0 },
             { id: 'projects', label: '내 프로젝트', icon: <FolderKanban size={18} />, count: memberProjectCount },
             { id: 'work', label: '내 담당', icon: <Package size={18} />, count: memberProductCount + memberDutyCount },
@@ -140,6 +143,10 @@ export function Shell({
     dashboard: {
       label: '홈',
       description: leaderMode ? `대기 검토 ${pendingCount}건 · 파트원 ${memberCount}명` : `${profile.name}님의 오늘 업무`,
+    },
+    announcements: {
+      label: '워크스페이스 / 공지',
+      description: '파트 공지와 상단 고정 안내',
     },
     reviews: {
       label: leaderMode ? '워크스페이스 / 검토요청' : '내 업무 / 검토요청',

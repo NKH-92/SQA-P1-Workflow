@@ -22,7 +22,6 @@ describe('local profile-note permission parity', () => {
     await expect(addProfileNote(missing, { profileId: 'missing-profile', note: 'blocked' })).rejects.toThrow()
 
     const leaderTarget = context()
-    leaderTarget.data.profiles.push(previewLeader)
     await expect(addProfileNote(leaderTarget, { profileId: previewLeader.id, note: 'blocked' })).rejects.toThrow(
       '파트원에게만 메모를 남길 수 있습니다.',
     )

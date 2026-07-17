@@ -1,8 +1,8 @@
 import type { Profile, Project } from '../../types'
+import type { ProjectInput } from '../contracts'
 import type { RepositoryContext } from '../repositoryContext'
 import { createLocalProjectRepository } from '../local/localProjectRepository'
 import { createSupabaseProjectRepository } from '../remote/supabaseProjectRepository'
-import type { ProjectInput } from '../local/appDataReducers'
 
 export type { ProjectInput }
 

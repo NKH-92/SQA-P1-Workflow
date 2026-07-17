@@ -4,9 +4,11 @@ import type { TabId } from '../app/types'
 import { formatDate, reviewStatusLabels } from '../lib/format'
 import { daysUntil, dueDateLabel, relativeDateLabel } from '../lib/dates'
 import { productCategory, productCompanyName, productName } from '../lib/products'
+import { selectMyProductChangeTaskContexts } from '../features/change-applications/selectors'
 import {
   Check,
   ClipboardList,
+  ClipboardPenLine,
   FolderKanban,
   Package,
   Send,
@@ -37,6 +39,11 @@ export function Dashboard({
     .filter((request) => request.requester_id === profile.id)
     .sort((left, right) => (right.created_at ?? '').localeCompare(left.created_at ?? ''))
   const openReviews = ownReviews.filter((request) => request.status === 'pending')
+  const ownChangeContexts = selectMyProductChangeTaskContexts(data, profile)
+  const pendingChangeContexts = ownChangeContexts.filter(({ task }) => task.status === 'pending')
+  const overdueChangeCount = pendingChangeContexts.filter(
+    ({ actionItem }) => (daysUntil(actionItem.due_date) ?? 0) < 0,
+  ).length
   const latestNote = data.profileNotes
     .filter((note) => note.profile_id === profile.id)
     .sort((left, right) => (right.created_at ?? '').localeCompare(left.created_at ?? ''))[0]
@@ -78,6 +85,17 @@ export function Dashboard({
             </small>
           </div>
         </div>
+      )}
+
+      {pendingChangeContexts.length > 0 && (
+        <button className="warm-callout" onClick={() => setActiveTab('change-applications')} type="button">
+          <ClipboardPenLine size={18} />
+          <span>
+            <strong>내 미적용 변경업무 {pendingChangeContexts.length}건</strong>
+            <small>{overdueChangeCount > 0 ? `기한 초과 ${overdueChangeCount}건을 먼저 확인하세요.` : '제품별 적용 여부를 확인하고 완료해 주세요.'}</small>
+          </span>
+          <span className="warm-callout-arrow">변경 적용 열기 →</span>
+        </button>
       )}
 
       {/* 카드 4개는 1:1 그리드 2행 + 동일한 flush 미리보기 문법으로 균형을 맞춘다. */}

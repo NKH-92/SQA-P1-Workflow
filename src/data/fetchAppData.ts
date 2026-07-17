@@ -1,25 +1,15 @@
 import type {
-  ActivityLog,
-  AllowedUser,
   Announcement,
-  AppData,
-  Duty,
-  DutyAssignment,
-  DutyMajorCategory,
-  Product,
-  ProductAssignment,
-  Profile,
-  Project,
-  ProjectAssignment,
+  ProductChangeTask,
   ReviewRequest,
 } from '../types'
 import { supabase } from '../lib/supabase'
+import { assembleAppData, emptyAppData } from './fetch/assembleAppData'
+import type { AssembledAppData } from './fetch/assembleAppData'
 
 export { mergeAnnouncements, sortAnnouncements } from './announcementCollection'
 
-export type FetchAppDataResult = AppData & {
-  optionalWarnings: string[]
-}
+export type FetchAppDataResult = AssembledAppData
 
 // Pending requests remain visible regardless of age so members can always
 // finish work in progress. Closed requests are intentionally bounded to the
@@ -27,12 +17,23 @@ export type FetchAppDataResult = AppData & {
 // the recurring refresh payload from growing without silently dropping work
 // that is still actionable.
 export const REVIEW_HISTORY_MONTHS = 6
+export const CHANGE_TASK_HISTORY_MONTHS = 6
 
 export function reviewHistoryCutoff(now = new Date()): string {
   const cutoff = new Date(now)
   const day = cutoff.getUTCDate()
   cutoff.setUTCDate(1)
   cutoff.setUTCMonth(cutoff.getUTCMonth() - REVIEW_HISTORY_MONTHS)
+  const lastDay = new Date(Date.UTC(cutoff.getUTCFullYear(), cutoff.getUTCMonth() + 1, 0)).getUTCDate()
+  cutoff.setUTCDate(Math.min(day, lastDay))
+  return cutoff.toISOString()
+}
+
+export function changeTaskHistoryCutoff(now = new Date()): string {
+  const cutoff = new Date(now)
+  const day = cutoff.getUTCDate()
+  cutoff.setUTCDate(1)
+  cutoff.setUTCMonth(cutoff.getUTCMonth() - CHANGE_TASK_HISTORY_MONTHS)
   const lastDay = new Date(Date.UTC(cutoff.getUTCFullYear(), cutoff.getUTCMonth() + 1, 0)).getUTCDate()
   cutoff.setUTCDate(Math.min(day, lastDay))
   return cutoff.toISOString()
@@ -112,30 +113,25 @@ export async function fetchAnnouncementById(
   return (data as Announcement | null) ?? null
 }
 
-function emptyAppData(): AppData {
-  return {
-    announcements: [],
-    profiles: [],
-    allowedUsers: [],
-    products: [],
-    dutyMajorCategories: [],
-    duties: [],
-    productAssignments: [],
-    dutyAssignments: [],
-    reviewRequests: [],
-    projects: [],
-    projectAssignments: [],
-    profileNotes: [],
-    activityLogs: [],
-  }
-}
-
-function settledData<T>(result: PromiseSettledResult<{ data: T | null; error: unknown }>, label: string, warnings: string[]): T {
-  if (result.status === 'rejected' || result.value.error) {
-    warnings.push(`${label} 조회에 실패했습니다.`)
-    return [] as T
-  }
-  return (result.value.data ?? []) as T
+/**
+ * Closed change tasks are bounded in the recurring app refresh. A user can
+ * explicitly request the complete history for one change without making every
+ * normal refresh grow forever.
+ */
+export async function fetchProductChangeTaskHistory(
+  actionItemIds: string[],
+  signal?: AbortSignal,
+): Promise<ProductChangeTask[]> {
+  if (!supabase || actionItemIds.length === 0) return []
+  let query = supabase
+    .from('product_change_tasks')
+    .select('*, products(name,category,company_name,sort_order)')
+    .in('action_item_id', [...new Set(actionItemIds)])
+    .order('updated_at', { ascending: false })
+  if (signal) query = query.abortSignal(signal)
+  const { data, error } = await query
+  if (error) throw error
+  return (data ?? []) as ProductChangeTask[]
 }
 
 export async function fetchAppData(): Promise<FetchAppDataResult> {
@@ -151,6 +147,11 @@ export async function fetchAppData(): Promise<FetchAppDataResult> {
     reviewRequestsResult,
     projectsResult,
     projectAssignmentsResult,
+    changeApplicationsResult,
+    changeActionItemsResult,
+    productChangeTasksResult,
+    changeProductScopeResult,
+    changeAssigneeOptionsResult,
   ] = await Promise.all([
     supabase.from('profiles').select('*').order('name'),
     supabase.from('products').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('name'),
@@ -187,6 +188,15 @@ export async function fetchAppData(): Promise<FetchAppDataResult> {
       .from('project_assignments')
       .select('*, profiles(name,email), projects(name,description,deadline,status)')
       .order('created_at', { ascending: false }),
+    supabase.from('change_applications').select('*').order('created_at', { ascending: false }),
+    supabase.from('change_action_items').select('*').order('sort_order', { ascending: true }),
+    supabase
+      .from('product_change_tasks')
+      .select('*, products(name,category,company_name,sort_order)')
+      .or(`status.eq.pending,updated_at.gte.${changeTaskHistoryCutoff()}`)
+      .order('updated_at', { ascending: false }),
+    supabase.rpc('list_change_application_product_scope'),
+    supabase.rpc('list_change_application_assignees'),
   ])
 
   const coreResults = [
@@ -199,11 +209,15 @@ export async function fetchAppData(): Promise<FetchAppDataResult> {
     reviewRequestsResult,
     projectsResult,
     projectAssignmentsResult,
+    changeApplicationsResult,
+    changeActionItemsResult,
+    productChangeTasksResult,
+    changeProductScopeResult,
+    changeAssigneeOptionsResult,
   ]
   const failedCore = coreResults.find((result) => result.error)
   if (failedCore?.error) throw failedCore.error
 
-  const optionalWarnings: string[] = []
   const optionalResults = await Promise.allSettled([
     supabase.from('allowed_users').select('*').order('created_at', { ascending: false }),
     supabase.from('profile_notes').select('*').order('created_at', { ascending: false }),
@@ -219,58 +233,24 @@ export async function fetchAppData(): Promise<FetchAppDataResult> {
       .limit(200),
   ])
 
-  let profiles = (profilesResult.data ?? []) as Profile[]
-  const leaderProfiles = settledData(
-    optionalResults[3] as PromiseSettledResult<{ data: Array<Pick<Profile, 'id' | 'name'>> | null; error: unknown }>,
-    '파트장 프로필',
-    optionalWarnings,
+  return assembleAppData(
+    {
+      profilesResult,
+      productsResult,
+      dutyMajorCategoriesResult,
+      dutiesResult,
+      productAssignmentsResult,
+      dutyAssignmentsResult,
+      reviewRequestsResult,
+      projectsResult,
+      projectAssignmentsResult,
+      changeApplicationsResult,
+      changeActionItemsResult,
+      productChangeTasksResult,
+      changeProductScopeResult,
+      changeAssigneeOptionsResult,
+    },
+    optionalResults,
+    mergeReviewRequests,
   )
-  if (leaderProfiles.length > 0) {
-    const knownIds = new Set(profiles.map((item) => item.id))
-    profiles = [
-      ...profiles,
-      ...leaderProfiles
-        .filter((leader) => !knownIds.has(leader.id))
-        .map((leader) => ({
-          id: leader.id,
-          name: leader.name,
-          email: '',
-          role: 'leader' as const,
-          is_active: true,
-        })),
-    ]
-  }
-
-  return {
-    announcements: settledData(
-      optionalResults[4] as PromiseSettledResult<{ data: Announcement[] | null; error: unknown }>,
-      '공지',
-      optionalWarnings,
-    ),
-    profiles,
-    allowedUsers: settledData(
-      optionalResults[0] as PromiseSettledResult<{ data: AllowedUser[] | null; error: unknown }>,
-      '초대 목록',
-      optionalWarnings,
-    ),
-    products: (productsResult.data ?? []) as Product[],
-    dutyMajorCategories: (dutyMajorCategoriesResult.data ?? []) as DutyMajorCategory[],
-    duties: (dutiesResult.data ?? []) as Duty[],
-    productAssignments: (productAssignmentsResult.data ?? []) as ProductAssignment[],
-    dutyAssignments: (dutyAssignmentsResult.data ?? []) as DutyAssignment[],
-    reviewRequests: mergeReviewRequests(reviewRequestsResult.data as ReviewRequest[] | null, null),
-    projects: (projectsResult.data ?? []) as Project[],
-    projectAssignments: (projectAssignmentsResult.data ?? []) as ProjectAssignment[],
-    profileNotes: settledData(
-      optionalResults[1] as PromiseSettledResult<{ data: AppData['profileNotes'] | null; error: unknown }>,
-      '프로필 메모',
-      optionalWarnings,
-    ),
-    activityLogs: settledData(
-      optionalResults[2] as PromiseSettledResult<{ data: ActivityLog[] | null; error: unknown }>,
-      '활동 로그',
-      optionalWarnings,
-    ),
-    optionalWarnings,
-  }
 }

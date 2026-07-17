@@ -4,6 +4,7 @@ import type { AppData, Profile } from '../types'
 import type { TabId } from '../app/types'
 import { selectScopedReviewRequests } from '../features/reviews/review.selectors'
 import { reviewStatusLabels } from '../lib/format'
+import { navigationItemsForRole } from '../lib/navigation'
 
 export type CommandItem = {
   id: string
@@ -16,31 +17,6 @@ export type CommandItem = {
 
 /** 검색 결과에 표시할 검토요청 최대 건수. 필터 적용 '후'에 자른다. */
 const REVIEW_RESULT_CAP = 20
-
-/** 역할별로 이동 가능한 탭. Shell 사이드바와 같은 규칙을 따른다. */
-function navItems(leaderMode: boolean): Array<{ tab: TabId; title: string }> {
-  if (leaderMode) {
-    return [
-      { tab: 'dashboard', title: '홈' },
-      { tab: 'announcements', title: '공지' },
-      { tab: 'reviews', title: '검토요청' },
-      { tab: 'review-stats', title: '검토 통계' },
-      { tab: 'projects', title: '프로젝트' },
-      { tab: 'team', title: '파트원' },
-      { tab: 'activity', title: '활동 로그' },
-      { tab: 'products', title: '제품 마스터' },
-      { tab: 'duties', title: '업무 카테고리' },
-      { tab: 'invites', title: '초대 관리' },
-    ]
-  }
-  return [
-    { tab: 'dashboard', title: '홈' },
-    { tab: 'announcements', title: '공지' },
-    { tab: 'reviews', title: '내 검토요청' },
-    { tab: 'projects', title: '내 프로젝트' },
-    { tab: 'work', title: '내 담당' },
-  ]
-}
 
 export function CommandPalette({
   open,
@@ -70,12 +46,12 @@ export function CommandPalette({
       onClose()
     }
 
-    const result: CommandItem[] = navItems(leaderMode).map((nav) => ({
+    const result: CommandItem[] = navigationItemsForRole(leaderMode).map((nav) => ({
       id: `nav-${nav.tab}`,
       group: '이동',
-      title: nav.title,
+      title: nav.paletteLabel,
       sub: `${nav.tab} 화면으로 이동`,
-      icon: nav.title.charAt(0),
+      icon: nav.paletteLabel.charAt(0),
       run: go(nav.tab),
     }))
 

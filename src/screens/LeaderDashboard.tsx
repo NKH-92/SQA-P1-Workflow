@@ -3,6 +3,7 @@ import { EmptyState, Section, Sparkline } from '../components/ui'
 import type { AppData, Profile } from '../types'
 import type { TabId } from '../app/types'
 import { buildReviewMonthlyStats } from '../lib/stats'
+import { daysUntil } from '../lib/dates'
 import {
   PRIORITY_GROUPS,
   selectLeaderPriorityQueue,
@@ -10,13 +11,14 @@ import {
   selectUnassignedProducts,
 } from '../features/dashboard/prioritySelectors'
 import { useTeamSummaries } from '../hooks/useTeamSummaries'
+import { selectProductChangeTaskContexts } from '../features/change-applications/selectors'
 import {
   CalendarClock,
   ChevronRight,
+  ClipboardPenLine,
   Inbox,
   ListTodo,
   Package,
-  Timer,
 } from 'lucide-react'
 
 const PRIORITY_PREVIEW_COUNT = 8
@@ -36,6 +38,12 @@ export function LeaderDashboard({
   const unassignedProducts = selectUnassignedProducts(data)
   const projectReminderItems = selectProjectReminderItems(data)
   const priorityQueue = selectLeaderPriorityQueue(data, teamMembers)
+  const pendingChangeContexts = selectProductChangeTaskContexts(data).filter(
+    ({ task, application }) => application.status === 'published' && task.status === 'pending',
+  )
+  const riskyChangeCount = pendingChangeContexts.filter(
+    ({ task, actionItem }) => !task.assignee_id || (daysUntil(actionItem.due_date) ?? 0) < 0,
+  ).length
 
   const visibleQueue = showAllPriorities ? priorityQueue : priorityQueue.slice(0, PRIORITY_PREVIEW_COUNT)
   const hiddenPriorityCount = priorityQueue.length - visibleQueue.length
@@ -100,16 +108,21 @@ export function LeaderDashboard({
             <span className="unit">개</span>
           </strong>
         </button>
-        <div className="kpi-stat">
+        <button
+          className="kpi-stat"
+          data-tone={riskyChangeCount > 0 ? 'warning' : undefined}
+          onClick={() => setActiveTab('change-applications')}
+          type="button"
+        >
           <span className="kpi-stat-label">
-            이번 달 평균 처리일
-            <Timer size={15} aria-hidden="true" />
+            미적용 변경업무
+            <ClipboardPenLine size={15} aria-hidden="true" />
           </span>
           <strong className="kpi-stat-value">
-            {currentMonthStats?.avgProcessingDays != null ? currentMonthStats.avgProcessingDays : '-'}
-            {currentMonthStats?.avgProcessingDays != null && <span className="unit">일</span>}
+            {pendingChangeContexts.length}
+            <span className="unit">건</span>
           </strong>
-        </div>
+        </button>
       </div>
 
       <Section title="먼저 확인할 것" icon={<ListTodo size={18} />} aside={`총 ${priorityQueue.length}건`}>

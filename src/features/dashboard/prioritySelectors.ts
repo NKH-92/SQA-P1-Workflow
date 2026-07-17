@@ -3,6 +3,7 @@ import type { AppData, Product, Profile } from '../../types'
 import { daysUntil, dueDateLabel, dueUrgency } from '../../lib/dates'
 import { formatDate, reviewStatusLabels } from '../../lib/format'
 import { reviewPriorityScore } from '../../lib/priority'
+import { selectProductChangeTaskContexts } from '../change-applications/selectors'
 
 export type PriorityUrgency = 'urgent' | 'warning' | 'normal'
 
@@ -83,8 +84,36 @@ export function selectLeaderPriorityQueue(data: AppData, teamMembers: Profile[],
   const projectReminderItems = selectProjectReminderItems(data, now)
   const unassignedProducts = selectUnassignedProducts(data)
   const membersWithAssignmentGaps = selectMembersWithAssignmentGaps(data, teamMembers)
+  const changeGroups = new Map<string, ReturnType<typeof selectProductChangeTaskContexts>>()
+  for (const context of selectProductChangeTaskContexts(data)) {
+    if (context.application.status !== 'published' || context.task.status !== 'pending') continue
+    const group = changeGroups.get(context.application.id) ?? []
+    group.push(context)
+    changeGroups.set(context.application.id, group)
+  }
+  const changePriorityItems: PriorityItem[] = [...changeGroups.values()].flatMap((contexts) => {
+    const minDays = Math.min(...contexts.map(({ actionItem }) => daysUntil(actionItem.due_date, now) ?? 999))
+    const unassigned = contexts.filter(({ task }) => !task.assignee_id).length
+    if (minDays > 3 && unassigned === 0) return []
+    const application = contexts[0].application
+    const urgency: PriorityUrgency = minDays <= 0 ? 'urgent' : minDays <= 3 ? 'warning' : 'normal'
+    return [{
+      id: `change-${application.id}`,
+      kind: '변경 적용',
+      title: application.title,
+      who: `미적용 ${contexts.length}건${unassigned > 0 ? ` · 미지정 ${unassigned}건` : ''}`,
+      dueLabel: minDays === 999 ? '기한 확인' : minDays < 0 ? `D+${Math.abs(minDays)}` : minDays === 0 ? '오늘' : `D-${minDays}`,
+      dueDetail: `${application.change_number} · 제품별 적용`,
+      urgency,
+      targetTab: 'change-applications',
+      entityId: application.id,
+      score: urgency === 'urgent' ? 1200 + minDays : urgency === 'warning' ? 2200 + minDays : 4900,
+      group: unassigned > 0 && urgency === 'normal' ? 'assign' : urgencyGroup(urgency),
+    }]
+  })
 
   return [
+    ...changePriorityItems,
     ...openReviewRequests.map((request) => {
       const urgency = dueUrgency(request.due_date, now)
       return {

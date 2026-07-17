@@ -11,6 +11,11 @@ function member(id: string, name: string): Profile {
 function emptyData(): AppData {
   return {
     announcements: [],
+    changeApplications: [],
+    changeActionItems: [],
+    productChangeTasks: [],
+    changeProductScope: [],
+    changeAssigneeOptions: [],
     profiles: [],
     allowedUsers: [],
     products: [],

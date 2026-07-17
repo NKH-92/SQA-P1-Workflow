@@ -2,6 +2,10 @@ import type {
   ActivityLog,
   AllowedUser,
   Announcement,
+  ChangeActionItem,
+  ChangeApplication,
+  ChangeAssigneeOption,
+  ChangeProductScopeRow,
   Duty,
   DutyAssignment,
   DutyMajorCategory,
@@ -12,10 +16,16 @@ import type {
   Project,
   ProjectAssignment,
   ReviewRequest,
+  ProductChangeTask,
 } from './domain'
 
 export interface AppData {
   announcements: Announcement[]
+  changeApplications: ChangeApplication[]
+  changeActionItems: ChangeActionItem[]
+  productChangeTasks: ProductChangeTask[]
+  changeProductScope: ChangeProductScopeRow[]
+  changeAssigneeOptions: ChangeAssigneeOption[]
   profiles: Profile[]
   allowedUsers: AllowedUser[]
   products: Product[]

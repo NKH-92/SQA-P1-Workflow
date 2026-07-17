@@ -506,4 +506,61 @@ describe('Supabase migrations', () => {
     expect(migration).not.toContain('create policy')
     expect(migration).not.toContain('grant ')
   })
+
+  it('adds atomic, history-preserving product change application workflows', () => {
+    const migration = readMigration('202607170001_change_applications.sql')
+
+    expect(migration).toContain('create table public.change_applications')
+    expect(migration).toContain('create table public.change_action_items')
+    expect(migration).toContain('create table public.product_change_tasks')
+    expect(migration).toContain('content_locked_at timestamptz')
+    expect(migration).toContain('change_applications_source_url_scheme_check')
+    expect(migration).toContain("source_url ~* '^https?://'")
+    expect(migration).toContain('source url must use http or https')
+    expect(migration).toContain('product_change_tasks_action_product_key unique (action_item_id, product_id)')
+    expect(migration).toContain('product_id uuid not null references public.products(id) on delete restrict')
+    expect(migration).toContain('alter table public.product_change_tasks enable row level security')
+    expect(migration).toContain('case when profile.id is not null then assignment.user_id else null end')
+    expect(migration).toContain('revoke all on table public.product_change_tasks from public, anon, authenticated')
+    expect(migration).toContain('change_applications_select_app_user')
+    expect(migration).toContain('change_action_items_select_app_user')
+    expect(migration).toMatch(/published_at is not null\s+and status in \('published', 'cancelled'\)/)
+    expect(migration).toMatch(/application\.published_at is not null\s+and application\.status in \('published', 'cancelled'\)/)
+    expect(migration).not.toContain("status <> 'draft'")
+    expect(migration).toContain('create or replace function public.publish_change_application')
+    expect(migration).toMatch(
+      /create or replace function private\.persist_change_application\(\s+p_change_application_id uuid,\s+p_expected_updated_at timestamptz,/,
+    )
+    expect(migration).toMatch(
+      /create or replace function public\.save_change_application_draft\(\s+p_change_application_id uuid,\s+p_expected_updated_at timestamptz,/,
+    )
+    expect(migration).toMatch(
+      /create or replace function public\.publish_change_application\(\s+p_change_application_id uuid,\s+p_expected_updated_at timestamptz,/,
+    )
+    expect(migration).toContain(
+      'p_change_application_id, p_expected_updated_at, p_change_number, p_source, p_title, p_summary',
+    )
+    expect(migration).toContain(
+      'if p_change_application_id is null and p_expected_updated_at is not null then',
+    )
+    expect(migration).toContain('v_application.updated_at is distinct from p_expected_updated_at')
+    expect(migration).toContain('change application was modified by another user')
+    expect(migration).toContain('create or replace function public.complete_product_change_task')
+    expect(migration).toContain('create or replace function public.mark_product_change_task_not_applicable')
+    expect(migration).toContain('create or replace function public.reopen_product_change_task')
+    expect(migration).toContain('create or replace function public.reassign_product_change_tasks')
+    expect(migration).toContain('create or replace function public.assign_product_and_transfer_change_tasks')
+    expect(migration).toContain("and application.status = 'published'")
+    expect(migration).toContain("'source', 'product_assignment_change'")
+    expect(migration).toContain('change application is locked after the first processed task')
+    expect(migration).toContain('assignee must be a current product assignee')
+    expect(migration).toContain("application.published_at is not null")
+    expect(migration).toContain("application.status in ('published', 'cancelled')")
+    expect(migration).toContain('cancelled product change task cannot be reactivated')
+    expect(migration).toContain('existing_action.change_application_id = v_application.id')
+    expect(migration).toContain("existing_task.status = 'cancelled'")
+    expect(migration).toContain('set content_locked_at = coalesce(content_locked_at, now())')
+    expect(migration).toContain("private.record_mutation_audit('product_change_task')")
+    expect(migration).toContain("'announcement', 'change_application'")
+  })
 })

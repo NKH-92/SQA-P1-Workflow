@@ -1,4 +1,6 @@
 export { createRepositoryContext, type RepositoryContext } from './repositoryContext'
+export { fetchProductChangeTaskHistory } from './fetchAppData'
+export type { ChangeApplicationInput, ChangeTaskDraft } from './contracts'
 
 export {
   saveAnnouncement,
@@ -50,3 +52,13 @@ export {
 } from './mutations/master'
 
 export { addProfileNote } from './mutations/team'
+
+export {
+  saveChangeApplication,
+  completeProductChangeTask,
+  markProductChangeTaskNotApplicable,
+  reopenProductChangeTask,
+  reassignProductChangeTasks,
+  cancelProductChangeTask,
+  cancelChangeApplication,
+} from './mutations/changeApplications'

@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AppData } from '../../types'
 
 const emptyResult: AppData & { optionalWarnings: string[] } = {
-  announcements: [],
+    announcements: [],
+    changeApplications: [],
+    changeActionItems: [],
+    productChangeTasks: [],
+    changeProductScope: [],
+    changeAssigneeOptions: [],
   profiles: [],
   allowedUsers: [],
   products: [],

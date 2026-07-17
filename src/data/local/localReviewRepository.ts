@@ -2,18 +2,18 @@ import { validateStorageAttachmentOwnership } from '../../lib/attachments'
 import { recordActivityLog } from '../../lib/activityLog'
 import { UserFacingError } from '../../lib/errors'
 import { reviewStatusLabels } from '../../lib/format'
+import type { ReviewFeedback } from '../../types'
+import type { RepositoryDeps, ReviewRepository } from '../repositories/types'
 import {
+  assertActiveLeader,
+  assertActiveMember,
   assertCanReject,
   assertCanReopen,
   assertCanResubmit,
-  assertActiveLeader,
-  assertActiveMember,
   assertFeedbackComment,
   assertReviewStatusTransition,
   assertStorageAttachmentOnly,
-} from '../../features/reviews/review.validators'
-import type { ReviewFeedback } from '../../types'
-import type { RepositoryDeps, ReviewRepository } from '../repositories/types'
+} from '../validation/reviews'
 import {
   appendReviewFeedback,
   createReviewRequest,

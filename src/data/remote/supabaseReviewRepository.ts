@@ -1,17 +1,17 @@
 import { removeReviewAttachment, validateStorageAttachmentOwnership } from '../../lib/attachments'
 import { recordActivityLog } from '../../lib/activityLog'
 import { UserFacingError } from '../../lib/errors'
+import { supabase } from '../../lib/supabase'
+import type { RepositoryDeps, ReviewRepository } from '../repositories/types'
 import {
+  assertActiveMember,
   assertCanReject,
   assertCanReopen,
   assertCanResubmit,
-  assertActiveMember,
   assertFeedbackComment,
   assertReviewStatusTransition,
   assertStorageAttachmentOnly,
-} from '../../features/reviews/review.validators'
-import { supabase } from '../../lib/supabase'
-import type { RepositoryDeps, ReviewRepository } from '../repositories/types'
+} from '../validation/reviews'
 
 export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepository {
   const { profile, data, setData } = ctx

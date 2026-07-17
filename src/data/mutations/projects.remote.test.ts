@@ -31,6 +31,11 @@ const project: Project = {
 function remoteContext(): RepositoryContext {
   const data: AppData = {
     announcements: [],
+    changeApplications: [],
+    changeActionItems: [],
+    productChangeTasks: [],
+    changeProductScope: [],
+    changeAssigneeOptions: [],
     profiles: [leader],
     allowedUsers: [],
     products: [],

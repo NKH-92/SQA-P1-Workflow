@@ -1,11 +1,11 @@
 import { UserFacingError } from '../../lib/errors'
 import type { Announcement } from '../../types'
+import type { AnnouncementPayload } from '../contracts'
 import { createLocalAnnouncementRepository } from '../local/localAnnouncementRepository'
-import type { AnnouncementPayload as RawAnnouncementPayload } from '../local/appDataReducers'
 import { createSupabaseAnnouncementRepository } from '../remote/supabaseAnnouncementRepository'
 import type { RepositoryContext } from '../repositoryContext'
 
-export type AnnouncementPayload = RawAnnouncementPayload
+export type { AnnouncementPayload }
 
 function normalizeAnnouncementPayload(payload: AnnouncementPayload): AnnouncementPayload {
   const title = payload.title.trim()

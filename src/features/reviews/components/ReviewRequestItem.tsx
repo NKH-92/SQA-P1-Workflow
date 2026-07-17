@@ -2,8 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { Badge, CopyLinkButton } from '../../../components/ui'
 import type { Profile, ReviewRequest, ReviewStatus } from '../../../types'
 import { resolveAttachmentHref } from '../../../lib/attachments'
-import { ageInDays, dueDateLabel, dueDateShortLabel, dueUrgency } from '../../../lib/dates'
+import { ageInDays, dueDateLabel, dueDateShortLabel } from '../../../lib/dates'
 import { formatDate, reviewStatusLabels } from '../../../lib/format'
+import {
+  buildReviewRequestItemModel,
+  type TimelineStepState,
+} from '../reviewRequestItemModel'
 import {
   Check,
   Paperclip,
@@ -18,24 +22,6 @@ const statusActions: Array<{ status: ReviewStatus; label: string; variant: strin
   { status: 'rejected', label: '반려', variant: 'reject' },
   { status: 'approved', label: '완료 처리', variant: 'approve' },
 ]
-
-type TimelineStepState = 'complete' | 'current' | 'waiting'
-
-function getTimelineSteps(status: ReviewStatus) {
-  return [
-    { key: 'pending', label: reviewStatusLabels.pending },
-    {
-      key: 'outcome',
-      label: status === 'rejected' ? reviewStatusLabels.rejected : reviewStatusLabels.approved,
-    },
-  ] as const
-}
-
-function getTimelineStepState(index: number, status: ReviewStatus): TimelineStepState {
-  if (status === 'pending') return index === 0 ? 'current' : 'waiting'
-  if (status === 'approved') return 'complete'
-  return index === 0 ? 'complete' : 'current'
-}
 
 function renderTimelineStepIcon(index: number, status: ReviewStatus, state: TimelineStepState) {
   if (state === 'complete') return <Check size={12} />
@@ -81,19 +67,18 @@ export function ReviewRequestItem({
   const [feedbackDraft, setFeedbackDraft] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const feedbackInputRef = useRef<HTMLTextAreaElement>(null)
-  const timelineSteps = getTimelineSteps(request.status)
-  const requestFeedback = request.review_feedback ?? []
-  const ownsRequest = profile.id === request.requester_id
-  const canEditOwn = ownsRequest && (request.status === 'pending' || request.status === 'rejected')
-  const canWithdrawOwn = ownsRequest && request.status === 'pending'
-  const isMemberResubmission = profile.role === 'member' && ownsRequest && request.status === 'rejected'
-  const reviewRound = request.review_round ?? 1
-  const rejectionCount = request.rejection_count ?? (request.status === 'rejected' ? 1 : 0)
-  const statusLabel = request.status === 'pending' && reviewRound > 1
-    ? '재검토 요청'
-    : reviewStatusLabels[request.status]
-  const urgency = dueUrgency(request.due_date)
-  const dueUrgent = urgency === 'urgent'
+  const {
+    timelineSteps,
+    requestFeedback,
+    canEditOwn,
+    canWithdrawOwn,
+    isMemberResubmission,
+    reviewRound,
+    rejectionCount,
+    statusLabel,
+    urgency,
+    dueUrgent,
+  } = buildReviewRequestItemModel(request, profile)
 
   useEffect(() => {
     let active = true
@@ -322,10 +307,9 @@ export function ReviewRequestItem({
 
       <div className="status-timeline" data-status={request.status} aria-label="검토 상태 흐름">
         {timelineSteps.map((step, index) => {
-          const state = getTimelineStepState(index, request.status)
           return (
-            <div className={`status-step ${state}`} key={step.key}>
-              <span>{renderTimelineStepIcon(index, request.status, state)}</span>
+            <div className={`status-step ${step.state}`} key={step.key}>
+              <span>{renderTimelineStepIcon(index, request.status, step.state)}</span>
               <small>{step.label}</small>
             </div>
           )

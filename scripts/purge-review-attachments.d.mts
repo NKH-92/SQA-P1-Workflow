@@ -20,7 +20,7 @@ export function summarizeObjects(objects: StorageObjectInventoryItem[]): {
   totalBytes: number
   nameDigestSha256: string
 }
-export function isNotFoundError(error: unknown): boolean
+export function isMissingBucketError(error: unknown): boolean
 export function getBucketPresence(
   storageClient: { getBucket(bucket: string): Promise<{ data: unknown; error: unknown }> },
   bucket: string,
@@ -33,6 +33,7 @@ export function deleteEmptyBucket(
   bucket: string,
 ): Promise<{
   bucketDeleted: boolean
+  bucketAlreadyAbsent: boolean
   bucketExistsAfter: boolean | null
   errorCode: string | number | null
 }>

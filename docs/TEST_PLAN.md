@@ -53,7 +53,7 @@
 
 ## RLS 수동 검증
 
-> 자동화된 RLS 테스트가 `tests/rls/`에 있다. `supabase start && supabase db reset` 후 `supabase status -o env`의 local URL/key를 설정하고 `node scripts/setup-rls-fixtures.mjs`로 fixture를 만든 다음 `npm run test:rls`를 실행한다. 전용 명령은 환경이 없으면 skip하지 않고 실패한다. CI와 Deploy Worker도 동일한 local Supabase fixture job을 필수 gate로 실행한다. 아래 수동 시나리오는 자동 테스트가 못 덮는 항목의 보완이다.
+> 자동화된 RLS 테스트가 `tests/rls/`에 있다. Stage B는 운영 순서와 동일하게 `supabase db reset --version 20260718054127`로 직전 버전까지 적용한 뒤 disposable local bucket을 Storage API로 제거하고, `supabase migration up --local`로 Stage B를 적용한다. 이후 `supabase status -o env`의 local URL/key를 설정하고 `node scripts/setup-rls-fixtures.mjs`로 fixture를 만든 다음 `npm run test:rls`를 실행한다. 전용 명령은 환경이 없으면 skip하지 않고 실패한다. CI와 Deploy Worker도 동일한 local Supabase fixture job을 필수 gate로 실행한다. 아래 수동 시나리오는 자동 테스트가 못 덮는 항목의 보완이다.
 
 Supabase에 최소 3명(`leader`, `member A`, `member B`)을 등록한 뒤 각 계정으로 로그인한다.
 

@@ -1,10 +1,9 @@
 -- Stage B: irreversible attachment cleanup and explicit ACL manifest.
 --
--- This migration must only run after an operator has purged the production
--- Storage bucket through the Storage API and recorded bucket-absent evidence.
--- Production runners enforce that handoff before db push; disposable local
--- resets remove the legacy empty bucket through the API immediately afterward.
--- Never delete storage.objects rows directly: doing so can orphan object blobs.
+-- This migration must only run after an operator has removed every object and
+-- deleted the review-attachments bucket through the Storage API, then recorded
+-- an independent absence recheck. Storage rows are API-managed metadata; never
+-- mutate storage.objects or storage.buckets rows directly with SQL.
 
 do $$
 begin
@@ -19,12 +18,21 @@ begin
       detail = 'SQA_REVIEW_ATTACHMENTS_NOT_EMPTY';
   end if;
 
+  if exists (
+    select 1
+      from storage.buckets
+     where id = 'review-attachments'
+  ) then
+    raise exception using
+      errcode = 'P0001',
+      message = 'review-attachments bucket still exists; delete it through the Storage API before this migration',
+      detail = 'SQA_REVIEW_ATTACHMENTS_BUCKET_PRESENT';
+  end if;
 end;
 $$;
 
--- The production operator API action has already removed the empty bucket.
--- Fresh local resets still contain an empty legacy row until the post-reset API
--- cleanup, so SQL guards object safety and never mutates Storage metadata.
+-- Storage rows remain read-only. Only user-owned policy DDL is performed after
+-- the guards prove that the API-owned object and bucket lifecycle has ended.
 drop policy if exists "review_attachments_select_self_or_leader" on storage.objects;
 drop policy if exists "review_attachments_insert_self" on storage.objects;
 drop policy if exists "review_attachments_delete_self_or_leader" on storage.objects;
@@ -43,6 +51,17 @@ begin
       errcode = 'P0001',
       message = 'review-attachments received an object during cleanup; purge and verify again',
       detail = 'SQA_REVIEW_ATTACHMENTS_RACE_DETECTED';
+  end if;
+
+  if exists (
+    select 1
+      from storage.buckets
+     where id = 'review-attachments'
+  ) then
+    raise exception using
+      errcode = 'P0001',
+      message = 'review-attachments bucket was recreated during cleanup; delete it through the Storage API and retry',
+      detail = 'SQA_REVIEW_ATTACHMENTS_BUCKET_RECREATED';
   end if;
 end;
 $$;

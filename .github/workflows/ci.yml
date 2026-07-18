@@ -62,16 +62,18 @@ jobs:
         with:
           version: 2.109.1
       - run: npm ci
-      - name: Start and reset local Supabase
+      - name: Start local Supabase and apply pre-Stage-B migrations
         run: |
           supabase start
-          supabase db reset
+          supabase db reset --version 20260718054127
       - name: Remove disposable local attachment bucket through Storage API
         run: |
           eval "$(supabase status -o env)"
           SUPABASE_URL="$API_URL" \
           SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" \
             node scripts/purge-review-attachments.mjs --execute --confirm=PURGE_REVIEW_ATTACHMENTS
+      - name: Apply Stage B and later migrations
+        run: supabase migration up --local
       - name: Seed deterministic RLS fixtures
         run: |
           eval "$(supabase status -o env)"

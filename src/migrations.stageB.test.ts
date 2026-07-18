@@ -6,23 +6,47 @@ const migration = readFileSync(
   resolve('supabase/migrations/20260718073243_finalize_review_workflow_hardening.sql'),
   'utf8',
 )
+const purgeScript = readFileSync(resolve('scripts/purge-review-attachments.mjs'), 'utf8')
 const config = readFileSync(resolve('supabase/config.toml'), 'utf8')
+const ciWorkflow = readFileSync(resolve('.github/workflows/ci.yml'), 'utf8')
+const deployWorkflow = readFileSync(resolve('.github/workflows/deploy-worker.yml'), 'utf8')
+const executableMigration = migration
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/--.*$/gm, '')
+const storageRowDml = /\b(?:delete\s+from|insert\s+into|update|merge\s+into|truncate(?:\s+table)?)\s+(?:only\s+)?(?:"storage"|storage)\s*\.\s*(?:"(?:objects|buckets)"|(?:objects|buckets))(?![\w$])/i
 
 describe('review workflow hardening Stage B migration', () => {
-  it('fails before destructive cleanup when the Storage bucket is not empty', () => {
-    const guard = migration.indexOf("where bucket_id = 'review-attachments'")
-    const failure = migration.indexOf('SQA_REVIEW_ATTACHMENTS_NOT_EMPTY')
+  it('requires zero objects and an API-deleted bucket before destructive cleanup', () => {
+    const objectGuard = migration.indexOf("where bucket_id = 'review-attachments'")
+    const objectFailure = migration.indexOf('SQA_REVIEW_ATTACHMENTS_NOT_EMPTY')
+    const bucketGuard = migration.indexOf('from storage.buckets')
+    const bucketFailure = migration.indexOf('SQA_REVIEW_ATTACHMENTS_BUCKET_PRESENT')
     const policyDrop = migration.indexOf('drop policy if exists "review_attachments_insert_self"')
     const raceFailure = migration.indexOf('SQA_REVIEW_ATTACHMENTS_RACE_DETECTED')
+    const recreatedFailure = migration.indexOf('SQA_REVIEW_ATTACHMENTS_BUCKET_RECREATED')
     const columnDrop = migration.indexOf('drop column attachment_url')
 
-    expect(guard).toBeGreaterThan(-1)
-    expect(failure).toBeGreaterThan(guard)
-    expect(policyDrop).toBeGreaterThan(failure)
+    expect(objectGuard).toBeGreaterThan(-1)
+    expect(objectFailure).toBeGreaterThan(objectGuard)
+    expect(bucketGuard).toBeGreaterThan(objectFailure)
+    expect(bucketFailure).toBeGreaterThan(bucketGuard)
+    expect(policyDrop).toBeGreaterThan(bucketFailure)
     expect(raceFailure).toBeGreaterThan(policyDrop)
-    expect(columnDrop).toBeGreaterThan(raceFailure)
-    expect(migration).not.toMatch(/delete\s+from\s+storage\.objects/i)
-    expect(migration).not.toMatch(/delete\s+from\s+storage\.buckets/i)
+    expect(recreatedFailure).toBeGreaterThan(raceFailure)
+    expect(columnDrop).toBeGreaterThan(recreatedFailure)
+    expect(executableMigration).not.toMatch(storageRowDml)
+  })
+
+  it('splits disposable migration replay around the same Storage API handoff', () => {
+    for (const workflow of [ciWorkflow, deployWorkflow]) {
+      expect(workflow).toContain('supabase db reset --version 20260718054127')
+      expect(workflow).toContain('node scripts/purge-review-attachments.mjs --execute --confirm=PURGE_REVIEW_ATTACHMENTS')
+      expect(workflow).toContain('supabase migration up --local')
+      expect(workflow.indexOf('supabase migration up --local'))
+        .toBeGreaterThan(workflow.indexOf('node scripts/purge-review-attachments.mjs --execute'))
+    }
+    expect(purgeScript).toContain('storageClient.deleteBucket(bucket)')
+    expect(purgeScript).toContain('storageClient.getBucket(bucket)')
   })
 
   it('removes every attachment compatibility object and the legacy password RPC', () => {

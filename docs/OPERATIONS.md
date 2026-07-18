@@ -97,7 +97,7 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 
 > **`scripts/backup-db.ps1`은 DB(스키마·데이터)만 덤프하며 Storage 객체를 포함하지 않습니다.** 2026-07-09의 기존 결정은 첨부를 백업 대상에서 제외하는 것이었지만, 실제 purge 전에는 운영자가 이 결정을 재확인하고 승인자를 기록해야 합니다.
 
-삭제 자동화는 [REMOVE_REVIEW_ATTACHMENTS.md](./REMOVE_REVIEW_ATTACHMENTS.md)의 장벽을 따른다. 먼저 파일명을 노출하지 않는 dry-run의 객체 수·digest를 기록하고, 승인된 운영자만 명시적 confirm으로 객체와 빈 bucket을 Storage API로 삭제한다. `verifiedRemainingObjectCount=0`, `bucketExistsAfter=false`, 재 dry-run `bucketExists=false`와 `objectCount=0`이 모두 확인되기 전에는 Stage B를 적용하지 않는다. SQL로 `storage.objects`나 `storage.buckets`를 삭제하지 않는다.
+삭제 자동화는 [REMOVE_REVIEW_ATTACHMENTS.md](./REMOVE_REVIEW_ATTACHMENTS.md)의 장벽을 따른다. 먼저 파일명을 노출하지 않는 dry-run의 객체 수·digest를 기록하고, 승인된 운영자만 명시적 confirm으로 객체와 빈 bucket을 Storage API로 삭제한다. `verifiedRemainingObjectCount=0`, `verifiedBucketAbsent=true`, `bucketExistsAfter=false`, 재 dry-run `bucketExists=false`와 `objectCount=0`이 모두 확인되기 전에는 Stage B를 적용하지 않는다. `bucketAlreadyAbsent=true` 또는 `bucketDeleteAttempted=false`는 별도 변경 기록 대조와 승인이 필요하다. SQL로 `storage.objects`나 `storage.buckets`를 삭제하지 않는다.
 
 ## Auth 계정 생성·정리
 

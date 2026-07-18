@@ -27,7 +27,9 @@
 - [ ] 보존 정책/승인자 확인
 - [ ] 운영자가 명시적 confirm으로 purge 실행
 - [ ] `verifiedRemainingObjectCount=0`
+- [ ] execute `verifiedBucketAbsent=true`
 - [ ] execute `bucketExistsAfter=false`
+- [ ] `bucketAlreadyAbsent=true` 또는 `bucketDeleteAttempted=false`라면 별도 변경 기록 대조·승인
 - [ ] 재 dry-run `bucketExists=false`, `objectCount=0`
 
 ## Stage B

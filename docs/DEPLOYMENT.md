@@ -100,7 +100,7 @@ CI(`deploy-worker.yml`)와 동일한 wrangler 버전·`--compatibility-date`를 
 - `frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`
 - 외부 폰트 CDN은 사용하지 않습니다 (Inter·Newsreader·JetBrains Mono를 `@fontsource-variable`로 번들에 셀프 호스팅)
 
-배포 후 브라우저 DevTools Console에서 CSP violation이 없는지, 로그인·Storage signed URL이 동작하는지 확인하세요.
+배포 후 브라우저 DevTools Console에서 CSP violation이 없는지, 로그인과 첨부 없는 검토요청 생성·조회가 동작하는지 확인하세요.
 
 ### 롤백
 

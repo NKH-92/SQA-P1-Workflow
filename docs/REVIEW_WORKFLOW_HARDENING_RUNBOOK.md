@@ -33,7 +33,7 @@ dry-run 결과를 변경 기록에 남기고 보존 정책과 승인자를 확�
 node scripts/purge-review-attachments.mjs --execute --confirm=PURGE_REVIEW_ATTACHMENTS
 ```
 
-성공 기준은 마지막 JSON의 `failedObjectCount`와 `verifiedRemainingObjectCount`가 모두 `0`인 것이다. 일부 batch가 실패하면 스크립트는 실패한 파일 수를 기록하고 exit code 1로 종료한다. 키를 셸에서 제거한 뒤 같은 dry-run을 다시 실행해 `objectCount=0`을 별도 기록하고 Stage B를 진행한다. Codex 자동화는 execute 단계를 수행하지 않는다.
+성공 기준은 마지막 JSON의 `failedObjectCount`와 `verifiedRemainingObjectCount`가 모두 `0`인 것이다. 일부 batch가 실패하면 스크립트는 실패한 파일 수를 기록하고 exit code 1로 종료한다. 키가 셸에 있는 동안 같은 dry-run을 다시 실행해 `objectCount=0`을 별도 기록한 다음 키를 제거하고 Stage B를 진행한다. Codex 자동화는 execute 단계를 수행하지 않는다. 상세 기록 양식은 [REMOVE_REVIEW_ATTACHMENTS.md](./REMOVE_REVIEW_ATTACHMENTS.md)를 따른다.
 
 ## Stage B — 파괴적 정리
 
@@ -44,7 +44,9 @@ Stage B PR은 다음 조건을 모두 충족해야 병합한다.
 - purge 후 재실행한 dry-run의 `objectCount`가 `0`이다.
 - 새로운 DB 백업이 있다.
 
-Stage B 마이그레이션 자체도 `storage.objects`에 대상 bucket 객체가 하나라도 있으면 예외로 중단한다. 통과하면 Storage 정책과 bucket 메타데이터, `review_requests.attachment_url`, legacy `mark_password_changed()`를 제거하고 리뷰 직접 쓰기 권한을 회수한다.
+Stage B 마이그레이션 `20260718073243_finalize_review_workflow_hardening.sql` 자체도 `storage.objects`에 대상 bucket 객체가 하나라도 있으면 어떤 정리도 하기 전에 `SQA_REVIEW_ATTACHMENTS_NOT_EMPTY`로 중단한다. 정책 제거를 기다리던 업로드가 뒤늦게 완료되면 bucket 삭제 직전 `SQA_REVIEW_ATTACHMENTS_RACE_DETECTED`로 전체 트랜잭션을 되돌린다. 통과하면 Storage 정책과 bucket 메타데이터, `review_requests.attachment_url`, legacy `mark_password_changed()` 및 구형 review RPC overload를 제거하고 리뷰 직접 쓰기 권한을 회수한다. `auto_expose_new_tables=false`, schema ACL reset, 현재 routine ACL과 향후 객체의 전역 default ACL manifest도 같은 단계에서 적용한다.
+
+병합 뒤에는 동일한 `main` SHA로 새 `Backup DB` → backup run ID를 사용한 `DB Migrate` → `Deploy Worker(deploy_confirm=true)` 순서로 실행하고, 각 workflow의 readiness/healthcheck가 끝날 때까지 기다린다.
 
 ## 롤백과 복구
 

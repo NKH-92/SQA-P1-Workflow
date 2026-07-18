@@ -2,6 +2,8 @@
 
 팀 업무 배정, 검토 요청, 프로젝트 현황을 관리하는 SPA입니다.
 
+검토 요청에는 파일을 첨부하지 않습니다. 검토 자료가 필요하면 승인된 사내 메신저로 전달하고, 요청 본문에는 자료명과 확인 요청만 기록합니다. 기존 리뷰 첨부 Storage 폐기 절차는 [docs/REMOVE_REVIEW_ATTACHMENTS.md](docs/REMOVE_REVIEW_ATTACHMENTS.md)를 따릅니다.
+
 ## 환경 변수
 
 `.env.example`을 `.env.local`로 복사한 뒤 값을 채웁니다.
@@ -53,6 +55,7 @@ npm run lint       # ESLint
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | GitHub·Workers·Supabase 배포 설정 |
 | [docs/MANUAL_TASKS_PLAN.md](docs/MANUAL_TASKS_PLAN.md) | 운영 배포 체크리스트 (작업 0·A~G) |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | 백업·장애·계정 관리 런북 |
+| [docs/REMOVE_REVIEW_ATTACHMENTS.md](docs/REMOVE_REVIEW_ATTACHMENTS.md) | 리뷰 첨부 Storage 폐기·Stage B 배포 런북 |
 | [docs/SUPABASE_MIGRATIONS.md](docs/SUPABASE_MIGRATIONS.md) | 마이그레이션 정책·목록·확인 SQL |
 | [docs/TEST_PLAN.md](docs/TEST_PLAN.md) | 기능·RLS 검증 시나리오 |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | 배포 이후 단계별 계획 |

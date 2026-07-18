@@ -61,6 +61,7 @@
 | `20260718054122_add_withdrawn_review_status.sql` | 리뷰 소프트 철회 상태 추가 |
 | `20260718054124_harden_review_workflow.sql` | 정확한 상태 시각, compact 이벤트·서버 읽음 영수증, OCC RPC, 피드백 무효화, Auth 비밀번호 트리거, 프로필 삭제 차단 |
 | `20260718054127_harden_change_audit_and_acl.sql` | 적용범위 제외/복원 구분, 보관 출처, delta 감사와 감사 페이지 RPC |
+| `20260718073243_finalize_review_workflow_hardening.sql` | Storage 0건 fail-fast 후 첨부 bucket·정책·컬럼·legacy 비밀번호 RPC 제거, 리뷰 RPC-only 전환, 기존/향후 객체 ACL manifest |
 
 ## Supabase CLI (권장)
 
@@ -75,7 +76,7 @@ npx supabase db push
 
 이 직접 명령은 운영 정규 경로가 아니라 break-glass 절차입니다. 운영 반영은 보호된 **Actions → DB Migrate**를 사용하고, 직접 실행이 불가피하면 동일한 사전 백업·프로젝트 식별·사후 readiness 증거와 승인 기록을 남깁니다.
 
-push와 핵심 객체(RPC·Storage 버킷·RLS 정책) 존재 확인을 한 번에 하려면 `scripts/apply-pending-migrations.ps1`을 사용합니다.
+push와 핵심 객체(RPC·Stage B Storage 부재·RLS/ACL) 확인을 한 번에 하려면 `scripts/apply-pending-migrations.ps1`을 사용합니다.
 
 ## GitHub Actions — DB Migrate (로컬 인증 없이)
 
@@ -127,7 +128,16 @@ select exists (
 select column_name from information_schema.columns
 where table_schema = 'public' and table_name = 'profiles' and column_name = 'is_active';
 
-select id from storage.buckets where id = 'review-attachments';
+-- Stage B final-state checks: every query must return true/zero as labelled.
+select not exists (select 1 from storage.buckets where id = 'review-attachments') as attachment_bucket_removed,
+       not exists (select 1 from pg_attribute where attrelid = 'public.review_requests'::regclass and attname = 'attachment_url' and not attisdropped) as attachment_column_removed,
+       to_regprocedure('public.mark_password_changed()') is null as legacy_password_rpc_removed;
+
+select count(*) as remaining_attachment_storage_policies
+from pg_policies
+where schemaname = 'storage'
+  and tablename = 'objects'
+  and policyname like 'review_attachments_%';
 
 select proname from pg_proc
 where pronamespace = 'public'::regnamespace
@@ -140,7 +150,11 @@ where pronamespace = 'public'::regnamespace
     'replace_product_assignments',
     'replace_product_assignments_with_reason',
     'replace_duty_assignments',
-    'update_review_request_status'
+    'create_review_request',
+    'update_review_request',
+    'withdraw_review_request',
+    'approve_review_request',
+    'void_review_feedback'
   );
 
 -- 202607080001: 비밀번호 변경 전 접근 차단이 can_use_app()/is_active_leader()에 반영됐는지
@@ -186,8 +200,28 @@ where table_schema = 'public'
   and table_name = 'review_feedback'
   and column_name = 'author_role';
 
-select has_function_privilege('authenticated', 'public.resubmit_review_request(uuid, text)', 'execute')
-  as authenticated_can_resubmit;
+select has_function_privilege('authenticated', 'public.resubmit_review_request(uuid, timestamptz, text)', 'execute')
+         as authenticated_can_resubmit_with_occ,
+       to_regprocedure('public.resubmit_review_request(uuid, text)') is null
+         as legacy_resubmit_is_removed;
+
+select has_schema_privilege('authenticated', 'public', 'usage') as authenticated_public_usage,
+       not has_schema_privilege('authenticated', 'public', 'create') as authenticated_public_create_denied,
+       has_schema_privilege('service_role', 'private', 'usage') as service_private_usage,
+       not has_schema_privilege('service_role', 'private', 'create') as service_private_create_denied;
+
+select exists (
+  select 1
+  from pg_default_acl
+  where defaclrole = 'postgres'::regrole
+    and defaclnamespace = 0
+    and defaclobjtype = 'f'
+    and defaclacl::text not like '%{=X%'
+    and defaclacl::text not like '%,=X%'
+    and defaclacl::text not like '%anon=X%'
+    and defaclacl::text not like '%authenticated=X%'
+    and defaclacl::text not like '%service_role=X%'
+) as future_public_execute_denied;
 ```
 
 ## 로컬 검증

@@ -91,13 +91,13 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 
 `DATABASE_URL`은 Supabase Dashboard > Project Settings > Database > Connection string (URI)에서 확인합니다. **명령행 인자로 URL을 넘기지 마세요** — shell history에 비밀번호가 남을 수 있습니다.
 
-### 폐기 예정 레거시 Storage
+### 리뷰 첨부 Storage 폐기
 
-Stage A부터 앱은 리뷰 첨부를 업로드·조회하지 않는다. 기존 `review-attachments` 버킷과 `attachment_url`은 운영자가 보존 정책과 삭제 승인을 다시 확인할 때까지만 호환 상태로 남긴다.
+앱은 리뷰 첨부를 업로드·조회하지 않는다. 기존 `review-attachments` 버킷은 운영자 purge와 0건 재확인 뒤 Stage B 마이그레이션에서 제거한다. 최종 스키마에는 버킷·정책·`attachment_url`이 모두 없어야 한다.
 
 > **`scripts/backup-db.ps1`은 DB(스키마·데이터)만 덤프하며 Storage 객체를 포함하지 않습니다.** 2026-07-09의 기존 결정은 첨부를 백업 대상에서 제외하는 것이었지만, 실제 purge 전에는 운영자가 이 결정을 재확인하고 승인자를 기록해야 합니다.
 
-삭제 자동화는 [REVIEW_WORKFLOW_HARDENING_RUNBOOK.md](./REVIEW_WORKFLOW_HARDENING_RUNBOOK.md)의 장벽을 따른다. 먼저 파일명을 노출하지 않는 dry-run의 객체 수·digest를 기록하고, 승인된 운영자만 명시적 confirm으로 purge한다. `verifiedRemainingObjectCount=0`과 재 dry-run `objectCount=0`이 모두 확인되기 전에는 Stage B를 적용하지 않는다.
+삭제 자동화는 [REMOVE_REVIEW_ATTACHMENTS.md](./REMOVE_REVIEW_ATTACHMENTS.md)의 장벽을 따른다. 먼저 파일명을 노출하지 않는 dry-run의 객체 수·digest를 기록하고, 승인된 운영자만 명시적 confirm으로 purge한다. `verifiedRemainingObjectCount=0`과 재 dry-run `objectCount=0`이 모두 확인되기 전에는 Stage B를 적용하지 않는다. SQL로 `storage.objects`를 삭제하지 않는다.
 
 ## Auth 계정 생성·정리
 
@@ -216,7 +216,7 @@ Stage A부터 앱은 리뷰 첨부를 업로드·조회하지 않는다. 기존 
 
 ### 최초 변경 전 데이터 접근 차단
 
-`must_change_password=true`인 동안에는 **RLS 레벨에서 데이터 읽기/쓰기가 차단**됩니다. 완료 플래그는 `auth.users.encrypted_password` 변경을 관찰하는 DB 트리거만 해제하며, 앱은 Auth 비밀번호 변경 후 프로필 상태를 다시 조회합니다. Stage A의 legacy `mark_password_changed()` 호환 함수는 플래그를 변경하지 않고 이미 관찰된 결과만 반환하며 Stage B에서 제거합니다.
+`must_change_password=true`인 동안에는 **RLS 레벨에서 데이터 읽기/쓰기가 차단**됩니다. 완료 플래그는 `auth.users.encrypted_password` 변경을 관찰하는 DB 트리거만 해제하며, 앱은 Auth 비밀번호 변경 후 프로필 상태를 다시 조회합니다. 최종 스키마에는 legacy `mark_password_changed()`의 어떤 overload도 남지 않으며, 구형 review mutation signature도 제거됩니다.
 
 ### 운영 완화책
 

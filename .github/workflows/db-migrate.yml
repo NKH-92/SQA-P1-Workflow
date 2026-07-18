@@ -233,12 +233,11 @@ jobs:
             "select pg_get_viewdef('public.public_leader_profiles'::regclass, true) like '%can_use_app()%'")
           review_status_gate=$(psql "$DATABASE_URL" -tAc \
             "select
-              not has_table_privilege('authenticated', 'public.review_requests', 'UPDATE')
-              and has_column_privilege('authenticated', 'public.review_requests', 'title', 'UPDATE')
-              and has_column_privilege('authenticated', 'public.review_requests', 'description', 'UPDATE')
-              and has_column_privilege('authenticated', 'public.review_requests', 'attachment_url', 'UPDATE')
-              and has_column_privilege('authenticated', 'public.review_requests', 'due_date', 'UPDATE')
-              and not has_column_privilege('authenticated', 'public.review_requests', 'status', 'UPDATE')
+              has_table_privilege('authenticated', 'public.review_requests', 'SELECT')
+              and not has_table_privilege('authenticated', 'public.review_requests', 'INSERT')
+              and not has_table_privilege('authenticated', 'public.review_requests', 'UPDATE')
+              and not has_table_privilege('authenticated', 'public.review_requests', 'DELETE')
+              and not exists (select 1 from pg_attribute where attrelid = 'public.review_requests'::regclass and attname = 'attachment_url' and not attisdropped)
               and to_regclass('private.review_status_events') is not null
               and exists (
                 select 1 from pg_trigger
@@ -251,11 +250,15 @@ jobs:
               exists (select 1 from supabase_migrations.schema_migrations where version = '20260718054122')
               and exists (select 1 from supabase_migrations.schema_migrations where version = '20260718054124')
               and exists (select 1 from supabase_migrations.schema_migrations where version = '20260718054127')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '20260718073243')
               and exists (select 1 from pg_enum value join pg_type type on type.oid = value.enumtypid where type.typname = 'review_status' and value.enumlabel = 'withdrawn')
               and to_regclass('public.review_events') is not null
               and to_regclass('public.review_read_receipts') is not null
               and coalesce((select relrowsecurity from pg_class where oid = to_regclass('public.review_events')), false)
               and coalesce((select relrowsecurity from pg_class where oid = to_regclass('public.review_read_receipts')), false)
+              and not exists (select 1 from storage.buckets where id = 'review-attachments')
+              and not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname like 'review_attachments_%')
+              and not exists (select 1 from pg_attribute where attrelid = 'public.review_requests'::regclass and attname = 'attachment_url' and not attisdropped)
               and to_regprocedure('public.withdraw_review_request(uuid,timestamp with time zone,text)') is not null
               and to_regprocedure('public.void_review_feedback(uuid,timestamp with time zone,text)') is not null
               and to_regprocedure('public.mark_review_seen(uuid)') is not null
@@ -264,7 +267,29 @@ jobs:
               and not has_function_privilege('anon', to_regprocedure('public.mark_review_seen(uuid)'), 'EXECUTE')
               and exists (select 1 from pg_trigger where tgrelid = 'auth.users'::regclass and tgname = 'on_auth_password_changed' and tgenabled in ('O', 'A'))
               and exists (select 1 from pg_trigger where tgrelid = 'public.profiles'::regclass and tgname = 'profiles_block_physical_delete' and tgenabled in ('O', 'A'))
-              and coalesce(pg_get_functiondef(to_regprocedure('public.mark_password_changed()')) like '%SQA_PASSWORD_CHANGE_NOT_OBSERVED%', false)
+              and to_regprocedure('public.mark_password_changed()') is null
+              and not exists (select 1 from pg_proc function join pg_namespace namespace on namespace.oid = function.pronamespace where namespace.nspname = 'public' and function.proname in ('mark_password_changed', 'validate_review_attachment_url'))
+              and not has_table_privilege('authenticated', 'public.review_feedback', 'INSERT')
+              and not has_table_privilege('authenticated', 'public.review_feedback', 'UPDATE')
+              and not has_table_privilege('authenticated', 'public.review_feedback', 'DELETE')
+              and to_regprocedure('public.update_review_request_status(uuid,public.review_status)') is null
+              and to_regprocedure('public.reject_review_request(uuid,text)') is null
+              and to_regprocedure('public.reopen_review_request(uuid)') is null
+              and to_regprocedure('public.resubmit_review_request(uuid,text)') is null
+              and not has_schema_privilege('anon', 'public', 'USAGE')
+              and has_schema_privilege('authenticated', 'public', 'USAGE')
+              and not has_schema_privilege('authenticated', 'public', 'CREATE')
+              and has_schema_privilege('service_role', 'public', 'USAGE')
+              and not has_schema_privilege('service_role', 'public', 'CREATE')
+              and not has_schema_privilege('authenticated', 'private', 'USAGE')
+              and has_schema_privilege('service_role', 'private', 'USAGE')
+              and not has_schema_privilege('service_role', 'private', 'CREATE')
+              and not exists (select 1 from pg_class object where object.relnamespace = 'public'::regnamespace and object.relkind in ('r', 'p') and not object.relrowsecurity)
+              and not exists (select 1 from pg_class object where object.relnamespace = 'public'::regnamespace and object.relkind in ('r', 'p', 'v', 'm') and (has_table_privilege('anon', object.oid, 'SELECT') or has_table_privilege('anon', object.oid, 'INSERT') or has_table_privilege('anon', object.oid, 'UPDATE') or has_table_privilege('anon', object.oid, 'DELETE')))
+              and not exists (select 1 from pg_class object where object.relnamespace = 'public'::regnamespace and object.relkind = 'S' and (has_sequence_privilege('anon', object.oid, 'USAGE') or has_sequence_privilege('anon', object.oid, 'SELECT') or has_sequence_privilege('anon', object.oid, 'UPDATE')))
+              and not exists (select 1 from pg_proc function where function.pronamespace = 'public'::regnamespace and has_function_privilege('anon', function.oid, 'EXECUTE'))
+              and exists (select 1 from pg_default_acl where defaclrole = 'postgres'::regrole and defaclnamespace = 0 and defaclobjtype = 'f' and defaclacl::text not like '%{=X%' and defaclacl::text not like '%,=X%' and defaclacl::text not like '%anon=X%' and defaclacl::text not like '%authenticated=X%' and defaclacl::text not like '%service_role=X%')
+              and (select count(distinct defaclobjtype) = 3 from pg_default_acl where defaclrole = 'postgres'::regrole and defaclnamespace = 'public'::regnamespace and defaclobjtype in ('r', 'S', 'f'))
               and exists (select 1 from information_schema.columns where table_schema = 'private' and table_name = 'audit_events' and column_name = 'changed_fields')
               and exists (select 1 from information_schema.columns where table_schema = 'private' and table_name = 'audit_events' and column_name = 'before_delta')
               and exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'product_change_tasks' and column_name = 'cancel_kind')
@@ -307,11 +332,13 @@ jobs:
               and pg_get_functiondef(to_regprocedure('public.guard_last_active_leader_allowed_user()')) like '%pg_advisory_xact_lock%'")
           direct_write_gate=$(psql "$DATABASE_URL" -tAc \
             "select
-              exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_requests' and policyname = 'review_requests_update_self_pending_or_rejected' and qual like '%can_use_app()%' and qual like '%requester_id%' and qual like '%rejected%' and with_check like '%can_use_app()%' and with_check like '%requester_id%' and with_check like '%rejected%')
-              and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_requests' and policyname = 'review_requests_delete_self_pending' and qual like '%can_use_app()%')
-              and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_feedback' and policyname = 'review_feedback_update_leader' and qual like '%leader_id = auth.uid()%' and with_check like '%leader_id = auth.uid()%')
-              and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_feedback' and policyname = 'review_feedback_delete_leader' and qual like '%leader_id = auth.uid()%')
-              and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_feedback' and policyname = 'review_feedback_insert_leader' and with_check like '%is_active_leader()%' and with_check like '%leader_id = auth.uid()%')
+              not exists (select 1 from pg_policies where schemaname = 'public' and tablename in ('review_requests', 'review_feedback') and cmd in ('INSERT', 'UPDATE', 'DELETE', 'ALL'))
+              and not has_table_privilege('authenticated', 'public.review_requests', 'INSERT')
+              and not has_table_privilege('authenticated', 'public.review_requests', 'UPDATE')
+              and not has_table_privilege('authenticated', 'public.review_requests', 'DELETE')
+              and not has_table_privilege('authenticated', 'public.review_feedback', 'INSERT')
+              and not has_table_privilege('authenticated', 'public.review_feedback', 'UPDATE')
+              and not has_table_privilege('authenticated', 'public.review_feedback', 'DELETE')
               and coalesce(pg_get_functiondef(to_regprocedure('public.is_active_leader()')) like '%password_is_current()%', false)
               and not has_table_privilege('authenticated', 'public.project_assignments', 'INSERT')
               and not has_table_privilege('authenticated', 'public.project_assignments', 'UPDATE')
@@ -333,19 +360,18 @@ jobs:
               and exists (select 1 from pg_constraint where conrelid = 'public.review_requests'::regclass and conname = 'review_requests_rejection_count_check' and convalidated)
               and exists (select 1 from pg_attribute where attrelid = 'public.review_feedback'::regclass and attname = 'author_role' and attnotnull and not attisdropped)
               and exists (select 1 from pg_trigger where tgrelid = 'public.review_feedback'::regclass and tgname = 'review_feedback_validate_leader' and tgfoid = to_regprocedure('public.validate_review_feedback_leader()') and tgenabled in ('O', 'A'))
-              and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_requests' and policyname = 'review_requests_update_self_pending_or_rejected' and qual like '%can_use_app()%' and qual like '%requester_id%' and qual like '%rejected%' and with_check like '%can_use_app()%' and with_check like '%requester_id%' and with_check like '%rejected%')
+              and not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'review_requests' and cmd in ('INSERT', 'UPDATE', 'DELETE', 'ALL'))
               and not has_column_privilege('authenticated', 'public.review_requests', 'review_round', 'UPDATE')
               and not has_column_privilege('authenticated', 'public.review_requests', 'rejection_count', 'UPDATE')
               and not has_column_privilege('authenticated', 'public.review_requests', 'last_submitted_at', 'UPDATE')
-              and to_regprocedure('public.resubmit_review_request(uuid,text)') is not null
-              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.resubmit_review_request(uuid,text)')), false)
-              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.resubmit_review_request(uuid,text)')), false)
-              and coalesce((select proacl is not null and proacl::text not like '%{=X%' and proacl::text not like '%,=X%' from pg_proc where oid = to_regprocedure('public.resubmit_review_request(uuid,text)')), false)
-              and coalesce(has_function_privilege('authenticated', to_regprocedure('public.resubmit_review_request(uuid,text)'), 'EXECUTE'), false)
-              and not coalesce(has_function_privilege('anon', to_regprocedure('public.resubmit_review_request(uuid,text)'), 'EXECUTE'), true)
-              and coalesce(pg_get_functiondef(to_regprocedure('public.resubmit_review_request(uuid,text)')) like '%for update%', false)
-              and coalesce(pg_get_functiondef(to_regprocedure('public.resubmit_review_request(uuid,text)')) like '%insert into public.review_feedback%', false)
-              and coalesce(pg_get_functiondef(to_regprocedure('public.resubmit_review_request(uuid,text)')) like '%insert into public.activity_logs%', false)")
+              and to_regprocedure('public.resubmit_review_request(uuid,timestamp with time zone,text)') is not null
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.resubmit_review_request(uuid,timestamp with time zone,text)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.resubmit_review_request(uuid,timestamp with time zone,text)')), false)
+              and coalesce(has_function_privilege('authenticated', to_regprocedure('public.resubmit_review_request(uuid,timestamp with time zone,text)'), 'EXECUTE'), false)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.resubmit_review_request(uuid,timestamp with time zone,text)'), 'EXECUTE'), true)
+              and not coalesce(has_function_privilege('authenticated', to_regprocedure('public.resubmit_review_request(uuid,text)'), 'EXECUTE'), false)
+              and coalesce(pg_get_functiondef(to_regprocedure('public.resubmit_review_request(uuid,timestamp with time zone,text)')) like '%for update%', false)
+              and coalesce(pg_get_functiondef(to_regprocedure('public.resubmit_review_request(uuid,timestamp with time zone,text)')) like '%p_expected_updated_at%', false)")
           leader_policy_gate=$(psql "$DATABASE_URL" -tAc \
             "select not exists (
               select 1 from pg_policies
@@ -356,27 +382,25 @@ jobs:
             )")
           review_activity_gate=$(psql "$DATABASE_URL" -tAc \
             "select
-              to_regprocedure('public.update_review_request_status(uuid,public.review_status)') is not null
-              and to_regprocedure('public.reject_review_request(uuid,text)') is not null
+              to_regprocedure('public.approve_review_request(uuid,timestamp with time zone)') is not null
+              and to_regprocedure('public.reject_review_request(uuid,timestamp with time zone,text)') is not null
               and to_regprocedure('public.add_review_feedback(uuid,text)') is not null
-              and coalesce(pg_get_functiondef(to_regprocedure('public.update_review_request_status(uuid,public.review_status)')) like '%insert into public.activity_logs%', false)
-              and coalesce(pg_get_functiondef(to_regprocedure('public.reject_review_request(uuid,text)')) like '%insert into public.activity_logs%', false)
-              and coalesce(pg_get_functiondef(to_regprocedure('public.add_review_feedback(uuid,text)')) like '%insert into public.activity_logs%', false)
-              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.update_review_request_status(uuid,public.review_status)')), false)
-              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.update_review_request_status(uuid,public.review_status)')), false)
-              and coalesce((select proacl is not null and proacl::text not like '%{=X%' and proacl::text not like '%,=X%' from pg_proc where oid = to_regprocedure('public.update_review_request_status(uuid,public.review_status)')), false)
-              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.reject_review_request(uuid,text)')), false)
-              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.reject_review_request(uuid,text)')), false)
-              and coalesce((select proacl is not null and proacl::text not like '%{=X%' and proacl::text not like '%,=X%' from pg_proc where oid = to_regprocedure('public.reject_review_request(uuid,text)')), false)
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.approve_review_request(uuid,timestamp with time zone)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.approve_review_request(uuid,timestamp with time zone)')), false)
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.reject_review_request(uuid,timestamp with time zone,text)')), false)
+              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.reject_review_request(uuid,timestamp with time zone,text)')), false)
               and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.add_review_feedback(uuid,text)')), false)
               and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.add_review_feedback(uuid,text)')), false)
-              and coalesce((select proacl is not null and proacl::text not like '%{=X%' and proacl::text not like '%,=X%' from pg_proc where oid = to_regprocedure('public.add_review_feedback(uuid,text)')), false)
-              and has_function_privilege('authenticated', to_regprocedure('public.update_review_request_status(uuid,public.review_status)'), 'EXECUTE')
-              and has_function_privilege('authenticated', to_regprocedure('public.reject_review_request(uuid,text)'), 'EXECUTE')
+              and has_function_privilege('authenticated', to_regprocedure('public.approve_review_request(uuid,timestamp with time zone)'), 'EXECUTE')
+              and has_function_privilege('authenticated', to_regprocedure('public.reject_review_request(uuid,timestamp with time zone,text)'), 'EXECUTE')
               and has_function_privilege('authenticated', to_regprocedure('public.add_review_feedback(uuid,text)'), 'EXECUTE')
-              and not has_function_privilege('anon', to_regprocedure('public.update_review_request_status(uuid,public.review_status)'), 'EXECUTE')
-              and not has_function_privilege('anon', to_regprocedure('public.reject_review_request(uuid,text)'), 'EXECUTE')
-              and not has_function_privilege('anon', to_regprocedure('public.add_review_feedback(uuid,text)'), 'EXECUTE')")
+              and not has_function_privilege('anon', to_regprocedure('public.approve_review_request(uuid,timestamp with time zone)'), 'EXECUTE')
+              and not has_function_privilege('anon', to_regprocedure('public.reject_review_request(uuid,timestamp with time zone,text)'), 'EXECUTE')
+              and not has_function_privilege('anon', to_regprocedure('public.add_review_feedback(uuid,text)'), 'EXECUTE')
+              and to_regprocedure('public.update_review_request_status(uuid,public.review_status)') is null
+              and to_regprocedure('public.reject_review_request(uuid,text)') is null
+              and exists (select 1 from pg_trigger where tgrelid = 'public.review_requests'::regclass and tgname = 'review_requests_record_status_event' and tgenabled in ('O', 'A'))
+              and exists (select 1 from pg_trigger where tgrelid = 'public.review_feedback'::regclass and tgname = 'review_feedback_record_event' and tgenabled in ('O', 'A'))")
           announcements_gate=$(psql "$DATABASE_URL" -tAc \
             "select
               exists (select 1 from supabase_migrations.schema_migrations where version = '20260716200422')
@@ -544,7 +568,7 @@ jobs:
           fi
 
           if [ "$review_hardening_gate" != "t" ]; then
-            echo "::error::review workflow Stage A hardening verification failed (received: $review_hardening_gate)"
+            echo "::error::review workflow Stage B cleanup/ACL verification failed (received: $review_hardening_gate)"
             exit 1
           fi
 
@@ -601,7 +625,7 @@ jobs:
           echo "leader UI product reason/current-leader assignment gate: $leader_ui_gate" >> "$GITHUB_STEP_SUMMARY"
           echo "leader profile view app-access gate: $leader_view_gate" >> "$GITHUB_STEP_SUMMARY"
           echo "review status RPC-only/audit gate: $review_status_gate" >> "$GITHUB_STEP_SUMMARY"
-          echo "review workflow Stage A hardening gate: $review_hardening_gate" >> "$GITHUB_STEP_SUMMARY"
+          echo "review workflow Stage B cleanup/ACL gate: $review_hardening_gate" >> "$GITHUB_STEP_SUMMARY"
           echo "private mutation audit gate: $private_audit_gate" >> "$GITHUB_STEP_SUMMARY"
           echo "last-active-leader serialization gate: $last_leader_gate" >> "$GITHUB_STEP_SUMMARY"
           echo "direct write/OCC hardening gate: $direct_write_gate" >> "$GITHUB_STEP_SUMMARY"

@@ -270,3 +270,22 @@ Windows에서 `npm ci`가 `EPERM`으로 실패하면, 다른 터미널·에디�
 | 날짜 | 담당 | 백업 파일 | 결과 |
 |---|---|---|---|
 | 2026-07-09 | 파트장 + Claude | db-backup-2026-07-09 (Backup DB run 29015812702) | 성공 — 복호화 후 테스트 프로젝트에 schema→data 복원, 에러 0건. 행 수 대조: 사용자 10 / 제품 218 / 배정 198 / 직무 25. 리허설 중 최초 `BACKUP_PASSPHRASE` 분실 발견 → 교체·재백업으로 해결(암구호는 비밀번호 관리자 보관 필수) |
+
+## 감사 v3 배포 확인
+
+`20260718153410_authoritative_audit_lifecycle_snapshots.sql`은 additive/replace-function
+변경이며 과거 v2 이벤트를 수정하거나 추정 backfill하지 않는다. 배포 순서는 기존과
+동일하게 PR/merge SHA CI green → Backup DB → DB Migrate → readiness → Deploy Worker다.
+
+DB Migrate와 Deploy Worker readiness는 다음을 fail-closed로 확인한다.
+
+- migration version 기록 및 `private.audit_events` 존재
+- `record_mutation_audit()`가 security definer + empty search path이고 v3 sanitized snapshot을 사용
+- private snapshot helper 존재 및 anon/authenticated execute 부재
+- 현재 16개 audit trigger가 모두 enabled
+- `list_audit_events`는 authenticated execute만 보유하고 함수 내부 active-leader gate 유지
+
+장애 시 기존 migration을 되돌리거나 수정하지 않는다. 새 roll-forward migration으로
+v2 호환 함수 또는 수정된 v3 함수를 교체한다. DB migration 전 프런트엔드는 v2 ID-only
+이벤트를 계속 표시할 수 있고, DB migration 후 기존 프런트엔드는 추가 snapshot 필드를
+무시하므로 배포 공백에서도 호환된다.

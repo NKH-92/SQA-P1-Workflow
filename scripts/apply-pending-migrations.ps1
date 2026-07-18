@@ -117,10 +117,19 @@ select 'profile_note_private_audit_ok' where
       and not tgisinternal
   )
   and (
-    select count(*) >= 13 from pg_trigger
+    select count(*) = 16 from pg_trigger
     where tgfoid = to_regprocedure('private.record_mutation_audit()')
       and not tgisinternal
   );
+select 'authoritative_audit_v3_ok' where
+  exists (select 1 from supabase_migrations.schema_migrations where version = '20260718153410')
+  and to_regprocedure('private.build_audit_business_snapshot(text,jsonb)') is not null
+  and not has_function_privilege('authenticated', 'private.build_audit_business_snapshot(text,jsonb)', 'EXECUTE')
+  and not has_function_privilege('anon', 'private.build_audit_business_snapshot(text,jsonb)', 'EXECUTE')
+  and exists (select 1 from unnest((select proconfig from pg_proc where oid = to_regprocedure('private.record_mutation_audit()'))) cfg where cfg in ('search_path=""', 'search_path='))
+  and (select prosrc like '%v_after := v_new_sanitized%' and prosrc like '%schema_version%' from pg_proc where oid = to_regprocedure('private.record_mutation_audit()'))
+  and has_function_privilege('authenticated', 'public.list_audit_events(integer,bigint)', 'EXECUTE')
+  and not has_function_privilege('anon', 'public.list_audit_events(integer,bigint)', 'EXECUTE');
 select 'announcement_board_ok' where
   exists (select 1 from supabase_migrations.schema_migrations where version = '20260716200422')
   and to_regclass('public.announcements') is not null
@@ -166,7 +175,7 @@ select 'announcement_board_ok' where
   and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'announcements' and policyname = 'announcements_update_leader' and qual like '%is_active_leader()%' and with_check like '%is_active_leader()%')
   and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'announcements' and policyname = 'announcements_delete_leader' and qual like '%is_active_leader()%');
 select 'latest_migration_version_ok' where
-  exists (select 1 from supabase_migrations.schema_migrations where version = '20260718123250');
+  exists (select 1 from supabase_migrations.schema_migrations where version = '20260718153410');
 select 'review_stage_b_cleanup_ok' where
   exists (select 1 from supabase_migrations.schema_migrations where version = '20260718073243')
   and exists (select 1 from supabase_migrations.schema_migrations where version = '20260718123250')
@@ -242,6 +251,7 @@ try {
     'active_leader_password_gate_ok',
     'assignment_rpc_security_ok',
     'profile_note_private_audit_ok',
+    'authoritative_audit_v3_ok',
     'announcement_board_ok',
     'latest_migration_version_ok',
     'review_stage_b_cleanup_ok'

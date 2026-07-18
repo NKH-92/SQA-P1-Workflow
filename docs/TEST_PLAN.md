@@ -1,5 +1,19 @@
 # 테스트 계획
 
+## CAPA WP1 — 감사 lifecycle
+
+- migration contract test는 실제 trigger의 모든 entity type과 v3 helper allowlist가
+  정확히 일치하는지 비교한다.
+- RLS fixture는 공지 INSERT/UPDATE/DELETE를 수행하고 생성 snapshot, 변경 필드 delta,
+  삭제 직전 snapshot을 leader list RPC로 확인한다.
+- constraint로 거절된 mutation이 같은 entity의 audit event 수를 늘리지 않는지 확인한다.
+- member/anon list RPC와 authenticated private schema 직접 조회를 거부한다.
+- UI test는 lifecycle snapshot, update 전후 값, legacy ID-only 안내, credential 필드
+  방어 필터, XSS 문자열의 text 렌더링, snapshot 검색을 검증한다.
+
+로컬 Docker가 없으면 RLS suite skip은 개발자 피드백용으로만 허용된다. DB PR 완료
+증적에는 CI의 `RLS_REQUIRED=1` Stage B fixture 결과가 반드시 필요하다.
+
 ## 앱 기능
 
 - 파트장 화면에서 초대 사용자, 제품, 업무, 담당제품, 담당업무, 프로젝트, 프로젝트 배정을 생성한다.

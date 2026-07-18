@@ -443,6 +443,50 @@ describe('Supabase migrations', () => {
     expect(migration).toContain('revoke execute on function public.replace_product_assignments(uuid, uuid[]) from anon')
   })
 
+  it('records audit lifecycle snapshots from an exhaustive business-field allowlist', () => {
+    const migration = readMigration('20260718153410_authoritative_audit_lifecycle_snapshots.sql')
+    const combined = Object.values(migrations).join('\n')
+    const triggerEntities = [...combined.matchAll(
+      /private\.record_mutation_audit\('([^']+)'\)/g,
+    )].map((match) => match[1]).sort()
+    const allowlistedEntities = [...migration.matchAll(
+      /when '([^']+)' then array\[/g,
+    )].map((match) => match[1]).sort()
+
+    expect(allowlistedEntities).toEqual(triggerEntities)
+    expect(migration).toContain('private.build_audit_business_snapshot')
+    expect(migration).toContain("detail = 'SQA_AUDIT_ENTITY_UNSUPPORTED:'")
+    expect(migration).toContain("set search_path = ''")
+    expect(migration).toContain('v_after := v_new_sanitized')
+    expect(migration).toContain('v_before := v_old_sanitized')
+    expect(migration).toContain('v_old_sanitized -> v_key')
+    expect(migration).toContain('v_new_sanitized -> v_key')
+    expect(migration).toMatch(/v_changed_fields, v_before, v_after[\s\S]*\n\s*3\n/)
+    expect(migration).toContain(
+      'revoke all on function private.build_audit_business_snapshot(text, jsonb)',
+    )
+    expect(migration).toContain(
+      'revoke all on function private.record_mutation_audit()',
+    )
+
+    const allowlistSection = migration.slice(
+      migration.indexOf('v_allowed_fields := case'),
+      migration.indexOf('if v_allowed_fields is null'),
+    )
+    for (const forbidden of [
+      "'password'",
+      "'encrypted_password'",
+      "'token'",
+      "'secret'",
+      "'service_key'",
+      "'session'",
+      "'credential'",
+      "'metadata'",
+    ]) {
+      expect(allowlistSection).not.toContain(forbidden)
+    }
+  })
+
   it('revokes PUBLIC execute on internal helper RPCs', () => {
     const migration = readMigration('202607070002_revoke_public_execute_on_internal_helpers.sql')
 

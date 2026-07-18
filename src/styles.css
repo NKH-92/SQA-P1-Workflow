@@ -4034,6 +4034,66 @@ button.review-preview-row:hover {
   font-size: 12px;
 }
 
+.audit-legacy-note {
+  margin: 6px 0 0;
+  color: var(--paper-faint);
+  font-size: 12px;
+}
+
+.audit-event-details {
+  margin-top: 8px;
+}
+
+.audit-event-details summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--paper-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.audit-field-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.audit-field {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.35fr) repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--paper-line);
+  border-radius: var(--radius-sm);
+  background: var(--paper-bg);
+}
+
+.audit-field > div {
+  min-width: 0;
+}
+
+.audit-field span {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--paper-faint);
+  font-size: 11px;
+}
+
+.audit-field pre {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: var(--paper-text);
+  font: inherit;
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .audit-field {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* --------------------------------------------------------------------------
    17. Auth · loading · blocked
    -------------------------------------------------------------------------- */

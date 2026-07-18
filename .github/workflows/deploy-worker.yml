@@ -41,14 +41,20 @@ jobs:
       - name: Start local Supabase with Stage B held back
         run: |
           stage_b_migration="supabase/migrations/20260718073243_finalize_review_workflow_hardening.sql"
+          follow_up_migration="supabase/migrations/20260718123250_remove_obsolete_review_status_rpc.sql"
           held_migration="$RUNNER_TEMP/$(basename "$stage_b_migration")"
+          held_follow_up_migration="$RUNNER_TEMP/$(basename "$follow_up_migration")"
           restore_stage_b() {
             if [ -f "$held_migration" ]; then
               mv "$held_migration" "$stage_b_migration"
             fi
+            if [ -f "$held_follow_up_migration" ]; then
+              mv "$held_follow_up_migration" "$follow_up_migration"
+            fi
           }
           trap restore_stage_b EXIT
           mv "$stage_b_migration" "$held_migration"
+          mv "$follow_up_migration" "$held_follow_up_migration"
           supabase start
           restore_stage_b
           trap - EXIT
@@ -364,6 +370,7 @@ jobs:
               and exists (select 1 from supabase_migrations.schema_migrations where version = '20260718054124')
               and exists (select 1 from supabase_migrations.schema_migrations where version = '20260718054127')
               and exists (select 1 from supabase_migrations.schema_migrations where version = '20260718073243')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '20260718123250')
               and exists (select 1 from pg_enum value join pg_type type on type.oid = value.enumtypid where type.typname = 'review_status' and value.enumlabel = 'withdrawn')
               and to_regclass('public.review_events') is not null
               and to_regclass('public.review_read_receipts') is not null
@@ -399,7 +406,24 @@ jobs:
               and not exists (select 1 from pg_class object where object.relnamespace = 'public'::regnamespace and object.relkind in ('r', 'p') and not object.relrowsecurity)
               and not exists (select 1 from pg_class object where object.relnamespace = 'public'::regnamespace and object.relkind in ('r', 'p', 'v', 'm') and (has_table_privilege('anon', object.oid, 'SELECT') or has_table_privilege('anon', object.oid, 'INSERT') or has_table_privilege('anon', object.oid, 'UPDATE') or has_table_privilege('anon', object.oid, 'DELETE')))
               and not exists (select 1 from pg_class object where object.relnamespace = 'public'::regnamespace and object.relkind = 'S' and (has_sequence_privilege('anon', object.oid, 'USAGE') or has_sequence_privilege('anon', object.oid, 'SELECT') or has_sequence_privilege('anon', object.oid, 'UPDATE')))
-              and not exists (select 1 from pg_proc function where function.pronamespace = 'public'::regnamespace and has_function_privilege('anon', function.oid, 'EXECUTE'))
+              and not exists (
+                select 1
+                  from pg_catalog.pg_proc function
+                 where function.pronamespace = 'public'::pg_catalog.regnamespace
+                   and pg_catalog.has_function_privilege('anon', function.oid, 'EXECUTE')
+                   and not exists (
+                     select 1
+                       from pg_catalog.pg_depend dependency
+                       join pg_catalog.pg_extension extension
+                         on extension.oid = dependency.refobjid
+                      where dependency.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass
+                        and dependency.objid = function.oid
+                        and dependency.objsubid = 0
+                        and dependency.refclassid = 'pg_catalog.pg_extension'::pg_catalog.regclass
+                        and dependency.refobjsubid = 0
+                        and dependency.deptype = 'e'
+                   )
+              )
               and exists (select 1 from pg_default_acl where defaclrole = 'postgres'::regrole and defaclnamespace = 0 and defaclobjtype = 'f' and defaclacl::text not like '%{=X%' and defaclacl::text not like '%,=X%' and defaclacl::text not like '%anon=X%' and defaclacl::text not like '%authenticated=X%' and defaclacl::text not like '%service_role=X%')
               and (select count(distinct defaclobjtype) = 3 from pg_default_acl where defaclrole = 'postgres'::regrole and defaclnamespace = 'public'::regnamespace and defaclobjtype in ('r', 'S', 'f'))
               and to_regprocedure('public.restore_product_change_scope(uuid,text)') is not null")

@@ -166,9 +166,11 @@ select 'announcement_board_ok' where
   and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'announcements' and policyname = 'announcements_update_leader' and qual like '%is_active_leader()%' and with_check like '%is_active_leader()%')
   and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'announcements' and policyname = 'announcements_delete_leader' and qual like '%is_active_leader()%');
 select 'latest_migration_version_ok' where
-  exists (select 1 from supabase_migrations.schema_migrations where version = '20260718073243');
+  exists (select 1 from supabase_migrations.schema_migrations where version = '20260718123250');
 select 'review_stage_b_cleanup_ok' where
-  not exists (select 1 from storage.buckets where id = 'review-attachments')
+  exists (select 1 from supabase_migrations.schema_migrations where version = '20260718073243')
+  and exists (select 1 from supabase_migrations.schema_migrations where version = '20260718123250')
+  and not exists (select 1 from storage.buckets where id = 'review-attachments')
   and not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname like 'review_attachments_%')
   and not exists (select 1 from pg_attribute where attrelid = 'public.review_requests'::regclass and attname = 'attachment_url' and not attisdropped)
   and to_regprocedure('public.mark_password_changed()') is null
@@ -190,6 +192,24 @@ select 'review_stage_b_cleanup_ok' where
   and not has_schema_privilege('authenticated', 'private', 'USAGE')
   and has_schema_privilege('service_role', 'private', 'USAGE')
   and not has_schema_privilege('service_role', 'private', 'CREATE')
+  and not exists (
+    select 1
+      from pg_catalog.pg_proc function
+     where function.pronamespace = 'public'::pg_catalog.regnamespace
+       and pg_catalog.has_function_privilege('anon', function.oid, 'EXECUTE')
+       and not exists (
+         select 1
+           from pg_catalog.pg_depend dependency
+           join pg_catalog.pg_extension extension
+             on extension.oid = dependency.refobjid
+          where dependency.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass
+            and dependency.objid = function.oid
+            and dependency.objsubid = 0
+            and dependency.refclassid = 'pg_catalog.pg_extension'::pg_catalog.regclass
+            and dependency.refobjsubid = 0
+            and dependency.deptype = 'e'
+       )
+  )
   and exists (select 1 from pg_default_acl where defaclrole = 'postgres'::regrole and defaclnamespace = 0 and defaclobjtype = 'f' and defaclacl::text not like '%{=X%' and defaclacl::text not like '%,=X%' and defaclacl::text not like '%anon=X%' and defaclacl::text not like '%authenticated=X%' and defaclacl::text not like '%service_role=X%');
 select 'realtime_pub_' || tablename from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'review_requests';
 "@

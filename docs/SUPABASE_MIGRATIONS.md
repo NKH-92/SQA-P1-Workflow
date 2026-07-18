@@ -62,6 +62,7 @@
 | `20260718054124_harden_review_workflow.sql` | 정확한 상태 시각, compact 이벤트·서버 읽음 영수증, OCC RPC, 피드백 무효화, Auth 비밀번호 트리거, 프로필 삭제 차단 |
 | `20260718054127_harden_change_audit_and_acl.sql` | 적용범위 제외/복원 구분, 보관 출처, delta 감사와 감사 페이지 RPC |
 | `20260718073243_finalize_review_workflow_hardening.sql` | Storage 0건 fail-fast 후 첨부 bucket·정책·컬럼·legacy 비밀번호 RPC 제거, 리뷰 RPC-only 전환, 기존/향후 객체 ACL manifest |
+| `20260718123250_remove_obsolete_review_status_rpc.sql` | Stage B에서 이름 목록에 빠진 구형 상태 변경 RPC를 정확한 시그니처로 제거하고 extension member를 구분하는 후속 검증과 정렬 |
 
 ## Supabase CLI (권장)
 

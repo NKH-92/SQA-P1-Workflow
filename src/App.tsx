@@ -9,13 +9,13 @@ import { useAuthProfile } from './app/hooks/useAuthProfile'
 import { useHashNavigation } from './app/hooks/useHashNavigation'
 import { useMutationRunner } from './app/hooks/useMutationRunner'
 import { useDeepLinkEntity } from './app/hooks/useDeepLinkEntity'
-import { shouldMarkReviewsSeen } from './app/reviewNavigation'
 import { reconciledProfile } from './app/profileSync'
 import { CommandPalette } from './components/CommandPalette'
 import { canManageTeamData } from './domain/permissions'
+import { createRepositoryContext, markAllRelevantReviewsSeen } from './data'
 import { toUserMessage } from './lib/errors'
 import { buildNotifications } from './lib/notifications'
-import { countUnreadReviews, loadReadState, markReviewsSeen } from './lib/readState'
+import { countUnreadReviews } from './lib/readState'
 import { hasSupabaseConfig, isPreviewMode } from './lib/supabase'
 import type { Profile } from './types'
 import type { TabId } from './app/types'
@@ -30,10 +30,6 @@ import {
 } from './screens'
 
 function App() {
-  const [readTick, setReadTick] = useState(0)
-  // 검토 리스트의 미확인 dot 기준점. 탭 진입 시 '이전' seenAt을 캡처하고,
-  // '모두 읽음'을 누르면 즉시 현재 시각으로 당겨 dot과 뱃지가 함께 꺼지게 한다.
-  const [reviewsUnreadCutoff, setReviewsUnreadCutoff] = useState<string | null>(null)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const reportWarningsRef = useRef<(warnings: string[]) => void>(() => {})
   const {
@@ -73,16 +69,10 @@ function App() {
   } = auth
   const leaderMode = canManageTeamData(profile)
   const navigation = useHashNavigation(leaderMode, Boolean(profile))
-  const { activeTab: navigationActiveTab, setActiveTab: setNavigationActiveTab } = navigation
-  const profileId = profile?.id ?? null
+  const { setActiveTab: setNavigationActiveTab } = navigation
   const setActiveTab = useCallback((tab: TabId, entityId?: string) => {
-    if (profileId && shouldMarkReviewsSeen(navigationActiveTab, tab)) {
-      markReviewsSeen(profileId)
-      setReviewsUnreadCutoff(loadReadState(profileId).reviewsSeenAt)
-      setReadTick((value) => value + 1)
-    }
     setNavigationActiveTab(tab, entityId)
-  }, [navigationActiveTab, profileId, setNavigationActiveTab])
+  }, [setNavigationActiveTab])
   useEffect(() => {
     resetNavigationRef.current = navigation.resetNavigation
   }, [navigation.resetNavigation])
@@ -111,23 +101,12 @@ function App() {
   )
 
   const pendingCount = data.reviewRequests.filter((request) => request.status === 'pending').length
-  const unreadReviewsCount = useMemo(() => {
-    void readTick
-    return profile ? countUnreadReviews(profile, data, leaderMode) : 0
-  }, [profile, data, leaderMode, readTick])
+  const unreadReviewsCount = useMemo(() => (profile ? countUnreadReviews(profile, data) : 0), [profile, data])
 
-  const notifications = useMemo(() => {
-    void readTick
-    return profile ? buildNotifications(profile, data, leaderMode) : []
-  }, [profile, data, leaderMode, readTick])
-
-  useEffect(() => {
-    if (!profile || navigation.activeTab !== 'reviews') return
-    // markReviewsSeen보다 먼저 캡처해야 dot 기준점이 '이번 방문 이전'이 된다.
-    setReviewsUnreadCutoff(loadReadState(profile.id).reviewsSeenAt)
-    markReviewsSeen(profile.id)
-    setReadTick((value) => value + 1)
-  }, [navigation.activeTab, profile])
+  const notifications = useMemo(
+    () => (profile ? buildNotifications(profile, data, leaderMode) : []),
+    [profile, data, leaderMode],
+  )
 
   // 딥링크 대상이 현재 capped 목록에 없으면 검토요청·공지를 on-demand로 한 번 조회한다.
   // 그래도 없으면(삭제·권한 밖) 조용히 첫 항목으로 폴백되는 대신 안내한다.
@@ -174,9 +153,9 @@ function App() {
 
   const markAllNotificationsRead = () => {
     if (!profile) return
-    markReviewsSeen(profile.id)
-    setReviewsUnreadCutoff(new Date().toISOString())
-    setReadTick((value) => value + 1)
+    void mutate(async () => {
+      await markAllRelevantReviewsSeen(createRepositoryContext(profile, data, setData))
+    }, '검토 알림을 모두 읽음 처리했습니다.')
   }
 
   // signOut이 resetNavigation까지 수행한다(useAuthProfile → useHashNavigation).
@@ -267,7 +246,6 @@ function App() {
           mutate={mutate}
           setData={setData}
           setActiveTab={setActiveTab}
-          reviewsUnreadCutoff={reviewsUnreadCutoff}
         />
       </Shell>
       <CommandPalette

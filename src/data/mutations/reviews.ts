@@ -20,8 +20,8 @@ export async function saveReviewRequest(
   return reviewRepository(ctx).saveReviewRequest(input)
 }
 
-export async function withdrawReviewRequest(ctx: RepositoryContext, requestId: string): Promise<void> {
-  return reviewRepository(ctx).withdrawReviewRequest(requestId)
+export async function withdrawReviewRequest(ctx: RepositoryContext, requestId: string, reason: string): Promise<void> {
+  return reviewRepository(ctx).withdrawReviewRequest(requestId, reason)
 }
 
 export async function rejectReviewRequest(
@@ -68,6 +68,14 @@ export async function updateReviewFeedback(
   return reviewRepository(ctx).updateReviewFeedback(feedbackId, comment)
 }
 
-export async function deleteReviewFeedback(ctx: RepositoryContext, feedbackId: string): Promise<void> {
-  return reviewRepository(ctx).deleteReviewFeedback(feedbackId)
+export async function voidReviewFeedback(ctx: RepositoryContext, feedbackId: string, reason: string): Promise<void> {
+  return reviewRepository(ctx).voidReviewFeedback(feedbackId, reason)
+}
+
+export async function markReviewSeen(ctx: RepositoryContext, requestId: string): Promise<void> {
+  return reviewRepository(ctx).markReviewSeen(requestId)
+}
+
+export async function markAllRelevantReviewsSeen(ctx: RepositoryContext): Promise<void> {
+  return reviewRepository(ctx).markAllRelevantReviewsSeen()
 }

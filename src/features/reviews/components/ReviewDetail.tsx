@@ -14,7 +14,7 @@ type ReviewDetailProps = {
   reopenReview: (requestId: string) => Promise<boolean>
   resubmitReview: (requestId: string, comment: string) => Promise<boolean>
   updateFeedback: (feedbackId: string, comment: string) => Promise<boolean>
-  deleteFeedback: (feedbackId: string) => Promise<boolean>
+  voidFeedback: (feedbackId: string, reason: string) => Promise<boolean>
   updateStatus: (id: string, status: ReviewStatus) => Promise<boolean>
   addFeedback: (requestId: string, comment: string) => Promise<boolean>
 }
@@ -30,7 +30,7 @@ export function ReviewDetail({
   reopenReview,
   resubmitReview,
   updateFeedback,
-  deleteFeedback,
+  voidFeedback,
   updateStatus,
   addFeedback,
 }: ReviewDetailProps) {
@@ -48,7 +48,7 @@ export function ReviewDetail({
           reopenReview={reopenReview}
           resubmitReview={resubmitReview}
           updateFeedback={updateFeedback}
-          deleteFeedback={deleteFeedback}
+          voidFeedback={voidFeedback}
           request={selectedReview}
           updateStatus={updateStatus}
           withdrawReview={withdrawReview}

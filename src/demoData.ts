@@ -18,6 +18,7 @@ import type {
   ProjectAssignment,
   ProjectStatus,
   ReviewRequest,
+  ReviewEvent,
   ActivityLog,
 } from './types'
 import { demoProductAllocationRows } from './demo/anonymousProductAllocation'
@@ -376,9 +377,6 @@ export function createPreviewData(): AppData {
       requester_id: 'member-01',
       title: '파트너 API 전환 검토',
       description: '전환 일정과 영향 범위 검토가 필요합니다.',
-      // Attachments are storage-only; the demo has no Supabase Storage, so leave it empty
-      // rather than ship a fake URL that the storage-only edit path would silently drop.
-      attachment_url: null,
       due_date: '2026-07-05',
       status: 'pending',
       created_at: '2026-07-03T09:20:00.000Z',
@@ -391,7 +389,6 @@ export function createPreviewData(): AppData {
       requester_id: 'member-02',
       title: '정산 자동화 화면 문구 확인',
       description: '파트너 안내 문구와 예외 케이스를 확인해 주세요.',
-      attachment_url: null,
       due_date: null,
       status: 'pending',
       created_at: '2026-07-02T14:30:00.000Z',
@@ -413,7 +410,6 @@ export function createPreviewData(): AppData {
       requester_id: 'member-extra-01',
       title: '모바일 알림 고도화 정책 검토',
       description: '마감 전 알림 조건과 발송 제외 조건 검토 요청입니다.',
-      attachment_url: null,
       due_date: '2026-07-09',
       status: 'pending',
       created_at: '2026-07-01T16:45:00.000Z',
@@ -422,6 +418,19 @@ export function createPreviewData(): AppData {
       review_feedback: [],
     },
   ]
+
+  const reviewEvents: ReviewEvent[] = reviewRequests.map((request, index) => ({
+    id: index + 1,
+    review_request_id: request.id,
+    actor_id: request.requester_id,
+    actor_name_snapshot: request.profiles?.name ?? '파트원',
+    event_type: 'submitted',
+    from_status: null,
+    to_status: 'pending',
+    occurred_at: request.created_at ?? createdAt,
+    metadata: { estimated: false },
+    transaction_id: index + 1,
+  }))
 
   const allowedUsers: AllowedUser[] = previewMembers.map((member, index) => ({
     id: `allowed-${String(index + 1).padStart(2, '0')}`,
@@ -507,6 +516,9 @@ export function createPreviewData(): AppData {
     productAssignments,
     dutyAssignments,
     reviewRequests,
+    reviewEvents,
+    reviewReadReceipts: [],
+    auditEvents: [],
     projects,
     projectAssignments,
     profileNotes,

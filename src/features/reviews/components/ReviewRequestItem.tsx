@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { Badge, CopyLinkButton } from '../../../components/ui'
 import type { Profile, ReviewRequest, ReviewStatus } from '../../../types'
-import { resolveAttachmentHref } from '../../../lib/attachments'
 import { ageInDays, dueDateLabel, dueDateShortLabel } from '../../../lib/dates'
 import { formatDate, reviewStatusLabels } from '../../../lib/format'
 import {
@@ -10,7 +9,6 @@ import {
 } from '../reviewRequestItemModel'
 import {
   Check,
-  Paperclip,
   Pencil,
   Send,
   Trash2,
@@ -39,7 +37,7 @@ export function ReviewRequestItem({
   reopenReview,
   resubmitReview,
   updateFeedback,
-  deleteFeedback,
+  voidFeedback,
   request,
   updateStatus,
   withdrawReview,
@@ -53,12 +51,11 @@ export function ReviewRequestItem({
   reopenReview: (requestId: string) => Promise<boolean>
   resubmitReview: (requestId: string, comment: string) => Promise<boolean>
   updateFeedback: (feedbackId: string, comment: string) => Promise<boolean>
-  deleteFeedback: (feedbackId: string) => Promise<boolean>
+  voidFeedback: (feedbackId: string, reason: string) => Promise<boolean>
   request: ReviewRequest
   updateStatus: (id: string, status: ReviewStatus) => Promise<boolean>
   withdrawReview: (requestId: string) => void
 }) {
-  const [attachmentHref, setAttachmentHref] = useState<string | null>(null)
   const [transitionNotice, setTransitionNotice] = useState<{ text: string; tone: ReviewStatus } | null>(null)
   const [rejectNotice, setRejectNotice] = useState(false)
   const [celebrate, setCelebrate] = useState(false)
@@ -79,21 +76,6 @@ export function ReviewRequestItem({
     urgency,
     dueUrgent,
   } = buildReviewRequestItemModel(request, profile)
-
-  useEffect(() => {
-    let active = true
-    void (async () => {
-      try {
-        const href = await resolveAttachmentHref(request.attachment_url)
-        if (active) setAttachmentHref(href)
-      } catch {
-        if (active) setAttachmentHref(null)
-      }
-    })()
-    return () => {
-      active = false
-    }
-  }, [request.attachment_url])
 
   const withSubmitting = async <T,>(operation: () => Promise<T>): Promise<T> => {
     setIsSubmitting(true)
@@ -176,8 +158,9 @@ export function ReviewRequestItem({
   }
 
   const removeFeedback = async (feedbackId: string) => {
-    if (!window.confirm('이 피드백을 삭제하시겠습니까?')) return
-    await withSubmitting(() => deleteFeedback(feedbackId))
+    const reason = window.prompt('피드백 무효화 사유를 입력해 주세요.')?.trim() ?? ''
+    if (reason.length < 2) return
+    await withSubmitting(() => voidFeedback(feedbackId, reason))
   }
 
   return (
@@ -210,7 +193,6 @@ export function ReviewRequestItem({
             {dueDateShortLabel(request.due_date)}
           </span>
         )}
-        {request.attachment_url && <Paperclip size={14} aria-label="첨부 있음" />}
         {profile.role === 'leader' && request.status === 'pending' && (
           <div className="request-actions">
             <span role="group" aria-label="검토 상태 전환" style={{ display: 'contents' }}>
@@ -290,19 +272,12 @@ export function ReviewRequestItem({
             {request.due_date ? `${formatDate(request.due_date)} · ${dueDateLabel(request.due_date)}` : '기한 없음'}
           </strong>
         </div>
-        <div>
-          <span>첨부</span>
-          <strong>
-            {attachmentHref ? (
-              <a href={attachmentHref} rel="noreferrer" target="_blank">
-                <Paperclip size={13} />
-                첨부 열기
-              </a>
-            ) : (
-              '없음'
-            )}
-          </strong>
-        </div>
+        {request.status === 'withdrawn' && (
+          <div>
+            <span>회수</span>
+            <strong>{formatDate(request.withdrawn_at)} · {request.withdrawal_reason}</strong>
+          </div>
+        )}
       </div>
 
       <div className="status-timeline" data-status={request.status} aria-label="검토 상태 흐름">
@@ -351,16 +326,18 @@ export function ReviewRequestItem({
                   </div>
                 ) : (
                   <>
-                    <p>{item.comment}</p>
+                    <p>{item.voided_at ? '무효화된 피드백' : item.comment}</p>
+                    {item.voided_at && <small>사유: {item.void_reason}</small>}
                     {profile.role === 'leader' &&
                       (item.author_role ?? 'leader') === 'leader' &&
-                      item.leader_id === profile.id && (
+                      item.leader_id === profile.id &&
+                      !item.voided_at && (
                       <div className="feedback-actions">
                         <button className="ghost compact" onClick={() => startFeedbackEdit(item.id, item.comment)} type="button">
                           수정
                         </button>
                         <button className="ghost compact" disabled={isSubmitting} onClick={() => void removeFeedback(item.id)} type="button">
-                          삭제
+                          무효화
                         </button>
                       </div>
                     )}

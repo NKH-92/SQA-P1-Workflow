@@ -8,7 +8,6 @@ const oldReview: ReviewRequest = {
   requester_id: 'member-1',
   title: 'Old review',
   description: 'Historical review',
-  attachment_url: null,
   due_date: null,
   status: 'approved',
   created_at: '2025-01-01T00:00:00.000Z',

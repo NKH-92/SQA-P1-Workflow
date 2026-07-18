@@ -3,7 +3,6 @@ import { createPreviewData, previewLeader, previewMember } from '../../demoData'
 import {
   createReviewRequest,
   removeProduct,
-  removeReviewRequest,
   replaceProductAssignments,
   replaceDutyAssignments,
   replaceProjectAssignments,
@@ -17,7 +16,6 @@ describe('appDataReducers', () => {
     const next = createReviewRequest(data, previewMember, 'review-new', {
       title: 'New review',
       description: 'Details',
-      attachment_url: null,
       due_date: '2026-08-01',
     })
 
@@ -26,22 +24,12 @@ describe('appDataReducers', () => {
     expect(next.reviewRequests[0]?.status).toBe('pending')
   })
 
-  it('removes a review request without mutating the source', () => {
-    const data = createPreviewData()
-    const reviewId = data.reviewRequests[0]?.id
-    expect(reviewId).toBeTruthy()
-
-    const next = removeReviewRequest(data, reviewId!)
-    expect(next.reviewRequests.some((item) => item.id === reviewId)).toBe(false)
-    expect(data.reviewRequests.some((item) => item.id === reviewId)).toBe(true)
-  })
-
   it('updates review status immutably', () => {
     const data = createPreviewData()
     const reviewId = data.reviewRequests[0]?.id
     expect(reviewId).toBeTruthy()
 
-    const next = setReviewStatus(data, reviewId!, 'approved')
+    const next = setReviewStatus(data, reviewId!, 'approved', previewLeader)
     expect(next.reviewRequests.find((item) => item.id === reviewId)?.status).toBe('approved')
     expect(data.reviewRequests.find((item) => item.id === reviewId)?.status).not.toBe('approved')
   })

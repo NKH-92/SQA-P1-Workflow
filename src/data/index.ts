@@ -1,5 +1,10 @@
 export { createRepositoryContext, type RepositoryContext } from './repositoryContext'
-export { fetchProductChangeTaskHistory } from './fetchAppData'
+export {
+  fetchAuditEvents,
+  fetchProductChangeTaskHistory,
+  fetchWithdrawnReviewRequestsPage,
+  mergeReviewRequests,
+} from './fetchAppData'
 export type { ChangeApplicationInput, ChangeTaskDraft } from './contracts'
 
 export {
@@ -18,7 +23,9 @@ export {
   resubmitReviewRequest,
   addReviewFeedback,
   updateReviewFeedback,
-  deleteReviewFeedback,
+  voidReviewFeedback,
+  markReviewSeen,
+  markAllRelevantReviewsSeen,
   type ReviewRequestPayload,
 } from './mutations/reviews'
 
@@ -60,6 +67,7 @@ export {
   reopenProductChangeTask,
   reassignProductChangeTasks,
   cancelProductChangeTask,
+  restoreProductChangeScope,
   cancelChangeApplication,
   archiveChangeApplication,
   restoreChangeApplication,

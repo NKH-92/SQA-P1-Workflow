@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react'
-import { Paperclip, Send, X } from 'lucide-react'
+import { Send, X } from 'lucide-react'
 import { Badge } from '../../../components/ui'
 import { useModalDismiss } from '../../../hooks/useModalDismiss'
 import { formatDate } from '../../../lib/format'
@@ -23,11 +23,6 @@ function quickDeadlineDate(days: number) {
   return `${year}-${month}-${day}`
 }
 
-function preventModalFileDrop(event: React.DragEvent) {
-  event.preventDefault()
-  event.stopPropagation()
-}
-
 type ReviewComposerModalProps = {
   open: boolean
   /** null이면 새 요청 작성, 값이 있으면 해당 요청 수정 */
@@ -36,9 +31,6 @@ type ReviewComposerModalProps = {
   setForm: Dispatch<SetStateAction<ReviewFormState>>
   draftNotice: string | null
   draftSavedAt: Date | null
-  attachmentFile: File | null
-  setAttachmentFile: (file: File | null) => void
-  existingStorageAttachment: string | null
   reviewTargetName: string | null
   isSubmitDisabled: boolean
   onSaveDraft: () => void
@@ -54,9 +46,6 @@ export function ReviewComposerModal({
   setForm,
   draftNotice,
   draftSavedAt,
-  attachmentFile,
-  setAttachmentFile,
-  existingStorageAttachment,
   reviewTargetName,
   isSubmitDisabled,
   onSaveDraft,
@@ -76,8 +65,6 @@ export function ReviewComposerModal({
         aria-labelledby="review-composer-title-v2"
         aria-modal="true"
         className="modal-card review-modal modal-a"
-        onDragOver={preventModalFileDrop}
-        onDrop={preventModalFileDrop}
         onMouseDown={(event) => event.stopPropagation()}
         role="dialog"
       >
@@ -153,29 +140,10 @@ export function ReviewComposerModal({
               </div>
             </div>
             <div className="modal-field-row">
-              <label htmlFor="review-attachment-v2">첨부</label>
+              <span className="modal-label">검토 자료</span>
               <div>
-                <label className="attachment-dropzone">
-                  <input
-                    accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt,.zip"
-                    hidden
-                    onChange={(event) => setAttachmentFile(event.target.files?.[0] ?? null)}
-                    type="file"
-                  />
-                  <span className="attachment-icon" aria-hidden="true">
-                    <Paperclip size={16} />
-                  </span>
-                  <span className="attachment-copy">
-                    <strong>{attachmentFile ? attachmentFile.name : '파일을 선택하세요'}</strong>
-                    <small>{attachmentFile ? '선택됨 · 다시 클릭하면 변경' : 'PDF, 문서, 이미지 · 10MB 이하'}</small>
-                  </span>
-                  <span className="ghost compact attachment-pick">파일 선택</span>
-                </label>
-                {existingStorageAttachment && !attachmentFile && (
-                  <p className="draft-notice">기존 첨부 파일이 유지됩니다.</p>
-                )}
                 <p className="draft-notice">
-                  첨부 파일은 시스템 백업 대상이 아닙니다. 중요한 원본은 작성자가 별도로 보관해 주세요.
+                  검토 자료가 필요한 경우 별도 메신저로 전달하고, 요청 설명에 전달한 자료명과 확인 요청사항을 적어 주세요.
                 </p>
               </div>
             </div>

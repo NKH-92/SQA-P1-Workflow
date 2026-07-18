@@ -337,6 +337,30 @@ jobs:
             exit 1
           fi
 
+          review_hardening_ready=$(psql "$DATABASE_URL" -tAc \
+            "select
+              exists (select 1 from supabase_migrations.schema_migrations where version = '20260718054122')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '20260718054124')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '20260718054127')
+              and exists (select 1 from pg_enum value join pg_type type on type.oid = value.enumtypid where type.typname = 'review_status' and value.enumlabel = 'withdrawn')
+              and to_regclass('public.review_events') is not null
+              and to_regclass('public.review_read_receipts') is not null
+              and coalesce((select relrowsecurity from pg_class where oid = to_regclass('public.review_events')), false)
+              and coalesce((select relrowsecurity from pg_class where oid = to_regclass('public.review_read_receipts')), false)
+              and to_regprocedure('public.withdraw_review_request(uuid,timestamp with time zone,text)') is not null
+              and to_regprocedure('public.void_review_feedback(uuid,timestamp with time zone,text)') is not null
+              and to_regprocedure('public.mark_review_seen(uuid)') is not null
+              and has_function_privilege('authenticated', to_regprocedure('public.mark_review_seen(uuid)'), 'EXECUTE')
+              and not has_function_privilege('anon', to_regprocedure('public.mark_review_seen(uuid)'), 'EXECUTE')
+              and exists (select 1 from pg_trigger where tgrelid = 'auth.users'::regclass and tgname = 'on_auth_password_changed' and tgenabled in ('O', 'A'))
+              and exists (select 1 from pg_trigger where tgrelid = 'public.profiles'::regclass and tgname = 'profiles_block_physical_delete' and tgenabled in ('O', 'A'))
+              and coalesce(pg_get_functiondef(to_regprocedure('public.mark_password_changed()')) like '%SQA_PASSWORD_CHANGE_NOT_OBSERVED%', false)
+              and to_regprocedure('public.restore_product_change_scope(uuid,text)') is not null")
+          if [ "$review_hardening_ready" != "t" ]; then
+            echo "::error::Production DB review workflow Stage A hardening contract is not ready"
+            exit 1
+          fi
+
           review_resubmission_ready=$(psql "$DATABASE_URL" -tAc \
             "select
               exists (select 1 from supabase_migrations.schema_migrations where version = '20260715013615')
@@ -399,7 +423,7 @@ jobs:
               to_regclass('private.audit_events') is not null
               and not has_schema_privilege('authenticated', 'private', 'USAGE')
               and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('private.record_mutation_audit()')), false)
-              and coalesce((select 'search_path=pg_catalog, public, private, pg_temp' = any(proconfig) from pg_proc where oid = to_regprocedure('private.record_mutation_audit()')), false)
+              and coalesce((select 'search_path=pg_catalog' = any(proconfig) from pg_proc where oid = to_regprocedure('private.record_mutation_audit()')), false)
               and (select count(*) >= 13 from pg_trigger
                    where tgfoid = to_regprocedure('private.record_mutation_audit()')
                      and tgenabled in ('O', 'A'))

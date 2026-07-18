@@ -5,18 +5,20 @@ import type { ReviewStatusFilter, MutateFn } from '../app/types'
 import {
   addReviewFeedback,
   createRepositoryContext,
-  deleteReviewFeedback,
+  fetchWithdrawnReviewRequestsPage,
+  markReviewSeen,
+  mergeReviewRequests,
   reopenReviewRequest,
   resubmitReviewRequest,
   rejectReviewRequest,
   saveReviewRequest,
   updateReviewStatus,
   updateReviewFeedback,
+  voidReviewFeedback,
   withdrawReviewRequest,
 } from '../data'
-import { UserFacingError } from '../lib/errors'
+import { toUserMessage, UserFacingError } from '../lib/errors'
 import { isReviewUnread } from '../lib/readState'
-import { removeReviewAttachment, uploadReviewAttachment } from '../lib/attachments'
 import {
   selectReviewStatusCounts,
   selectScopedReviewRequests,
@@ -37,7 +39,6 @@ export function ReviewsPanel({
   setData,
   initialSelectedId,
   onInitialSelectionApplied,
-  reviewsUnreadCutoff = null,
 }: {
   profile: Profile
   data: AppData
@@ -45,17 +46,35 @@ export function ReviewsPanel({
   setData: Dispatch<SetStateAction<AppData>>
   initialSelectedId?: string | null
   onInitialSelectionApplied?: () => void
-  /** 미확인 dot 기준 시각. App이 탭 진입 '이전' seenAt을 캡처해 내려준다. null이면 dot 없음. */
-  reviewsUnreadCutoff?: string | null
 }) {
   const [editingReviewId, setEditingReviewId] = useState<string | null>(null)
   const [pendingWithdrawId, setPendingWithdrawId] = useState<string | null>(null)
-  const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
-  const [existingStorageAttachment, setExistingStorageAttachment] = useState<string | null>(null)
   const [isReviewComposerOpen, setReviewComposerOpen] = useState(false)
   const [statusFilter, setStatusFilter] = useState<ReviewStatusFilter>('all')
   // 칸반은 상태 흐름 전체를 보는 파트장에게 유용하다. 파트원은 목록만.
   const [reviewView, setReviewView] = useState<'list' | 'kanban'>('list')
+  const [archivePage, setArchivePage] = useState(-1)
+  const [archiveHasMore, setArchiveHasMore] = useState(true)
+  const [archiveLoading, setArchiveLoading] = useState(false)
+  const [archiveError, setArchiveError] = useState<string | null>(null)
+
+  const loadArchivePage = async (page: number) => {
+    setArchiveLoading(true)
+    setArchiveError(null)
+    try {
+      const requests = await fetchWithdrawnReviewRequestsPage(page)
+      setData((current) => ({
+        ...current,
+        reviewRequests: mergeReviewRequests(current.reviewRequests, requests),
+      }))
+      setArchivePage(page)
+      setArchiveHasMore(requests.length === 50)
+    } catch (error) {
+      setArchiveError(toUserMessage(error))
+    } finally {
+      setArchiveLoading(false)
+    }
+  }
 
   const scopedReviewRequests = useMemo(
     () => selectScopedReviewRequests(data, profile),
@@ -76,13 +95,11 @@ export function ReviewsPanel({
   const unreadReviewIds = useMemo(
     () =>
       new Set(
-        reviewsUnreadCutoff == null
-          ? []
-          : scopedReviewRequests
-              .filter((request) => isReviewUnread(request, profile, profile.role === 'leader', reviewsUnreadCutoff))
-              .map((request) => request.id),
+        scopedReviewRequests
+          .filter((request) => isReviewUnread(request, profile, data))
+          .map((request) => request.id),
       ),
-    [profile, reviewsUnreadCutoff, scopedReviewRequests],
+    [data, profile, scopedReviewRequests],
   )
   const { selectedReviewId, setSelectedReviewId, selectedReview } = useReviewSelection(
     visibleReviewRequests,
@@ -97,13 +114,15 @@ export function ReviewsPanel({
     const target = scopedReviewRequests.find((request) => request.id === id)
     if (target && statusFilter !== 'all' && target.status !== statusFilter) setStatusFilter('all')
     setSelectedReviewId(id)
-  }, [scopedReviewRequests, setSelectedReviewId, statusFilter])
+    void markReviewSeen(createRepositoryContext(profile, data, setData), id).catch(() => undefined)
+  }, [data, profile, scopedReviewRequests, setData, setSelectedReviewId, statusFilter])
 
   useEffect(() => {
     if (!initialSelectedId) return
     const target = scopedReviewRequests.find((request) => request.id === initialSelectedId)
     if (target && statusFilter !== 'all' && target.status !== statusFilter) setStatusFilter('all')
-  }, [initialSelectedId, scopedReviewRequests, statusFilter])
+    if (target) void markReviewSeen(createRepositoryContext(profile, data, setData), target.id).catch(() => undefined)
+  }, [data, initialSelectedId, profile, scopedReviewRequests, setData, statusFilter])
 
   const {
     form,
@@ -122,21 +141,15 @@ export function ReviewsPanel({
 
   const openReviewComposer = () => {
     setEditingReviewId(null)
-    setAttachmentFile(null)
-    setExistingStorageAttachment(null)
     openComposerDraft()
     setReviewComposerOpen(true)
   }
 
   const openReviewEditor = (request: ReviewRequest) => {
     setEditingReviewId(request.id)
-    setAttachmentFile(null)
-    const storageAttachment = request.attachment_url?.startsWith('storage://') ? request.attachment_url : null
-    setExistingStorageAttachment(storageAttachment)
     setForm({
       title: request.title,
       description: request.description,
-      attachment_url: '',
       deadlineMode: request.due_date ? 'date' : 'none',
       due_date: request.due_date?.slice(0, 10) ?? '',
     })
@@ -147,8 +160,6 @@ export function ReviewsPanel({
   const closeReviewComposer = useCallback(() => {
       setReviewComposerOpen(false)
       setEditingReviewId(null)
-      setAttachmentFile(null)
-      setExistingStorageAttachment(null)
     },
     [],
   )
@@ -165,49 +176,30 @@ export function ReviewsPanel({
       if (form.deadlineMode === 'date' && !dueDate) {
         throw new UserFacingError('검토 기한 날짜를 선택해 주세요.')
       }
-      const uploadedNow = Boolean(attachmentFile) && ctx.isRemote
-      const attachmentUrl = attachmentFile
-        ? ctx.isRemote
-          ? await uploadReviewAttachment(profile.id, attachmentFile)
-          : (() => {
-              throw new UserFacingError('파일 첨부는 Supabase 연결 환경에서만 사용할 수 있습니다.')
-            })()
-        : existingStorageAttachment
-      let result: { isUpdate: boolean }
-      try {
-        result = await saveReviewRequest(ctx, {
-          editingReviewId,
-          payload: {
-            title,
-            description,
-            attachment_url: attachmentUrl,
-            due_date: dueDate,
-          },
-        })
-      } catch (error) {
-        // The record insert/update failed after we uploaded a new file — drop the orphan.
-        if (uploadedNow && attachmentUrl) await removeReviewAttachment(attachmentUrl)
-        throw error
-      }
+      const result = await saveReviewRequest(ctx, {
+        editingReviewId,
+        payload: { title, description, due_date: dueDate },
+      })
       if (result.isUpdate) {
         setEditingReviewId(null)
         resetForm()
-        setAttachmentFile(null)
         setReviewComposerOpen(false)
         return
       }
       resetForm()
-      setAttachmentFile(null)
       clearDraftStorage()
       setReviewComposerOpen(false)
     }, editingReviewId ? '검토요청을 수정했습니다.' : '검토요청을 등록했습니다.')
 
-  const withdrawReview = (requestId: string) =>
-    mutate(async () => {
-      await withdrawReviewRequest(createRepositoryContext(profile, data, setData), requestId)
+  const withdrawReview = (requestId: string) => {
+    const reason = window.prompt('회수 사유를 입력하세요.')?.trim()
+    if (!reason) return
+    void mutate(async () => {
+      await withdrawReviewRequest(createRepositoryContext(profile, data, setData), requestId, reason)
       setPendingWithdrawId(null)
       if (selectedReviewId === requestId) setSelectedReviewId(null)
-    }, '검토요청을 회수했습니다.')
+    }, '검토요청을 회수 보관함으로 옮겼습니다.')
+  }
 
   const rejectReview = async (requestId: string, comment: string): Promise<boolean> =>
     mutate(async () => {
@@ -238,10 +230,10 @@ export function ReviewsPanel({
       await updateReviewFeedback(createRepositoryContext(profile, data, setData), feedbackId, comment)
     }, '피드백을 수정했습니다.')
 
-  const deleteFeedback = async (feedbackId: string): Promise<boolean> =>
+  const voidFeedback = async (feedbackId: string, reason: string): Promise<boolean> =>
     mutate(async () => {
-      await deleteReviewFeedback(createRepositoryContext(profile, data, setData), feedbackId)
-    }, '피드백을 삭제했습니다.')
+      await voidReviewFeedback(createRepositoryContext(profile, data, setData), feedbackId, reason)
+    }, '피드백을 무효화했습니다.')
 
   const addFeedback = (requestId: string, comment: string): Promise<boolean> =>
     mutate(async () => {
@@ -258,7 +250,7 @@ export function ReviewsPanel({
             <span>새 검토요청</span>
             <strong>{form.title || '무엇을 검토받고 싶으세요?'}</strong>
             <p>
-              제목과 검토 포인트를 먼저 적고, 필요하면 첨부 파일과 기한을 더하세요. 보내는 즉시 파트장 우선처리 목록에 올라갑니다.
+              제목과 검토 포인트를 먼저 적고 기한을 더하세요. 자료는 별도 메신저로 전달하고 요청 설명에 자료명을 남겨 주세요.
             </p>
           </div>
           <button className="primary" onClick={() => openReviewComposer()} type="button">
@@ -275,9 +267,6 @@ export function ReviewsPanel({
           setForm={setForm}
           draftNotice={draftNotice}
           draftSavedAt={draftSavedAt}
-          attachmentFile={attachmentFile}
-          setAttachmentFile={setAttachmentFile}
-          existingStorageAttachment={existingStorageAttachment}
           reviewTargetName={reviewTarget?.name ?? null}
           isSubmitDisabled={isReviewSubmitDisabled}
           onSaveDraft={saveReviewDraft}
@@ -288,6 +277,18 @@ export function ReviewsPanel({
       {profile.role === 'leader' && (
         <div className="workspace-header">
           <h2>검토 워크스페이스</h2>
+          <button
+            className={statusFilter === 'withdrawn' ? 'selected' : 'ghost'}
+            onClick={() => {
+              const opening = statusFilter !== 'withdrawn'
+              setStatusFilter(opening ? 'withdrawn' : 'all')
+              setReviewView('list')
+              if (opening && archivePage < 0) void loadArchivePage(0)
+            }}
+            type="button"
+          >
+            회수 보관함 ({statusCounts.withdrawn ?? 0})
+          </button>
           <div className="workspace-view-toggle" role="group" aria-label="검토요청 보기 방식">
             <button
               aria-pressed={reviewView === 'list'}
@@ -329,7 +330,7 @@ export function ReviewsPanel({
                 reopenReview={reopenReview}
                 resubmitReview={resubmitReview}
                 updateFeedback={updateFeedback}
-                deleteFeedback={deleteFeedback}
+                voidFeedback={voidFeedback}
                 selectedReview={selectedReview}
                 updateStatus={updateStatus}
                 withdrawReview={withdrawReview}
@@ -360,12 +361,23 @@ export function ReviewsPanel({
             reopenReview={reopenReview}
             resubmitReview={resubmitReview}
             updateFeedback={updateFeedback}
-            deleteFeedback={deleteFeedback}
+            voidFeedback={voidFeedback}
             selectedReview={selectedReview}
             updateStatus={updateStatus}
             withdrawReview={withdrawReview}
           />
         </section>
+      )}
+      {statusFilter === 'withdrawn' && (
+        <div className="workspace-header">
+          <p className="empty-copy">최근 90일 회수 요청을 50건씩 불러옵니다.</p>
+          {archiveError && <p className="notice">회수 보관함을 불러오지 못했습니다. {archiveError}</p>}
+          {archiveHasMore && (
+            <button className="ghost" disabled={archiveLoading} onClick={() => void loadArchivePage(archivePage + 1)} type="button">
+              {archiveLoading ? '불러오는 중...' : '이전 회수 요청 더 보기'}
+            </button>
+          )}
+        </div>
       )}
     </div>
   )

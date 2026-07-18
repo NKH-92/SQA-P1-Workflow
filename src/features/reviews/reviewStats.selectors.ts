@@ -1,4 +1,4 @@
-import type { AppData, Profile, ReviewRequest, ReviewStatus } from '../../types'
+import type { AppData, Profile, ReviewEvent, ReviewRequest, ReviewStatus } from '../../types'
 
 export const REVIEW_STATS_HISTORY_MONTHS = 6
 
@@ -75,7 +75,7 @@ type RequesterIdentity = {
 }
 
 const DATE_KEY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/
-const STATUS_ORDER: ReviewStatus[] = ['pending', 'approved', 'rejected']
+const STATUS_ORDER: ReviewStatus[] = ['pending', 'approved', 'rejected', 'withdrawn']
 const UNKNOWN_REQUESTER_NAME = '알 수 없는 요청자'
 
 function toDateKey(date: Date): string {
@@ -266,12 +266,13 @@ function statusCounts(requests: ReviewRequest[]): Record<ReviewStatus, number> {
       counts[request.status] += 1
       return counts
     },
-    { pending: 0, approved: 0, rejected: 0 },
+    { pending: 0, approved: 0, rejected: 0, withdrawn: 0 },
   )
 }
 
 function buildRequesterRows(
   requests: ReviewRequest[],
+  events: ReviewEvent[],
   identities: Map<string, RequesterIdentity>,
 ): ReviewStatsRequesterRow[] {
   const grouped = new Map<string, ReviewRequest[]>()
@@ -284,18 +285,22 @@ function buildRequesterRows(
   return [...grouped.entries()]
     .map(([requesterId, requesterRequests]) => {
       const counts = statusCounts(requesterRequests)
-      const submissionCount = requesterRequests.reduce((sum, request) => sum + reviewSubmissionCount(request), 0)
+      const requestIds = new Set(requesterRequests.map((request) => request.id))
+      const requesterEvents = events.filter((event) => requestIds.has(event.review_request_id))
+      const requestCount = requesterEvents.filter((event) => event.event_type === 'submitted').length
+      const resubmissionCount = requesterEvents.filter((event) => event.event_type === 'resubmitted').length
+      const submissionCount = requestCount + resubmissionCount
       const identity = identities.get(requesterId) ?? { name: UNKNOWN_REQUESTER_NAME, inactive: false }
       return {
         requesterId,
         requesterName: identity.name,
         requesterInactive: identity.inactive,
-        requestCount: requesterRequests.length,
+        requestCount,
         submissionCount,
-        resubmissionCount: Math.max(0, submissionCount - requesterRequests.length),
+        resubmissionCount,
         pendingCount: counts.pending,
-        approvedCount: counts.approved,
-        rejectedCount: counts.rejected,
+        approvedCount: requesterEvents.filter((event) => event.event_type === 'approved').length,
+        rejectedCount: requesterEvents.filter((event) => event.event_type === 'rejected').length,
       }
     })
     .sort(
@@ -326,35 +331,41 @@ function monthKeysBetween(startDate: string, endDate: string): string[] {
   return months
 }
 
-function buildMonthlyRows(requests: ReviewRequest[], range: ReviewStatsRange): ReviewStatsMonthRow[] {
-  const byMonth = new Map<string, ReviewRequest[]>()
-  for (const request of requests) {
-    const dateKey = requestDateKey(request)
-    if (!dateKey) continue
-    const month = monthKeyFromDateKey(dateKey)
+function buildMonthlyRows(events: ReviewEvent[], range: ReviewStatsRange): ReviewStatsMonthRow[] {
+  const byMonth = new Map<string, ReviewEvent[]>()
+  for (const event of events) {
+    const timestamp = Date.parse(event.occurred_at)
+    if (Number.isNaN(timestamp)) continue
+    const month = monthKeyFromDateKey(toDateKey(new Date(timestamp)))
     const current = byMonth.get(month)
-    if (current) current.push(request)
-    else byMonth.set(month, [request])
+    if (current) current.push(event)
+    else byMonth.set(month, [event])
   }
 
   return monthKeysBetween(range.startDate, range.endDate).map((month) => {
-    const monthRequests = byMonth.get(month) ?? []
-    const counts = statusCounts(monthRequests)
-    const submissionCount = monthRequests.reduce((sum, request) => sum + reviewSubmissionCount(request), 0)
+    const monthEvents = byMonth.get(month) ?? []
+    const requestCount = monthEvents.filter((event) => event.event_type === 'submitted').length
+    const resubmissionCount = monthEvents.filter((event) => event.event_type === 'resubmitted').length
+    const latestStatusByRequest = new Map<string, ReviewEvent>()
+    for (const event of monthEvents) {
+      if (!event.to_status) continue
+      const current = latestStatusByRequest.get(event.review_request_id)
+      if (!current || Number(event.id) > Number(current.id)) latestStatusByRequest.set(event.review_request_id, event)
+    }
     return {
       month,
-      requestCount: monthRequests.length,
-      submissionCount,
-      resubmissionCount: Math.max(0, submissionCount - monthRequests.length),
-      pendingCount: counts.pending,
-      approvedCount: counts.approved,
-      rejectedCount: counts.rejected,
+      requestCount,
+      submissionCount: requestCount + resubmissionCount,
+      resubmissionCount,
+      pendingCount: [...latestStatusByRequest.values()].filter((event) => event.to_status === 'pending').length,
+      approvedCount: monthEvents.filter((event) => event.event_type === 'approved').length,
+      rejectedCount: monthEvents.filter((event) => event.event_type === 'rejected').length,
     }
   })
 }
 
 export function selectReviewStats(
-  data: Pick<AppData, 'profiles' | 'reviewRequests'>,
+  data: Pick<AppData, 'profiles' | 'reviewRequests' | 'reviewEvents'>,
   filters: ReviewStatsFilters,
   now = new Date(),
 ): ReviewStatsResult {
@@ -385,30 +396,48 @@ export function selectReviewStats(
       })
     : []
 
+  const eventScopedRequests = data.reviewRequests.filter((request) => {
+    if (filters.requesterId !== 'all' && request.requester_id !== filters.requesterId) return false
+    return filters.status === 'all' || request.status === filters.status
+  })
+  const filteredRequestIds = new Set(eventScopedRequests.map((request) => request.id))
+  const filteredEvents = range.valid
+    ? (data.reviewEvents ?? []).filter((event) => {
+        if (!filteredRequestIds.has(event.review_request_id) || event.event_type === 'withdrawn') return false
+        const timestamp = Date.parse(event.occurred_at)
+        if (Number.isNaN(timestamp)) return false
+        const dateKey = toDateKey(new Date(timestamp))
+        return dateKey >= range.startDate && dateKey <= range.endDate
+      })
+    : []
+
   const counts = statusCounts(filteredRequests)
-  const submissionCount = filteredRequests.reduce((sum, request) => sum + reviewSubmissionCount(request), 0)
-  const requesterRows = buildRequesterRows(filteredRequests, identities)
+  const requestCount = filteredEvents.filter((event) => event.event_type === 'submitted').length
+  const resubmissionCount = filteredEvents.filter((event) => event.event_type === 'resubmitted').length
+  const submissionCount = requestCount + resubmissionCount
+  const requesterRows = buildRequesterRows(eventScopedRequests, filteredEvents, identities)
+    .filter((row) => row.submissionCount + row.approvedCount + row.rejectedCount > 0)
 
   return {
     range,
     requesterOptions,
     filteredRequests,
     kpis: {
-      requestCount: filteredRequests.length,
+      requestCount,
       submissionCount,
-      resubmissionCount: Math.max(0, submissionCount - filteredRequests.length),
+      resubmissionCount,
       pendingCount: counts.pending,
-      approvedCount: counts.approved,
-      rejectedCount: counts.rejected,
+      approvedCount: filteredEvents.filter((event) => event.event_type === 'approved').length,
+      rejectedCount: filteredEvents.filter((event) => event.event_type === 'rejected').length,
     },
     requesterRows,
-    monthlyRows: range.valid ? buildMonthlyRows(filteredRequests, range) : [],
+    monthlyRows: range.valid ? buildMonthlyRows(filteredEvents, range) : [],
     statusCounts: STATUS_ORDER.reduce<Record<ReviewStatus, number>>(
       (result, status) => {
         result[status] = counts[status]
         return result
       },
-      { pending: 0, approved: 0, rejected: 0 },
+      { pending: 0, approved: 0, rejected: 0, withdrawn: 0 },
     ),
   }
 }

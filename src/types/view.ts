@@ -16,6 +16,9 @@ import type {
   Project,
   ProjectAssignment,
   ReviewRequest,
+  ReviewEvent,
+  ReviewReadReceipt,
+  AuditEvent,
   ProductChangeTask,
 } from './domain'
 
@@ -34,6 +37,10 @@ export interface AppData {
   productAssignments: ProductAssignment[]
   dutyAssignments: DutyAssignment[]
   reviewRequests: ReviewRequest[]
+  /** Optional slices retain their last good snapshot when a secondary query fails. */
+  reviewEvents?: ReviewEvent[]
+  reviewReadReceipts?: ReviewReadReceipt[]
+  auditEvents?: AuditEvent[]
   projects: Project[]
   projectAssignments: ProjectAssignment[]
   profileNotes: ProfileNote[]

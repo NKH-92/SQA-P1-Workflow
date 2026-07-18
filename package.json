@@ -11,7 +11,10 @@
     "test:rls": "node scripts/run-rls-tests.mjs",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "ops:attachments:dry-run": "node scripts/purge-review-attachments.mjs",
+    "ops:password-change:dry-run": "node scripts/force-password-change.mjs",
+    "ops:activity-prune:dry-run": "node scripts/prune-activity-logs.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",

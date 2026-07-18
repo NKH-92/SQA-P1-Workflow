@@ -8,7 +8,6 @@ function makeRequest(overrides: Partial<ReviewRequest>): ReviewRequest {
     requester_id: 'u1',
     title: 'Test',
     description: 'Desc',
-    attachment_url: null,
     due_date: null,
     status: 'pending',
     created_at: '2026-07-01T00:00:00.000Z',

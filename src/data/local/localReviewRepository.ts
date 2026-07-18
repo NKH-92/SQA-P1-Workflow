@@ -1,4 +1,3 @@
-import { validateStorageAttachmentOwnership } from '../../lib/attachments'
 import { recordActivityLog } from '../../lib/activityLog'
 import { UserFacingError } from '../../lib/errors'
 import { reviewStatusLabels } from '../../lib/format'
@@ -12,7 +11,6 @@ import {
   assertCanResubmit,
   assertFeedbackComment,
   assertReviewStatusTransition,
-  assertStorageAttachmentOnly,
 } from '../validation/reviews'
 import {
   appendReviewFeedback,
@@ -20,8 +18,8 @@ import {
   newId,
   rejectReviewRequest as rejectReviewRequestReducer,
   resubmitReviewRequest as resubmitReviewRequestReducer,
-  removeReviewFeedback,
-  removeReviewRequest,
+  voidReviewFeedback,
+  withdrawReviewRequest,
   setReviewStatus,
   updateReviewFeedback,
   updateReviewRequest,
@@ -33,10 +31,6 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
   return {
     async saveReviewRequest({ editingReviewId, payload }) {
       const { title, due_date: dueDate } = payload
-      assertStorageAttachmentOnly(payload.attachment_url)
-      const attachmentError = validateStorageAttachmentOwnership(profile.id, payload.attachment_url)
-      if (attachmentError) throw new UserFacingError(attachmentError)
-
       if (editingReviewId) {
         // Parity with remote RLS: a requester may correct a pending or rejected request.
         const target = data.reviewRequests.find((item) => item.id === editingReviewId)
@@ -74,7 +68,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       return { reviewId, isUpdate: false }
     },
 
-    async withdrawReviewRequest(requestId) {
+    async withdrawReviewRequest(requestId, reason) {
       const request = data.reviewRequests.find((item) => item.id === requestId)
       if (!request) {
         throw new UserFacingError('검토요청을 찾을 수 없습니다.')
@@ -85,13 +79,15 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       if (request.requester_id !== profile.id) {
         throw new UserFacingError('본인의 요청만 회수할 수 있습니다.')
       }
-      setData((current) => removeReviewRequest(current, requestId))
+      if (reason.trim().length < 2) throw new UserFacingError('회수 사유를 2자 이상 입력해 주세요.')
+      setData((current) => withdrawReviewRequest(current, requestId, profile, reason.trim()))
       await recordActivityLog(setData, {
         actor: profile,
         entityType: 'review_request',
         entityId: requestId,
         action: 'withdrawn',
         summary: `${profile.name}님이 ${request.title} 검토요청을 회수했습니다.`,
+        metadata: { reason: reason.trim() },
       })
     },
 
@@ -119,7 +115,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       const request = data.reviewRequests.find((item) => item.id === requestId)
       if (!request) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
       assertReviewStatusTransition(request.status, status)
-      setData((current) => setReviewStatus(current, requestId, status))
+      setData((current) => setReviewStatus(current, requestId, status, profile))
       await recordActivityLog(setData, {
         actor: profile,
         targetUserId: request?.requester_id ?? null,
@@ -136,14 +132,14 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       const request = data.reviewRequests.find((item) => item.id === requestId)
       if (!request) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
       assertCanReopen(request.status)
-      setData((current) => setReviewStatus(current, requestId, 'pending'))
+      setData((current) => setReviewStatus(current, requestId, 'pending', profile))
       await recordActivityLog(setData, {
         actor: profile,
         targetUserId: request.requester_id,
         entityType: 'review_request',
         entityId: requestId,
         action: 'reopened',
-        summary: `request reopened.`,
+        summary: `${request.title} 검토요청을 다시 열었습니다.`,
         metadata: { from_status: request.status, status: 'pending' },
       })
     },
@@ -190,7 +186,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
         created_at: new Date().toISOString(),
         profiles: { name: profile.name },
       }
-      setData((current) => appendReviewFeedback(current, requestId, item))
+      setData((current) => appendReviewFeedback(current, requestId, item, profile))
       await recordActivityLog(setData, {
         actor: profile,
         targetUserId: request?.requester_id ?? null,
@@ -215,38 +211,89 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       }
       const request = data.reviewRequests.find((item) => item.id === feedback.review_request_id)
       const trimmedComment = comment.trim()
-      setData((current) => updateReviewFeedback(current, feedbackId, trimmedComment))
+      setData((current) => updateReviewFeedback(current, feedbackId, trimmedComment, profile))
       await recordActivityLog(setData, {
         actor: profile,
         targetUserId: request?.requester_id ?? null,
         entityType: 'review_feedback',
         entityId: feedbackId,
         action: 'updated',
-        summary: `feedback updated.`,
+        summary: `검토 피드백을 수정했습니다.`,
         metadata: { review_request_id: feedback.review_request_id },
       })
     },
 
-    async deleteReviewFeedback(feedbackId) {
+    async voidReviewFeedback(feedbackId, reason) {
       assertActiveLeader(profile)
       const feedback = data.reviewRequests
         .flatMap((request) => request.review_feedback ?? [])
         .find((item) => item.id === feedbackId)
       if (!feedback) throw new UserFacingError('피드백을 찾을 수 없습니다.')
       if ((feedback.author_role ?? 'leader') !== 'leader' || feedback.leader_id !== profile.id) {
-        throw new UserFacingError('본인이 작성한 파트장 피드백만 삭제할 수 있습니다.')
+        throw new UserFacingError('본인이 작성한 파트장 피드백만 무효화할 수 있습니다.')
       }
+      if (feedback.voided_at) throw new UserFacingError('이미 무효화된 피드백입니다.')
+      if (reason.trim().length < 2) throw new UserFacingError('무효화 사유를 2자 이상 입력해 주세요.')
       const request = data.reviewRequests.find((item) => item.id === feedback.review_request_id)
-      setData((current) => removeReviewFeedback(current, feedbackId))
+      setData((current) => voidReviewFeedback(current, feedbackId, profile, reason.trim()))
       await recordActivityLog(setData, {
         actor: profile,
         targetUserId: request?.requester_id ?? null,
         entityType: 'review_feedback',
         entityId: feedbackId,
-        action: 'deleted',
-        summary: `feedback deleted.`,
-        metadata: { review_request_id: feedback.review_request_id },
+        action: 'voided',
+        summary: `검토 피드백을 무효화했습니다.`,
+        metadata: { review_request_id: feedback.review_request_id, reason: reason.trim() },
       })
+    },
+
+    async markReviewSeen(requestId) {
+      const request = data.reviewRequests.find((item) => item.id === requestId)
+      if (!request || (profile.role !== 'leader' && request.requester_id !== profile.id)) {
+        throw new UserFacingError('검토요청을 찾을 수 없습니다.')
+      }
+      const relevantTypes = profile.role === 'leader'
+        ? new Set(['submitted', 'resubmitted'])
+        : new Set(['feedback_added', 'feedback_updated', 'approved', 'rejected', 'reopened'])
+      const latest = (data.reviewEvents ?? [])
+        .filter((event) => event.review_request_id === requestId && relevantTypes.has(event.event_type))
+        .reduce((max, event) => Math.max(max, event.id), 0)
+      if (latest === 0) return
+      setData((current) => ({
+        ...current,
+        reviewReadReceipts: [
+          ...(current.reviewReadReceipts ?? []).filter((receipt) => !(receipt.user_id === profile.id && receipt.review_request_id === requestId)),
+          { user_id: profile.id, review_request_id: requestId, last_seen_event_id: latest, read_at: new Date().toISOString() },
+        ],
+      }))
+    },
+
+    async markAllRelevantReviewsSeen() {
+      const relevantRequests = data.reviewRequests.filter((request) =>
+        profile.role === 'leader' || request.requester_id === profile.id,
+      )
+      const relevantIds = new Set(relevantRequests.map((request) => request.id))
+      const relevantTypes = profile.role === 'leader'
+        ? new Set(['submitted', 'resubmitted'])
+        : new Set(['feedback_added', 'feedback_updated', 'approved', 'rejected', 'reopened'])
+      const latestByRequest = new Map<string, number>()
+      for (const event of data.reviewEvents ?? []) {
+        if (!relevantIds.has(event.review_request_id) || !relevantTypes.has(event.event_type)) continue
+        latestByRequest.set(event.review_request_id, Math.max(latestByRequest.get(event.review_request_id) ?? 0, event.id))
+      }
+      const now = new Date().toISOString()
+      setData((current) => ({
+        ...current,
+        reviewReadReceipts: [
+          ...(current.reviewReadReceipts ?? []).filter((receipt) => receipt.user_id !== profile.id),
+          ...[...latestByRequest].map(([reviewRequestId, lastSeenEventId]) => ({
+            user_id: profile.id,
+            review_request_id: reviewRequestId,
+            last_seen_event_id: lastSeenEventId,
+            read_at: now,
+          })),
+        ],
+      }))
     },
   }
 }

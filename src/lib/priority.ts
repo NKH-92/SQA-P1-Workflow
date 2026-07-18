@@ -5,6 +5,7 @@ const statusWeights: Record<ReviewStatus, number> = {
   pending: 0,
   rejected: 1_000_000,
   approved: 2_000_000,
+  withdrawn: 3_000_000,
 }
 
 const MAX_DUE_WEIGHT = 499_999

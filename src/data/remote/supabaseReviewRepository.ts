@@ -1,5 +1,3 @@
-import { removeReviewAttachment, validateStorageAttachmentOwnership } from '../../lib/attachments'
-import { recordActivityLog } from '../../lib/activityLog'
 import { UserFacingError } from '../../lib/errors'
 import { supabase } from '../../lib/supabase'
 import type { RepositoryDeps, ReviewRepository } from '../repositories/types'
@@ -10,7 +8,6 @@ import {
   assertCanResubmit,
   assertFeedbackComment,
   assertReviewStatusTransition,
-  assertStorageAttachmentOnly,
 } from '../validation/reviews'
 
 export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepository {
@@ -18,81 +15,38 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
 
   return {
     async saveReviewRequest({ editingReviewId, payload }) {
-      const { title, due_date: dueDate } = payload
-      assertStorageAttachmentOnly(payload.attachment_url)
-      const attachmentError = validateStorageAttachmentOwnership(profile.id, payload.attachment_url)
-      if (attachmentError) throw new UserFacingError(attachmentError)
-
       if (editingReviewId) {
         const previous = data.reviewRequests.find((item) => item.id === editingReviewId)
         if (!previous) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
-        const previousAttachment = previous.attachment_url
-        const { data: updated, error } = await supabase!
-          .from('review_requests')
-          .update(payload)
-          .eq('id', editingReviewId)
-          .eq('updated_at', previous.updated_at)
-          .select('id')
+        const { error } = await supabase!.rpc('update_review_request', {
+          p_review_request_id: editingReviewId,
+          p_expected_updated_at: previous.updated_at,
+          p_title: payload.title,
+          p_description: payload.description,
+          p_due_date: payload.due_date,
+        })
         if (error) throw error
-        // RLS allows editing the requester's own pending or rejected row. Zero rows means
-        // the request changed while the editor was open — surface it instead of a
-        // misleading success toast.
-        if (!updated || updated.length === 0) {
-          throw new UserFacingError('이미 처리된 요청이라 수정할 수 없습니다. 목록을 새로고침해 주세요.')
-        }
-        if (previousAttachment && previousAttachment !== payload.attachment_url) {
-          // ??????쎈솭??removeReviewAttachment ????癒?퐣 ??깊룖筌왖沃샕嚥?野껉퀗?든몴?疫꿸퀡?롧뵳???곸?揶쎛 ??용뼄.
-          // ?대끃??await??롢늺 ?源껊궗 ?醫롫뮞?硫? ??쎈꽅?귐? ?類ｋ궗筌띾슦寃???堉깍쭪袁⑤뼄.
-          void removeReviewAttachment(previousAttachment)
-        }
-        await recordActivityLog(setData, {
-          actor: profile,
-          entityType: 'review_request',
-          entityId: editingReviewId,
-          action: 'updated',
-        summary: `${profile.name}님이 ${title} 검토요청을 수정했습니다.`,
-          metadata: { due_date: dueDate },
-        }, { isRemote: true })
         return { reviewId: editingReviewId, isUpdate: true }
       }
 
-      const { data: created, error } = await supabase!.from('review_requests').insert({
-        requester_id: profile.id,
-        ...payload,
-        status: 'pending',
-      }).select('id').single()
+      const { data: createdId, error } = await supabase!.rpc('create_review_request', {
+        p_title: payload.title,
+        p_description: payload.description,
+        p_due_date: payload.due_date,
+      })
       if (error) throw error
-      const reviewId = created?.id ?? ''
-      await recordActivityLog(setData, {
-        actor: profile,
-        entityType: 'review_request',
-        entityId: created?.id ?? null,
-        action: 'created',
-        summary: `${profile.name}님이 ${title} 검토를 요청했습니다.`,
-        metadata: { due_date: dueDate },
-      }, { isRemote: true })
-      return { reviewId, isUpdate: false }
+      return { reviewId: typeof createdId === 'string' ? createdId : '', isUpdate: false }
     },
 
-    async withdrawReviewRequest(requestId) {
+    async withdrawReviewRequest(requestId, reason) {
       const request = data.reviewRequests.find((item) => item.id === requestId)
-      const { data: deleted, error } = await supabase!
-        .from('review_requests')
-        .delete()
-        .eq('id', requestId)
-        .select('id')
+      if (!request) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
+      const { error } = await supabase!.rpc('withdraw_review_request', {
+        p_review_request_id: requestId,
+        p_expected_updated_at: request.updated_at,
+        p_reason: reason.trim(),
+      })
       if (error) throw error
-      if (!deleted || deleted.length === 0) {
-        throw new UserFacingError('이미 처리된 요청이라 회수할 수 없습니다. 목록을 새로고침해 주세요.')
-      }
-      if (request?.attachment_url) void removeReviewAttachment(request.attachment_url)
-      await recordActivityLog(setData, {
-        actor: profile,
-        entityType: 'review_request',
-        entityId: requestId,
-        action: 'withdrawn',
-        summary: `${profile.name}님이 ${request?.title ?? '검토요청'} 검토요청을 회수했습니다.`,
-      }, { isRemote: true })
     },
 
     async rejectReviewRequest(requestId, comment) {
@@ -101,7 +55,8 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
       assertCanReject(request.status)
       const { error } = await supabase!.rpc('reject_review_request', {
         p_review_request_id: requestId,
-        p_comment: comment,
+        p_expected_updated_at: request.updated_at,
+        p_comment: comment.trim(),
       })
       if (error) throw error
     },
@@ -110,9 +65,10 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
       const request = data.reviewRequests.find((item) => item.id === requestId)
       if (!request) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
       assertReviewStatusTransition(request.status, status)
-      const { error } = await supabase!.rpc('update_review_request_status', {
+      if (status !== 'approved') throw new UserFacingError('승인 이외의 상태 변경은 전용 동작을 사용해 주세요.')
+      const { error } = await supabase!.rpc('approve_review_request', {
         p_review_request_id: requestId,
-        p_status: status,
+        p_expected_updated_at: request.updated_at,
       })
       if (error) throw error
     },
@@ -123,37 +79,35 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
       assertCanReopen(request.status)
       const { error } = await supabase!.rpc('reopen_review_request', {
         p_review_request_id: requestId,
+        p_expected_updated_at: request.updated_at,
       })
       if (error) throw error
-      // The RPC writes the authoritative activity log in the same transaction.
     },
 
     async resubmitReviewRequest(requestId, comment) {
       assertActiveMember(profile)
       assertFeedbackComment(comment)
       const request = data.reviewRequests.find((item) => item.id === requestId)
-      if (!request) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
-      if (request.requester_id !== profile.id) {
+      if (!request || request.requester_id !== profile.id) {
         throw new UserFacingError('본인의 요청만 재요청할 수 있습니다.')
       }
       assertCanResubmit(request.status)
       const { error } = await supabase!.rpc('resubmit_review_request', {
         p_review_request_id: requestId,
+        p_expected_updated_at: request.updated_at,
         p_comment: comment.trim(),
       })
       if (error) throw error
-      // The RPC appends the member feedback, reopens the same row, and writes its audit log.
     },
 
     async addReviewFeedback(requestId, comment) {
       assertFeedbackComment(comment)
       const { data: createdId, error } = await supabase!.rpc('add_review_feedback', {
         p_review_request_id: requestId,
-        p_comment: comment,
+        p_comment: comment.trim(),
       })
       if (error) throw error
-      const feedbackId = typeof createdId === 'string' ? createdId : null
-      return feedbackId
+      return typeof createdId === 'string' ? createdId : null
     },
 
     async updateReviewFeedback(feedbackId, comment) {
@@ -162,57 +116,79 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
         .flatMap((request) => request.review_feedback ?? [])
         .find((item) => item.id === feedbackId)
       if (!feedback) throw new UserFacingError('피드백을 찾을 수 없습니다.')
-      if ((feedback.author_role ?? 'leader') !== 'leader' || feedback.leader_id !== profile.id) {
-        throw new UserFacingError('본인이 작성한 파트장 피드백만 수정할 수 있습니다.')
-      }
-      const request = data.reviewRequests.find((item) => item.id === feedback.review_request_id)
-      const { data: updated, error } = await supabase!
-        .from('review_feedback')
-        .update({ comment: comment.trim() })
-        .eq('id', feedbackId)
-        .select('id')
+      const { error } = await supabase!.rpc('update_review_feedback', {
+        p_feedback_id: feedbackId,
+        p_expected_updated_at: feedback.updated_at ?? feedback.created_at,
+        p_comment: comment.trim(),
+      })
       if (error) throw error
-      if (!updated || updated.length === 0) {
-        throw new UserFacingError('피드백을 수정할 수 없습니다. 목록을 새로고침해 주세요.')
-      }
-      await recordActivityLog(setData, {
-        actor: profile,
-        targetUserId: request?.requester_id ?? null,
-        entityType: 'review_feedback',
-        entityId: feedbackId,
-        action: 'updated',
-        summary: `feedback updated.`,
-        metadata: { review_request_id: feedback.review_request_id },
-      }, { isRemote: true })
     },
 
-    async deleteReviewFeedback(feedbackId) {
+    async voidReviewFeedback(feedbackId, reason) {
       const feedback = data.reviewRequests
         .flatMap((request) => request.review_feedback ?? [])
         .find((item) => item.id === feedbackId)
       if (!feedback) throw new UserFacingError('피드백을 찾을 수 없습니다.')
-      if ((feedback.author_role ?? 'leader') !== 'leader' || feedback.leader_id !== profile.id) {
-        throw new UserFacingError('본인이 작성한 파트장 피드백만 삭제할 수 있습니다.')
-      }
-      const request = data.reviewRequests.find((item) => item.id === feedback.review_request_id)
-      const { data: deleted, error } = await supabase!
-        .from('review_feedback')
-        .delete()
-        .eq('id', feedbackId)
-        .select('id')
+      const { error } = await supabase!.rpc('void_review_feedback', {
+        p_feedback_id: feedbackId,
+        p_expected_updated_at: feedback.updated_at ?? feedback.created_at,
+        p_reason: reason.trim(),
+      })
       if (error) throw error
-      if (!deleted || deleted.length === 0) {
-        throw new UserFacingError('피드백을 삭제할 수 없습니다. 목록을 새로고침해 주세요.')
+    },
+
+    async markReviewSeen(requestId) {
+      const { data: latestEventId, error } = await supabase!.rpc('mark_review_seen', {
+        p_review_request_id: requestId,
+      })
+      if (error) throw error
+      const parsedEventId = Number(latestEventId)
+      if (!Number.isFinite(parsedEventId)) return
+      setData((current) => ({
+        ...current,
+        reviewReadReceipts: [
+          ...(current.reviewReadReceipts ?? []).filter(
+            (receipt) => !(receipt.user_id === profile.id && receipt.review_request_id === requestId),
+          ),
+          {
+            user_id: profile.id,
+            review_request_id: requestId,
+            last_seen_event_id: parsedEventId,
+            read_at: new Date().toISOString(),
+          },
+        ],
+      }))
+    },
+
+    async markAllRelevantReviewsSeen() {
+      const { error } = await supabase!.rpc('mark_all_relevant_reviews_seen')
+      if (error) throw error
+      const relevantTypes = profile.role === 'leader'
+        ? new Set(['submitted', 'resubmitted'])
+        : new Set(['feedback_added', 'feedback_updated', 'feedback_voided', 'approved', 'rejected', 'reopened'])
+      const latestByRequest = new Map<string, number>()
+      for (const event of data.reviewEvents ?? []) {
+        if (!relevantTypes.has(event.event_type)) continue
+        const request = data.reviewRequests.find((item) => item.id === event.review_request_id)
+        if (!request || (profile.role !== 'leader' && request.requester_id !== profile.id)) continue
+        latestByRequest.set(
+          event.review_request_id,
+          Math.max(latestByRequest.get(event.review_request_id) ?? 0, Number(event.id)),
+        )
       }
-      await recordActivityLog(setData, {
-        actor: profile,
-        targetUserId: request?.requester_id ?? null,
-        entityType: 'review_feedback',
-        entityId: feedbackId,
-        action: 'deleted',
-        summary: `feedback deleted.`,
-        metadata: { review_request_id: feedback.review_request_id },
-      }, { isRemote: true })
+      const now = new Date().toISOString()
+      setData((current) => ({
+        ...current,
+        reviewReadReceipts: [
+          ...(current.reviewReadReceipts ?? []).filter((receipt) => receipt.user_id !== profile.id),
+          ...[...latestByRequest].map(([reviewRequestId, lastSeenEventId]) => ({
+            user_id: profile.id,
+            review_request_id: reviewRequestId,
+            last_seen_event_id: lastSeenEventId,
+            read_at: now,
+          })),
+        ],
+      }))
     },
   }
 }

@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { reviewStatusLabels } from '../lib/format'
-import type { AppData, ReviewRequest } from '../types'
+import type { AppData, ReviewEvent, ReviewRequest } from '../types'
 import { ReviewStatsPanel } from './ReviewStatsPanel'
 
 function emptyData(): AppData {
@@ -32,12 +32,31 @@ function request(overrides: Partial<ReviewRequest> & Pick<ReviewRequest, 'id' | 
   return {
     title: overrides.id,
     description: '',
-    attachment_url: null,
     due_date: null,
     created_at: new Date(2026, 5, 10, 12).toISOString(),
     review_round: 1,
     ...overrides,
   }
+}
+
+function withReviewEvents(data: AppData): AppData {
+  let id = 0
+  const reviewEvents: ReviewEvent[] = data.reviewRequests.flatMap((review) => {
+    const submitted: ReviewEvent = {
+      id: ++id, review_request_id: review.id, actor_id: review.requester_id,
+      actor_name_snapshot: review.profiles?.name ?? '요청자', event_type: 'submitted',
+      from_status: null, to_status: 'pending', occurred_at: review.created_at!, metadata: {}, transaction_id: id,
+    }
+    const events = [submitted]
+    for (let round = 1; round < (review.review_round ?? 1); round += 1) {
+      events.push({ ...submitted, id: ++id, event_type: 'resubmitted', from_status: 'rejected', transaction_id: id })
+    }
+    if (review.status === 'approved' || review.status === 'rejected') {
+      events.push({ ...submitted, id: ++id, event_type: review.status, from_status: 'pending', to_status: review.status, transaction_id: id })
+    }
+    return events
+  })
+  return { ...data, reviewEvents }
 }
 
 describe('ReviewStatsPanel', () => {
@@ -102,13 +121,13 @@ describe('ReviewStatsPanel', () => {
       }),
     ]
 
-    render(<ReviewStatsPanel data={data} />)
+    render(<ReviewStatsPanel data={withReviewEvents(data)} />)
 
     expect(screen.getByRole('article', { name: '요청 건수 2건' })).toBeInTheDocument()
     expect(screen.getByRole('article', { name: '제출 횟수 4회' })).toBeInTheDocument()
 
     const table = screen.getByRole('table', {
-      name: '요청 건수는 행 수, 제출 횟수는 각 행의 review_round 합계이며 값이 없거나 유효하지 않으면 1회로 계산합니다.',
+      name: '요청·재제출·승인·반려 수치는 서버의 검토 이벤트 발생 시각을 기준으로 집계합니다.',
     })
     const requesterRow = within(table).getByRole('row', { name: /한 요청자/ })
     expect(within(requesterRow).getAllByRole('cell').map((cell: HTMLElement) => cell.textContent)).toEqual([
@@ -134,7 +153,7 @@ describe('ReviewStatsPanel', () => {
       request({ id: 'two-approved', requester_id: 'member-2', status: 'approved', review_round: 4 }),
     ]
 
-    render(<ReviewStatsPanel data={data} />)
+    render(<ReviewStatsPanel data={withReviewEvents(data)} />)
     fireEvent.change(screen.getByLabelText('요청자'), { target: { value: 'member-1' } })
     fireEvent.change(screen.getByLabelText('상태'), { target: { value: 'approved' } })
 
@@ -169,7 +188,7 @@ describe('ReviewStatsPanel', () => {
       }),
     ]
 
-    render(<ReviewStatsPanel data={data} />)
+    render(<ReviewStatsPanel data={withReviewEvents(data)} />)
 
     expect(screen.getByRole('option', { name: '퇴직 요청자 (비활성)' })).toBeInTheDocument()
     expect(screen.getAllByText('비활성').length).toBeGreaterThanOrEqual(2)
@@ -181,7 +200,7 @@ describe('ReviewStatsPanel', () => {
     data.profiles = [{ id: 'member-1', email: 'one@example.com', name: '한 요청자', role: 'member' }]
     data.reviewRequests = [request({ id: 'only-approved', requester_id: 'member-1', status: 'approved' })]
 
-    render(<ReviewStatsPanel data={data} />)
+    render(<ReviewStatsPanel data={withReviewEvents(data)} />)
     fireEvent.change(screen.getByLabelText('상태'), { target: { value: 'rejected' } })
 
     expect(screen.getByRole('article', { name: '요청 건수 0건' })).toBeInTheDocument()

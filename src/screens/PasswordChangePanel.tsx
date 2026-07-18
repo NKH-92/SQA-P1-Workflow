@@ -27,16 +27,20 @@ export function PasswordChangePanel({ profile, onComplete, onSignOut }: Password
   const completePasswordChange = async () => {
     if (!supabase) return false
 
-    const { data: updatedProfile, error: profileError } = await supabase.rpc('mark_password_changed')
-    if (profileError) {
-      setNotice(
-        `비밀번호는 변경되었을 수 있으나 완료 처리에 실패했습니다. 새 비밀번호로 다시 로그인한 뒤 완료 처리를 재시도하세요. (${toUserMessage(profileError)})`,
-      )
-      return false
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const { data: updatedProfile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', profile.id)
+        .maybeSingle()
+      if (!profileError && updatedProfile && updatedProfile.must_change_password === false) {
+        onComplete(updatedProfile as Profile)
+        return true
+      }
+      if (attempt < 4) await new Promise((resolve) => setTimeout(resolve, 250))
     }
-
-    onComplete((updatedProfile as Profile | null) ?? { ...profile, must_change_password: false })
-    return true
+    setNotice('비밀번호 변경은 완료됐지만 계정 상태 확인이 지연되고 있습니다. 새 비밀번호로 다시 로그인하거나 상태 확인을 재시도하세요.')
+    return false
   }
 
   const retryCompletion = async () => {
@@ -53,10 +57,6 @@ export function PasswordChangePanel({ profile, onComplete, onSignOut }: Password
 
     if (password.length < PASSWORD_MIN_LENGTH) {
       setNotice(`새 비밀번호는 ${PASSWORD_MIN_LENGTH}자 이상이어야 합니다.`)
-      return
-    }
-    if (password === '1234') {
-      setNotice('임시 비밀번호 1234는 다시 사용할 수 없습니다.')
       return
     }
     if (password !== confirmation) {

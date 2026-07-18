@@ -14,7 +14,7 @@ export function selectReviewStatusCounts(requests: ReviewRequest[]) {
       ...counts,
       [request.status]: counts[request.status] + 1,
     }),
-    { pending: 0, approved: 0, rejected: 0 } satisfies Record<ReviewStatus, number>,
+    { pending: 0, approved: 0, rejected: 0, withdrawn: 0 } satisfies Record<ReviewStatus, number>,
   )
 }
 
@@ -24,8 +24,9 @@ export function selectVisibleReviewRequests(
   statusFilter: ReviewStatusFilter,
 ): ReviewRequest[] {
   const scoped = selectScopedReviewRequests(data, profile)
-  const base =
-    statusFilter === 'all' ? scoped : scoped.filter((request) => request.status === statusFilter)
+  const base = statusFilter === 'all'
+    ? scoped.filter((request) => request.status !== 'withdrawn')
+    : scoped.filter((request) => request.status === statusFilter)
 
   return [...base].sort((left, right) => compareReviewRequests(left, right, profile.role === 'member'))
 }

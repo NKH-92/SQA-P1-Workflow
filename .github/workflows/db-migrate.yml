@@ -246,12 +246,36 @@ jobs:
                   and tgname = 'review_requests_record_status_event'
                   and tgenabled in ('O', 'A')
               )")
+          review_hardening_gate=$(psql "$DATABASE_URL" -tAc \
+            "select
+              exists (select 1 from supabase_migrations.schema_migrations where version = '20260718054122')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '20260718054124')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '20260718054127')
+              and exists (select 1 from pg_enum value join pg_type type on type.oid = value.enumtypid where type.typname = 'review_status' and value.enumlabel = 'withdrawn')
+              and to_regclass('public.review_events') is not null
+              and to_regclass('public.review_read_receipts') is not null
+              and coalesce((select relrowsecurity from pg_class where oid = to_regclass('public.review_events')), false)
+              and coalesce((select relrowsecurity from pg_class where oid = to_regclass('public.review_read_receipts')), false)
+              and to_regprocedure('public.withdraw_review_request(uuid,timestamp with time zone,text)') is not null
+              and to_regprocedure('public.void_review_feedback(uuid,timestamp with time zone,text)') is not null
+              and to_regprocedure('public.mark_review_seen(uuid)') is not null
+              and to_regprocedure('public.mark_all_relevant_reviews_seen()') is not null
+              and has_function_privilege('authenticated', to_regprocedure('public.mark_review_seen(uuid)'), 'EXECUTE')
+              and not has_function_privilege('anon', to_regprocedure('public.mark_review_seen(uuid)'), 'EXECUTE')
+              and exists (select 1 from pg_trigger where tgrelid = 'auth.users'::regclass and tgname = 'on_auth_password_changed' and tgenabled in ('O', 'A'))
+              and exists (select 1 from pg_trigger where tgrelid = 'public.profiles'::regclass and tgname = 'profiles_block_physical_delete' and tgenabled in ('O', 'A'))
+              and coalesce(pg_get_functiondef(to_regprocedure('public.mark_password_changed()')) like '%SQA_PASSWORD_CHANGE_NOT_OBSERVED%', false)
+              and exists (select 1 from information_schema.columns where table_schema = 'private' and table_name = 'audit_events' and column_name = 'changed_fields')
+              and exists (select 1 from information_schema.columns where table_schema = 'private' and table_name = 'audit_events' and column_name = 'before_delta')
+              and exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'product_change_tasks' and column_name = 'cancel_kind')
+              and exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'change_applications' and column_name = 'archive_origin')
+              and to_regprocedure('public.restore_product_change_scope(uuid,text)') is not null")
           private_audit_gate=$(psql "$DATABASE_URL" -tAc \
             "select
               to_regclass('private.audit_events') is not null
               and not has_schema_privilege('authenticated', 'private', 'USAGE')
               and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('private.record_mutation_audit()')), false)
-              and coalesce((select 'search_path=pg_catalog, public, private, pg_temp' = any(proconfig) from pg_proc where oid = to_regprocedure('private.record_mutation_audit()')), false)
+              and coalesce((select 'search_path=pg_catalog' = any(proconfig) from pg_proc where oid = to_regprocedure('private.record_mutation_audit()')), false)
               and (
                 select count(*) >= 13 from pg_trigger
                 where tgfoid = to_regprocedure('private.record_mutation_audit()')
@@ -519,6 +543,11 @@ jobs:
             exit 1
           fi
 
+          if [ "$review_hardening_gate" != "t" ]; then
+            echo "::error::review workflow Stage A hardening verification failed (received: $review_hardening_gate)"
+            exit 1
+          fi
+
           if [ "$private_audit_gate" != "t" ]; then
             echo "::error::private mutation audit verification failed (received: $private_audit_gate)"
             exit 1
@@ -572,6 +601,7 @@ jobs:
           echo "leader UI product reason/current-leader assignment gate: $leader_ui_gate" >> "$GITHUB_STEP_SUMMARY"
           echo "leader profile view app-access gate: $leader_view_gate" >> "$GITHUB_STEP_SUMMARY"
           echo "review status RPC-only/audit gate: $review_status_gate" >> "$GITHUB_STEP_SUMMARY"
+          echo "review workflow Stage A hardening gate: $review_hardening_gate" >> "$GITHUB_STEP_SUMMARY"
           echo "private mutation audit gate: $private_audit_gate" >> "$GITHUB_STEP_SUMMARY"
           echo "last-active-leader serialization gate: $last_leader_gate" >> "$GITHUB_STEP_SUMMARY"
           echo "direct write/OCC hardening gate: $direct_write_gate" >> "$GITHUB_STEP_SUMMARY"

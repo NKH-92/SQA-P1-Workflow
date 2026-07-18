@@ -4,10 +4,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Profile, ReviewRequest } from '../../../types'
 import { ReviewRequestItem } from './ReviewRequestItem'
 
-vi.mock('../../../lib/attachments', () => ({
-  resolveAttachmentHref: vi.fn(async () => null),
-}))
-
 const member: Profile = {
   id: 'member-1',
   email: 'member@example.com',
@@ -20,7 +16,6 @@ const request: ReviewRequest = {
   requester_id: member.id,
   title: '반려된 검토요청',
   description: '수정이 필요한 요청입니다.',
-  attachment_url: null,
   due_date: null,
   status: 'rejected',
   review_round: 1,
@@ -55,7 +50,7 @@ function renderItem(resubmitReview = vi.fn(async () => true)) {
   render(
     <ReviewRequestItem
       addFeedback={vi.fn(async () => true)}
-      deleteFeedback={vi.fn(async () => true)}
+      voidFeedback={vi.fn(async () => true)}
       onEdit={vi.fn()}
       onWithdraw={vi.fn()}
       pendingWithdraw={false}

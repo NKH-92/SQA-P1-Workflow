@@ -24,8 +24,6 @@ type AppRoutesProps = {
   mutate: MutateFn
   setData: React.Dispatch<React.SetStateAction<AppData>>
   setActiveTab: (tab: TabId, entityId?: string) => void
-  /** 검토 리스트 미확인 dot의 기준 시각(App이 탭 진입 시 캡처). null이면 dot을 켜지 않는다. */
-  reviewsUnreadCutoff: string | null
 }
 
 export function AppRoutes({
@@ -37,7 +35,6 @@ export function AppRoutes({
   mutate,
   setData,
   setActiveTab,
-  reviewsUnreadCutoff,
 }: AppRoutesProps) {
   const leaderMode = profile.is_active !== false && canManageTeamData(profile)
 
@@ -68,7 +65,6 @@ export function AppRoutes({
           setData={setData}
           initialSelectedId={navEntityId}
           onInitialSelectionApplied={() => setNavEntityId(null)}
-          reviewsUnreadCutoff={reviewsUnreadCutoff}
         />
       )}
       {activeTab === 'review-stats' && leaderMode && <ReviewStatsPanel data={data} />}

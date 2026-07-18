@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { mergeReviewRequests, reviewHistoryCutoff, REVIEW_HISTORY_MONTHS } from './fetchAppData'
+import {
+  mergeReviewRequests,
+  reviewHistoryCutoff,
+  REVIEW_HISTORY_MONTHS,
+  REVIEW_REQUEST_SELECT,
+} from './fetchAppData'
 import type { ReviewRequest } from '../types'
 
 function review(id: string, created_at: string, status: ReviewRequest['status'] = 'approved'): ReviewRequest {
@@ -8,7 +13,6 @@ function review(id: string, created_at: string, status: ReviewRequest['status'] 
     requester_id: 'member-1',
     title: id,
     description: '',
-    attachment_url: null,
     due_date: null,
     status,
     created_at,
@@ -19,6 +23,11 @@ function review(id: string, created_at: string, status: ReviewRequest['status'] 
 }
 
 describe('review request load budget', () => {
+  it('never returns the compatibility-only attachment column to the browser', () => {
+    expect(REVIEW_REQUEST_SELECT).not.toContain('attachment_url')
+    expect(REVIEW_REQUEST_SELECT).not.toContain('*')
+  })
+
   it('uses the same six-month boundary as the dashboard history window', () => {
     expect(REVIEW_HISTORY_MONTHS).toBe(6)
     expect(reviewHistoryCutoff(new Date('2026-07-11T00:00:00.000Z'))).toBe('2026-01-11T00:00:00.000Z')

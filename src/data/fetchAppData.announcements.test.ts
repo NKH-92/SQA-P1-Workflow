@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => {
     or: ReturnType<typeof vi.fn>
     in: ReturnType<typeof vi.fn>
     limit: ReturnType<typeof vi.fn>
+    range: ReturnType<typeof vi.fn>
   }> = {}
   const from = vi.fn((table: string) => {
     trace.push(`from:${table}`)
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => {
       or: vi.fn(),
       in: vi.fn(),
       limit: vi.fn(),
+      range: vi.fn(),
       then: (
         resolve: (value: { data: unknown[] | null; error: unknown }) => unknown,
         reject?: (reason: unknown) => unknown,
@@ -30,12 +32,21 @@ const mocks = vi.hoisted(() => {
     query.or.mockReturnValue(query)
     query.in.mockReturnValue(query)
     query.limit.mockReturnValue(query)
+    query.range.mockReturnValue(query)
     queries[table] = query
     return query
   })
   const rpc = vi.fn((name: string) => {
     trace.push(`rpc:${name}`)
-    return Promise.resolve(rpcResults[name] ?? { data: [], error: null })
+    const query = {
+      range: vi.fn(),
+      then: (
+        resolve: (value: { data: unknown[] | null; error: unknown }) => unknown,
+        reject?: (reason: unknown) => unknown,
+      ) => Promise.resolve(rpcResults[name] ?? { data: [], error: null }).then(resolve, reject),
+    }
+    query.range.mockReturnValue(query)
+    return query
   })
   return { results, rpcResults, queries, trace, from, rpc }
 })
@@ -86,6 +97,8 @@ describe('fetchAppData orchestration and optional data', () => {
       'from:product_assignments',
       'from:duty_assignments',
       'from:review_requests',
+      'from:review_events',
+      'from:review_read_receipts',
       'from:projects',
       'from:project_assignments',
       'from:change_applications',
@@ -96,7 +109,7 @@ describe('fetchAppData orchestration and optional data', () => {
     ])
   })
 
-  it('creates optional queries only after the successful 14-query core array', async () => {
+  it('creates optional queries only after the successful 16-query core array', async () => {
     await fetchAppData()
 
     expect(mocks.trace).toEqual([
@@ -107,6 +120,8 @@ describe('fetchAppData orchestration and optional data', () => {
       'from:product_assignments',
       'from:duty_assignments',
       'from:review_requests',
+      'from:review_events',
+      'from:review_read_receipts',
       'from:projects',
       'from:project_assignments',
       'from:change_applications',
@@ -136,11 +151,11 @@ describe('fetchAppData orchestration and optional data', () => {
     const result = await fetchAppData()
 
     expect(result.optionalWarnings).toEqual([
-      '파트장 프로필 조회에 실패했습니다.',
-      '공지 조회에 실패했습니다.',
-      '초대 목록 조회에 실패했습니다.',
-      '프로필 메모 조회에 실패했습니다.',
-      '활동 로그 조회에 실패했습니다.',
+      '파트장 프로필 조회에 실패해 마지막 정상 데이터를 유지합니다.',
+      '공지 조회에 실패해 마지막 정상 데이터를 유지합니다.',
+      '초대 목록 조회에 실패해 마지막 정상 데이터를 유지합니다.',
+      '프로필 메모 조회에 실패해 마지막 정상 데이터를 유지합니다.',
+      '활동 로그 조회에 실패해 마지막 정상 데이터를 유지합니다.',
     ])
   })
 

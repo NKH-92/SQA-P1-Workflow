@@ -18,6 +18,7 @@ const users = [
   { key: 'inactive', email: 'rls-inactive@example.test', name: 'RLS Inactive', role: 'member', active: false },
   { key: 'pending', email: 'rls-pending-password@example.test', name: 'RLS Pending Password', role: 'member', active: true, mustChangePassword: true },
   { key: 'leaderB', email: 'rls-leader-b@example.test', name: 'RLS Leader B', role: 'leader', active: true },
+  { key: 'pendingHardened', email: 'rls-pending-password-hardened@example.test', name: 'RLS Hardened Pending Password', role: 'member', active: true, mustChangePassword: true },
 ]
 
 const { error: allowedError } = await admin.from('allowed_users').insert(
@@ -78,6 +79,10 @@ const { data: reviews, error: reviewsError } = await admin
   .insert([
     { requester_id: created.memberA.id, title: 'Member A pending', description: 'RLS fixture', status: 'pending', rejection_count: 0 },
     { requester_id: created.memberB.id, title: 'Member B pending', description: 'RLS fixture', status: 'pending', rejection_count: 0 },
+    { requester_id: created.memberA.id, title: 'Hardened OCC approval fixture', description: 'RLS fixture', status: 'pending', rejection_count: 0 },
+    { requester_id: created.memberA.id, title: 'Hardened withdrawal fixture', description: 'RLS fixture', status: 'pending', rejection_count: 0 },
+    { requester_id: created.memberA.id, title: 'Hardened receipt fixture', description: 'RLS fixture', status: 'pending', rejection_count: 0 },
+    { requester_id: created.memberA.id, title: 'Hardened feedback fixture', description: 'RLS fixture', status: 'rejected', rejection_count: 1 },
     { requester_id: created.memberA.id, title: 'Closed concurrency fixture', description: 'RLS fixture', status: 'rejected', rejection_count: 1 },
     { requester_id: created.memberA.id, title: 'Closed leader fixture', description: 'RLS fixture', status: 'rejected', rejection_count: 1 },
     { requester_id: created.memberA.id, title: 'Closed member fixture', description: 'RLS fixture', status: 'rejected', rejection_count: 1 },
@@ -90,13 +95,18 @@ if (reviewsError || !reviews) throw reviewsError ?? new Error('Failed to create 
 const reviewByTitle = new Map(reviews.map((item) => [item.title, item]))
 const memberAReview = reviewByTitle.get('Member A pending')
 const memberBReview = reviewByTitle.get('Member B pending')
+const hardenedOccReview = reviewByTitle.get('Hardened OCC approval fixture')
+const hardenedWithdrawalReview = reviewByTitle.get('Hardened withdrawal fixture')
+const hardenedReceiptReview = reviewByTitle.get('Hardened receipt fixture')
+const hardenedFeedbackReview = reviewByTitle.get('Hardened feedback fixture')
 const closedConcurrencyReview = reviewByTitle.get('Closed concurrency fixture')
 const closedLeaderReview = reviewByTitle.get('Closed leader fixture')
 const closedMemberReview = reviewByTitle.get('Closed member fixture')
 const resubmitHistoryReview = reviewByTitle.get('Resubmit history fixture')
 const resubmitConcurrencyReview = reviewByTitle.get('Resubmit concurrency fixture')
 if (
-  !memberAReview || !memberBReview || !closedConcurrencyReview || !closedLeaderReview ||
+  !memberAReview || !memberBReview || !hardenedOccReview || !hardenedWithdrawalReview ||
+  !hardenedReceiptReview || !hardenedFeedbackReview || !closedConcurrencyReview || !closedLeaderReview ||
   !closedMemberReview || !resubmitHistoryReview || !resubmitConcurrencyReview
 ) throw new Error('Review fixture ids are incomplete')
 
@@ -107,9 +117,10 @@ const { data: feedbackRows, error: feedbackError } = await admin
     { review_request_id: closedMemberReview.id, leader_id: created.leaderB.id, comment: 'Other leader feedback' },
     { review_request_id: resubmitHistoryReview.id, leader_id: created.leader.id, comment: 'Initial rejection reason' },
     { review_request_id: resubmitConcurrencyReview.id, leader_id: created.leader.id, comment: 'Concurrency rejection reason' },
+    { review_request_id: hardenedFeedbackReview.id, leader_id: created.leader.id, comment: 'Hardened feedback' },
   ])
   .select('id, review_request_id, leader_id')
-if (feedbackError || !feedbackRows || feedbackRows.length !== 4) {
+if (feedbackError || !feedbackRows || feedbackRows.length !== 5) {
   throw feedbackError ?? new Error('Feedback fixture ids are incomplete')
 }
 
@@ -129,12 +140,19 @@ const output = {
   RLS_PENDING_PASSWORD_EMAIL: users[4].email,
   RLS_PENDING_PASSWORD: password,
   RLS_PENDING_PASSWORD_USER_ID: created.pending.id,
+  RLS_HARDENED_PENDING_PASSWORD_EMAIL: users.find((user) => user.key === 'pendingHardened').email,
+  RLS_HARDENED_PENDING_PASSWORD: password,
+  RLS_HARDENED_PENDING_PASSWORD_USER_ID: created.pendingHardened.id,
   RLS_TEST_PRODUCT_ID: product.id,
   RLS_TEST_DUTY_ID: duty.id,
   RLS_TEST_PROJECT_ID: project.id,
   RLS_TEST_PROJECT_UPDATED_AT: project.updated_at,
   RLS_MEMBER_A_PENDING_REVIEW_REQUEST_ID: memberAReview.id,
   RLS_MEMBER_B_REVIEW_REQUEST_ID: memberBReview.id,
+  RLS_HARDENED_OCC_REVIEW_REQUEST_ID: hardenedOccReview.id,
+  RLS_HARDENED_WITHDRAW_REVIEW_REQUEST_ID: hardenedWithdrawalReview.id,
+  RLS_HARDENED_RECEIPT_REVIEW_REQUEST_ID: hardenedReceiptReview.id,
+  RLS_HARDENED_FEEDBACK_ID: feedbackRows[4].id,
   RLS_CLOSED_CONCURRENCY_REVIEW_REQUEST_ID: closedConcurrencyReview.id,
   RLS_CLOSED_LEADER_REVIEW_REQUEST_ID: closedLeaderReview.id,
   RLS_CLOSED_MEMBER_REVIEW_REQUEST_ID: closedMemberReview.id,

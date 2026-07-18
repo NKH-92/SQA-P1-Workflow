@@ -36,8 +36,8 @@
 - 마스터 `제품`/`초대 관리` 탭에서 CSV 가져오기로 일괄 등록할 수 있고, 기존 등록분과 **파일 내 중복 행**을 모두 건너뛰며, 가져온 건수와 건너뛴 건수를 안내한다.
 - 앱 로그인 화면에 **가입 UI가 없고** 로그인만 가능하다. 미초대 계정은 `BlockedProfile` 안내가 표시된다.
 - 파트장은 `pending` 검토만 `완료`/`반려`로 전환할 수 있고, `approved`/`rejected`에서는 확인 후 `다시 열기`로 `pending`에 복귀할 수 있다. 파트원에게는 재오픈 UI가 없다.
-- 검토요청 작성 시 **파일 업로드만** 첨부 가능하며 외부 URL 입력 필드는 없다. 데모 모드에서는 파일 첨부 시 안내 오류가 표시된다.
-- Storage 첨부(`storage://review-attachments/...`)가 있는 검토요청은 `첨부 열기` 링크로 열 수 있다(Supabase 연결 환경).
+- 검토요청 작성·수정·상세 화면에는 첨부 업로드·URL·열기 기능이 없고, 업무 자료는 별도 사내 메신저로 전달하라는 안내만 표시된다.
+- Stage A에서는 기존 Storage 객체와 `attachment_url`을 호환 목적으로 보존하지만 앱은 이를 만들거나 읽지 않는다. 운영 purge와 Stage B 제거는 [REVIEW_WORKFLOW_HARDENING_RUNBOOK.md](./REVIEW_WORKFLOW_HARDENING_RUNBOOK.md)의 차단 조건을 따른다.
 - 마스터 초대 카드에서 가입한 사용자를 `비활성화`/`활성화`할 수 있고, 비활성 계정은 로그인 후 안내 화면만 표시된다.
 - `npm test`와 `npm run build`가 CI에서 통과한다.
 
@@ -73,8 +73,9 @@ Supabase에 최소 3명(`leader`, `member A`, `member B`)을 등록한 뒤 각 �
 - 본인 아닌 member의 `resubmit_review_request` 호출은 거부되고, 본인 rejected 요청은 같은 ID로 재요청되어야 한다. 동시 재요청은 하나만 성공해야 한다.
 - 활성 파트장은 종결 검토요청을 재오픈할 수 있고, member·비활성 파트장·미인증 호출은 `reopen_review_request` RPC에서 거부되어야 한다.
 - 같은 종결 요청에 대한 동시 재오픈 호출은 하나만 성공하고, 최종 상태는 `pending`이며 status audit 이벤트는 한 건이어야 한다.
-- `member`는 `review-attachments` 버킷에 본인 경로(`{user_id}/...`)로만 업로드할 수 있고, 다른 사용자 파일은 조회·삭제할 수 없어야 한다.
-- `leader`는 `review-attachments` 버킷의 모든 파일을 조회할 수 있어야 한다.
+- `withdraw_review_request`는 요청자 자신의 최신 `pending` 행만 필수 사유와 OCC 조건으로 철회하고, 행과 이벤트 이력을 유지해야 한다.
+- 읽음 처리는 `review_read_receipts`와 DB 시각을 사용하며, 사용자는 자신의 영수증과 권한이 있는 요청의 이벤트만 조회할 수 있어야 한다.
+- `mark_password_changed()`는 Auth 비밀번호 변경을 관찰하기 전에는 실패하고, `profiles` 물리 삭제는 service role에도 차단되어야 한다.
 - `member` 계정을 `profiles.is_active = false`로 설정하면 본인 데이터 조회·쓰기가 RLS에서 거부되어야 한다.
 - `leader` 계정을 `profiles.is_active = false`로 설정해도 API로 제품·프로젝트·검토요청을 조회·수정할 수 없어야 한다.
 - `leader`는 `profiles.is_active`를 변경할 수 있어야 한다.

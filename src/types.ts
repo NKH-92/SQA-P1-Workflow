@@ -1,6 +1,7 @@
 export type {
   Role,
   ReviewStatus,
+  ReviewEventType,
   ProjectStatus,
   ProductCategory,
   ChangeApplicationSource,
@@ -17,6 +18,9 @@ export type {
   DutyAssignment,
   ReviewFeedback,
   ReviewRequest,
+  ReviewEvent,
+  ReviewReadReceipt,
+  AuditEvent,
   Project,
   ProjectAssignment,
   ProfileNote,

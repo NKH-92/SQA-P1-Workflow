@@ -16,7 +16,6 @@ function request(overrides: Partial<ReviewRequest> = {}): ReviewRequest {
     requester_id: member.id,
     title: '검토 요청',
     description: '내용',
-    attachment_url: null,
     due_date: '2026-07-18',
     status: 'pending',
     created_at: '2026-07-17T00:00:00.000Z',

@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { createPreviewData, previewLeader, previewMember } from '../../demoData'
-import { toStorageAttachmentUrl } from '../../lib/attachments'
 import { UserFacingError } from '../../lib/errors'
 import {
-  deleteReviewFeedback,
+  voidReviewFeedback,
   addReviewFeedback,
   rejectReviewRequest,
   reopenReviewRequest,
@@ -27,7 +26,6 @@ describe('withdrawReviewRequest (demo)', () => {
           requester_id: previewMember.id,
           title: '회수 테스트',
           description: 'demo',
-          attachment_url: null,
           due_date: null,
           status: 'pending' as const,
           created_at: new Date().toISOString(),
@@ -49,8 +47,9 @@ describe('withdrawReviewRequest (demo)', () => {
       },
     }
 
-    await withdrawReviewRequest(ctx, reviewId)
-    expect(next.reviewRequests.some((item) => item.id === reviewId)).toBe(false)
+    await withdrawReviewRequest(ctx, reviewId, '더 이상 검토가 필요하지 않음')
+    expect(next.reviewRequests.find((item) => item.id === reviewId)?.status).toBe('withdrawn')
+    expect(next.reviewRequests.find((item) => item.id === reviewId)?.withdrawal_reason).toBe('더 이상 검토가 필요하지 않음')
   })
 })
 
@@ -90,12 +89,12 @@ describe('saveReviewRequest (demo)', () => {
     await expect(
       saveReviewRequest(ctx, {
         editingReviewId: 'missing-review',
-        payload: { title: 'stale', description: '', attachment_url: null, due_date: null },
+        payload: { title: 'stale', description: '', due_date: null },
       }),
     ).rejects.toBeInstanceOf(UserFacingError)
   })
 
-  it('rejects storage attachments that do not belong to the requester', async () => {
+  it('creates a request without an attachment contract', async () => {
     const data = createPreviewData()
     let next = data
     const ctx: RepositoryContext = {
@@ -107,19 +106,11 @@ describe('saveReviewRequest (demo)', () => {
       },
     }
 
-    await expect(
-      saveReviewRequest(ctx, {
-        editingReviewId: null,
-        payload: {
-          title: '첨부 테스트',
-          description: 'demo',
-          attachment_url: toStorageAttachmentUrl('other-user/file.pdf'),
-          due_date: null,
-        },
-      }),
-    ).rejects.toThrow('본인이 업로드한 파일만 첨부할 수 있습니다.')
-
-    expect(next.reviewRequests).toHaveLength(data.reviewRequests.length)
+    await saveReviewRequest(ctx, {
+      editingReviewId: null,
+      payload: { title: '검토 테스트', description: 'demo', due_date: null },
+    })
+    expect(next.reviewRequests).toHaveLength(data.reviewRequests.length + 1)
   })
 })
 
@@ -139,7 +130,7 @@ describe('leader-only review mutations (demo)', () => {
     await expect(updateReviewStatus(ctx, requestId!, 'approved')).rejects.toThrow('활성 파트장 권한이 필요합니다.')
     await expect(reopenReviewRequest(ctx, requestId!)).rejects.toThrow('활성 파트장 권한이 필요합니다.')
     await expect(updateReviewFeedback(ctx, 'missing-feedback', 'updated')).rejects.toThrow('활성 파트장 권한이 필요합니다.')
-    await expect(deleteReviewFeedback(ctx, 'missing-feedback')).rejects.toThrow('활성 파트장 권한이 필요합니다.')
+    await expect(voidReviewFeedback(ctx, 'missing-feedback', '잘못 작성함')).rejects.toThrow('활성 파트장 권한이 필요합니다.')
   })
 })
 
@@ -153,7 +144,7 @@ describe('withdrawReviewRequest (demo) missing-record guard', () => {
       setData: () => undefined,
     }
 
-    await expect(withdrawReviewRequest(ctx, 'missing-review')).rejects.toBeInstanceOf(UserFacingError)
+    await expect(withdrawReviewRequest(ctx, 'missing-review', '회수 사유')).rejects.toBeInstanceOf(UserFacingError)
   })
 })
 
@@ -212,11 +203,11 @@ describe('reopenReviewRequest and feedback correction (demo)', () => {
 
     await reopenReviewRequest(ctx, source.id)
     await updateReviewFeedback(ctx, 'feedback-reopen', 'corrected')
-    await deleteReviewFeedback(ctx, 'feedback-reopen')
+    await voidReviewFeedback(ctx, 'feedback-reopen', '잘못 작성한 피드백')
 
     const updated = next.reviewRequests.find((item) => item.id === source.id)
     expect(updated?.status).toBe('pending')
-    expect(updated?.review_feedback).toEqual([])
+    expect(updated?.review_feedback?.[0]).toEqual(expect.objectContaining({ void_reason: '잘못 작성한 피드백' }))
     expect(next.activityLogs.some((log) => log.action === 'reopened')).toBe(true)
   })
 })
@@ -278,7 +269,6 @@ describe('resubmitReviewRequest (demo)', () => {
       payload: {
         title: '반려 내용 수정',
         description: source.description,
-        attachment_url: source.attachment_url,
         due_date: source.due_date,
       },
     })
@@ -302,10 +292,10 @@ describe('local review ownership parity', () => {
     await expect(
       saveReviewRequest(ctx, {
         editingReviewId: request.id,
-        payload: { title: 'changed', description: request.description, attachment_url: null, due_date: null },
+        payload: { title: 'changed', description: request.description, due_date: null },
       }),
     ).rejects.toThrow('본인의 요청만 수정할 수 있습니다.')
-    await expect(withdrawReviewRequest(ctx, request.id)).rejects.toThrow('본인의 요청만 회수할 수 있습니다.')
+    await expect(withdrawReviewRequest(ctx, request.id, '회수 사유')).rejects.toThrow('본인의 요청만 회수할 수 있습니다.')
   })
 
   it('rejects feedback for a missing request instead of logging a false success', async () => {

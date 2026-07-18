@@ -65,7 +65,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" \
             node scripts/purge-review-attachments.mjs --execute --confirm=PURGE_REVIEW_ATTACHMENTS
       - name: Apply Stage B and later migrations
-        run: supabase migration up --local
+        run: supabase migration up --local --include-all
       - name: Seed deterministic RLS fixtures
         run: |
           eval "$(supabase status -o env)"

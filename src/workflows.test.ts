@@ -45,7 +45,7 @@ describe('production workflow guards', () => {
       expect(workflow).toContain('supabase start')
       expect(workflow).toContain('mv "$stage_b_migration" "$held_migration"')
       expect(workflow).toContain('node scripts/purge-review-attachments.mjs --execute --confirm=PURGE_REVIEW_ATTACHMENTS')
-      expect(workflow).toContain('supabase migration up --local')
+      expect(workflow).toContain('supabase migration up --local --include-all')
       expect(workflow).toContain('node scripts/setup-rls-fixtures.mjs')
       expect(workflow).toContain('echo "SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY"')
       expect(workflow).toContain('npm run test:rls')

@@ -64,10 +64,10 @@ describe('review workflow hardening Stage B migration', () => {
       expect(workflow).toContain('mv "$follow_up_migration" "$held_follow_up_migration"')
       expect(workflow).toContain('trap restore_stage_b EXIT')
       expect(workflow).toContain('node scripts/purge-review-attachments.mjs --execute --confirm=PURGE_REVIEW_ATTACHMENTS')
-      expect(workflow).toContain('supabase migration up --local')
+      expect(workflow).toContain('supabase migration up --local --include-all')
       expect(workflow.indexOf('node scripts/purge-review-attachments.mjs --execute'))
         .toBeGreaterThan(workflow.indexOf('supabase start'))
-      expect(workflow.indexOf('supabase migration up --local'))
+      expect(workflow.indexOf('supabase migration up --local --include-all'))
         .toBeGreaterThan(workflow.indexOf('node scripts/purge-review-attachments.mjs --execute'))
     }
     expect(purgeScript).toContain('storageClient.deleteBucket(bucket)')

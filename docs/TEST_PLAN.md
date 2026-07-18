@@ -1,5 +1,26 @@
 # 테스트 계획
 
+## 현행 자동 게이트
+
+아래 순서를 로컬과 CI의 기준으로 사용한다. 이 절은 아래의 과거 수동 시나리오와 충돌할 경우 우선한다.
+
+```text
+npm ci
+npm run typecheck
+npm run lint
+npm test -- --run
+npm run build
+npm run check:bundle
+npm run test:e2e
+git diff --check
+```
+
+DB/repository/운영 변경은 Docker와 pinned Supabase CLI `2.109.1`이 준비된 환경에서 `npm run test:rls:full`까지 성공해야 한다. 일반 unit run에 환경형 RLS test가 skip으로 보이는 것은 개발 피드백일 뿐 완료 증거가 아니다. full runner의 skip 또는 실패는 전체 완료를 차단한다.
+
+Playwright는 다음 10개 시나리오를 독립적으로 차단한다: leader/member navigation, command palette, review lifecycle, project CRUD, product transfer, change task lifecycle, deep-link, density persistence, mobile sidebar, notification/read navigation.
+
+Workflow contract test는 RLS job 삭제, E2E job 삭제, build dependency 누락, secret 과다 주입, readiness manifest 누락/중복, 미등록 `60_*.sql`을 거부한다.
+
 ## CAPA WP1 — 감사 lifecycle
 
 - migration contract test는 실제 trigger의 모든 entity type과 v3 helper allowlist가

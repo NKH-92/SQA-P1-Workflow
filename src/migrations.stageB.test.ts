@@ -1,19 +1,37 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const migration = readFileSync(
-  resolve('supabase/migrations/20260718073243_finalize_review_workflow_hardening.sql'),
-  'utf8',
+const readText = (path: string) => readFileSync(resolve(path), 'utf8').replace(/\r\n?/g, '\n')
+
+const migration = readText(
+  'supabase/migrations/20260718073243_finalize_review_workflow_hardening.sql',
 )
-const purgeScript = readFileSync(resolve('scripts/purge-review-attachments.mjs'), 'utf8')
-const config = readFileSync(resolve('supabase/config.toml'), 'utf8')
-const ciWorkflow = readFileSync(resolve('.github/workflows/ci.yml'), 'utf8')
-const deployWorkflow = readFileSync(resolve('.github/workflows/deploy-worker.yml'), 'utf8')
+const followUpMigration = readText(
+  'supabase/migrations/20260718123250_remove_obsolete_review_status_rpc.sql',
+)
+const purgeScript = readText('scripts/purge-review-attachments.mjs')
+const verificationSql = readText('scripts/verify-review-hardening-followup.sql')
+const localMigrationScript = readText('scripts/apply-pending-migrations.ps1')
+const config = readText('supabase/config.toml')
+const ciWorkflow = readText('.github/workflows/ci.yml')
+const deployWorkflow = readText('.github/workflows/deploy-worker.yml')
+const dbMigrateWorkflow = readText('.github/workflows/db-migrate.yml')
 const executableMigration = migration
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/--.*$/gm, '')
+const executableFollowUpMigration = followUpMigration
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/--.*$/gm, '')
 const storageRowDml = /\b(?:delete\s+from|insert\s+into|update|merge\s+into|truncate(?:\s+table)?)\s+(?:only\s+)?(?:"storage"|storage)\s*\.\s*(?:"(?:objects|buckets)"|(?:objects|buckets))(?![\w$])/i
+const immutableStageBSha256 = '8e8d36f4cdab97b26dd047de89dd13ea2f50720a59580174a69a62a78ec49511'
+
+function passesNoAnonApplicationRoutineGate(
+  routines: Array<{ anonExecute: boolean; extensionMember: boolean }>,
+) {
+  return !routines.some((routine) => routine.anonExecute && !routine.extensionMember)
+}
 
 describe('review workflow hardening Stage B migration', () => {
   it('requires zero objects and an API-deleted bucket before destructive cleanup', () => {
@@ -40,7 +58,10 @@ describe('review workflow hardening Stage B migration', () => {
   it('splits disposable migration replay around the same Storage API handoff', () => {
     for (const workflow of [ciWorkflow, deployWorkflow]) {
       expect(workflow).toContain('held_migration="$RUNNER_TEMP/$(basename "$stage_b_migration")"')
+      expect(workflow).toContain('follow_up_migration="supabase/migrations/20260718123250_remove_obsolete_review_status_rpc.sql"')
+      expect(workflow).toContain('held_follow_up_migration="$RUNNER_TEMP/$(basename "$follow_up_migration")"')
       expect(workflow).toContain('mv "$stage_b_migration" "$held_migration"')
+      expect(workflow).toContain('mv "$follow_up_migration" "$held_follow_up_migration"')
       expect(workflow).toContain('trap restore_stage_b EXIT')
       expect(workflow).toContain('node scripts/purge-review-attachments.mjs --execute --confirm=PURGE_REVIEW_ATTACHMENTS')
       expect(workflow).toContain('supabase migration up --local')
@@ -89,5 +110,57 @@ describe('review workflow hardening Stage B migration', () => {
     expect(migration).toContain('alter default privileges for role postgres\n  revoke execute on routines from public, anon, authenticated, service_role')
     expect(migration).toContain('alter default privileges for role postgres in schema public')
     expect(migration).toContain('revoke execute on routines from public, anon, authenticated, service_role')
+  })
+
+  it('keeps the applied Stage B migration immutable', () => {
+    expect(createHash('sha256').update(migration).digest('hex')).toBe(immutableStageBSha256)
+    expect(migration).not.toContain('drop function if exists public.update_review_request_status')
+  })
+
+  it('drops only the exact obsolete RPC in an append-only follow-up', () => {
+    expect(followUpMigration).toContain(
+      'drop function if exists public.update_review_request_status(uuid, public.review_status) restrict',
+    )
+    expect(executableFollowUpMigration).not.toMatch(/\bcascade\b/i)
+    expect(executableFollowUpMigration).not.toMatch(/alter\s+extension\s+citext/i)
+    expect(executableFollowUpMigration).not.toMatch(/\b(?:grant|revoke)\b/i)
+    expect(executableFollowUpMigration).not.toMatch(/\b(?:alter|create|drop)\s+(?:table|policy)\b/i)
+    expect(executableFollowUpMigration).not.toMatch(storageRowDml)
+    expect(followUpMigration).toContain("notify pgrst, 'reload schema'")
+  })
+
+  it('requires the follow-up and excludes only catalog extension members from the anon gate', () => {
+    for (const source of [dbMigrateWorkflow, deployWorkflow, localMigrationScript, verificationSql]) {
+      expect(source).toContain("version = '20260718123250'")
+      expect(source).toContain("pg_catalog.has_function_privilege('anon', function.oid, 'EXECUTE')")
+      expect(source).toContain('from pg_catalog.pg_depend dependency')
+      expect(source).toContain('join pg_catalog.pg_extension extension')
+      expect(source).toContain(
+        "dependency.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass",
+      )
+      expect(source).toContain(
+        "dependency.refclassid = 'pg_catalog.pg_extension'::pg_catalog.regclass",
+      )
+      expect(source).toContain("dependency.deptype = 'e'")
+      expect(source).not.toContain("extension.extname = 'citext'")
+    }
+    expect(dbMigrateWorkflow).not.toMatch(/alter\s+extension\s+citext\s+set\s+schema/i)
+  })
+
+  it('allows extension routines but still fails on an anon-callable application routine', () => {
+    const extensionRoutines = Array.from({ length: 47 }, () => ({
+      anonExecute: true,
+      extensionMember: true,
+    }))
+
+    expect(passesNoAnonApplicationRoutineGate(extensionRoutines)).toBe(true)
+    expect(passesNoAnonApplicationRoutineGate([
+      ...extensionRoutines,
+      { anonExecute: true, extensionMember: false },
+    ])).toBe(false)
+    expect(passesNoAnonApplicationRoutineGate([
+      ...extensionRoutines,
+      { anonExecute: false, extensionMember: false },
+    ])).toBe(true)
   })
 })

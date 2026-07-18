@@ -65,14 +65,20 @@ jobs:
       - name: Start local Supabase with Stage B held back
         run: |
           stage_b_migration="supabase/migrations/20260718073243_finalize_review_workflow_hardening.sql"
+          follow_up_migration="supabase/migrations/20260718123250_remove_obsolete_review_status_rpc.sql"
           held_migration="$RUNNER_TEMP/$(basename "$stage_b_migration")"
+          held_follow_up_migration="$RUNNER_TEMP/$(basename "$follow_up_migration")"
           restore_stage_b() {
             if [ -f "$held_migration" ]; then
               mv "$held_migration" "$stage_b_migration"
             fi
+            if [ -f "$held_follow_up_migration" ]; then
+              mv "$held_follow_up_migration" "$follow_up_migration"
+            fi
           }
           trap restore_stage_b EXIT
           mv "$stage_b_migration" "$held_migration"
+          mv "$follow_up_migration" "$held_follow_up_migration"
           supabase start
           restore_stage_b
           trap - EXIT

@@ -46,6 +46,20 @@ Stage B PR은 다음 조건을 모두 충족해야 병합한다.
 
 Stage B `DB Migrate` 사전검사는 대상 객체나 Storage API로 지워야 할 bucket 행이 남아 있으면 `SQA_REVIEW_ATTACHMENTS_BUCKET_STILL_EXISTS`로 push 전에 중단한다. 마이그레이션 `20260718073243_finalize_review_workflow_hardening.sql` 자체도 객체가 있으면 `SQA_REVIEW_ATTACHMENTS_NOT_EMPTY`, bucket이 남아 있으면 `SQA_REVIEW_ATTACHMENTS_BUCKET_PRESENT`로 정리 전에 실패한다. 정책 제거 중 객체나 bucket이 다시 생기면 `SQA_REVIEW_ATTACHMENTS_RACE_DETECTED` 또는 `SQA_REVIEW_ATTACHMENTS_BUCKET_RECREATED`로 전체 트랜잭션을 되돌린다. 통과하면 Storage 정책, `review_requests.attachment_url`, legacy `mark_password_changed()` 및 구형 review RPC overload를 제거하고 리뷰 직접 쓰기 권한을 회수한다. `auto_expose_new_tables=false`, schema ACL reset, 현재 routine ACL과 향후 객체의 전역 default ACL manifest도 같은 단계에서 적용한다.
 
+## Stage B 후속 정정 — 20260718123250
+
+운영에 기록된 `20260718073243`은 수정하지 않는다. 후속 마이그레이션 `20260718123250_remove_obsolete_review_status_rpc.sql`은 Stage B 이름 목록에서 빠진 구형 `public.update_review_request_status(uuid, public.review_status)`만 `DROP FUNCTION ... RESTRICT`로 제거한다. 다른 리뷰 RPC, 테이블, 정책, RLS, Storage 메타데이터, extension 객체 또는 ACL은 변경하지 않는다.
+
+`citext`는 이번 정정에서 다른 schema로 이동하지 않는다. 현재 운영 컬럼과 인덱스가 해당 extension type을 사용하므로 relocation은 별도 호환성 작업이다. 대신 `review_hardening_gate`는 `pg_depend.deptype = 'e'`로 확인되는 실제 extension member routine만 전역 `anon` 검사에서 제외하고, `public`의 모든 비-extension routine에는 `has_function_privilege('anon', ..., 'EXECUTE') = false` 규칙을 유지한다. 소유자 이름, 특정 함수명, 현재 47개라는 개수는 예외 조건으로 사용하지 않는다.
+
+후속 정정은 기존 branch, SHA, 24시간, 암호화 artifact 검사를 그대로 거친다. 적용 뒤 `scripts/verify-review-hardening-followup.sql`의 성공 기준은 다음과 같다.
+
+- `stage_b_recorded=true`, `follow_up_recorded=true`
+- `obsolete_rpc_absent=true`
+- `application_anon_routine_count=0`
+- `review_hardening_followup_gate=true`
+- `extension_anon_routine_count`는 진단값이며 extension member라는 이유만으로 실패하지 않는다.
+
 병합 뒤에는 동일한 `main` SHA로 새 `Backup DB` → backup run ID를 사용한 `DB Migrate` → `Deploy Worker(deploy_confirm=true)` 순서로 실행하고, 각 workflow의 readiness/healthcheck가 끝날 때까지 기다린다.
 
 ## 롤백과 복구

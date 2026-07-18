@@ -2,7 +2,9 @@ import type { ReviewStatusFilter } from '../../app/types'
 import { compareReviewRequests } from '../../lib/priority'
 import type { AppData, Profile, ReviewRequest, ReviewStatus } from '../../types'
 
-export function selectScopedReviewRequests(data: AppData, profile: Profile): ReviewRequest[] {
+export type ReviewFeatureData = Pick<AppData, 'reviewRequests'>
+
+export function selectScopedReviewRequests(data: ReviewFeatureData, profile: Profile): ReviewRequest[] {
   return profile.role === 'leader'
     ? data.reviewRequests
     : data.reviewRequests.filter((request) => request.requester_id === profile.id)
@@ -19,7 +21,7 @@ export function selectReviewStatusCounts(requests: ReviewRequest[]) {
 }
 
 export function selectVisibleReviewRequests(
-  data: AppData,
+  data: ReviewFeatureData,
   profile: Profile,
   statusFilter: ReviewStatusFilter,
 ): ReviewRequest[] {

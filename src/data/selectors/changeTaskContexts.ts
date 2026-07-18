@@ -11,7 +11,12 @@ export type ProductChangeTaskContext = {
   application: ChangeApplication
 }
 
-export function selectProductChangeTaskContexts(data: AppData): ProductChangeTaskContext[] {
+export type ChangeTaskContextData = Pick<
+  AppData,
+  'changeApplications' | 'changeActionItems' | 'productChangeTasks'
+>
+
+export function selectProductChangeTaskContexts(data: ChangeTaskContextData): ProductChangeTaskContext[] {
   const actionItems = new Map(data.changeActionItems.map((item) => [item.id, item]))
   const applications = new Map(data.changeApplications.map((item) => [item.id, item]))
   return data.productChangeTasks.flatMap((task) => {

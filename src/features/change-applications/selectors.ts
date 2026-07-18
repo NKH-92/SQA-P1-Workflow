@@ -1,9 +1,9 @@
 import type {
-  AppData,
   ChangeActionItem,
   ChangeApplication,
   Profile,
 } from '../../types'
+import type { ChangeApplicationFeatureData } from './types'
 import { daysUntil } from '../../lib/dates'
 import {
   selectProductChangeTaskContexts,
@@ -21,7 +21,7 @@ export type ChangeScopeProduct = {
   assignees: Array<{ id: string; name: string }>
 }
 
-export function selectChangeScopeProducts(data: AppData): ChangeScopeProduct[] {
+export function selectChangeScopeProducts(data: ChangeApplicationFeatureData): ChangeScopeProduct[] {
   const products = new Map<string, ChangeScopeProduct>()
   for (const row of data.changeProductScope) {
     const product = products.get(row.product_id) ?? {
@@ -64,13 +64,13 @@ export function selectChangeScopeProducts(data: AppData): ChangeScopeProduct[] {
   )
 }
 
-export function selectApplicationTaskContexts(data: AppData, applicationId: string) {
+export function selectApplicationTaskContexts(data: ChangeApplicationFeatureData, applicationId: string) {
   return selectProductChangeTaskContexts(data).filter(
     (context) => context.application.id === applicationId,
   )
 }
 
-export function selectMyProductChangeTaskContexts(data: AppData, profile: Profile) {
+export function selectMyProductChangeTaskContexts(data: ChangeApplicationFeatureData, profile: Profile) {
   return selectProductChangeTaskContexts(data)
     .filter(
       ({ task, application }) =>

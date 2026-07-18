@@ -1,6 +1,8 @@
 import { projectStatusLabels } from '../../lib/format'
 import type { AppData, Profile, ProjectAssignment, ProjectStatus } from '../../types'
 
+export type ProjectFeatureData = Pick<AppData, 'projects' | 'profiles' | 'projectAssignments'>
+
 export type ProjectFilter = { query: string; status: 'all' | ProjectStatus }
 
 function matchesProjectQuery(
@@ -11,14 +13,14 @@ function matchesProjectQuery(
   return parts.join(' ').toLowerCase().includes(query)
 }
 
-export function selectVisibleProjectAssignments(data: AppData, profile: Profile, leaderMode: boolean) {
+export function selectVisibleProjectAssignments(data: ProjectFeatureData, profile: Profile, leaderMode: boolean) {
   return leaderMode
     ? data.projectAssignments
     : data.projectAssignments.filter((assignment) => assignment.user_id === profile.id)
 }
 
 export function selectFilteredProjectAssignments(
-  data: AppData,
+  data: ProjectFeatureData,
   assignments: ProjectAssignment[],
   filter: ProjectFilter,
 ) {
@@ -41,7 +43,7 @@ export function selectFilteredProjectAssignments(
 }
 
 export function selectProjectGroups(
-  data: AppData,
+  data: ProjectFeatureData,
   profile: Profile,
   leaderMode: boolean,
   filter: ProjectFilter,

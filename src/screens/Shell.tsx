@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import type { AppData, Profile, Role } from '../types'
+import type { Profile, Role } from '../types'
 import type { TabId, ToastMessage } from '../app/types'
 import { roleLabels } from '../lib/format'
 import { navigationItemsForRole, tabHeaderLabel } from '../lib/navigation'
 import type { AppNotification } from '../lib/notifications'
 import type { DesktopNotificationControls } from '../app/hooks/useDesktopNotifications'
 import { NotificationPanel } from '../components/NotificationPanel'
-import { buildShellModel } from './shellModel'
+import { buildShellModel, type ShellFeatureData } from './shellModel'
 import { useDensityPreference } from './useDensityPreference'
 import {
   BarChart3,
@@ -52,7 +52,7 @@ export function Shell({
   activeTab: TabId
   setActiveTab: (tab: TabId, entityId?: string) => void
   profile: Profile
-  data: AppData
+  data: ShellFeatureData
   leaderMode: boolean
   message: ToastMessage | null
   saving: boolean

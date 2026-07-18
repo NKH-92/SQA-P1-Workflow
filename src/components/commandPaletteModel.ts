@@ -4,6 +4,8 @@ import { reviewStatusLabels } from '../lib/format'
 import { navigationItemsForRole } from '../lib/navigation'
 import type { AppData, Profile } from '../types'
 
+export type CommandPaletteData = Pick<AppData, 'profiles' | 'reviewRequests'>
+
 export type CommandItem = {
   id: string
   group: string
@@ -22,7 +24,7 @@ export function buildCommandItems({
   select,
 }: {
   profile: Profile
-  data: AppData
+  data: CommandPaletteData
   leaderMode: boolean
   select: (tab: TabId, entityId?: string) => void
 }): CommandItem[] {

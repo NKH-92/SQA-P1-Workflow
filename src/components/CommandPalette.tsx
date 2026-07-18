@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Search } from 'lucide-react'
-import type { AppData, Profile } from '../types'
+import type { Profile } from '../types'
 import type { TabId } from '../app/types'
-import { buildCommandItems, filterCommandItems, groupCommandItems } from './commandPaletteModel'
+import {
+  buildCommandItems,
+  filterCommandItems,
+  groupCommandItems,
+  type CommandPaletteData,
+} from './commandPaletteModel'
 
 export function CommandPalette({
   open,
@@ -15,7 +20,7 @@ export function CommandPalette({
   open: boolean
   onClose: () => void
   profile: Profile
-  data: AppData
+  data: CommandPaletteData
   leaderMode: boolean
   setActiveTab: (tab: TabId, entityId?: string) => void
 }) {

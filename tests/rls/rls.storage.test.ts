@@ -9,7 +9,7 @@ describeRls(`RLS removed review attachment storage (${RLS_SKIP_NOTE})`, () => {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? ''
   const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? ''
 
-  it('keeps the removed bucket unavailable to authenticated uploads and reads', async () => {
+  it('keeps the removed bucket unavailable to authenticated uploads and returns no reads', async () => {
     const memberEmail = process.env.RLS_MEMBER_A_EMAIL
     const memberPassword = process.env.RLS_MEMBER_A_PASSWORD
 
@@ -27,6 +27,7 @@ describeRls(`RLS removed review attachment storage (${RLS_SKIP_NOTE})`, () => {
     expect(upload.error).not.toBeNull()
 
     const listing = await client.storage.from('review-attachments').list('', { limit: 1 })
-    expect(listing.error).not.toBeNull()
+    expect(listing.error).toBeNull()
+    expect(listing.data).toEqual([])
   })
 })

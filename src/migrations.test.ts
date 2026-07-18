@@ -461,7 +461,7 @@ describe('Supabase migrations', () => {
     expect(migration).toContain('v_before := v_old_sanitized')
     expect(migration).toContain('v_old_sanitized -> v_key')
     expect(migration).toContain('v_new_sanitized -> v_key')
-    expect(migration).toMatch(/v_changed_fields, v_before, v_after[\s\S]*\n\s*3\n/)
+    expect(migration).toMatch(/v_changed_fields, v_before, v_after[\s\S]*\r?\n\s*3\r?\n/)
     expect(migration).toContain(
       'revoke all on function private.build_audit_business_snapshot(text, jsonb)',
     )
@@ -485,6 +485,19 @@ describe('Supabase migrations', () => {
     ]) {
       expect(allowlistSection).not.toContain(forbidden)
     }
+  })
+
+  it('repairs audit conditional expressions without weakening the trigger ACL', () => {
+    const migration = readMigration('20260718161549_fix_audit_nullif_syntax.sql')
+
+    expect(migration).toContain('create or replace function private.record_mutation_audit()')
+    expect(migration).toContain("set search_path = ''")
+    expect(migration).toContain("nullif(pg_catalog.current_setting('sqa.audit_reason', true), '')")
+    expect(migration).toContain('v_source text := coalesce(')
+    expect(migration).not.toMatch(/pg_catalog\.(?:nullif|coalesce)\s*\(/)
+    expect(migration).toContain(
+      'revoke all on function private.record_mutation_audit()',
+    )
   })
 
   it('revokes PUBLIC execute on internal helper RPCs', () => {

@@ -137,7 +137,7 @@ export function ChangeApplicationsPanel({
       productChangeTasks: mergeProductChangeTasks(data.productChangeTasks, retainedHistoryTasks, false),
     }
   }, [data, retainedHistoryTasks])
-  const remoteHistoryIsCapped = createRepositoryContext(profile, data, setData).isRemote
+  const remoteHistoryIsCapped = createRepositoryContext(profile, data, setData).capabilities.historyIsCapped
   const isHistoryLoaded = (applicationId: string) => {
     const cached = historyCache[applicationId]
     return Boolean(

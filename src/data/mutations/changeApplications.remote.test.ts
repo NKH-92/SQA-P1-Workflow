@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPreviewData, previewLeader } from '../../demoData'
 import type { ChangeApplicationInput } from '../contracts'
 import type { AppData } from '../../types'
-import type { RepositoryContext } from '../repositoryContext'
+import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
 
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(async (): Promise<{ data: unknown; error: { message: string } | null }> => ({
@@ -19,12 +19,10 @@ vi.mock('../../lib/supabase', () => ({
 import { archiveChangeApplication, restoreChangeApplication, saveChangeApplication } from './changeApplications'
 
 function remoteContext(data = createPreviewData()): RepositoryContext {
-  return {
-    isRemote: true,
-    profile: previewLeader,
+  return createRepositoryContextFromDeps('remote', {    profile: previewLeader,
     data,
     setData: vi.fn(),
-  }
+  })
 }
 
 function newInput(data: AppData): ChangeApplicationInput {

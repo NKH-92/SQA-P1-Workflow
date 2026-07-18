@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { STALE_WRITE_MESSAGE, UserFacingError } from '../../lib/errors'
 import type { Announcement, AppData, Profile } from '../../types'
-import type { RepositoryContext } from '../repositoryContext'
+import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
 import { deleteAnnouncement, saveAnnouncement, toggleAnnouncementPin } from './announcements'
 
 const leader: Profile = {
@@ -44,15 +44,13 @@ function createContext(profile: Profile = leader, announcements: Announcement[] 
     profileNotes: [],
     activityLogs: [],
   }
-  const ctx: RepositoryContext = {
-    isRemote: false,
-    profile,
+  const ctx: RepositoryContext = createRepositoryContextFromDeps('local', {    profile,
     data: current,
     setData(updater) {
       current = typeof updater === 'function' ? updater(current) : updater
       ctx.data = current
     },
-  }
+  })
   return { ctx, data: () => current }
 }
 

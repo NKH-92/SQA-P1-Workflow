@@ -1,14 +1,8 @@
 import type { Profile, Project } from '../../types'
 import type { ProjectInput } from '../contracts'
 import type { RepositoryContext } from '../repositoryContext'
-import { createLocalProjectRepository } from '../local/localProjectRepository'
-import { createSupabaseProjectRepository } from '../remote/supabaseProjectRepository'
 
 export type { ProjectInput }
-
-function projectRepository(ctx: RepositoryContext) {
-  return ctx.isRemote ? createSupabaseProjectRepository(ctx) : createLocalProjectRepository(ctx)
-}
 
 export async function createProject(
   ctx: RepositoryContext,
@@ -18,7 +12,7 @@ export async function createProject(
     memberOptions: Profile[]
   },
 ): Promise<string | null> {
-  return projectRepository(ctx).createProject(input)
+  return ctx.repositories.projects.createProject(input)
 }
 
 export async function updateProject(
@@ -26,7 +20,7 @@ export async function updateProject(
   projectId: string,
   updated: ProjectInput,
 ): Promise<void> {
-  return projectRepository(ctx).updateProject(projectId, updated)
+  return ctx.repositories.projects.updateProject(projectId, updated)
 }
 
 export async function saveProjectAssignments(
@@ -37,9 +31,9 @@ export async function saveProjectAssignments(
     memberOptions: Profile[]
   },
 ): Promise<void> {
-  return projectRepository(ctx).saveProjectAssignments(input)
+  return ctx.repositories.projects.saveProjectAssignments(input)
 }
 
 export async function deleteProject(ctx: RepositoryContext, project: Project): Promise<void> {
-  return projectRepository(ctx).deleteProject(project)
+  return ctx.repositories.projects.deleteProject(project)
 }

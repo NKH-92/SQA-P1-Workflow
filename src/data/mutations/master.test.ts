@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppData, Profile } from '../../types'
-import type { RepositoryContext } from '../repositoryContext'
+import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
 import {
   addAllowedUser,
   addDuty,
@@ -59,7 +59,7 @@ function localContext(profile: Profile = leader): RepositoryContext {
     profileNotes: [],
     activityLogs: [],
   }
-  return { isRemote: false, profile, data, setData: vi.fn() }
+  return createRepositoryContextFromDeps('local', {profile, data, setData: vi.fn() })
 }
 
 describe('local assignment replacement parity', () => {

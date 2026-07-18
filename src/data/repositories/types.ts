@@ -1,4 +1,3 @@
-import type { Dispatch, SetStateAction } from 'react'
 import type {
   Announcement,
   AppData,
@@ -16,6 +15,7 @@ import type {
   ProjectInput,
   ReviewRequestPayload,
 } from '../contracts'
+import type { AppDataUpdater } from './appDataUpdater'
 
 export type ReviewRepository = {
   saveReviewRequest(input: {
@@ -151,9 +151,17 @@ export type ChangeApplicationRepository = {
   restoreChangeApplication(changeApplicationId: string, reason: string): Promise<void>
 }
 
+export type RepositorySet = {
+  reviews: ReviewRepository
+  projects: ProjectRepository
+  announcements: AnnouncementRepository
+  changeApplications: ChangeApplicationRepository
+  master: MasterRepository
+}
+
 /** local·remote repository가 공통으로 받는 의존성 (RepositoryContext에서 isRemote를 뺀 형태). */
 export type RepositoryDeps = {
   profile: Profile
   data: AppData
-  setData: Dispatch<SetStateAction<AppData>>
+  setData: AppDataUpdater
 }

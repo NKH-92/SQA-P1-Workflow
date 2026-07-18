@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createPreviewData, previewLeader, previewMember } from '../../demoData'
 import type { AppData, Profile } from '../../types'
-import type { RepositoryContext } from '../repositoryContext'
+import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
 import {
   archiveChangeApplication,
   cancelProductChangeTask,
@@ -19,12 +19,10 @@ function harness(initial = createPreviewData()) {
   const setData: RepositoryContext['setData'] = (next) => {
     current = typeof next === 'function' ? next(current) : next
   }
-  const context = (profile: Profile): RepositoryContext => ({
-    isRemote: false,
-    profile,
+  const context = (profile: Profile): RepositoryContext => (createRepositoryContextFromDeps('local', {    profile,
     data: current,
     setData,
-  })
+  }))
   return { get data() { return current }, context }
 }
 

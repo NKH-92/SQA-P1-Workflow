@@ -1,8 +1,6 @@
 import { recordActivityLog } from '../../lib/activityLog'
 import { UserFacingError } from '../../lib/errors'
 import type { DutyMajorCategory, Product, ProductCategory, Role } from '../../types'
-import { createLocalMasterRepository } from '../local/localMasterRepository'
-import { createSupabaseMasterRepository } from '../remote/supabaseMasterRepository'
 import type { RepositoryContext } from '../repositoryContext'
 
 type ProductInput = {
@@ -30,10 +28,6 @@ function normalizeProductInput(input: ProductInput) {
   }
 }
 
-function masterRepository(ctx: RepositoryContext) {
-  return ctx.isRemote ? createSupabaseMasterRepository(ctx) : createLocalMasterRepository(ctx)
-}
-
 async function logMasterActivity(
   ctx: RepositoryContext,
   entityType: Parameters<typeof recordActivityLog>[1]['entityType'],
@@ -49,7 +43,7 @@ async function logMasterActivity(
     action,
     summary,
     metadata,
-  }, { isRemote: ctx.isRemote })
+  }, { isRemote: ctx.mode === 'remote' })
 }
 
 export async function importProducts(
@@ -57,7 +51,7 @@ export async function importProducts(
   rows: ProductInput[],
 ): Promise<void> {
   const products = rows.map(normalizeProductInput)
-  await masterRepository(ctx).importProducts(products)
+  await ctx.repositories.master.importProducts(products)
   await logMasterActivity(ctx, 'product', 'created', `${products.length}개 제품을 가져왔습니다.`, null, {
     count: products.length,
   })
@@ -68,7 +62,7 @@ export async function importInvites(
   rows: Array<{ email: string; name: string; role: Role }>,
 ): Promise<void> {
   const invites = rows.map((row) => ({ ...row, name: row.name.trim() }))
-  await masterRepository(ctx).importInvites(invites)
+  await ctx.repositories.master.importInvites(invites)
   await logMasterActivity(ctx, 'allowed_user', 'created', `${rows.length}개 초대를 가져왔습니다.`, null, {
     count: rows.length,
   })
@@ -78,7 +72,7 @@ export async function addAllowedUser(
   ctx: RepositoryContext,
   input: { email: string; name: string; role: Role },
 ): Promise<void> {
-  await masterRepository(ctx).addAllowedUser(input)
+  await ctx.repositories.master.addAllowedUser(input)
   await logMasterActivity(ctx, 'allowed_user', 'created', `${input.name} 초대를 추가했습니다.`, null, {
     email: input.email,
     role: input.role,
@@ -90,7 +84,7 @@ export async function addProduct(
   input: ProductInput,
 ): Promise<void> {
   const product = normalizeProductInput(input)
-  await masterRepository(ctx).addProduct(product)
+  await ctx.repositories.master.addProduct(product)
   await logMasterActivity(ctx, 'product', 'created', `${product.name} 제품을 추가했습니다.`, null, product)
 }
 
@@ -102,7 +96,7 @@ export async function addDutyMajorCategory(
     name: input.name.trim(),
     sort_order: input.sortOrder ?? null,
   }
-  await masterRepository(ctx).addDutyMajorCategory(payload)
+  await ctx.repositories.master.addDutyMajorCategory(payload)
   await logMasterActivity(
     ctx,
     'duty_major_category',
@@ -122,7 +116,7 @@ export async function addDuty(
     name: input.name.trim(),
     sort_order: input.sortOrder ?? null,
   }
-  await masterRepository(ctx).addDuty(payload)
+  await ctx.repositories.master.addDuty(payload)
   await logMasterActivity(ctx, 'duty', 'created', `${payload.name} 업무를 추가했습니다.`, null, payload)
 }
 
@@ -137,7 +131,7 @@ export async function saveProductAssignments(
   },
 ): Promise<void> {
   const normalizedReason = normalizeUnassignedReason(input.unassignedReason)
-  await masterRepository(ctx).saveProductAssignments({
+  await ctx.repositories.master.saveProductAssignments({
     ...input,
     unassignedReason: normalizedReason,
   })
@@ -160,7 +154,7 @@ export async function saveDutyAssignments(
     memberOptions?: Array<{ id: string; name: string; email: string }>
   },
 ): Promise<void> {
-  await masterRepository(ctx).saveDutyAssignments(input)
+  await ctx.repositories.master.saveDutyAssignments(input)
   await logMasterActivity(ctx, 'duty_assignment', 'updated', '업무 배정을 조정했습니다.', input.dutyId, {
     assigned_user_ids: input.nextMemberIds,
   })
@@ -177,7 +171,7 @@ export async function assignProduct(
 ): Promise<void> {
   const transferPending = input.transferPendingChangeTasks === true
   const transferReason = input.transferReason?.trim() || null
-  const result = await masterRepository(ctx).assignProduct({
+  const result = await ctx.repositories.master.assignProduct({
     userId: input.userId,
     productId: input.productId,
     transferPending,
@@ -218,7 +212,7 @@ export async function assignDuty(
   ctx: RepositoryContext,
   input: { userId: string; dutyId: string },
 ): Promise<void> {
-  const changed = await masterRepository(ctx).assignDuty(input)
+  const changed = await ctx.repositories.master.assignDuty(input)
   if (!changed) return
   await logMasterActivity(ctx, 'duty_assignment', 'created', '업무를 배정했습니다.', input.dutyId, {
     user_id: input.userId,
@@ -239,7 +233,7 @@ export async function updateProduct(
   const normalizedPayload = payload.unassigned_reason === undefined
     ? payload
     : { ...payload, unassigned_reason: normalizeUnassignedReason(payload.unassigned_reason) }
-  await masterRepository(ctx).updateProduct(productId, normalizedPayload)
+  await ctx.repositories.master.updateProduct(productId, normalizedPayload)
   await logMasterActivity(ctx, 'product', 'updated', '제품 정보를 수정했습니다.', productId, normalizedPayload)
 }
 
@@ -248,7 +242,7 @@ export async function updateDutyMajorCategory(
   majorCategoryId: string,
   payload: { name: string; sort_order?: number | null },
 ): Promise<void> {
-  await masterRepository(ctx).updateDutyMajorCategory(majorCategoryId, payload)
+  await ctx.repositories.master.updateDutyMajorCategory(majorCategoryId, payload)
   await logMasterActivity(
     ctx,
     'duty_major_category',
@@ -264,7 +258,7 @@ export async function updateDuty(
   dutyId: string,
   payload: { name: string; major_category_id: string; sort_order?: number | null },
 ): Promise<void> {
-  await masterRepository(ctx).updateDuty(dutyId, payload)
+  await ctx.repositories.master.updateDuty(dutyId, payload)
   await logMasterActivity(ctx, 'duty', 'updated', '업무 정보를 수정했습니다.', dutyId, payload)
 }
 
@@ -273,7 +267,7 @@ export async function updateInvite(
   inviteId: string,
   payload: { email: string; name: string; role: Role },
 ): Promise<void> {
-  await masterRepository(ctx).updateInvite(inviteId, payload)
+  await ctx.repositories.master.updateInvite(inviteId, payload)
   await logMasterActivity(ctx, 'allowed_user', 'updated', '초대 정보를 수정했습니다.', inviteId, payload)
 }
 
@@ -282,7 +276,7 @@ export async function toggleProfileActive(
   profileId: string,
   nextActive: boolean,
 ): Promise<void> {
-  await masterRepository(ctx).toggleProfileActive(profileId, nextActive)
+  await ctx.repositories.master.toggleProfileActive(profileId, nextActive)
   await logMasterActivity(
     ctx,
     'allowed_user',
@@ -294,21 +288,21 @@ export async function toggleProfileActive(
 }
 
 export async function deleteAllowedUser(ctx: RepositoryContext, id: string): Promise<void> {
-  const name = await masterRepository(ctx).deleteAllowedUser(id)
+  const name = await ctx.repositories.master.deleteAllowedUser(id)
   await logMasterActivity(ctx, 'allowed_user', 'deleted', `${name ?? '초대'} 사용자를 삭제했습니다.`, id)
 }
 
 export async function deleteProduct(ctx: RepositoryContext, id: string): Promise<void> {
-  const name = await masterRepository(ctx).deleteProduct(id)
+  const name = await ctx.repositories.master.deleteProduct(id)
   await logMasterActivity(ctx, 'product', 'deleted', `${name ?? '제품'}을 삭제했습니다.`, id)
 }
 
 export async function deleteDuty(ctx: RepositoryContext, id: string): Promise<void> {
-  const name = await masterRepository(ctx).deleteDuty(id)
+  const name = await ctx.repositories.master.deleteDuty(id)
   await logMasterActivity(ctx, 'duty', 'deleted', `${name ?? '업무'}를 삭제했습니다.`, id)
 }
 
 export async function deleteDutyMajorCategory(ctx: RepositoryContext, id: string): Promise<void> {
-  const name = await masterRepository(ctx).deleteDutyMajorCategory(id)
+  const name = await ctx.repositories.master.deleteDutyMajorCategory(id)
   await logMasterActivity(ctx, 'duty_major_category', 'deleted', `${name ?? '대분류'}를 삭제했습니다.`, id)
 }

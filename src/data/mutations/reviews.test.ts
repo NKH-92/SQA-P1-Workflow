@@ -12,7 +12,7 @@ import {
   updateReviewStatus,
   withdrawReviewRequest,
 } from './reviews'
-import type { RepositoryContext } from '../repositoryContext'
+import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
 
 describe('withdrawReviewRequest (demo)', () => {
   it('removes a pending review from local data', async () => {
@@ -38,14 +38,12 @@ describe('withdrawReviewRequest (demo)', () => {
     }
 
     let next = seeded
-    const ctx: RepositoryContext = {
-      isRemote: false,
-      profile: previewMember,
+    const ctx: RepositoryContext = createRepositoryContextFromDeps('local', {      profile: previewMember,
       data: seeded,
       setData: (updater) => {
         next = typeof updater === 'function' ? updater(next) : updater
       },
-    }
+    })
 
     await withdrawReviewRequest(ctx, reviewId, '더 이상 검토가 필요하지 않음')
     expect(next.reviewRequests.find((item) => item.id === reviewId)?.status).toBe('withdrawn')
@@ -60,14 +58,12 @@ describe('rejectReviewRequest (demo)', () => {
     expect(reviewId).toBeTruthy()
 
     let next = data
-    const ctx: RepositoryContext = {
-      isRemote: false,
-      profile: previewLeader,
+    const ctx: RepositoryContext = createRepositoryContextFromDeps('local', {      profile: previewLeader,
       data,
       setData: (updater) => {
         next = typeof updater === 'function' ? updater(next) : updater
       },
-    }
+    })
 
     await rejectReviewRequest(ctx, reviewId!, '반려 사유')
     const updated = next.reviewRequests.find((item) => item.id === reviewId)
@@ -79,12 +75,10 @@ describe('rejectReviewRequest (demo)', () => {
 describe('saveReviewRequest (demo)', () => {
   it('rejects editing a review that disappeared from the local snapshot', async () => {
     const data = createPreviewData()
-    const ctx: RepositoryContext = {
-      isRemote: false,
-      profile: previewMember,
+    const ctx: RepositoryContext = createRepositoryContextFromDeps('local', {      profile: previewMember,
       data,
       setData: () => undefined,
-    }
+    })
 
     await expect(
       saveReviewRequest(ctx, {
@@ -97,14 +91,12 @@ describe('saveReviewRequest (demo)', () => {
   it('creates a request without an attachment contract', async () => {
     const data = createPreviewData()
     let next = data
-    const ctx: RepositoryContext = {
-      isRemote: false,
-      profile: previewMember,
+    const ctx: RepositoryContext = createRepositoryContextFromDeps('local', {      profile: previewMember,
       data,
       setData: (updater) => {
         next = typeof updater === 'function' ? updater(next) : updater
       },
-    }
+    })
 
     await saveReviewRequest(ctx, {
       editingReviewId: null,
@@ -119,12 +111,10 @@ describe('leader-only review mutations (demo)', () => {
     const data = createPreviewData()
     const requestId = data.reviewRequests[0]?.id
     expect(requestId).toBeTruthy()
-    const ctx: RepositoryContext = {
-      isRemote: false,
-      profile: previewMember,
+    const ctx: RepositoryContext = createRepositoryContextFromDeps('local', {      profile: previewMember,
       data,
       setData: () => undefined,
-    }
+    })
 
     await expect(rejectReviewRequest(ctx, requestId!, 'reason')).rejects.toThrow('활성 파트장 권한이 필요합니다.')
     await expect(updateReviewStatus(ctx, requestId!, 'approved')).rejects.toThrow('활성 파트장 권한이 필요합니다.')
@@ -137,12 +127,10 @@ describe('leader-only review mutations (demo)', () => {
 describe('withdrawReviewRequest (demo) missing-record guard', () => {
   it('rejects a request that disappeared from the local snapshot', async () => {
     const data = createPreviewData()
-    const ctx: RepositoryContext = {
-      isRemote: false,
-      profile: previewMember,
+    const ctx: RepositoryContext = createRepositoryContextFromDeps('local', {      profile: previewMember,
       data,
       setData: () => undefined,
-    }
+    })
 
     await expect(withdrawReviewRequest(ctx, 'missing-review', '회수 사유')).rejects.toBeInstanceOf(UserFacingError)
   })
@@ -155,14 +143,12 @@ describe('updateReviewStatus (demo)', () => {
     expect(reviewId).toBeTruthy()
 
     let next = data
-    const ctx: RepositoryContext = {
-      isRemote: false,
-      profile: previewLeader,
+    const ctx: RepositoryContext = createRepositoryContextFromDeps('local', {      profile: previewLeader,
       data,
       setData: (updater) => {
         next = typeof updater === 'function' ? updater(next) : updater
       },
-    }
+    })
 
     await updateReviewStatus(ctx, reviewId!, 'approved')
     const updated = next.reviewRequests.find((item) => item.id === reviewId)
@@ -192,14 +178,12 @@ describe('reopenReviewRequest and feedback correction (demo)', () => {
       }],
     }
     let next = { ...data, reviewRequests: [closed, ...data.reviewRequests.slice(1)] }
-    const ctx: RepositoryContext = {
-      isRemote: false,
-      profile: previewLeader,
+    const ctx: RepositoryContext = createRepositoryContextFromDeps('local', {      profile: previewLeader,
       data: next,
       setData: (updater) => {
         next = typeof updater === 'function' ? updater(next) : updater
       },
-    }
+    })
 
     await reopenReviewRequest(ctx, source.id)
     await updateReviewFeedback(ctx, 'feedback-reopen', 'corrected')
@@ -224,14 +208,12 @@ describe('resubmitReviewRequest (demo)', () => {
       review_feedback: [],
     }
     let next = { ...data, reviewRequests: [rejected, ...data.reviewRequests.slice(1)] }
-    const ctx: RepositoryContext = {
-      isRemote: false,
-      profile: previewMember,
+    const ctx: RepositoryContext = createRepositoryContextFromDeps('local', {      profile: previewMember,
       data: next,
       setData: (updater) => {
         next = typeof updater === 'function' ? updater(next) : updater
       },
-    }
+    })
 
     await resubmitReviewRequest(ctx, source.id, '수정 내용을 반영했습니다.')
 
@@ -255,14 +237,12 @@ describe('resubmitReviewRequest (demo)', () => {
     const data = createPreviewData()
     const source = { ...data.reviewRequests[0]!, status: 'rejected' as const }
     let next = { ...data, reviewRequests: [source, ...data.reviewRequests.slice(1)] }
-    const ctx: RepositoryContext = {
-      isRemote: false,
-      profile: previewMember,
+    const ctx: RepositoryContext = createRepositoryContextFromDeps('local', {      profile: previewMember,
       data: next,
       setData: (updater) => {
         next = typeof updater === 'function' ? updater(next) : updater
       },
-    }
+    })
 
     await saveReviewRequest(ctx, {
       editingReviewId: source.id,
@@ -282,12 +262,10 @@ describe('local review ownership parity', () => {
     const data = createPreviewData()
     const request = data.reviewRequests[0]!
     const otherMember = { ...previewMember, id: 'other-member', email: 'other@example.com' }
-    const ctx: RepositoryContext = {
-      isRemote: false,
-      profile: otherMember,
+    const ctx: RepositoryContext = createRepositoryContextFromDeps('local', {      profile: otherMember,
       data,
       setData: () => undefined,
-    }
+    })
 
     await expect(
       saveReviewRequest(ctx, {
@@ -300,12 +278,10 @@ describe('local review ownership parity', () => {
 
   it('rejects feedback for a missing request instead of logging a false success', async () => {
     const data = createPreviewData()
-    const ctx: RepositoryContext = {
-      isRemote: false,
-      profile: previewLeader,
+    const ctx: RepositoryContext = createRepositoryContextFromDeps('local', {      profile: previewLeader,
       data,
       setData: () => undefined,
-    }
+    })
 
     await expect(addReviewFeedback(ctx, 'missing-review', 'comment')).rejects.toBeInstanceOf(UserFacingError)
   })

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AppData, Profile, Project } from '../../types'
-import type { RepositoryContext } from '../repositoryContext'
+import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
 import { UserFacingError } from '../../lib/errors'
 import { assignProduct, deleteProduct, updateProduct } from './master'
 import { deleteProject, updateProject } from './projects'
@@ -44,7 +44,7 @@ function localContext(): RepositoryContext {
     profileNotes: [],
     activityLogs: [],
   }
-  return { isRemote: false, profile: leader, data, setData: vi.fn() }
+  return createRepositoryContextFromDeps('local', {profile: leader, data, setData: vi.fn() })
 }
 
 describe('local missing-record mutation guards', () => {

@@ -1,14 +1,8 @@
 import type { ReviewStatus } from '../../types'
 import type { ReviewRequestPayload } from '../contracts'
 import type { RepositoryContext } from '../repositoryContext'
-import { createLocalReviewRepository } from '../local/localReviewRepository'
-import { createSupabaseReviewRepository } from '../remote/supabaseReviewRepository'
 
 export type { ReviewRequestPayload }
-
-function reviewRepository(ctx: RepositoryContext) {
-  return ctx.isRemote ? createSupabaseReviewRepository(ctx) : createLocalReviewRepository(ctx)
-}
 
 export async function saveReviewRequest(
   ctx: RepositoryContext,
@@ -17,11 +11,11 @@ export async function saveReviewRequest(
     payload: ReviewRequestPayload
   },
 ) {
-  return reviewRepository(ctx).saveReviewRequest(input)
+  return ctx.repositories.reviews.saveReviewRequest(input)
 }
 
 export async function withdrawReviewRequest(ctx: RepositoryContext, requestId: string, reason: string): Promise<void> {
-  return reviewRepository(ctx).withdrawReviewRequest(requestId, reason)
+  return ctx.repositories.reviews.withdrawReviewRequest(requestId, reason)
 }
 
 export async function rejectReviewRequest(
@@ -29,7 +23,7 @@ export async function rejectReviewRequest(
   requestId: string,
   comment: string,
 ): Promise<void> {
-  return reviewRepository(ctx).rejectReviewRequest(requestId, comment)
+  return ctx.repositories.reviews.rejectReviewRequest(requestId, comment)
 }
 
 export async function updateReviewStatus(
@@ -37,11 +31,11 @@ export async function updateReviewStatus(
   requestId: string,
   status: ReviewStatus,
 ): Promise<void> {
-  return reviewRepository(ctx).updateReviewStatus(requestId, status)
+  return ctx.repositories.reviews.updateReviewStatus(requestId, status)
 }
 
 export async function reopenReviewRequest(ctx: RepositoryContext, requestId: string): Promise<void> {
-  return reviewRepository(ctx).reopenReviewRequest(requestId)
+  return ctx.repositories.reviews.reopenReviewRequest(requestId)
 }
 
 export async function resubmitReviewRequest(
@@ -49,7 +43,7 @@ export async function resubmitReviewRequest(
   requestId: string,
   comment: string,
 ): Promise<void> {
-  return reviewRepository(ctx).resubmitReviewRequest(requestId, comment)
+  return ctx.repositories.reviews.resubmitReviewRequest(requestId, comment)
 }
 
 export async function addReviewFeedback(
@@ -57,7 +51,7 @@ export async function addReviewFeedback(
   requestId: string,
   comment: string,
 ): Promise<void> {
-  await reviewRepository(ctx).addReviewFeedback(requestId, comment)
+  await ctx.repositories.reviews.addReviewFeedback(requestId, comment)
 }
 
 export async function updateReviewFeedback(
@@ -65,17 +59,17 @@ export async function updateReviewFeedback(
   feedbackId: string,
   comment: string,
 ): Promise<void> {
-  return reviewRepository(ctx).updateReviewFeedback(feedbackId, comment)
+  return ctx.repositories.reviews.updateReviewFeedback(feedbackId, comment)
 }
 
 export async function voidReviewFeedback(ctx: RepositoryContext, feedbackId: string, reason: string): Promise<void> {
-  return reviewRepository(ctx).voidReviewFeedback(feedbackId, reason)
+  return ctx.repositories.reviews.voidReviewFeedback(feedbackId, reason)
 }
 
 export async function markReviewSeen(ctx: RepositoryContext, requestId: string): Promise<void> {
-  return reviewRepository(ctx).markReviewSeen(requestId)
+  return ctx.repositories.reviews.markReviewSeen(requestId)
 }
 
 export async function markAllRelevantReviewsSeen(ctx: RepositoryContext): Promise<void> {
-  return reviewRepository(ctx).markAllRelevantReviewsSeen()
+  return ctx.repositories.reviews.markAllRelevantReviewsSeen()
 }

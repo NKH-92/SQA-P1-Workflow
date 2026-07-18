@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createPreviewData, previewLeader, previewMember } from '../../demoData'
-import type { RepositoryContext } from '../repositoryContext'
+import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
 import { addProfileNote } from './team'
 
 function context(profile = previewLeader): RepositoryContext {
-  return { isRemote: false, profile, data: createPreviewData(), setData: vi.fn() }
+  return createRepositoryContextFromDeps('local', {profile, data: createPreviewData(), setData: vi.fn() })
 }
 
 describe('local profile-note permission parity', () => {

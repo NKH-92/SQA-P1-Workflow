@@ -1,7 +1,9 @@
 -- Stage B: irreversible attachment cleanup and explicit ACL manifest.
 --
 -- This migration must only run after an operator has purged the production
--- Storage bucket through the Storage API and recorded a zero-object recheck.
+-- Storage bucket through the Storage API and recorded bucket-absent evidence.
+-- Production runners enforce that handoff before db push; disposable local
+-- resets remove the legacy empty bucket through the API immediately afterward.
 -- Never delete storage.objects rows directly: doing so can orphan object blobs.
 
 do $$
@@ -16,18 +18,20 @@ begin
       message = 'review-attachments bucket is not empty; run purge script before this migration',
       detail = 'SQA_REVIEW_ATTACHMENTS_NOT_EMPTY';
   end if;
+
 end;
 $$;
 
--- Storage metadata is safe to remove only after the guard above proves there
--- are no objects. The actual binary purge remains an operator-only API action.
+-- The production operator API action has already removed the empty bucket.
+-- Fresh local resets still contain an empty legacy row until the post-reset API
+-- cleanup, so SQL guards object safety and never mutates Storage metadata.
 drop policy if exists "review_attachments_select_self_or_leader" on storage.objects;
 drop policy if exists "review_attachments_insert_self" on storage.objects;
 drop policy if exists "review_attachments_delete_self_or_leader" on storage.objects;
 
 -- The policy DDL waits for in-flight storage.objects writers. Recheck after the
--- write policies are gone so an upload that raced the first snapshot cannot be
--- converted into an orphan by the bucket-row cleanup below.
+-- write policies are gone so an upload racing the first snapshot cannot survive
+-- into the irreversible compatibility cleanup below.
 do $$
 begin
   if exists (
@@ -42,9 +46,6 @@ begin
   end if;
 end;
 $$;
-
-delete from storage.buckets
- where id = 'review-attachments';
 
 -- Remove the compatibility-only attachment schema after Storage is empty.
 drop trigger if exists review_requests_validate_attachment on public.review_requests;

@@ -116,6 +116,19 @@ jobs:
           DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: supabase migration list --db-url "$DATABASE_URL"
 
+      - name: Guard Stage B Storage handoff
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          object_count=$(psql "$DATABASE_URL" -tAc \
+            "select count(*) from storage.objects where bucket_id = 'review-attachments'")
+          bucket_count=$(psql "$DATABASE_URL" -tAc \
+            "select count(*) from storage.buckets where id = 'review-attachments'")
+          if [ "$object_count" -ne 0 ] || [ "$bucket_count" -ne 0 ]; then
+            echo "::error::SQA_REVIEW_ATTACHMENTS_BUCKET_STILL_EXISTS: operator Storage API evidence must show objectCount=0 and bucketExists=false before Stage B (objects=$object_count buckets=$bucket_count)"
+            exit 1
+          fi
+
       # Migration history repair is intentionally excluded from this routine.
       # A mismatched/empty history must be handled as a separately reviewed break-glass
       # operation after object-by-object verification; it must never be combined with db push.

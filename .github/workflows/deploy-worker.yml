@@ -42,6 +42,12 @@ jobs:
         run: |
           supabase start
           supabase db reset
+      - name: Remove disposable local attachment bucket through Storage API
+        run: |
+          eval "$(supabase status -o env)"
+          SUPABASE_URL="$API_URL" \
+          SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" \
+            node scripts/purge-review-attachments.mjs --execute --confirm=PURGE_REVIEW_ATTACHMENTS
       - name: Seed deterministic RLS fixtures
         run: |
           eval "$(supabase status -o env)"

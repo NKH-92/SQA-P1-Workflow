@@ -20,6 +20,22 @@ export function summarizeObjects(objects: StorageObjectInventoryItem[]): {
   totalBytes: number
   nameDigestSha256: string
 }
+export function isNotFoundError(error: unknown): boolean
+export function getBucketPresence(
+  storageClient: { getBucket(bucket: string): Promise<{ data: unknown; error: unknown }> },
+  bucket: string,
+): Promise<{ exists: boolean }>
+export function deleteEmptyBucket(
+  storageClient: {
+    deleteBucket(bucket: string): Promise<{ error: unknown }>
+    getBucket(bucket: string): Promise<{ data: unknown; error: unknown }>
+  },
+  bucket: string,
+): Promise<{
+  bucketDeleted: boolean
+  bucketExistsAfter: boolean | null
+  errorCode: string | number | null
+}>
 export function removeInBatches(bucketClient: unknown, objects: StorageObjectInventoryItem[]): Promise<Array<{
   batchNumber: number
   failedObjectCount: number

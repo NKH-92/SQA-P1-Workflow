@@ -27,7 +27,8 @@
 - [ ] 보존 정책/승인자 확인
 - [ ] 운영자가 명시적 confirm으로 purge 실행
 - [ ] `verifiedRemainingObjectCount=0`
-- [ ] 재 dry-run `objectCount=0`
+- [ ] execute `bucketExistsAfter=false`
+- [ ] 재 dry-run `bucketExists=false`, `objectCount=0`
 
 ## Stage B
 

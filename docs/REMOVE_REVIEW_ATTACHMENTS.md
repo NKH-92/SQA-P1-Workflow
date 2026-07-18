@@ -19,7 +19,7 @@ $env:SUPABASE_SERVICE_ROLE_KEY = '<ephemeral service-role key>'
 node scripts/purge-review-attachments.mjs --output=ops-output/review-attachments-dry-run.json
 ```
 
-기록할 값은 `targetProjectRef`, `bucket`, `objectCount`, `totalBytes`, `nameDigestSha256`이다. 기본 출력에는 파일명이 없으며, 파일명 확인이 별도로 승인된 경우에만 `--verbose`를 사용한다. `ops-output/`은 git에 포함하지 않는다.
+기록할 값은 `targetProjectRef`, `bucket`, `bucketExists`, `objectCount`, `totalBytes`, `nameDigestSha256`이다. 기본 출력에는 파일명이 없으며, 파일명 확인이 별도로 승인된 경우에만 `--verbose`를 사용한다. `ops-output/`은 git에 포함하지 않는다.
 
 ## 3. 보존·삭제 승인
 
@@ -44,10 +44,11 @@ node scripts/purge-review-attachments.mjs --output=ops-output/review-attachments
 
 - execute 결과 `failedObjectCount=0`
 - execute 결과 `verifiedRemainingObjectCount=0`
-- 별도 dry-run 결과 `objectCount=0`
+- execute 결과 `bucketExistsAfter=false`
+- 별도 dry-run 결과 `bucketExists=false`, `objectCount=0`
 - 두 결과의 대상 URL/project ref와 bucket이 동일
 
-하나라도 다르면 Stage B를 중단한다. 스크립트는 실패한 batch가 있으면 exit code 1로 종료하며, SQL로 `storage.objects` 행을 삭제해서 우회하지 않는다. 결과를 기록한 뒤 키를 셸에서 제거한다.
+하나라도 다르면 Stage B를 중단한다. 스크립트는 실패한 batch가 있거나 빈 bucket의 Storage API 삭제·부재 재확인이 실패하면 exit code 1로 종료한다. SQL로 `storage.objects` 또는 `storage.buckets` 행을 삭제해서 우회하지 않는다. 결과를 기록한 뒤 키를 셸에서 제거한다.
 
 ```powershell
 Remove-Item Env:SUPABASE_SERVICE_ROLE_KEY
@@ -56,7 +57,7 @@ Remove-Item Env:SUPABASE_URL
 
 ## 5. Stage B 병합과 배포
 
-0건 증거와 승인자를 Stage B PR에 연결한 뒤에만 병합한다. Stage B 파일은 `20260718073243_finalize_review_workflow_hardening.sql`이며, 객체가 남아 있으면 `SQA_REVIEW_ATTACHMENTS_NOT_EMPTY`로 어떤 정리도 하기 전에 실패한다. Storage 정책 제거를 기다리던 업로드가 뒤늦게 완료되면 bucket 삭제 직전의 두 번째 검사에서 `SQA_REVIEW_ATTACHMENTS_RACE_DETECTED`로 전체 트랜잭션을 되돌린다.
+0건·bucket 부재 증거와 승인자를 Stage B PR에 연결한 뒤에만 병합한다. `DB Migrate` 사전검사는 객체나 빈 bucket 행이 남아 있으면 `SQA_REVIEW_ATTACHMENTS_BUCKET_STILL_EXISTS`로 push 전에 실패한다. Stage B 파일 `20260718073243_finalize_review_workflow_hardening.sql`도 객체가 남아 있으면 `SQA_REVIEW_ATTACHMENTS_NOT_EMPTY`로 정리 전에 실패하고, Storage 정책 제거 중 업로드가 발생하면 두 번째 검사에서 `SQA_REVIEW_ATTACHMENTS_RACE_DETECTED`로 전체 트랜잭션을 되돌린다.
 
 병합 후 동일한 `main` SHA에서 다음 순서를 지킨다.
 
@@ -73,9 +74,9 @@ Remove-Item Env:SUPABASE_URL
 ```text
 Stage A SHA / deploy run:
 purge 승인자 / 실행자:
-dry-run objectCount / totalBytes / digest:
-execute failedObjectCount / verifiedRemainingObjectCount:
-zero recheck objectCount:
+dry-run bucketExists / objectCount / totalBytes / digest:
+execute failedObjectCount / verifiedRemainingObjectCount / bucketDeleted / bucketExistsAfter:
+zero recheck bucketExists / objectCount:
 Stage B SHA:
 Backup DB / DB Migrate / Deploy Worker run IDs:
 DB readiness: bucket=absent, policies=0, attachment_url=absent, legacy RPC/overloads=absent, direct review writes=denied, schema CREATE=denied, future PUBLIC EXECUTE=denied

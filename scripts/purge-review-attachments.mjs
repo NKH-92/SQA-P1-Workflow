@@ -92,6 +92,37 @@ export function summarizeObjects(objects) {
   }
 }
 
+export function isNotFoundError(error) {
+  return error?.status === 404 || error?.statusCode === '404'
+}
+
+export async function getBucketPresence(storageClient, bucket) {
+  const { data, error } = await storageClient.getBucket(bucket)
+  if (error) {
+    if (isNotFoundError(error)) return { exists: false }
+    throw error
+  }
+  return { exists: data != null }
+}
+
+export async function deleteEmptyBucket(storageClient, bucket) {
+  const { error } = await storageClient.deleteBucket(bucket)
+  if (error && !isNotFoundError(error)) {
+    return {
+      bucketDeleted: false,
+      bucketExistsAfter: null,
+      errorCode: error.statusCode ?? error.status ?? 'storage_bucket_delete_failed',
+    }
+  }
+
+  const finalPresence = await getBucketPresence(storageClient, bucket)
+  return {
+    bucketDeleted: error == null,
+    bucketExistsAfter: finalPresence.exists,
+    errorCode: finalPresence.exists ? 'storage_bucket_still_exists' : null,
+  }
+}
+
 export async function removeInBatches(bucketClient, objects) {
   const failures = []
   for (let index = 0; index < objects.length; index += DELETE_BATCH_SIZE) {
@@ -131,20 +162,42 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     auth: { persistSession: false, autoRefreshToken: false },
   })
   const bucketClient = client.storage.from(bucket)
-  const objects = await listAllObjects(bucketClient)
+  const bucketPresence = await getBucketPresence(client.storage, bucket)
+  const objects = bucketPresence.exists ? await listAllObjects(bucketClient) : []
   const inventory = summarizeObjects(objects)
   const report = {
     generatedAt: new Date().toISOString(),
     mode: options.execute ? 'execute' : 'dry-run',
     bucket,
     target,
+    bucketExists: bucketPresence.exists,
     inventory,
   }
 
-  console.log(JSON.stringify({ bucket, ...inventory }))
+  console.log(JSON.stringify({ bucket, bucketExists: bucketPresence.exists, ...inventory }))
   if (options.verbose) console.error(JSON.stringify({ objectNames: objects.map((object) => object.name) }))
 
   if (!options.execute) {
+    if (options.outputPath) {
+      console.log(JSON.stringify({ reportPath: await saveReport(options.outputPath, report) }))
+    }
+    return 0
+  }
+
+  if (!bucketPresence.exists) {
+    report.execution = {
+      attemptedObjectCount: 0,
+      failedObjectCount: 0,
+      failedBatchCount: 0,
+      verifiedRemainingObjectCount: 0,
+      verifiedRemainingTotalBytes: 0,
+      verifiedRemainingNameDigestSha256: inventory.nameDigestSha256,
+      bucketDeleteAttempted: false,
+      bucketDeleted: false,
+      bucketExistsAfter: false,
+      failures: [],
+    }
+    console.log(JSON.stringify(report.execution))
     if (options.outputPath) {
       console.log(JSON.stringify({ reportPath: await saveReport(options.outputPath, report) }))
     }
@@ -161,19 +214,41 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     verifiedRemainingObjectCount: remainingInventory.objectCount,
     verifiedRemainingTotalBytes: remainingInventory.totalBytes,
     verifiedRemainingNameDigestSha256: remainingInventory.nameDigestSha256,
+    bucketDeleteAttempted: false,
+    bucketDeleted: false,
+    bucketExistsAfter: true,
     failures,
   }
   report.execution = execution
-  console.log(JSON.stringify(execution))
-
-  if (options.outputPath) {
-    console.log(JSON.stringify({ reportPath: await saveReport(options.outputPath, report) }))
-  }
   if (failures.length > 0 || remainingObjects.length > 0) {
+    console.log(JSON.stringify(execution))
+    if (options.outputPath) {
+      console.log(JSON.stringify({ reportPath: await saveReport(options.outputPath, report) }))
+    }
     console.error(JSON.stringify({
       error: 'Purge verification failed.',
       failedObjectCount: execution.failedObjectCount,
       verifiedRemainingObjectCount: execution.verifiedRemainingObjectCount,
+    }))
+    return 1
+  }
+
+  const bucketDeletion = await deleteEmptyBucket(client.storage, bucket)
+  Object.assign(execution, {
+    bucketDeleteAttempted: true,
+    bucketDeleted: bucketDeletion.bucketDeleted,
+    bucketExistsAfter: bucketDeletion.bucketExistsAfter,
+    bucketDeleteErrorCode: bucketDeletion.errorCode,
+  })
+  console.log(JSON.stringify(execution))
+  if (options.outputPath) {
+    console.log(JSON.stringify({ reportPath: await saveReport(options.outputPath, report) }))
+  }
+  if (bucketDeletion.errorCode != null || bucketDeletion.bucketExistsAfter) {
+    console.error(JSON.stringify({
+      error: 'Bucket deletion verification failed.',
+      bucketDeleteErrorCode: bucketDeletion.errorCode,
+      bucketExistsAfter: bucketDeletion.bucketExistsAfter,
     }))
     return 1
   }

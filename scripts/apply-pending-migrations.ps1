@@ -34,6 +34,26 @@ if ($ProjectRef) {
   npx --yes "supabase@$SupabaseCliVersion" link --project-ref $ProjectRef
 }
 
+$stageBMigration = Join-Path $root 'supabase\migrations\20260718073243_finalize_review_workflow_hardening.sql'
+if (Test-Path -LiteralPath $stageBMigration) {
+  $preflightSql = @"
+select 'stage_b_storage_handoff_ok' where
+  not exists (select 1 from storage.objects where bucket_id = 'review-attachments')
+  and not exists (select 1 from storage.buckets where id = 'review-attachments');
+"@
+  $preflightFile = Join-Path ([System.IO.Path]::GetTempPath()) ("supabase-stage-b-preflight-{0}.sql" -f [Guid]::NewGuid().ToString('N'))
+  try {
+    Set-Content -Path $preflightFile -Value $preflightSql -Encoding UTF8
+    $preflightOutput = npx --yes "supabase@$SupabaseCliVersion" db query --linked --file $preflightFile 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0 -or $preflightOutput -notmatch 'stage_b_storage_handoff_ok') {
+      throw 'SQA_REVIEW_ATTACHMENTS_BUCKET_STILL_EXISTS: run the approved Storage API purge and verify objectCount=0, bucketExists=false before Stage B.'
+    }
+  }
+  finally {
+    Remove-Item -LiteralPath $preflightFile -Force -ErrorAction SilentlyContinue
+  }
+}
+
 Write-Host "Pushing migrations..."
 npx --yes "supabase@$SupabaseCliVersion" db push
 

@@ -39,6 +39,7 @@ describe('production workflow guards', () => {
       const workflow = readWorkflow(name)
       expect(workflow).toContain('supabase start')
       expect(workflow).toContain('supabase db reset')
+      expect(workflow).toContain('node scripts/purge-review-attachments.mjs --execute --confirm=PURGE_REVIEW_ATTACHMENTS')
       expect(workflow).toContain('node scripts/setup-rls-fixtures.mjs')
       expect(workflow).toContain('echo "SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY"')
       expect(workflow).toContain('npm run test:rls')
@@ -78,6 +79,10 @@ describe('production workflow guards', () => {
     expect(workflow).not.toContain('Repair migration history (optional)')
     expect(workflow).not.toContain('repair_applied:')
     expect(workflow).not.toContain('repair_reverted:')
+    expect(workflow).toContain('- name: Guard Stage B Storage handoff')
+    expect(workflow).toContain('SQA_REVIEW_ATTACHMENTS_BUCKET_STILL_EXISTS')
+    expect(workflow.indexOf('- name: Guard Stage B Storage handoff'))
+      .toBeLessThan(workflow.indexOf('- name: Push pending migrations'))
   })
 
   it('verifies assignment migration versions and RPC security attributes', () => {

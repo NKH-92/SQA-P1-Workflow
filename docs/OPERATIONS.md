@@ -93,11 +93,11 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 
 ### 리뷰 첨부 Storage 폐기
 
-앱은 리뷰 첨부를 업로드·조회하지 않는다. 기존 `review-attachments` 버킷은 운영자 purge와 0건 재확인 뒤 Stage B 마이그레이션에서 제거한다. 최종 스키마에는 버킷·정책·`attachment_url`이 모두 없어야 한다.
+앱은 리뷰 첨부를 업로드·조회하지 않는다. 기존 `review-attachments` 버킷은 운영자 purge와 0건 확인 뒤 같은 운영 도구가 Storage API로 제거한다. Stage B `DB Migrate` 사전검사는 버킷 부재를 강제하고, 마이그레이션은 객체 race를 재확인한 뒤 정책·호환 스키마를 정리한다. 최종 스키마에는 버킷·정책·`attachment_url`이 모두 없어야 한다.
 
 > **`scripts/backup-db.ps1`은 DB(스키마·데이터)만 덤프하며 Storage 객체를 포함하지 않습니다.** 2026-07-09의 기존 결정은 첨부를 백업 대상에서 제외하는 것이었지만, 실제 purge 전에는 운영자가 이 결정을 재확인하고 승인자를 기록해야 합니다.
 
-삭제 자동화는 [REMOVE_REVIEW_ATTACHMENTS.md](./REMOVE_REVIEW_ATTACHMENTS.md)의 장벽을 따른다. 먼저 파일명을 노출하지 않는 dry-run의 객체 수·digest를 기록하고, 승인된 운영자만 명시적 confirm으로 purge한다. `verifiedRemainingObjectCount=0`과 재 dry-run `objectCount=0`이 모두 확인되기 전에는 Stage B를 적용하지 않는다. SQL로 `storage.objects`를 삭제하지 않는다.
+삭제 자동화는 [REMOVE_REVIEW_ATTACHMENTS.md](./REMOVE_REVIEW_ATTACHMENTS.md)의 장벽을 따른다. 먼저 파일명을 노출하지 않는 dry-run의 객체 수·digest를 기록하고, 승인된 운영자만 명시적 confirm으로 객체와 빈 bucket을 Storage API로 삭제한다. `verifiedRemainingObjectCount=0`, `bucketExistsAfter=false`, 재 dry-run `bucketExists=false`와 `objectCount=0`이 모두 확인되기 전에는 Stage B를 적용하지 않는다. SQL로 `storage.objects`나 `storage.buckets`를 삭제하지 않는다.
 
 ## Auth 계정 생성·정리
 

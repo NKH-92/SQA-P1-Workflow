@@ -14,16 +14,15 @@ describe('review workflow hardening Stage B migration', () => {
     const failure = migration.indexOf('SQA_REVIEW_ATTACHMENTS_NOT_EMPTY')
     const policyDrop = migration.indexOf('drop policy if exists "review_attachments_insert_self"')
     const raceFailure = migration.indexOf('SQA_REVIEW_ATTACHMENTS_RACE_DETECTED')
-    const bucketDelete = migration.indexOf('delete from storage.buckets')
     const columnDrop = migration.indexOf('drop column attachment_url')
 
     expect(guard).toBeGreaterThan(-1)
     expect(failure).toBeGreaterThan(guard)
     expect(policyDrop).toBeGreaterThan(failure)
     expect(raceFailure).toBeGreaterThan(policyDrop)
-    expect(bucketDelete).toBeGreaterThan(raceFailure)
-    expect(columnDrop).toBeGreaterThan(bucketDelete)
+    expect(columnDrop).toBeGreaterThan(raceFailure)
     expect(migration).not.toMatch(/delete\s+from\s+storage\.objects/i)
+    expect(migration).not.toMatch(/delete\s+from\s+storage\.buckets/i)
   })
 
   it('removes every attachment compatibility object and the legacy password RPC', () => {

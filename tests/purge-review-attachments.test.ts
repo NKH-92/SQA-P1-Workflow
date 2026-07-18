@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   CONFIRMATION,
+  deleteEmptyBucket,
   describeTarget,
+  getBucketPresence,
+  isNotFoundError,
   listAllObjects,
   parseOptions,
   removeInBatches,
@@ -72,5 +75,56 @@ describe('review attachment purge safety', () => {
       failedObjectCount: 100,
       errorCode: 'storage_remove_failed',
     }])
+  })
+
+  it('treats only an HTTP 404 as an already-absent bucket', async () => {
+    expect(isNotFoundError({ status: 404, message: 'missing' })).toBe(true)
+    expect(isNotFoundError({ statusCode: '404', message: 'missing' })).toBe(true)
+    expect(isNotFoundError({ status: 403, message: 'missing' })).toBe(false)
+
+    await expect(getBucketPresence({
+      getBucket: vi.fn().mockResolvedValue({ data: null, error: { status: 404 } }),
+    }, 'review-attachments')).resolves.toEqual({ exists: false })
+
+    await expect(getBucketPresence({
+      getBucket: vi.fn().mockResolvedValue({ data: null, error: { status: 403 } }),
+    }, 'review-attachments')).rejects.toEqual({ status: 403 })
+  })
+
+  it('deletes the empty bucket through the API and verifies terminal absence', async () => {
+    const storage = {
+      deleteBucket: vi.fn().mockResolvedValue({ data: { message: 'Successfully deleted' }, error: null }),
+      getBucket: vi.fn().mockResolvedValue({ data: null, error: { status: 404 } }),
+    }
+
+    await expect(deleteEmptyBucket(storage, 'review-attachments')).resolves.toEqual({
+      bucketDeleted: true,
+      bucketExistsAfter: false,
+      errorCode: null,
+    })
+    expect(storage.deleteBucket).toHaveBeenCalledWith('review-attachments')
+  })
+
+  it('fails closed when deletion is rejected or the bucket is recreated', async () => {
+    const rejectedStorage = {
+      deleteBucket: vi.fn().mockResolvedValue({ data: null, error: { status: 409, statusCode: 'BucketNotEmpty' } }),
+      getBucket: vi.fn(),
+    }
+    await expect(deleteEmptyBucket(rejectedStorage, 'review-attachments')).resolves.toEqual({
+      bucketDeleted: false,
+      bucketExistsAfter: null,
+      errorCode: 'BucketNotEmpty',
+    })
+    expect(rejectedStorage.getBucket).not.toHaveBeenCalled()
+
+    const recreatedStorage = {
+      deleteBucket: vi.fn().mockResolvedValue({ data: { message: 'Successfully deleted' }, error: null }),
+      getBucket: vi.fn().mockResolvedValue({ data: { id: 'review-attachments' }, error: null }),
+    }
+    await expect(deleteEmptyBucket(recreatedStorage, 'review-attachments')).resolves.toEqual({
+      bucketDeleted: true,
+      bucketExistsAfter: true,
+      errorCode: 'storage_bucket_still_exists',
+    })
   })
 })

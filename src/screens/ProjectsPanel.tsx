@@ -3,13 +3,6 @@ import type { Dispatch, SetStateAction } from 'react'
 import { Badge, CopyLinkButton, EmptyState, Rows, Section } from '../components/ui'
 import type { AppData, Profile, Project, ProjectStatus } from '../types'
 import { downloadCsv } from '../lib/csv'
-import {
-  createProject as createProjectMutation,
-  createRepositoryContext,
-  deleteProject as deleteProjectMutation,
-  saveProjectAssignments,
-  updateProject as updateProjectMutation,
-} from '../data'
 import type { MutateFn } from '../app/types'
 import { formatDate, projectStatusLabels } from '../lib/format'
 import { canAssignProjectTo } from '../domain/permissions'
@@ -23,6 +16,7 @@ import {
   selectProjectStatusGroups,
   selectVisibleProjectAssignments,
 } from '../features/projects/project.selectors'
+import { useProjectController } from '../features/projects/useProjectController'
 import {
   BriefcaseBusiness,
   Download,
@@ -50,6 +44,7 @@ export function ProjectsPanel({
   initialSelectedId?: string | null
   onInitialSelectionApplied?: () => void
 }) {
+  const controller = useProjectController(profile, data, setData)
   const [projectForm, setProjectForm] = useState({ name: '', description: '', deadline: '', status: 'planned' as ProjectStatus })
   const [isProjectComposerOpen, setProjectComposerOpen] = useState(false)
   const [selectedProjectMemberIds, setSelectedProjectMemberIds] = useState<string[]>([])
@@ -124,18 +119,13 @@ export function ProjectsPanel({
 
   const createProject = () =>
     mutate(async () => {
-      const ctx = createRepositoryContext(profile, data, setData)
       const selectedMembers = selectedProjectMemberIds.filter((memberId) => memberOptions.some((member) => member.id === memberId))
-      await createProjectMutation(ctx, {
-        project: {
-          name: projectForm.name,
-          description: projectForm.description,
-          deadline: projectForm.deadline || null,
-          status: projectForm.status,
-        },
-        memberIds: selectedMembers,
-        memberOptions,
-      })
+      await controller.create({
+        name: projectForm.name,
+        description: projectForm.description,
+        deadline: projectForm.deadline || null,
+        status: projectForm.status,
+      }, selectedMembers, memberOptions)
       setProjectForm({ name: '', description: '', deadline: '', status: 'planned' })
       setSelectedProjectMemberIds([])
       setProjectComposerOpen(false)
@@ -163,7 +153,7 @@ export function ProjectsPanel({
     mutate(async () => {
       const edit = projectEdits[project.id]
       if (!edit) return
-      await updateProjectMutation(createRepositoryContext(profile, data, setData), project.id, {
+      await controller.update(project.id, {
         name: edit.name,
         description: edit.description,
         deadline: edit.deadline || null,
@@ -188,18 +178,14 @@ export function ProjectsPanel({
       const project = data.projects.find((item) => item.id === assignmentEditProjectId)
       if (!project) return
       const nextIds = assignmentEditMemberIds.filter((memberId) => memberOptions.some((member) => member.id === memberId))
-      await saveProjectAssignments(createRepositoryContext(profile, data, setData), {
-        project,
-        nextMemberIds: nextIds,
-        memberOptions,
-      })
+      await controller.saveAssignments(project, nextIds, memberOptions)
       setAssignmentEditProjectId(null)
       setAssignmentEditMemberIds([])
     }, '프로젝트 배정을 수정했습니다.')
 
   const deleteProject = (project: Project) =>
     mutate(async () => {
-      await deleteProjectMutation(createRepositoryContext(profile, data, setData), project)
+      await controller.remove(project)
       setPendingProjectDeleteId(null)
       cancelProjectEdit(project.id)
     }, '프로젝트를 삭제했습니다.')

@@ -6,15 +6,6 @@ import { downloadCsv } from '../../../lib/csv'
 import { buildProductAllocationCsvRows } from '../../../lib/productAllocationCsv'
 import { parseCsvRows, parseProductImportRows } from '../../../lib/csvImport'
 import { canReceiveAssignment } from '../../../domain/permissions'
-import {
-  addProduct as addProductMutation,
-  assignProduct as assignProductMutation,
-  createRepositoryContext,
-  deleteProduct as deleteProductRecord,
-  importProducts as importProductsMutation,
-  saveProductAssignments,
-  updateProduct as updateProductMutation,
-} from '../../../data'
 import { selectProductGroups } from '../master.selectors'
 import { selectProductChangeTaskContexts } from '../../change-applications/selectors'
 import {
@@ -30,8 +21,10 @@ import {
 } from './ProductAssignModal'
 import { ProductCard, type ProductEdit } from './ProductCard'
 import { ProductRegisterModal } from './ProductRegisterModal'
+import { useProductAdminController } from './useProductAdminController'
 
 export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSubPanelProps) {
+  const controller = useProductAdminController(profile, data, setData)
   const [productForm, setProductForm] = useState({ name: '', category: '자사' as ProductCategory, companyName: '자사' })
   const [productAssignment, setProductAssignment] = useState<ProductAssignmentForm>({
     user_id: '',
@@ -91,7 +84,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
     await mutate(
       async () => {
         validateProductImport(data, rows.length, incoming.length)
-        await importProductsMutation(createRepositoryContext(profile, data, setData), incoming)
+        await controller.importRows(incoming)
       },
       skipped > 0
         ? `제품 ${incoming.length}건을 가져왔습니다. 중복·형식 오류 ${skipped}건은 제외했습니다.`
@@ -102,7 +95,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
   const addProduct = async () => {
     const ok = await mutate(async () => {
       const payload = validateProductCreate(data, productForm)
-      await addProductMutation(createRepositoryContext(profile, data, setData), payload)
+      await controller.add(payload)
       setProductForm({ name: '', category: '자사', companyName: '자사' })
     }, '제품을 등록했습니다.')
     if (ok) setProductRegisterOpen(false)
@@ -121,15 +114,14 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
       : 0
     const ok = await mutate(async () => {
       if (!productAssignment.user_id || !productAssignment.product_id) return
-      const ctx = createRepositoryContext(profile, data, setData)
       if (isUnassigned) {
-        await saveProductAssignments(ctx, {
+        await controller.saveAssignments({
           productId: productAssignment.product_id,
           nextMemberIds: [],
           unassignedReason: productAssignment.unassigned_reason,
         })
       } else {
-        await assignProductMutation(ctx, {
+        await controller.assign({
           userId: productAssignment.user_id,
           productId: productAssignment.product_id,
           transferPendingChangeTasks: productAssignment.transfer_pending_tasks,
@@ -152,7 +144,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
       const edit = productEdits[productId]
       if (!edit?.name.trim()) return
       const name = validateProductUpdate(data, productId, edit.name)
-      await updateProductMutation(createRepositoryContext(profile, data, setData), productId, {
+      await controller.update(productId, {
         name,
         category: edit.category || '자사',
         company_name: edit.companyName.trim() || (edit.category === '자사' ? '자사' : ''),
@@ -169,7 +161,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
 
   const deleteProduct = (productId: string) =>
     mutate(async () => {
-      await deleteProductRecord(createRepositoryContext(profile, data, setData), productId)
+      await controller.remove(productId)
       setPendingDelete(null)
     }, '제품 삭제했습니다.')
 

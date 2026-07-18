@@ -6,23 +6,17 @@ import { downloadCsv } from '../../../lib/csv'
 import { parseCsvRows, parseInviteImportRows } from '../../../lib/csvImport'
 import { roleLabels } from '../../../lib/format'
 import { canReceiveAssignment } from '../../../domain/permissions'
-import {
-  addAllowedUser as addAllowedUserMutation,
-  createRepositoryContext,
-  deleteAllowedUser as deleteAllowedUserRecord,
-  importInvites as importInvitesMutation,
-  toggleProfileActive as toggleProfileActiveMutation,
-  updateInvite as updateInviteMutation,
-} from '../../../data'
 import { selectFilteredAllowedUsers } from '../master.selectors'
 import { validateInviteCreate, validateInviteImport, validateInviteUpdate, validateProfileToggle } from '../master.validators'
 import type { MasterSubPanelProps } from '../shared/types'
 import { InviteCard } from './InviteCard'
 import { InviteRegisterModal } from './InviteRegisterModal'
+import { useInviteAdminController } from './useInviteAdminController'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubPanelProps) {
+  const controller = useInviteAdminController(profile, data, setData)
   const [allowedForm, setAllowedForm] = useState({ email: '', name: '', role: 'member' as Role })
   const [adminSearch, setAdminSearch] = useState('')
   const [pendingDelete, setPendingDelete] = useState<{ table: AdminDeleteTable; id: string } | null>(null)
@@ -87,7 +81,7 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
     await mutate(
       async () => {
         validateInviteImport(data, rows.length, incoming.length)
-        await importInvitesMutation(createRepositoryContext(profile, data, setData), incoming)
+        await controller.importRows(incoming)
       },
       skipped > 0
         ? `초대 ${incoming.length}건을 가져왔습니다. 중복·형식 오류 ${skipped}건은 제외했습니다.`
@@ -98,7 +92,7 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
   const addAllowedUser = async () => {
     const ok = await mutate(async () => {
       const payload = validateInviteCreate(data, allowedForm)
-      await addAllowedUserMutation(createRepositoryContext(profile, data, setData), payload)
+      await controller.add(payload)
       setAllowedForm({ email: '', name: '', role: 'member' })
     }, '초대 정보를 등록했습니다.')
     if (ok) setInviteRegisterOpen(false)
@@ -109,7 +103,7 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
       const edit = inviteEdits[inviteId]
       if (!edit?.name.trim() || !edit.email.trim()) return
       const payload = validateInviteUpdate(data, inviteId, edit)
-      await updateInviteMutation(createRepositoryContext(profile, data, setData), inviteId, payload)
+      await controller.update(inviteId, payload)
       setInviteEdits((current) => {
         const next = { ...current }
         delete next[inviteId]
@@ -120,13 +114,13 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
   const toggleProfileActive = (email: string, nextActive: boolean) =>
     mutate(async () => {
       const memberProfile = validateProfileToggle(data, email)
-      await toggleProfileActiveMutation(createRepositoryContext(profile, data, setData), memberProfile.id, nextActive)
+      await controller.toggleProfile(memberProfile.id, nextActive)
       setPendingProfileToggle(null)
     }, nextActive ? '계정을 활성화했습니다.' : '계정을 비활성화했습니다.')
 
   const deleteInvite = (inviteId: string) =>
     mutate(async () => {
-      await deleteAllowedUserRecord(createRepositoryContext(profile, data, setData), inviteId)
+      await controller.remove(inviteId)
       setPendingDelete(null)
     }, '초대 삭제했습니다.')
 

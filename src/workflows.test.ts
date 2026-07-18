@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import publicHeaders from '../public/_headers?raw'
 
 const workflows = import.meta.glob('../.github/workflows/*.yml', {
   query: '?raw',
@@ -8,6 +9,10 @@ const workflows = import.meta.glob('../.github/workflows/*.yml', {
 
 function readWorkflow(name: string) {
   return (workflows[`../.github/workflows/${name}`] ?? '').replace(/\r\n/g, '\n')
+}
+
+function readPublicHeaders() {
+  return publicHeaders.replace(/\r\n/g, '\n')
 }
 
 describe('production workflow guards', () => {
@@ -329,6 +334,12 @@ describe('production workflow guards', () => {
     expect(workflow).toContain('content-security-policy')
     expect(workflow).toContain('x-content-type-options:')
     expect(healthPosition).toBeGreaterThan(deployPosition)
+  })
+
+  it('does not retain blob image permission after attachment previews are removed', () => {
+    const headers = readPublicHeaders()
+    expect(headers).toContain("img-src 'self' data:")
+    expect(headers).not.toMatch(/img-src[^;]*\bblob:/)
   })
 
   it('probes the configured Supabase URL and anon key before building', () => {

@@ -157,10 +157,40 @@ export type RepositorySet = {
   projects: ProjectRepository
   announcements: AnnouncementRepository
   changeApplications: ChangeApplicationRepository
-  master: MasterRepository
+  products: ProductAdminRepository
+  duties: DutyAdminRepository
+  invites: InviteAdminRepository
   team: TeamRepository
   activityLogs: ActivityLogWriter
 }
+
+export type ProductAdminRepository = Pick<MasterRepository,
+  | 'importProducts'
+  | 'addProduct'
+  | 'saveProductAssignments'
+  | 'assignProduct'
+  | 'updateProduct'
+  | 'deleteProduct'
+>
+
+export type DutyAdminRepository = Pick<MasterRepository,
+  | 'addDutyMajorCategory'
+  | 'addDuty'
+  | 'saveDutyAssignments'
+  | 'assignDuty'
+  | 'updateDutyMajorCategory'
+  | 'updateDuty'
+  | 'deleteDuty'
+  | 'deleteDutyMajorCategory'
+>
+
+export type InviteAdminRepository = Pick<MasterRepository,
+  | 'importInvites'
+  | 'addAllowedUser'
+  | 'updateInvite'
+  | 'toggleProfileActive'
+  | 'deleteAllowedUser'
+>
 
 export type TeamRepository = {
   addProfileNote(input: { profileId: string; note: string }): Promise<void>

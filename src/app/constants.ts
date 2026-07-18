@@ -1,31 +1,12 @@
 import type { AdminDeleteTable } from './types'
 import type { AppData } from '../types'
+import { createEmptyAppData } from '../data/appData'
 
 export const PASSWORD_MIN_LENGTH = 8
 
-export const emptyData: AppData = {
-  announcements: [],
-  changeApplications: [],
-  changeActionItems: [],
-  productChangeTasks: [],
-  changeProductScope: [],
-  changeAssigneeOptions: [],
-  profiles: [],
-  allowedUsers: [],
-  products: [],
-  dutyMajorCategories: [],
-  duties: [],
-  productAssignments: [],
-  dutyAssignments: [],
-  reviewRequests: [],
-  reviewEvents: [],
-  reviewReadReceipts: [],
-  auditEvents: [],
-  projects: [],
-  projectAssignments: [],
-  profileNotes: [],
-  activityLogs: [],
-}
+/** @deprecated 새 상태에는 createEmptyAppData()를 사용한다. */
+export const emptyData: AppData = createEmptyAppData()
+export { createEmptyAppData }
 
 export const deleteWarnings: Record<AdminDeleteTable, string> = {
   allowed_users:

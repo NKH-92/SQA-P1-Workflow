@@ -20,6 +20,7 @@ import type {
   ReviewEvent,
   ReviewReadReceipt,
 } from '../../types'
+import { createEmptyAppData } from '../appData'
 
 type QueryResult<T> = { data: T | null; error: unknown }
 type SettledQueryResult<T> = PromiseSettledResult<QueryResult<T>>
@@ -60,31 +61,7 @@ type ReviewRequestMerger = (
   recentClosed: ReviewRequest[] | null | undefined,
 ) => ReviewRequest[]
 
-export function emptyAppData(): AppData {
-  return {
-    announcements: [],
-    changeApplications: [],
-    changeActionItems: [],
-    productChangeTasks: [],
-    changeProductScope: [],
-    changeAssigneeOptions: [],
-    profiles: [],
-    allowedUsers: [],
-    products: [],
-    dutyMajorCategories: [],
-    duties: [],
-    productAssignments: [],
-    dutyAssignments: [],
-    reviewRequests: [],
-    reviewEvents: [],
-    reviewReadReceipts: [],
-    auditEvents: [],
-    projects: [],
-    projectAssignments: [],
-    profileNotes: [],
-    activityLogs: [],
-  }
-}
+export const emptyAppData = createEmptyAppData
 
 function optionalDataOrWarning<T>(
   result: SettledQueryResult<T>,

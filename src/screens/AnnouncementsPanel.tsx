@@ -17,6 +17,7 @@ import {
   saveAnnouncement as saveAnnouncementMutation,
   toggleAnnouncementPin as toggleAnnouncementPinMutation,
 } from '../data'
+import { sortAnnouncements } from '../data/announcementCollection'
 import type { MutateFn } from '../app/types'
 import type { AppData, Profile } from '../types'
 import './AnnouncementsPanel.css'
@@ -48,20 +49,6 @@ function timestamp(value: string | null | undefined) {
 function formatAnnouncementDate(value: string | null | undefined) {
   const parsed = timestamp(value)
   return parsed > 0 ? dateFormatter.format(new Date(parsed)) : '날짜 없음'
-}
-
-function compareAnnouncements(left: Announcement, right: Announcement) {
-  if (left.is_pinned !== right.is_pinned) return left.is_pinned ? -1 : 1
-
-  const leftTime = left.is_pinned
-    ? timestamp(left.pinned_at ?? left.updated_at ?? left.created_at)
-    : timestamp(left.created_at)
-  const rightTime = right.is_pinned
-    ? timestamp(right.pinned_at ?? right.updated_at ?? right.created_at)
-    : timestamp(right.created_at)
-
-  if (leftTime !== rightTime) return rightTime - leftTime
-  return right.id.localeCompare(left.id)
 }
 
 function AnnouncementEditorModal({
@@ -172,7 +159,7 @@ export function AnnouncementsPanel({
     [data.profiles],
   )
   const sortedAnnouncements = useMemo(
-    () => [...data.announcements].sort(compareAnnouncements),
+    () => sortAnnouncements(data.announcements),
     [data.announcements],
   )
   const filteredAnnouncements = useMemo(() => {

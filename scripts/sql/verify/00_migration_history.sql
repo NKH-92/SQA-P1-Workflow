@@ -1,0 +1,90 @@
+-- Canonical fail-closed migration and realtime readiness checks.
+do $verify$
+declare
+  expected_versions text[] := array[
+    '202607020001',
+    '202607020002',
+    '202607020003',
+    '202607020004',
+    '202607040001',
+    '202607040002',
+    '202607040003',
+    '202607050001',
+    '202607050002',
+    '202607050003',
+    '202607050004',
+    '202607050005',
+    '202607050006',
+    '202607050007',
+    '202607050008',
+    '202607050009',
+    '202607050010',
+    '202607060001',
+    '202607060002',
+    '202607060003',
+    '202607060004',
+    '202607060005',
+    '202607060006',
+    '202607070001',
+    '202607070002',
+    '202607070003',
+    '202607070004',
+    '202607070005',
+    '202607080001',
+    '202607090001',
+    '202607110001',
+    '202607110002',
+    '202607110003',
+    '202607110004',
+    '202607110005',
+    '202607110006',
+    '202607110007',
+    '202607110008',
+    '202607110009',
+    '202607110010',
+    '202607110011',
+    '202607120001',
+    '202607120002',
+    '20260714075451',
+    '20260714082821',
+    '20260715013615',
+    '20260716200422',
+    '202607170001',
+    '20260717123840',
+    '20260718054122',
+    '20260718054124',
+    '20260718054127',
+    '20260718073243',
+    '20260718123250',
+    '20260718153410',
+    '20260718161549'
+  ];
+begin
+  if exists (
+    select 1
+      from unnest(expected_versions) expected(version)
+      full join (
+        select version::text
+          from supabase_migrations.schema_migrations
+      ) actual using (version)
+     where expected.version is null
+        or actual.version is null
+  ) then
+    raise exception 'SQA_DB_READY_MIGRATION_SET';
+  end if;
+end
+$verify$;
+
+do $verify$
+begin
+  if not exists (
+    select 1
+      from pg_publication_tables
+     where pubname = 'supabase_realtime'
+       and schemaname = 'public'
+       and tablename = 'review_requests'
+  ) then
+    raise exception 'SQA_DB_READY_REALTIME';
+  end if;
+end
+$verify$;

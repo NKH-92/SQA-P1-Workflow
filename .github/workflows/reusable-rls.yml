@@ -1,0 +1,29 @@
+name: Reusable RLS verification
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
+        with:
+          version: 2.109.1
+      - run: npm ci
+      - name: Run full local RLS gate
+        env:
+          SUPABASE_BIN: supabase
+        run: npm run test:rls:full
+      - if: ${{ always() }}
+        run: supabase stop --no-backup

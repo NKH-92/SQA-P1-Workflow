@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-const scripts = import.meta.glob('../scripts/*.{ps1,mjs}', {
+const scripts = import.meta.glob('../scripts/**/*.{ps1,mjs,sql,json}', {
   query: '?raw',
   import: 'default',
   eager: true,
@@ -13,43 +13,40 @@ function readScript(name: string) {
 describe('migration scripts', () => {
   it('apply-pending-migrations.ps1 uses db query not db execute', () => {
     const script = readScript('apply-pending-migrations.ps1')
+    const canonicalSql = [
+      'sql/verify/00_migration_history.sql',
+      'sql/verify/10_assignment_security.sql',
+      'sql/verify/20_review_workflow.sql',
+      'sql/verify/30_announcement_contract.sql',
+      'sql/verify/40_change_application_contract.sql',
+      'sql/verify/50_audit_v3.sql',
+    ].map(readScript).join('\n')
+    const manifest = readScript('sql/verify/manifest.json')
 
     expect(script).toContain("'db', 'query'")
     expect(script).not.toContain('db execute')
-    expect(script).toContain('add_product_assignment')
-    expect(script).toContain('add_duty_assignment')
-    expect(script).toContain('replace_project_assignments_if_current')
-    expect(script).toContain('assignment_rpc_security_ok')
-    expect(script).toContain('review_activity_transaction_ok')
-    expect(script).toContain('active_leader_password_gate_ok')
-    expect(script).toContain('profile_note_private_audit_ok')
-    expect(script).toContain('authoritative_audit_v3_ok')
-    expect(script).toContain('announcement_board_ok')
-    expect(script).toContain("to_regclass('public.announcements')")
-    expect(script).toContain('announcements_pin_state_check')
-    expect(script).toContain('announcements_private_audit')
-    expect(script).toContain('private.enforce_announcement_invariants()')
-    expect(script).toContain('announcements_select_app_user')
-    expect(script).toContain("qual like '%is_active_self()%'")
-    expect(script).toContain("qual not like '%can_use_app()%'")
-    expect(script).toContain('announcements_insert_leader')
-    expect(script).toContain('announcements_update_leader')
-    expect(script).toContain('announcements_delete_leader')
-    expect(script).toContain("'pinned_at', 'UPDATE'")
-    expect(script).toContain('latest_migration_version_ok')
-    expect(script).toContain("version = '20260716200422'")
-    expect(script).toContain("version = '20260718153410'")
-    expect(script).toContain('count(*) = 16')
-    expect(script).toContain('private.build_audit_business_snapshot(text,jsonb)')
-    expect(script).toContain('public.list_audit_events(integer,bigint)')
-    expect(script).not.toContain("proacl::text not like '%=X%'")
+    expect(script).toContain("sql\\verify\\manifest.json")
+    expect(script).toContain('validate-readiness-manifest.mjs')
+    expect(script).not.toContain('$verificationSql = @"')
+    expect(canonicalSql).toContain('add_product_assignment')
+    expect(canonicalSql).toContain('add_duty_assignment')
+    expect(canonicalSql).toContain('replace_project_assignments_if_current')
+    expect(canonicalSql).toContain("raise exception 'SQA_DB_READY_")
+    expect(canonicalSql).toContain("to_regclass('public.announcements')")
+    expect(canonicalSql).toContain('announcements_pin_state_check')
+    expect(canonicalSql).toContain('private.enforce_announcement_invariants()')
+    expect(canonicalSql).toContain('announcements_select_app_user')
+    expect(canonicalSql).toContain('count(*) = 16')
+    expect(canonicalSql).toContain('private.build_audit_business_snapshot(text,jsonb)')
+    expect(canonicalSql).toContain('public.list_audit_events(integer,bigint)')
+    expect(manifest).toContain('20260718161549')
     expect(script).toContain("SupabaseCliVersion = '2.109.1'")
     expect(script).toContain('function Invoke-SupabaseCommand')
     expect(script).toContain('$nativeExitCode = $LASTEXITCODE')
     expect(script).toContain("SQA_SUPABASE_NATIVE_FAILED: $Operation exited with code $nativeExitCode")
     expect(script).toContain("-Operation 'link'")
     expect(script).toContain("-Operation 'db-push'")
-    expect(script).toContain("-Operation 'readiness-verification'")
+    expect(script).toContain('-Operation "readiness-$readinessFileName"')
     expect(script).not.toContain('npx --yes "supabase@$SupabaseCliVersion" link')
     expect(script).not.toContain('npx --yes "supabase@$SupabaseCliVersion" db push')
   })

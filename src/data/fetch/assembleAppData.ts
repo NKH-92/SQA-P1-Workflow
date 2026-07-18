@@ -17,6 +17,8 @@ import type {
   Project,
   ProjectAssignment,
   ReviewRequest,
+  ReviewEvent,
+  ReviewReadReceipt,
 } from '../../types'
 
 type QueryResult<T> = { data: T | null; error: unknown }
@@ -34,6 +36,8 @@ export type CoreAppDataResults = {
   productAssignmentsResult: QueryResult<ProductAssignment[]>
   dutyAssignmentsResult: QueryResult<DutyAssignment[]>
   reviewRequestsResult: QueryResult<ReviewRequest[]>
+  reviewEventsResult?: QueryResult<ReviewEvent[]>
+  reviewReadReceiptsResult?: QueryResult<ReviewReadReceipt[]>
   projectsResult: QueryResult<Project[]>
   projectAssignmentsResult: QueryResult<ProjectAssignment[]>
   changeApplicationsResult: QueryResult<ChangeApplication[]>
@@ -72,6 +76,9 @@ export function emptyAppData(): AppData {
     productAssignments: [],
     dutyAssignments: [],
     reviewRequests: [],
+    reviewEvents: [],
+    reviewReadReceipts: [],
+    auditEvents: [],
     projects: [],
     projectAssignments: [],
     profileNotes: [],
@@ -83,10 +90,11 @@ function optionalDataOrWarning<T>(
   result: SettledQueryResult<T>,
   label: string,
   warnings: string[],
+  previous: T,
 ): T {
   if (result.status === 'rejected' || result.value.error) {
-    warnings.push(`${label} 조회에 실패했습니다.`)
-    return [] as T
+    warnings.push(`${label} 조회에 실패해 마지막 정상 데이터를 유지합니다.`)
+    return previous
   }
   return (result.value.data ?? []) as T
 }
@@ -100,6 +108,8 @@ export function assembleAppData(
     productAssignmentsResult,
     dutyAssignmentsResult,
     reviewRequestsResult,
+    reviewEventsResult,
+    reviewReadReceiptsResult,
     projectsResult,
     projectAssignmentsResult,
     changeApplicationsResult,
@@ -110,6 +120,7 @@ export function assembleAppData(
   }: CoreAppDataResults,
   optionalResults: OptionalAppDataResults,
   mergeReviewRequests: ReviewRequestMerger,
+  previous: AppData = emptyAppData(),
 ): AssembledAppData {
   const optionalWarnings: string[] = []
 
@@ -118,6 +129,7 @@ export function assembleAppData(
     optionalResults[3],
     '파트장 프로필',
     optionalWarnings,
+    [] as Array<Pick<Profile, 'id' | 'name'>>,
   )
   if (leaderProfiles.length > 0) {
     const knownIds = new Set(profiles.map((item) => item.id))
@@ -136,10 +148,10 @@ export function assembleAppData(
   }
 
   // Warning order is user-visible and intentionally differs from query order.
-  const announcements = optionalDataOrWarning(optionalResults[4], '공지', optionalWarnings)
-  const allowedUsers = optionalDataOrWarning(optionalResults[0], '초대 목록', optionalWarnings)
-  const profileNotes = optionalDataOrWarning(optionalResults[1], '프로필 메모', optionalWarnings)
-  const activityLogs = optionalDataOrWarning(optionalResults[2], '활동 로그', optionalWarnings)
+  const announcements = optionalDataOrWarning(optionalResults[4], '공지', optionalWarnings, previous.announcements)
+  const allowedUsers = optionalDataOrWarning(optionalResults[0], '초대 목록', optionalWarnings, previous.allowedUsers)
+  const profileNotes = optionalDataOrWarning(optionalResults[1], '프로필 메모', optionalWarnings, previous.profileNotes)
+  const activityLogs = optionalDataOrWarning(optionalResults[2], '활동 로그', optionalWarnings, previous.activityLogs)
 
   return {
     announcements,
@@ -156,6 +168,9 @@ export function assembleAppData(
     productAssignments: (productAssignmentsResult.data ?? []) as ProductAssignment[],
     dutyAssignments: (dutyAssignmentsResult.data ?? []) as DutyAssignment[],
     reviewRequests: mergeReviewRequests(reviewRequestsResult.data, null),
+    reviewEvents: (reviewEventsResult?.data ?? []) as ReviewEvent[],
+    reviewReadReceipts: (reviewReadReceiptsResult?.data ?? []) as ReviewReadReceipt[],
+    auditEvents: [],
     projects: (projectsResult.data ?? []) as Project[],
     projectAssignments: (projectAssignmentsResult.data ?? []) as ProjectAssignment[],
     profileNotes,

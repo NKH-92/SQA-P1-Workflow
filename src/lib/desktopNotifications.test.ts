@@ -13,7 +13,6 @@ function review(partial: Partial<ReviewRequest> & Pick<ReviewRequest, 'id' | 'st
     requester_id: 'member-1',
     title: '검토 제목',
     description: '설명',
-    attachment_url: null,
     due_date: null,
     profiles: { name: '김파트', email: 'member@example.com' },
     ...partial,

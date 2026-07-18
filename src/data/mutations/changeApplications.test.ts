@@ -167,7 +167,8 @@ describe('local change application mutations', () => {
       '담당 미지정 업무 대리 처리',
     )
     expect(state.data.changeApplications.find((item) => item.id === applicationId)).toMatchObject({
-      archived_by: previewLeader.id,
+      archived_by: null,
+      archive_origin: 'automatic',
       archive_reason: '모든 제품 적용업무가 처리되어 자동 보관됨',
     })
     expect(state.data.changeApplications.find((item) => item.id === applicationId)?.archived_at).toBeTruthy()

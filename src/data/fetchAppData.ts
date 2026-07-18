@@ -1,15 +1,24 @@
 import type {
   Announcement,
+  AuditEvent,
+  ChangeAssigneeOption,
+  ChangeProductScopeRow,
   ProductChangeTask,
   ReviewRequest,
 } from '../types'
 import { supabase } from '../lib/supabase'
 import { assembleAppData, emptyAppData } from './fetch/assembleAppData'
 import type { AssembledAppData } from './fetch/assembleAppData'
+import { fetchAllPages } from './fetch/pagination'
+import type { PageResult } from './fetch/pagination'
 
 export { mergeAnnouncements, sortAnnouncements } from './announcementCollection'
 
 export type FetchAppDataResult = AssembledAppData
+
+// Keep the Stage A compatibility-only attachment_url column outside every
+// browser response. Stage B removes the column after the operator purge barrier.
+export const REVIEW_REQUEST_SELECT = 'id,requester_id,title,description,due_date,status,review_round,rejection_count,last_submitted_at,status_changed_at,closed_at,withdrawn_at,withdrawn_by,withdrawal_reason,created_at,updated_at,profiles(name,email),review_feedback(id,review_request_id,leader_id,author_role,comment,created_at,updated_at,voided_at,voided_by,void_reason,profiles(name))'
 
 // Pending requests remain visible regardless of age so members can always
 // finish work in progress. Closed requests are intentionally bounded to the
@@ -36,6 +45,12 @@ export function changeTaskHistoryCutoff(now = new Date()): string {
   cutoff.setUTCMonth(cutoff.getUTCMonth() - CHANGE_TASK_HISTORY_MONTHS)
   const lastDay = new Date(Date.UTC(cutoff.getUTCFullYear(), cutoff.getUTCMonth() + 1, 0)).getUTCDate()
   cutoff.setUTCDate(Math.min(day, lastDay))
+  return cutoff.toISOString()
+}
+
+export function reviewArchiveCutoff(now = new Date()): string {
+  const cutoff = new Date(now)
+  cutoff.setUTCDate(cutoff.getUTCDate() - 90)
   return cutoff.toISOString()
 }
 
@@ -90,12 +105,27 @@ export async function fetchReviewRequestById(requestId: string, signal?: AbortSi
   if (!supabase) return null
   let query = supabase
     .from('review_requests')
-    .select('*, profiles(name,email), review_feedback(*, profiles(name))')
+    .select(REVIEW_REQUEST_SELECT)
     .eq('id', requestId)
   if (signal) query = query.abortSignal(signal)
   const { data, error } = await query.maybeSingle()
   if (error) throw error
   return (data as ReviewRequest | null) ?? null
+}
+
+export async function fetchWithdrawnReviewRequestsPage(page = 0, pageSize = 50): Promise<ReviewRequest[]> {
+  if (!supabase) return []
+  const from = Math.max(0, page) * pageSize
+  const { data, error } = await supabase
+    .from('review_requests')
+    .select(REVIEW_REQUEST_SELECT)
+    .eq('status', 'withdrawn')
+    .gte('withdrawn_at', reviewArchiveCutoff())
+    .order('withdrawn_at', { ascending: false })
+    .order('id', { ascending: false })
+    .range(from, from + pageSize - 1)
+  if (error) throw error
+  return (data ?? []) as unknown as ReviewRequest[]
 }
 
 export async function fetchAnnouncementById(
@@ -111,6 +141,16 @@ export async function fetchAnnouncementById(
   const { data, error } = await query.maybeSingle()
   if (error) throw error
   return (data as Announcement | null) ?? null
+}
+
+export async function fetchAuditEvents(beforeId: number | null = null, limit = 50): Promise<AuditEvent[]> {
+  if (!supabase) return []
+  const { data, error } = await supabase.rpc('list_audit_events', {
+    p_limit: Math.max(1, Math.min(limit, 100)),
+    p_before_id: beforeId,
+  })
+  if (error) throw error
+  return (data ?? []).map((event: Record<string, unknown>) => ({ ...event, id: Number(event.id) })) as AuditEvent[]
 }
 
 /**
@@ -134,8 +174,9 @@ export async function fetchProductChangeTaskHistory(
   return (data ?? []) as ProductChangeTask[]
 }
 
-export async function fetchAppData(): Promise<FetchAppDataResult> {
+export async function fetchAppData(previous?: AssembledAppData): Promise<FetchAppDataResult> {
   if (!supabase) return { ...emptyAppData(), optionalWarnings: [] }
+  const client = supabase
 
   const [
     profilesResult,
@@ -145,6 +186,8 @@ export async function fetchAppData(): Promise<FetchAppDataResult> {
     productAssignmentsResult,
     dutyAssignmentsResult,
     reviewRequestsResult,
+    reviewEventsResult,
+    reviewReadReceiptsResult,
     projectsResult,
     projectAssignmentsResult,
     changeApplicationsResult,
@@ -153,50 +196,27 @@ export async function fetchAppData(): Promise<FetchAppDataResult> {
     changeProductScopeResult,
     changeAssigneeOptionsResult,
   ] = await Promise.all([
-    supabase.from('profiles').select('*').order('name'),
-    supabase.from('products').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('name'),
-    supabase
-      .from('duty_major_categories')
-      .select('*')
-      .order('sort_order', { ascending: true, nullsFirst: false })
-      .order('name'),
-    supabase
-      .from('duties')
-      .select('*, duty_major_categories(name,sort_order)')
-      .order('sort_order', { ascending: true, nullsFirst: false })
-      .order('name'),
-    supabase
-      .from('product_assignments')
-      .select('*, profiles(name,email), products(name,category,company_name,sort_order)')
-      .order('created_at', { ascending: false }),
-    supabase
-      .from('duty_assignments')
-      .select('*, profiles(name,email), duties(name,major_category_id,duty_major_categories(name))')
-      .order('created_at', { ascending: false }),
-    supabase
-      .from('review_requests')
-      .select('*, profiles(name,email), review_feedback(*, profiles(name))')
-      // One PostgREST statement gives pending + recent closed rows one consistent
-      // snapshot, avoiding a status-transition gap between two independent queries.
-      .or(`status.eq.pending,and(status.in.(approved,rejected),created_at.gte.${reviewHistoryCutoff()})`)
+    fetchAllPages((from, to) => client.from('profiles').select('*').order('name').range(from, to)),
+    fetchAllPages((from, to) => client.from('products').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('name').range(from, to)),
+    fetchAllPages((from, to) => client.from('duty_major_categories').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('name').range(from, to)),
+    fetchAllPages((from, to) => client.from('duties').select('*, duty_major_categories(name,sort_order)').order('sort_order', { ascending: true, nullsFirst: false }).order('name').range(from, to)),
+    fetchAllPages((from, to) => client.from('product_assignments').select('*, profiles(name,email), products(name,category,company_name,sort_order)').order('created_at', { ascending: false }).range(from, to)),
+    fetchAllPages((from, to) => client.from('duty_assignments').select('*, profiles(name,email), duties(name,major_category_id,duty_major_categories(name))').order('created_at', { ascending: false }).range(from, to)),
+    fetchAllPages<ReviewRequest>((from, to) => client.from('review_requests')
+      .select(REVIEW_REQUEST_SELECT)
+      .or(`status.eq.pending,and(status.in.(approved,rejected),closed_at.gte.${reviewHistoryCutoff()}))`)
       .order('created_at', { ascending: false })
-      // Embedded feedback rows must be chronological — the UI highlights the last item as
-      // the newest, which only holds if PostgREST returns them oldest-first.
-      .order('created_at', { referencedTable: 'review_feedback', ascending: true }),
-    supabase.from('projects').select('*').order('created_at', { ascending: false }),
-    supabase
-      .from('project_assignments')
-      .select('*, profiles(name,email), projects(name,description,deadline,status)')
-      .order('created_at', { ascending: false }),
-    supabase.from('change_applications').select('*').order('created_at', { ascending: false }),
-    supabase.from('change_action_items').select('*').order('sort_order', { ascending: true }),
-    supabase
-      .from('product_change_tasks')
-      .select('*, products(name,category,company_name,sort_order)')
-      .or(`status.eq.pending,updated_at.gte.${changeTaskHistoryCutoff()}`)
-      .order('updated_at', { ascending: false }),
-    supabase.rpc('list_change_application_product_scope'),
-    supabase.rpc('list_change_application_assignees'),
+      .order('created_at', { referencedTable: 'review_feedback', ascending: true })
+      .range(from, to) as unknown as PromiseLike<PageResult<ReviewRequest>>),
+    fetchAllPages((from, to) => client.from('review_events').select('*').order('id', { ascending: false }).range(from, to)),
+    fetchAllPages((from, to) => client.from('review_read_receipts').select('*').range(from, to)),
+    fetchAllPages((from, to) => client.from('projects').select('*').order('created_at', { ascending: false }).range(from, to)),
+    fetchAllPages((from, to) => client.from('project_assignments').select('*, profiles(name,email), projects(name,description,deadline,status)').order('created_at', { ascending: false }).range(from, to)),
+    fetchAllPages((from, to) => client.from('change_applications').select('*').order('created_at', { ascending: false }).range(from, to)),
+    fetchAllPages((from, to) => client.from('change_action_items').select('*').order('sort_order', { ascending: true }).range(from, to)),
+    fetchAllPages((from, to) => client.from('product_change_tasks').select('*, products(name,category,company_name,sort_order)').or(`status.eq.pending,updated_at.gte.${changeTaskHistoryCutoff()}`).order('updated_at', { ascending: false }).range(from, to)),
+    fetchAllPages<ChangeProductScopeRow>((from, to) => client.rpc('list_change_application_product_scope').range(from, to)),
+    fetchAllPages<ChangeAssigneeOption>((from, to) => client.rpc('list_change_application_assignees').range(from, to)),
   ])
 
   const coreResults = [
@@ -207,6 +227,8 @@ export async function fetchAppData(): Promise<FetchAppDataResult> {
     productAssignmentsResult,
     dutyAssignmentsResult,
     reviewRequestsResult,
+    reviewEventsResult,
+    reviewReadReceiptsResult,
     projectsResult,
     projectAssignmentsResult,
     changeApplicationsResult,
@@ -242,6 +264,8 @@ export async function fetchAppData(): Promise<FetchAppDataResult> {
       productAssignmentsResult,
       dutyAssignmentsResult,
       reviewRequestsResult,
+      reviewEventsResult,
+      reviewReadReceiptsResult,
       projectsResult,
       projectAssignmentsResult,
       changeApplicationsResult,
@@ -252,5 +276,6 @@ export async function fetchAppData(): Promise<FetchAppDataResult> {
     },
     optionalResults,
     mergeReviewRequests,
+    previous,
   )
 }

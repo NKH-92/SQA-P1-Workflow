@@ -9,6 +9,7 @@ export const reviewStatusLabels: Record<ReviewStatus, string> = {
   pending: '대기중',
   approved: '완료',
   rejected: '반려',
+  withdrawn: '회수됨',
 }
 
 export const projectStatusLabels: Record<ProjectStatus, string> = {

@@ -31,7 +31,7 @@
 "배포된 앱"을 "매일 쓰는 도구"로 만드는 단계. 코드보다 운영 장치가 중심이다.
 
 ### 1주차 — 소규모 파일럿 (파트장 + 파트원 2~3명)
-- [ ] 온보딩 키트 작성: 1페이지 사용 가이드 (`docs/USER_GUIDE.md` — 로그인·비밀번호 변경·검토요청 올리기·뱃지 확인·첨부 규칙)
+- [ ] 온보딩 키트 작성: 1페이지 사용 가이드 (`docs/USER_GUIDE.md` — 로그인·비밀번호 변경·검토요청 올리기·뱃지 확인·자료는 사내 메신저로 전달)
 - [ ] 실제 검토요청 3건 이상을 시스템으로만 처리해보기 (메신저 병행 금지 실험)
 - [ ] 발견되는 문제·불편을 GitHub Issues에 즉시 기록 (라벨: `pilot`)
 
@@ -94,9 +94,9 @@
 | 항목 | 한도 (Free) | 점검 방법 | 주의 |
 |------|-------------|-----------|------|
 | Supabase DB | 500MB | Dashboard → Database → 사용량 | 10명 규모로는 수년치 여유 |
-| Supabase Storage | 1GB | Dashboard → Storage | 첨부 10MB 제한 유지, 종결 1년 경과 첨부 정리 규칙 검토 |
+| Supabase Storage | 1GB | Dashboard → Storage | 리뷰 첨부 기능 폐지. Stage A 배포 후 승인된 purge와 Stage B 제거가 끝날 때까지만 기존 버킷을 호환 유지 |
 | Supabase 프로젝트 일시정지 | **7일 비활성 시 자동 pause** | — | 장기 연휴 주의 — 재개 절차는 [OPERATIONS.md](./OPERATIONS.md) 장애 확인 순서 참고 |
-| Supabase 자동 백업 | 없음 (Free 내장 백업 없음) | Actions **Backup DB** run green 확인 | 매일 자동 암호화 백업(아티팩트 90일)이 복구 수단 — Storage 첨부는 백업 제외([OPERATIONS.md](./OPERATIONS.md)) |
+| Supabase 자동 백업 | 없음 (Free 내장 백업 없음) | Actions **Backup DB** run green 확인 | 매일 자동 암호화 DB 백업(아티팩트 90일)이 복구 수단. 폐기 전 기존 Storage 객체는 별도 승인·보존 판단 필요([OPERATIONS.md](./OPERATIONS.md)) |
 | Cloudflare Workers | 10만 요청/일 | Dashboard → Workers 메트릭 | 10명 규모로는 도달 불가 |
 
 ---

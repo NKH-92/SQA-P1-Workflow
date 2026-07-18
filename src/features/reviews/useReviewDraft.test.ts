@@ -23,7 +23,6 @@ describe('useReviewDraft storage helpers', () => {
     const draft = {
       title: 'Draft title',
       description: 'Body',
-      attachment_url: '',
       deadlineMode: 'none' as const,
       due_date: '',
       saved_at: new Date().toISOString(),

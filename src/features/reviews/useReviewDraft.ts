@@ -4,7 +4,6 @@ import type { DeadlineMode } from '../../app/types'
 export const emptyReviewForm = {
   title: '',
   description: '',
-  attachment_url: '',
   deadlineMode: 'none' as DeadlineMode,
   due_date: '',
 }
@@ -24,7 +23,6 @@ function isReviewForm(value: unknown): value is ReviewFormState {
   return (
     typeof draft.title === 'string' &&
     typeof draft.description === 'string' &&
-    typeof draft.attachment_url === 'string' &&
     (draft.deadlineMode === 'none' || draft.deadlineMode === 'date') &&
     typeof draft.due_date === 'string'
   )

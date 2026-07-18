@@ -1,7 +1,7 @@
 import type { AppData, Profile } from '../types'
 import type { TabId } from '../app/types'
 import { daysUntil, dueUrgency, eventTime, relativeDateLabel, relativeDaysAgo } from './dates'
-import { isReviewUnread, loadReadState } from './readState'
+import { isReviewUnread, latestRelevantReviewEvent } from './readState'
 import { selectProductChangeTaskContexts } from '../features/change-applications/selectors'
 
 export type AppNotification = {
@@ -37,8 +37,8 @@ function relativeTime(at: number, now: number) {
 }
 
 /**
- * 알림은 별도 테이블 없이 이미 로드된 AppData에서 파생한다.
- * 읽음 여부는 readState(localStorage)의 reviewsSeenAt 기준이며, 검토요청 탭을 열면 해소된다.
+ * 검토 알림은 불변 review_events와 서버 영수증에서 파생한다.
+ * 행 updated_at이나 브라우저 저장소를 쓰지 않아 기기 간 판정이 일치한다.
  */
 export function buildNotifications(
   profile: Profile,
@@ -46,26 +46,23 @@ export function buildNotifications(
   leaderMode: boolean,
   now = Date.now(),
 ): AppNotification[] {
-  // 미확인 판정은 요청 단위(isReviewUnread)로 한다 — 사이드바 뱃지(countUnreadReviews)와
-  // 벨 카운트가 같은 판정을 써야 두 숫자가 어긋나지 않는다. 한 요청이 만든 여러 알림
-  // (피드백 + 상태 변경) 중에는 최신 것 하나만 미확인으로 표시한다.
-  const seenAtIso = loadReadState(profile.id).reviewsSeenAt
   const items: AppNotification[] = []
 
   if (leaderMode) {
     data.reviewRequests
       .filter((request) => request.status === 'pending')
       .forEach((request) => {
-        const reviewRound = request.review_round ?? 1
-        const at = eventTime(request.last_submitted_at ?? request.created_at)
+        const latest = latestRelevantReviewEvent(request, profile, data)
+        if (!latest) return
+        const at = eventTime(latest.occurred_at)
         items.push({
-          id: `review-${request.id}`,
-          actor: request.profiles?.name?.trim().charAt(0) || '?',
-          title: `${request.profiles?.name ?? '파트원'}님이 “${request.title}” ${reviewRound > 1 ? '재검토를' : '검토를'} 요청했습니다.`,
+          id: `review-event-${latest.id}`,
+          actor: latest.actor_name_snapshot.trim().charAt(0) || '?',
+          title: `${latest.actor_name_snapshot || request.profiles?.name || '파트원'}님이 “${request.title}” ${latest.event_type === 'resubmitted' ? '재검토를' : '검토를'} 요청했습니다.`,
           when: relativeTime(at, now),
           kind: '검토요청',
           urgency: dueUrgency(request.due_date),
-          unread: isReviewUnread(request, profile, leaderMode, seenAtIso),
+          unread: isReviewUnread(request, profile, data),
           tab: 'reviews',
           entityId: request.id,
           at,
@@ -75,45 +72,33 @@ export function buildNotifications(
     data.reviewRequests
       .filter((request) => request.requester_id === profile.id)
       .forEach((request) => {
-        const requestItems: AppNotification[] = []
-        const feedback = (request.review_feedback ?? []).filter(
-          (item) => (item.author_role ?? 'leader') === 'leader',
-        )
-        const latest = feedback[feedback.length - 1]
-        const feedbackAt = eventTime(latest?.created_at)
-        if (latest && feedbackAt > 0) {
-          requestItems.push({
-            id: `feedback-${latest.id}`,
-            actor: latest.profiles?.name?.trim().charAt(0) || '파',
-            title: `“${request.title}”에 파트장 피드백이 달렸습니다.`,
-            when: relativeTime(feedbackAt, now),
-            kind: '피드백',
-            urgency: 'normal',
-            unread: false,
-            tab: 'reviews',
-            entityId: request.id,
-            at: feedbackAt,
-          })
-        }
-        if (request.status !== 'pending') {
-          const closedAt = eventTime(request.updated_at ?? request.created_at)
-          requestItems.push({
-            id: `status-${request.id}`,
-            actor: '파',
-            title: `“${request.title}” 검토요청이 ${request.status === 'approved' ? '완료' : '반려'}되었습니다.`,
-            when: relativeTime(closedAt, now),
-            kind: '상태 변경',
-            urgency: request.status === 'rejected' ? 'warning' : 'normal',
-            unread: false,
-            tab: 'reviews',
-            entityId: request.id,
-            at: closedAt,
-          })
-        }
-        if (requestItems.length > 0 && isReviewUnread(request, profile, leaderMode, seenAtIso)) {
-          requestItems.reduce((left, right) => (right.at > left.at ? right : left)).unread = true
-        }
-        items.push(...requestItems)
+        const latest = latestRelevantReviewEvent(request, profile, data)
+        if (!latest) return
+        const at = eventTime(latest.occurred_at)
+        const feedbackEvent = latest.event_type.startsWith('feedback_')
+        const actionLabel = feedbackEvent
+          ? latest.event_type === 'feedback_voided'
+            ? '파트장 피드백이 무효화되었습니다.'
+            : latest.event_type === 'feedback_updated'
+              ? '파트장 피드백이 수정되었습니다.'
+              : '파트장 피드백이 달렸습니다.'
+          : latest.event_type === 'approved'
+            ? '검토요청이 완료되었습니다.'
+            : latest.event_type === 'rejected'
+              ? '검토요청이 반려되었습니다.'
+              : '검토요청이 다시 열렸습니다.'
+        items.push({
+          id: `review-event-${latest.id}`,
+          actor: latest.actor_name_snapshot.trim().charAt(0) || '파',
+          title: `“${request.title}” ${actionLabel}`,
+          when: relativeTime(at, now),
+          kind: feedbackEvent ? '피드백' : '상태 변경',
+          urgency: latest.event_type === 'rejected' ? 'warning' : 'normal',
+          unread: isReviewUnread(request, profile, data),
+          tab: 'reviews',
+          entityId: request.id,
+          at,
+        })
       })
   }
 

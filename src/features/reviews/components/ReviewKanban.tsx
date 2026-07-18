@@ -33,6 +33,7 @@ export const ReviewKanban = memo(function ReviewKanban({
     pending: false,
     approved: false,
     rejected: false,
+    withdrawn: false,
   })
 
   useEffect(() => {

@@ -103,6 +103,14 @@ export function createSupabaseChangeApplicationRepository(
       if (error) throw translateChangeError(error)
     },
 
+    async restoreProductChangeScope(taskId, reason) {
+      const { error } = await supabase!.rpc('restore_product_change_scope', {
+        p_task_id: taskId,
+        p_reason: reason,
+      })
+      if (error) throw translateChangeError(error)
+    },
+
     async cancelChangeApplication(changeApplicationId, reason) {
       const { error } = await supabase!.rpc('cancel_change_application', {
         p_change_application_id: changeApplicationId,

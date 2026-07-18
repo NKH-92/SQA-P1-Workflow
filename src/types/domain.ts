@@ -1,5 +1,15 @@
 export type Role = 'leader' | 'member'
-export type ReviewStatus = 'pending' | 'approved' | 'rejected'
+export type ReviewStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn'
+export type ReviewEventType =
+  | 'submitted'
+  | 'resubmitted'
+  | 'approved'
+  | 'rejected'
+  | 'reopened'
+  | 'withdrawn'
+  | 'feedback_added'
+  | 'feedback_updated'
+  | 'feedback_voided'
 export type ProjectStatus = 'planned' | 'in_progress' | 'done'
 export type ProductCategory = '자사' | '위탁'
 export type ChangeApplicationSource = 'official' | 'internal' | 'other'
@@ -101,6 +111,10 @@ export interface ReviewFeedback {
   author_role?: Role
   comment: string
   created_at?: string
+  updated_at?: string
+  voided_at?: string | null
+  voided_by?: string | null
+  void_reason?: string | null
   profiles?: Pick<Profile, 'name'> | null
 }
 
@@ -109,16 +123,40 @@ export interface ReviewRequest {
   requester_id: string
   title: string
   description: string
-  attachment_url: string | null
   due_date: string | null
   status: ReviewStatus
   review_round?: number
   rejection_count?: number
   last_submitted_at?: string
+  status_changed_at?: string
+  closed_at?: string | null
+  withdrawn_at?: string | null
+  withdrawn_by?: string | null
+  withdrawal_reason?: string | null
   created_at?: string
   updated_at?: string
   profiles?: Pick<Profile, 'name' | 'email'> | null
   review_feedback?: ReviewFeedback[]
+}
+
+export interface ReviewEvent {
+  id: number
+  review_request_id: string
+  actor_id: string | null
+  actor_name_snapshot: string
+  event_type: ReviewEventType
+  from_status: ReviewStatus | null
+  to_status: ReviewStatus | null
+  occurred_at: string
+  metadata: Record<string, unknown>
+  transaction_id: number
+}
+
+export interface ReviewReadReceipt {
+  user_id: string
+  review_request_id: string
+  last_seen_event_id: number
+  read_at: string
 }
 
 export interface Project {
@@ -175,6 +213,7 @@ export interface ChangeApplication {
   archived_at?: string | null
   archived_by?: string | null
   archive_reason?: string | null
+  archive_origin?: 'manual' | 'automatic' | 'migration' | 'legacy_system' | null
   created_by: string
   published_at: string | null
   cancelled_at: string | null
@@ -207,6 +246,12 @@ export interface ProductChangeTask {
   product_note: string | null
   completion_note: string | null
   resolution_reason: string | null
+  cancel_kind?: 'scope_removed' | 'manual' | 'application_cancelled' | 'legacy' | null
+  cancelled_at?: string | null
+  cancelled_by?: string | null
+  restored_at?: string | null
+  restored_by?: string | null
+  restore_reason?: string | null
   proxy_reason: string | null
   completed_by: string | null
   completed_by_name: string | null
@@ -248,4 +293,19 @@ export interface ActivityLog {
   summary: string
   metadata?: Record<string, unknown>
   created_at?: string
+}
+
+export interface AuditEvent {
+  id: number
+  entity_type: string
+  entity_id: string | null
+  action: 'inserted' | 'updated' | 'deleted'
+  actor_id: string | null
+  actor_name: string | null
+  changed_fields: string[]
+  before_delta: Record<string, unknown>
+  after_delta: Record<string, unknown>
+  reason: string | null
+  source: string
+  changed_at: string
 }

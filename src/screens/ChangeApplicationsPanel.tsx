@@ -31,6 +31,7 @@ import {
   reassignProductChangeTasks,
   reopenProductChangeTask,
   restoreChangeApplication,
+  restoreProductChangeScope,
   saveChangeApplication,
 } from '../data'
 import { ChangeActionModal, type ChangeActionDialog, type ChangeActionDialogResult } from '../features/change-applications/components/ChangeActionModal'
@@ -304,6 +305,10 @@ export function ChangeApplicationsPanel({
       && !application.archived_at
       && task.status === 'pending'
       && (leaderMode || application.created_by === profile.id)
+    const canRestoreScope = task.status === 'cancelled'
+      && task.cancel_kind === 'scope_removed'
+      && !application.content_locked_at
+      && (leaderMode || application.created_by === profile.id)
     const days = daysUntil(actionItem.due_date)
     const overdue = task.status === 'pending' && days != null && days < 0
     return (
@@ -321,7 +326,11 @@ export function ChangeApplicationsPanel({
           <span>{formatDate(actionItem.due_date)}</span>
         </div>
         <div className="change-task-status">
-          <Badge status={task.status}>{productChangeTaskStatusLabels[task.status]}</Badge>
+          <Badge status={task.status}>
+            {task.status === 'cancelled' && task.cancel_kind === 'scope_removed'
+              ? '범위 제외'
+              : productChangeTaskStatusLabels[task.status]}
+          </Badge>
           {task.completed_at && <small>{formatDate(task.completed_at)}</small>}
         </div>
         <div className="change-task-actions">
@@ -338,6 +347,22 @@ export function ChangeApplicationsPanel({
             <button aria-label={`${task.product_name} 업무 취소`} className="icon-button" onClick={() => setDialog({ kind: 'cancel_task', task })} title="업무 취소" type="button"><XCircle size={15} /></button>
           )}
           {canReopen && <button className="ghost compact" onClick={() => setDialog({ kind: 'reopen', task })} type="button"><RefreshCw size={14} />재개</button>}
+          {canRestoreScope && (
+            <button
+              className="ghost compact"
+              onClick={() => {
+                const reason = window.prompt('제품을 변경 적용범위에 복원하는 사유를 입력하세요.')?.trim()
+                if (!reason) return
+                void mutate(
+                  () => restoreProductChangeScope(createRepositoryContext(profile, data, setData), task.id, reason),
+                  `${task.product_name} 제품을 변경 적용범위에 복원했습니다.`,
+                )
+              }}
+              type="button"
+            >
+              <RefreshCw size={14} />범위 복원
+            </button>
+          )}
         </div>
         {(task.completion_note || task.resolution_reason || task.reopen_reason) && (
           <p className="change-task-note">{task.completion_note || task.resolution_reason || `재개: ${task.reopen_reason}`}</p>

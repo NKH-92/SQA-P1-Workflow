@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AppData, Profile, ReviewRequest, ReviewStatus } from '../../types'
+import type { AppData, Profile, ReviewEvent, ReviewRequest, ReviewStatus } from '../../types'
 import {
   getReviewStatsAvailableRange,
   resolveReviewStatsRange,
@@ -30,7 +30,6 @@ function review(
     requester_id: requesterId,
     title: id,
     description: '',
-    attachment_url: null,
     due_date: null,
     status,
     review_round: reviewRound,
@@ -39,8 +38,33 @@ function review(
   }
 }
 
-function data(reviewRequests: ReviewRequest[]): Pick<AppData, 'profiles' | 'reviewRequests'> {
-  return { profiles, reviewRequests }
+function data(reviewRequests: ReviewRequest[]): Pick<AppData, 'profiles' | 'reviewRequests' | 'reviewEvents'> {
+  let id = 0
+  const reviewEvents: ReviewEvent[] = reviewRequests.flatMap((request) => {
+    const events: ReviewEvent[] = [{
+      id: ++id,
+      review_request_id: request.id,
+      actor_id: request.requester_id,
+      actor_name_snapshot: request.profiles?.name ?? '요청자',
+      event_type: 'submitted',
+      from_status: null,
+      to_status: 'pending',
+      occurred_at: request.created_at!,
+      metadata: { estimated: false },
+      transaction_id: id,
+    }]
+    for (let round = 1; round < (request.review_round ?? 1); round += 1) {
+      events.push({ ...events[0], id: ++id, event_type: 'resubmitted', from_status: 'rejected', transaction_id: id })
+    }
+    if (request.status === 'approved' || request.status === 'rejected') {
+      events.push({
+        ...events[0], id: ++id, event_type: request.status, from_status: 'pending',
+        to_status: request.status, transaction_id: id,
+      })
+    }
+    return events
+  })
+  return { profiles, reviewRequests, reviewEvents }
 }
 
 function filters(overrides: Partial<ReviewStatsFilters> = {}): ReviewStatsFilters {
@@ -157,7 +181,7 @@ describe('reviewStats.selectors', () => {
     expect(result.filteredRequests.map((request) => request.id)).toEqual(['a-approved'])
     expect(result.kpis.requestCount).toBe(1)
     expect(result.kpis.submissionCount).toBe(2)
-    expect(result.statusCounts).toEqual({ pending: 0, approved: 1, rejected: 0 })
+    expect(result.statusCounts).toEqual({ pending: 0, approved: 1, rejected: 0, withdrawn: 0 })
     expect(result.monthlyRows).toEqual([
       {
         month: '2026-06',
@@ -192,7 +216,7 @@ describe('reviewStats.selectors', () => {
       approvedCount: 0,
       rejectedCount: 0,
     })
-    expect(result.statusCounts).toEqual({ pending: 0, approved: 0, rejected: 0 })
+    expect(result.statusCounts).toEqual({ pending: 0, approved: 0, rejected: 0, withdrawn: 0 })
     expect(result.monthlyRows.map((row) => [row.month, row.requestCount, row.submissionCount])).toEqual([
       ['2026-04', 0, 0],
       ['2026-05', 0, 0],
@@ -275,7 +299,7 @@ describe('reviewStats.selectors', () => {
   it('falls back to embedded requester identity when the profile row is unavailable', () => {
     const request = review('removed-profile', 'removed-member', localIso(2026, 6, 1), 'approved', 1)
     request.profiles = { name: '삭제된 계정 요청자', email: 'removed@example.com' }
-    const result = selectReviewStats({ profiles: [], reviewRequests: [request] }, filters(), now)
+    const result = selectReviewStats({ ...data([request]), profiles: [] }, filters(), now)
 
     expect(result.requesterOptions).toEqual([
       { id: 'removed-member', name: '삭제된 계정 요청자', inactive: false },

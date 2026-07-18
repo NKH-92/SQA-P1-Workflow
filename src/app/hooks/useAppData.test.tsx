@@ -86,7 +86,6 @@ describe('useAppData session reset', () => {
       requester_id: 'member-1',
       title: 'Old review',
       description: 'Historical detail',
-      attachment_url: null,
       due_date: null,
       status: 'approved' as const,
       created_at: '2024-01-01T00:00:00.000Z',

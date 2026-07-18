@@ -13,7 +13,6 @@ export type AnnouncementPayload = {
 export type ReviewRequestPayload = {
   title: string
   description: string
-  attachment_url: string | null
   due_date: string | null
 }
 

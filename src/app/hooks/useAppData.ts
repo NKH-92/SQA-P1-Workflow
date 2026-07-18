@@ -21,6 +21,10 @@ export function useAppData(reportWarnings?: (warnings: string[]) => void) {
   const [refreshing, setRefreshing] = useState(false)
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null)
   const generationRef = useRef(0)
+  const dataRef = useRef(data)
+  useEffect(() => {
+    dataRef.current = data
+  }, [data])
 
   const refreshData = useCallback(async (options?: { initial?: boolean; silent?: boolean }) => {
     if (!supabase) return
@@ -31,7 +35,7 @@ export function useAppData(reportWarnings?: (warnings: string[]) => void) {
     const generation = ++generationRef.current
     if (!isQuiet) setRefreshing(true)
     try {
-      const result = await fetchAppData()
+      const result = await fetchAppData({ ...dataRef.current, optionalWarnings: [] })
       if (generation !== generationRef.current) return
       const { optionalWarnings, ...appData } = result
       if (optionalWarnings.length > 0) {

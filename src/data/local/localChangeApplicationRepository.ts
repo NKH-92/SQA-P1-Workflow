@@ -79,7 +79,7 @@ function saveLocalData(
     if (existing.content_locked_at || contexts.some(({ task }) =>
       task.status === 'completed'
       || task.status === 'not_applicable'
-      || task.status === 'cancelled')) {
+       || (task.status === 'cancelled' && task.cancel_kind !== 'scope_removed'))) {
       throw new UserFacingError('한 제품이라도 처리된 뒤에는 변경 내용을 수정할 수 없습니다.')
     }
   }
@@ -135,8 +135,23 @@ function saveLocalData(
     const draft = selected.get(task.product_id)
     if (!draft) {
       return task.status === 'pending'
-        ? { ...task, status: 'cancelled' as const, resolution_reason: '제품 적용 범위에서 제외됨', updated_at: now }
+        ? {
+            ...task,
+            status: 'cancelled' as const,
+            cancel_kind: 'scope_removed' as const,
+            cancelled_at: now,
+            cancelled_by: profile.id,
+            resolution_reason: '제품 적용 범위 편집에서 제외',
+            updated_at: now,
+          }
         : task
+    }
+    if (task.status === 'cancelled') {
+      throw new UserFacingError(
+        task.cancel_kind === 'scope_removed'
+          ? '범위에서 제외된 제품은 사유를 입력해 먼저 복원해 주세요.'
+          : '수동 취소된 제품 업무는 다시 활성화할 수 없습니다.',
+      )
     }
     const product = productSnapshot(data, task.product_id)
     return {
@@ -265,7 +280,8 @@ export function createLocalChangeApplicationRepository(
           ...item,
           content_locked_at: item.content_locked_at ?? now,
           archived_at: autoArchive ? now : item.archived_at ?? null,
-          archived_by: autoArchive ? profile.id : item.archived_by ?? null,
+          archived_by: autoArchive ? null : item.archived_by ?? null,
+          archive_origin: autoArchive ? 'automatic' : item.archive_origin ?? null,
           archive_reason: autoArchive ? '모든 제품 적용업무가 처리되어 자동 보관됨' : item.archive_reason ?? null,
           updated_at: now,
         } : item),
@@ -317,7 +333,8 @@ export function createLocalChangeApplicationRepository(
           ...item,
           content_locked_at: item.content_locked_at ?? now,
           archived_at: autoArchive ? now : item.archived_at ?? null,
-          archived_by: autoArchive ? profile.id : item.archived_by ?? null,
+          archived_by: autoArchive ? null : item.archived_by ?? null,
+          archive_origin: autoArchive ? 'automatic' : item.archive_origin ?? null,
           archive_reason: autoArchive ? '모든 제품 적용업무가 처리되어 자동 보관됨' : item.archive_reason ?? null,
           updated_at: now,
         } : item),
@@ -468,6 +485,9 @@ export function createLocalChangeApplicationRepository(
         productChangeTasks: current.productChangeTasks.map((item) => item.id === taskId ? {
           ...item,
           status: 'cancelled',
+          cancel_kind: 'manual',
+          cancelled_at: now,
+          cancelled_by: profile.id,
           resolution_reason: reason,
           updated_at: now,
         } : item),
@@ -479,6 +499,42 @@ export function createLocalChangeApplicationRepository(
         entityId: taskId,
         action: 'cancelled',
         summary: `${profile.name}님이 ${task.product_name} 변경 적용업무를 취소했습니다.`,
+        metadata: { reason },
+      })
+    },
+
+    async restoreProductChangeScope(taskId, reason) {
+      assertActive(profile)
+      const { task, application } = taskContext(taskId)
+      if (profile.role !== 'leader' && application.created_by !== profile.id) {
+        throw new UserFacingError('등록자 또는 파트장만 제품 범위를 복원할 수 있습니다.')
+      }
+      if (task.status !== 'cancelled' || task.cancel_kind !== 'scope_removed') {
+        throw new UserFacingError('범위에서 제외된 제품만 복원할 수 있습니다.')
+      }
+      if (application.content_locked_at) throw new UserFacingError('처리가 시작된 변경건의 범위는 복원할 수 없습니다.')
+      const now = new Date().toISOString()
+      setData((current) => ({
+        ...current,
+        productChangeTasks: current.productChangeTasks.map((item) => item.id === taskId ? {
+          ...item,
+          status: 'pending',
+          cancel_kind: null,
+          cancelled_at: null,
+          cancelled_by: null,
+          restored_at: now,
+          restored_by: profile.id,
+          restore_reason: reason,
+          resolution_reason: null,
+          updated_at: now,
+        } : item),
+      }))
+      await recordActivityLog(setData, {
+        actor: profile,
+        entityType: 'product_change_task',
+        entityId: taskId,
+        action: 'scope_restored',
+        summary: `${profile.name}님이 ${task.product_name} 제품을 변경 적용범위에 복원했습니다.`,
         metadata: { reason },
       })
     },
@@ -514,6 +570,9 @@ export function createLocalChangeApplicationRepository(
         productChangeTasks: current.productChangeTasks.map((item) => actionIds.has(item.action_item_id) && item.status === 'pending' ? {
           ...item,
           status: 'cancelled',
+          cancel_kind: 'application_cancelled',
+          cancelled_at: now,
+          cancelled_by: profile.id,
           resolution_reason: reason,
           updated_at: now,
         } : item),
@@ -548,6 +607,7 @@ export function createLocalChangeApplicationRepository(
           ...item,
           archived_at: now,
           archived_by: profile.id,
+          archive_origin: 'manual',
           archive_reason: reason,
           updated_at: now,
         } : item),
@@ -575,6 +635,7 @@ export function createLocalChangeApplicationRepository(
           ...item,
           archived_at: null,
           archived_by: null,
+          archive_origin: null,
           archive_reason: null,
           updated_at: now,
         } : item),

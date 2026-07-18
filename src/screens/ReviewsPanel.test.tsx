@@ -17,7 +17,6 @@ function memberDataWithPendingReview(): AppData {
         requester_id: previewMember.id,
         title: '수정 테스트 제목',
         description: '수정 테스트 설명',
-        attachment_url: 'storage://review-attachments/user/file.pdf',
         due_date: '2026-07-10',
         status: 'pending',
         created_at: '2026-07-04T09:00:00.000Z',
@@ -101,7 +100,6 @@ describe('ReviewsPanel', () => {
     const draft = {
       title: '초안 제목',
       description: '초안 설명',
-      attachment_url: '',
       deadlineMode: 'date',
       due_date: '2026-07-12',
       saved_at: now.toISOString(),
@@ -121,7 +119,7 @@ describe('ReviewsPanel', () => {
     expect(within(dialog).getByText('이 기기에 저장된 초안을 불러왔습니다.')).toBeInTheDocument()
   })
 
-  it('warns that uploaded attachments are not included in system backups', async () => {
+  it('directs reviewers to exchange files outside the system', async () => {
     const user = userEvent.setup()
     render(
       <ReviewsPanel profile={previewMember} data={createPreviewData()} mutate={vi.fn()} setData={() => undefined} />,
@@ -130,7 +128,7 @@ describe('ReviewsPanel', () => {
     await user.click(screen.getByRole('button', { name: '검토요청 작성' }))
 
     expect(
-      within(composerDialog()).getByText('첨부 파일은 시스템 백업 대상이 아닙니다. 중요한 원본은 작성자가 별도로 보관해 주세요.'),
+      within(composerDialog()).getByText(/검토 자료가 필요한 경우 별도 메신저로 전달하고/),
     ).toBeInTheDocument()
   })
 

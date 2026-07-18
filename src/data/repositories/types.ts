@@ -22,14 +22,16 @@ export type ReviewRepository = {
     editingReviewId: string | null
     payload: ReviewRequestPayload
   }): Promise<{ reviewId: string; isUpdate: boolean }>
-  withdrawReviewRequest(requestId: string): Promise<void>
+  withdrawReviewRequest(requestId: string, reason: string): Promise<void>
   rejectReviewRequest(requestId: string, comment: string): Promise<void>
   updateReviewStatus(requestId: string, status: ReviewStatus): Promise<void>
   reopenReviewRequest(requestId: string): Promise<void>
   resubmitReviewRequest(requestId: string, comment: string): Promise<void>
   addReviewFeedback(requestId: string, comment: string): Promise<string | null>
   updateReviewFeedback(feedbackId: string, comment: string): Promise<void>
-  deleteReviewFeedback(feedbackId: string): Promise<void>
+  voidReviewFeedback(feedbackId: string, reason: string): Promise<void>
+  markReviewSeen(requestId: string): Promise<void>
+  markAllRelevantReviewsSeen(): Promise<void>
 }
 
 export type ProjectRepository = {
@@ -143,6 +145,7 @@ export type ChangeApplicationRepository = {
   reopenProductTask(taskId: string, reason: string): Promise<void>
   reassignProductTasks(taskIds: string[], assigneeId: string | null, reason: string): Promise<void>
   cancelProductTask(taskId: string, reason: string): Promise<void>
+  restoreProductChangeScope(taskId: string, reason: string): Promise<void>
   cancelChangeApplication(changeApplicationId: string, reason: string): Promise<void>
   archiveChangeApplication(changeApplicationId: string, reason: string): Promise<void>
   restoreChangeApplication(changeApplicationId: string, reason: string): Promise<void>

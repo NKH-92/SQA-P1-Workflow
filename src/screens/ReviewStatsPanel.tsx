@@ -252,7 +252,7 @@ function ExactNumbersTable({ rows }: { rows: ReviewStatsRequesterRow[] }) {
       tabIndex={0}
     >
       <table className="review-stats-table">
-        <caption>요청 건수는 행 수, 제출 횟수는 각 행의 review_round 합계이며 값이 없거나 유효하지 않으면 1회로 계산합니다.</caption>
+        <caption>요청·재제출·승인·반려 수치는 서버의 검토 이벤트 발생 시각을 기준으로 집계합니다.</caption>
         <thead>
           <tr>
             <th scope="col">요청자</th>
@@ -341,7 +341,7 @@ export function ReviewStatsPanel({ data }: { data: AppData }) {
       <div className="page-intro">
         <h1>검토 통계</h1>
         <p>
-          요청 생성일 기준 · <strong>{rangeLabel}</strong>
+          검토 이벤트 발생일 기준 · <strong>{rangeLabel}</strong>
         </p>
       </div>
 
@@ -450,9 +450,8 @@ export function ReviewStatsPanel({ data }: { data: AppData }) {
 
         <p className="review-stats-history-note" id="review-stats-history-note">
           <CalendarDays aria-hidden="true" size={16} />
-          완료 데이터는 조회 시각 기준 최근 6개월만 로드됩니다. 최초 경계일의 일부 시간대가 누락되지 않도록 완전히
-          로드된 {formatDateKey(stats.range.minDate)}부터 {formatDateKey(stats.range.maxDate)}까지 집계하며, 더 오래된 대기
-          요청도 통계에서는 제외합니다. 월별 제출 횟수는 요청 생성월에 각 행의 review_round 합계를 배치하며, 값이 없거나 유효하지 않으면 최초 제출 1회로 계산합니다.
+          {formatDateKey(stats.range.minDate)}부터 {formatDateKey(stats.range.maxDate)}까지 서버에 기록된 제출·재제출·승인·반려
+          이벤트의 실제 발생 시각으로 집계합니다. 이관된 추정 이벤트는 서버 메타데이터에 별도로 표시됩니다.
         </p>
 
         {!stats.range.valid && (

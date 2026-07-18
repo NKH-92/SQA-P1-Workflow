@@ -15,7 +15,11 @@ function timelineSteps(status: ReviewStatus) {
     { key: 'pending', label: reviewStatusLabels.pending },
     {
       key: 'outcome',
-      label: status === 'rejected' ? reviewStatusLabels.rejected : reviewStatusLabels.approved,
+      label: status === 'rejected'
+        ? reviewStatusLabels.rejected
+        : status === 'withdrawn'
+          ? reviewStatusLabels.withdrawn
+          : reviewStatusLabels.approved,
     },
   ].map((step, index) => ({ ...step, state: timelineStepState(index, status) }))
 }

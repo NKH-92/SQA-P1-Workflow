@@ -11,7 +11,6 @@ function requests(count: number): ReviewRequest[] {
     requester_id: 'member-1',
     title: `검토 항목 ${index + 1}`,
     description: '',
-    attachment_url: null,
     due_date: null,
     status: 'pending' as const,
     profiles: { name: '파트원', email: 'member@example.com' },

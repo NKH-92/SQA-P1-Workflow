@@ -1,4 +1,3 @@
-import { isStorageAttachment } from '../../lib/attachments'
 import { UserFacingError } from '../../lib/errors'
 import type { Profile, ReviewStatus } from '../../types'
 
@@ -6,14 +5,6 @@ export function assertActiveLeader(profile: Pick<Profile, 'role' | 'is_active'>)
   if (profile.role !== 'leader' || profile.is_active === false) {
     throw new UserFacingError('활성 파트장 권한이 필요합니다.')
   }
-}
-
-export function assertStorageAttachmentOnly(value: string | null | undefined) {
-  if (!value || !value.trim()) return null
-  if (!isStorageAttachment(value)) {
-    throw new UserFacingError('첨부는 파일 업로드만 사용할 수 있습니다.')
-  }
-  return value
 }
 
 export function assertReviewStatusTransition(current: ReviewStatus, next: ReviewStatus) {

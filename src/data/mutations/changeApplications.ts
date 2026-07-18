@@ -70,6 +70,10 @@ export function cancelProductChangeTask(ctx: RepositoryContext, taskId: string, 
   return repository(ctx).cancelProductTask(taskId, normalizeTaskReason(reason, '취소 사유'))
 }
 
+export function restoreProductChangeScope(ctx: RepositoryContext, taskId: string, reason: string) {
+  return repository(ctx).restoreProductChangeScope(taskId, normalizeTaskReason(reason, '범위 복원 사유'))
+}
+
 export function cancelChangeApplication(ctx: RepositoryContext, changeApplicationId: string, reason: string) {
   return repository(ctx).cancelChangeApplication(
     changeApplicationId,

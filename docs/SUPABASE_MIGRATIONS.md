@@ -55,6 +55,12 @@
 | `20260714075451_leader_ui_improvements.sql` | 제품 미지정 사유 원자적 저장·배정 시 자동 삭제 + 현재 활성 파트장 본인 프로젝트 배정 허용 |
 | `20260714082821_optimize_leader_project_assignment_rls.sql` | 파트장 본인 프로젝트 배정 RLS의 사용자 ID 평가를 쿼리당 1회로 최적화 |
 | `20260715013615_review_resubmission_history.sql` | 반려 요청의 동일-ID 재요청, 회차·반려 횟수·작성자 역할 이력, 원자적 `resubmit_review_request` RPC |
+| `20260716200422_create_announcements_board.sql` | 파트장 전용 고정 공지 게시판과 RLS·감사 트리거 |
+| `202607170001_change_applications.sql` | 변경적용서·조치항목·제품 적용 작업 원장과 OCC RPC |
+| `20260717123840_change_application_archiving.sql` | 변경적용서 수동·자동 보관과 복원 계약 |
+| `20260718054122_add_withdrawn_review_status.sql` | 리뷰 소프트 철회 상태 추가 |
+| `20260718054124_harden_review_workflow.sql` | 정확한 상태 시각, compact 이벤트·서버 읽음 영수증, OCC RPC, 피드백 무효화, Auth 비밀번호 트리거, 프로필 삭제 차단 |
+| `20260718054127_harden_change_audit_and_acl.sql` | 적용범위 제외/복원 구분, 보관 출처, delta 감사와 감사 페이지 RPC |
 
 ## Supabase CLI (권장)
 

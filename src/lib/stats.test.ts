@@ -7,7 +7,6 @@ function review(partial: Partial<ReviewRequest> & Pick<ReviewRequest, 'id' | 'st
     requester_id: 'member-1',
     title: 'title',
     description: 'description',
-    attachment_url: null,
     due_date: null,
     created_at: '2026-07-01T00:00:00.000Z',
     updated_at: '2026-07-03T00:00:00.000Z',

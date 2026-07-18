@@ -14,7 +14,7 @@ describe('migration scripts', () => {
   it('apply-pending-migrations.ps1 uses db query not db execute', () => {
     const script = readScript('apply-pending-migrations.ps1')
 
-    expect(script).toContain('db query')
+    expect(script).toContain("'db', 'query'")
     expect(script).not.toContain('db execute')
     expect(script).toContain('add_product_assignment')
     expect(script).toContain('add_duty_assignment')
@@ -44,6 +44,14 @@ describe('migration scripts', () => {
     expect(script).toContain('public.list_audit_events(integer,bigint)')
     expect(script).not.toContain("proacl::text not like '%=X%'")
     expect(script).toContain("SupabaseCliVersion = '2.109.1'")
+    expect(script).toContain('function Invoke-SupabaseCommand')
+    expect(script).toContain('$nativeExitCode = $LASTEXITCODE')
+    expect(script).toContain("SQA_SUPABASE_NATIVE_FAILED: $Operation exited with code $nativeExitCode")
+    expect(script).toContain("-Operation 'link'")
+    expect(script).toContain("-Operation 'db-push'")
+    expect(script).toContain("-Operation 'readiness-verification'")
+    expect(script).not.toContain('npx --yes "supabase@$SupabaseCliVersion" link')
+    expect(script).not.toContain('npx --yes "supabase@$SupabaseCliVersion" db push')
   })
 
   it('backup-db.ps1 dumps schema and data separately', () => {

@@ -25,13 +25,41 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
 Set-Location $root
 
+function Invoke-SupabaseCommand {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Operation,
+    [Parameter(Mandatory = $true)]
+    [string[]]$Arguments,
+    [switch]$CaptureOutput
+  )
+
+  $commandOutput = & npx --yes "supabase@$SupabaseCliVersion" @Arguments 2>&1
+  $nativeExitCode = $LASTEXITCODE
+  $outputText = $commandOutput | Out-String
+
+  if ($nativeExitCode -ne 0) {
+    if ($outputText.Trim()) {
+      Write-Host $outputText
+    }
+    throw "SQA_SUPABASE_NATIVE_FAILED: $Operation exited with code $nativeExitCode."
+  }
+
+  if ($CaptureOutput) {
+    return $outputText
+  }
+  if ($outputText.Trim()) {
+    Write-Host $outputText.TrimEnd()
+  }
+}
+
 if ($AccessToken) {
   $env:SUPABASE_ACCESS_TOKEN = $AccessToken
 }
 
 if ($ProjectRef) {
   Write-Host "Linking project ref: $ProjectRef"
-  npx --yes "supabase@$SupabaseCliVersion" link --project-ref $ProjectRef
+  Invoke-SupabaseCommand -Operation 'link' -Arguments @('link', '--project-ref', $ProjectRef)
 }
 
 $stageBMigration = Join-Path $root 'supabase\migrations\20260718073243_finalize_review_workflow_hardening.sql'
@@ -44,8 +72,10 @@ select 'stage_b_storage_handoff_ok' where
   $preflightFile = Join-Path ([System.IO.Path]::GetTempPath()) ("supabase-stage-b-preflight-{0}.sql" -f [Guid]::NewGuid().ToString('N'))
   try {
     Set-Content -Path $preflightFile -Value $preflightSql -Encoding UTF8
-    $preflightOutput = npx --yes "supabase@$SupabaseCliVersion" db query --linked --file $preflightFile 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0 -or $preflightOutput -notmatch 'stage_b_storage_handoff_ok') {
+    $preflightOutput = Invoke-SupabaseCommand -Operation 'stage-b-preflight' -Arguments @(
+      'db', 'query', '--linked', '--file', $preflightFile
+    ) -CaptureOutput
+    if ($preflightOutput -notmatch 'stage_b_storage_handoff_ok') {
       throw 'SQA_REVIEW_ATTACHMENTS_BUCKET_STILL_EXISTS: run the approved Storage API purge and verify objectCount=0, bucketExists=false before Stage B.'
     }
   }
@@ -55,7 +85,7 @@ select 'stage_b_storage_handoff_ok' where
 }
 
 Write-Host "Pushing migrations..."
-npx --yes "supabase@$SupabaseCliVersion" db push
+Invoke-SupabaseCommand -Operation 'db-push' -Arguments @('db', 'push')
 
 $verificationSql = @"
 select proname from pg_proc where pronamespace = 'public'::regnamespace and proname in ('reject_review_request', 'add_review_feedback', 'create_project_with_assignments', 'is_active_leader', 'add_product_assignment', 'add_duty_assignment', 'replace_project_assignments_if_current', 'reopen_review_request', 'bump_project_revision_from_assignment');
@@ -228,13 +258,9 @@ try {
   Set-Content -Path $tempSql -Value $verificationSql -Encoding UTF8
 
   Write-Host "Verifying RPC functions, Stage B cleanup/ACL, review RLS, and announcement-board invariants..."
-  $verifyOutput = npx --yes "supabase@$SupabaseCliVersion" db query --linked --file $tempSql 2>&1 | Out-String
-
-  if ($LASTEXITCODE -ne 0) {
-    Write-Warning "Verification query failed (exit $LASTEXITCODE). Check results:"
-    Write-Host $verifyOutput
-    exit 1
-  }
+  $verifyOutput = Invoke-SupabaseCommand -Operation 'readiness-verification' -Arguments @(
+    'db', 'query', '--linked', '--file', $tempSql
+  ) -CaptureOutput
 
   $expectedRpc = @(
     'reject_review_request',

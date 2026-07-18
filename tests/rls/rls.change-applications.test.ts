@@ -125,12 +125,13 @@ describeRls(`RLS change applications (${RLS_SKIP_NOTE})`, () => {
 
     const lockedSnapshot = await memberA
       .from('change_applications')
-      .select('updated_at,archived_at,archived_by,archive_reason')
+      .select('updated_at,archived_at,archived_by,archive_reason,archive_origin')
       .eq('id', applicationId)
       .single()
     expect(lockedSnapshot.error).toBeNull()
     expect(lockedSnapshot.data).toMatchObject({
-      archived_by: memberAId,
+      archived_by: null,
+      archive_origin: 'automatic',
       archive_reason: '모든 제품 적용업무가 처리되어 자동 보관됨',
     })
     expect(lockedSnapshot.data?.archived_at).toBeTruthy()
@@ -167,7 +168,7 @@ describeRls(`RLS change applications (${RLS_SKIP_NOTE})`, () => {
     })
     const automaticallyRestored = await memberA
       .from('change_applications')
-      .select('archived_at,archived_by,archive_reason')
+      .select('archived_at,archived_by,archive_reason,archive_origin')
       .eq('id', applicationId)
       .single()
     expect(automaticallyRestored.error).toBeNull()
@@ -175,6 +176,7 @@ describeRls(`RLS change applications (${RLS_SKIP_NOTE})`, () => {
       archived_at: null,
       archived_by: null,
       archive_reason: null,
+      archive_origin: null,
     })
 
     const reopenedSnapshot = await memberA
@@ -217,12 +219,13 @@ describeRls(`RLS change applications (${RLS_SKIP_NOTE})`, () => {
 
     const automaticallyArchivedAgain = await memberB
       .from('change_applications')
-      .select('archived_at,archived_by,archive_reason')
+      .select('archived_at,archived_by,archive_reason,archive_origin')
       .eq('id', applicationId)
       .single()
     expect(automaticallyArchivedAgain.error).toBeNull()
     expect(automaticallyArchivedAgain.data).toMatchObject({
-      archived_by: memberBId,
+      archived_by: null,
+      archive_origin: 'automatic',
       archive_reason: '모든 제품 적용업무가 처리되어 자동 보관됨',
     })
     expect(automaticallyArchivedAgain.data?.archived_at).toBeTruthy()

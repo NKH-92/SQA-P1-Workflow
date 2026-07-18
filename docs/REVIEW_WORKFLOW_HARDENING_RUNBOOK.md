@@ -25,13 +25,15 @@ $env:SUPABASE_SERVICE_ROLE_KEY = '<ephemeral service-role key>'
 npm run ops:attachments:dry-run
 ```
 
-dry-run 결과의 `bucket`, `objectCount`, `nameDigestSha256`를 변경 기록에 남긴다. 파일명 자체는 출력하지 않는다. 보존 정책과 승인자를 확인한 운영자만 다음을 실행한다.
+기본 출력에는 파일명이 없으며 대상 URL/project ref, `bucket`, `objectCount`, `totalBytes`, `nameDigestSha256`만 표시된다. 필요하면 `--output=ops-output/review-attachments-dry-run.json`으로 비밀값이나 파일명 없는 JSON 기록을 남긴다. 파일명 확인이 승인된 경우에만 `--verbose`를 추가한다.
+
+dry-run 결과를 변경 기록에 남기고 보존 정책과 승인자를 확인한 운영자만 다음을 실행한다. 실행 결과도 저장하려면 동일하게 `--output=ops-output/review-attachments-execute.json`을 추가한다.
 
 ```powershell
 node scripts/purge-review-attachments.mjs --execute --confirm=PURGE_REVIEW_ATTACHMENTS
 ```
 
-성공 기준은 마지막 JSON의 `verifiedRemainingObjectCount`가 `0`인 것이다. 키를 셸에서 제거한 뒤 Stage B를 진행한다. Codex 자동화는 이 실행 단계를 수행하지 않는다.
+성공 기준은 마지막 JSON의 `failedObjectCount`와 `verifiedRemainingObjectCount`가 모두 `0`인 것이다. 일부 batch가 실패하면 스크립트는 실패한 파일 수를 기록하고 exit code 1로 종료한다. 키를 셸에서 제거한 뒤 같은 dry-run을 다시 실행해 `objectCount=0`을 별도 기록하고 Stage B를 진행한다. Codex 자동화는 execute 단계를 수행하지 않는다.
 
 ## Stage B — 파괴적 정리
 

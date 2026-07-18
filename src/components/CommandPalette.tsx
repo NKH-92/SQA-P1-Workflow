@@ -2,21 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Search } from 'lucide-react'
 import type { AppData, Profile } from '../types'
 import type { TabId } from '../app/types'
-import { selectScopedReviewRequests } from '../features/reviews/review.selectors'
-import { reviewStatusLabels } from '../lib/format'
-import { navigationItemsForRole } from '../lib/navigation'
-
-export type CommandItem = {
-  id: string
-  group: string
-  title: string
-  sub: string
-  icon: string
-  run: () => void
-}
-
-/** 검색 결과에 표시할 검토요청 최대 건수. 필터 적용 '후'에 자른다. */
-const REVIEW_RESULT_CAP = 20
+import { buildCommandItems, filterCommandItems, groupCommandItems } from './commandPaletteModel'
 
 export function CommandPalette({
   open,
@@ -38,67 +24,21 @@ export function CommandPalette({
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
-  const items = useMemo<CommandItem[]>(() => {
+  const items = useMemo(() => {
     // 닫혀 있는 동안에는 목록을 만들지 않는다 — App이 리렌더될 때마다 헛일하지 않도록.
     if (!open) return []
-    const go = (tab: TabId, entityId?: string) => () => {
-      setActiveTab(tab, entityId)
-      onClose()
-    }
-
-    const result: CommandItem[] = navigationItemsForRole(leaderMode).map((nav) => ({
-      id: `nav-${nav.tab}`,
-      group: '이동',
-      title: nav.paletteLabel,
-      sub: `${nav.tab} 화면으로 이동`,
-      icon: nav.paletteLabel.charAt(0),
-      run: go(nav.tab),
-    }))
-
-    // 검토요청: 파트장은 전체, 파트원은 본인 것만 (RLS 가시성과 동일).
-    // 여기서 자르지 않는다 — 오래된 요청도 검색으로 찾을 수 있어야 한다.
-    const visibleReviews = selectScopedReviewRequests(data, profile)
-    visibleReviews.forEach((request) => {
-      result.push({
-        id: `review-${request.id}`,
-        group: '검토요청',
-        title: request.title,
-        sub: `${request.profiles?.name ?? '요청자'} · ${reviewStatusLabels[request.status]}`,
-        icon: request.title.trim().charAt(0) || '검',
-        run: go('reviews', request.id),
-      })
+    return buildCommandItems({
+      profile,
+      data,
+      leaderMode,
+      select: (tab, entityId) => {
+        setActiveTab(tab, entityId)
+        onClose()
+      },
     })
-
-    if (leaderMode) {
-      data.profiles
-        .filter((item) => item.role === 'member')
-        .forEach((member) => {
-          result.push({
-            id: `member-${member.id}`,
-            group: '파트원',
-            title: member.name,
-            sub: member.email,
-            icon: member.name.trim().charAt(0) || '?',
-            run: go('team', member.id),
-          })
-        })
-    }
-
-    return result
   }, [data, leaderMode, onClose, open, profile, setActiveTab])
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    const matches = q ? items.filter((item) => `${item.title} ${item.sub}`.toLowerCase().includes(q)) : items
-    // 검토요청 그룹만 상한을 둔다. 검색 필터를 먼저 적용했으므로 오래된 요청도 매칭된다.
-    const cappedReviewIds = new Set(
-      matches
-        .filter((item) => item.group === '검토요청')
-        .slice(0, REVIEW_RESULT_CAP)
-        .map((item) => item.id),
-    )
-    return matches.filter((item) => item.group !== '검토요청' || cappedReviewIds.has(item.id))
-  }, [items, query])
+  const filtered = useMemo(() => filterCommandItems(items, query), [items, query])
 
   // 열릴 때마다 검색어·커서를 초기화하고 입력에 포커스를 준다.
   useEffect(() => {
@@ -146,10 +86,7 @@ export function CommandPalette({
   }
 
   let index = -1
-  const groups = filtered.reduce<Record<string, CommandItem[]>>((acc, item) => {
-    ;(acc[item.group] ??= []).push(item)
-    return acc
-  }, {})
+  const groups = groupCommandItems(filtered)
 
   return (
     <div className="cmd-backdrop" onMouseDown={onClose} role="presentation">

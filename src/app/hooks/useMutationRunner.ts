@@ -3,6 +3,8 @@ import { toUserMessage } from '../../lib/errors'
 import { supabase } from '../../lib/supabase'
 import type { ToastMessage } from '../types'
 
+export type MutationRunner = (operation: () => Promise<void>, success: string) => Promise<boolean>
+
 export function useMutationRunner(refreshData: () => Promise<void>) {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<ToastMessage | null>(null)
@@ -14,7 +16,7 @@ export function useMutationRunner(refreshData: () => Promise<void>) {
     return () => clearTimeout(timer)
   }, [message])
 
-  const mutate = useCallback(
+  const mutate = useCallback<MutationRunner>(
     async (operation: () => Promise<void>, success: string): Promise<boolean> => {
       // Re-entrancy guard: a second submit (double-click / Ctrl+Enter + click) while one
       // is in flight is ignored, so we never insert the same record twice. The guard spans

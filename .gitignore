@@ -12,6 +12,7 @@ scripts/.seed-batches/
 data/private/*.local.csv
 data/private/*.local.json
 backup/*.sql
+ops-output/
 supabase/.temp/
 
 .claude/

@@ -16,6 +16,7 @@ import type {
   ReviewRequestPayload,
 } from '../contracts'
 import type { AppDataUpdater } from './appDataUpdater'
+import type { ActivityLogWriter } from './activityLogWriter'
 
 export type ReviewRepository = {
   saveReviewRequest(input: {
@@ -157,6 +158,12 @@ export type RepositorySet = {
   announcements: AnnouncementRepository
   changeApplications: ChangeApplicationRepository
   master: MasterRepository
+  team: TeamRepository
+  activityLogs: ActivityLogWriter
+}
+
+export type TeamRepository = {
+  addProfileNote(input: { profileId: string; note: string }): Promise<void>
 }
 
 /** local·remote repository가 공통으로 받는 의존성 (RepositoryContext에서 isRemote를 뺀 형태). */
@@ -164,4 +171,5 @@ export type RepositoryDeps = {
   profile: Profile
   data: AppData
   setData: AppDataUpdater
+  activityLogs: ActivityLogWriter
 }

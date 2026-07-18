@@ -1,4 +1,4 @@
-import { recordActivityLog } from '../../lib/activityLog'
+import { recordActivityLog } from '../activityLog'
 import { UserFacingError } from '../../lib/errors'
 import { makeId } from '../../lib/format'
 import type {
@@ -218,7 +218,7 @@ function saveLocalData(
 export function createLocalChangeApplicationRepository(
   ctx: RepositoryDeps,
 ): ChangeApplicationRepository {
-  const { profile, data, setData } = ctx
+  const { profile, data, setData, activityLogs } = ctx
 
   const taskContext = (taskId: string) => {
     const context = selectProductChangeTaskContexts(data).find(({ task }) => task.id === taskId)
@@ -254,7 +254,7 @@ export function createLocalChangeApplicationRepository(
       const now = new Date().toISOString()
       const result = saveLocalData(data, profile, input, publish, now)
       setData(result.data)
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         entityType: 'change_application',
         entityId: result.applicationId,
@@ -297,7 +297,7 @@ export function createLocalChangeApplicationRepository(
           updated_at: now,
         } : item),
       }))
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         targetUserId: task.assignee_id,
         entityType: 'product_change_task',
@@ -307,7 +307,7 @@ export function createLocalChangeApplicationRepository(
         metadata: { completion_note: completionNote || null, proxy_reason: proxyReason || null },
       })
       if (autoArchive) {
-        await recordActivityLog(setData, {
+        await recordActivityLog(activityLogs, {
           actor: profile,
           entityType: 'change_application',
           entityId: application.id,
@@ -350,7 +350,7 @@ export function createLocalChangeApplicationRepository(
           updated_at: now,
         } : item),
       }))
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         targetUserId: task.assignee_id,
         entityType: 'product_change_task',
@@ -360,7 +360,7 @@ export function createLocalChangeApplicationRepository(
         metadata: { reason, proxy_reason: proxyReason || null },
       })
       if (autoArchive) {
-        await recordActivityLog(setData, {
+        await recordActivityLog(activityLogs, {
           actor: profile,
           entityType: 'change_application',
           entityId: application.id,
@@ -413,7 +413,7 @@ export function createLocalChangeApplicationRepository(
           updated_at: now,
         } : item),
       }))
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         targetUserId: task.assignee_id,
         entityType: 'product_change_task',
@@ -423,7 +423,7 @@ export function createLocalChangeApplicationRepository(
         metadata: { ...previous, reason },
       })
       if (wasArchived) {
-        await recordActivityLog(setData, {
+        await recordActivityLog(activityLogs, {
           actor: profile,
           entityType: 'change_application',
           entityId: application.id,
@@ -460,7 +460,7 @@ export function createLocalChangeApplicationRepository(
       }))
       for (const taskId of taskIds) {
         const task = taskContext(taskId).task
-        await recordActivityLog(setData, {
+        await recordActivityLog(activityLogs, {
           actor: profile,
           targetUserId: assigneeId,
           entityType: 'product_change_task',
@@ -492,7 +492,7 @@ export function createLocalChangeApplicationRepository(
           updated_at: now,
         } : item),
       }))
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         targetUserId: task.assignee_id,
         entityType: 'product_change_task',
@@ -529,7 +529,7 @@ export function createLocalChangeApplicationRepository(
           updated_at: now,
         } : item),
       }))
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         entityType: 'product_change_task',
         entityId: taskId,
@@ -577,7 +577,7 @@ export function createLocalChangeApplicationRepository(
           updated_at: now,
         } : item),
       }))
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         entityType: 'change_application',
         entityId: changeApplicationId,
@@ -612,7 +612,7 @@ export function createLocalChangeApplicationRepository(
           updated_at: now,
         } : item),
       }))
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         entityType: 'change_application',
         entityId: changeApplicationId,
@@ -640,7 +640,7 @@ export function createLocalChangeApplicationRepository(
           updated_at: now,
         } : item),
       }))
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         entityType: 'change_application',
         entityId: changeApplicationId,

@@ -12,7 +12,7 @@ vi.mock('../../lib/supabase', () => ({
   hasSupabaseConfig: true,
   supabase: { rpc: mocks.rpc },
 }))
-vi.mock('../../lib/activityLog', () => ({ recordActivityLog: mocks.recordActivityLog }))
+vi.mock('../activityLog', () => ({ recordActivityLog: mocks.recordActivityLog }))
 
 import { saveProjectAssignments } from './projects'
 

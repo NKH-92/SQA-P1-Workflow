@@ -1,4 +1,4 @@
-import { recordActivityLog } from '../../lib/activityLog'
+import { recordActivityLog } from '../activityLog'
 import { UserFacingError } from '../../lib/errors'
 import type { DutyMajorCategory, Product, ProductCategory, Role } from '../../types'
 import type { RepositoryContext } from '../repositoryContext'
@@ -36,14 +36,14 @@ async function logMasterActivity(
   entityId: string | null = null,
   metadata: Record<string, unknown> = {},
 ) {
-  await recordActivityLog(ctx.setData, {
+  await recordActivityLog(ctx.repositories.activityLogs, {
     actor: ctx.profile,
     entityType,
     entityId,
     action,
     summary,
     metadata,
-  }, { isRemote: ctx.mode === 'remote' })
+  })
 }
 
 export async function importProducts(
@@ -191,7 +191,7 @@ export async function assignProduct(
     activityMetadata,
   )
   for (const task of result.transferredTasks) {
-    await recordActivityLog(ctx.setData, {
+    await recordActivityLog(ctx.repositories.activityLogs, {
       actor: ctx.profile,
       targetUserId: input.userId,
       entityType: 'product_change_task',

@@ -29,7 +29,7 @@ const activityLogMock = vi.hoisted(() => vi.fn(async (
   _options?: unknown,
 ) => undefined))
 
-vi.mock('../../lib/activityLog', () => ({
+vi.mock('../activityLog', () => ({
   recordActivityLog: activityLogMock,
 }))
 

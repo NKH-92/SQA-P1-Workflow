@@ -25,7 +25,7 @@ vi.mock('../../lib/supabase', () => ({
   hasSupabaseConfig: true,
   supabase: { rpc: rpcMock, from: fromMock },
 }))
-vi.mock('../../lib/activityLog', () => ({
+vi.mock('../activityLog', () => ({
   recordActivityLog: activityLogMock,
 }))
 

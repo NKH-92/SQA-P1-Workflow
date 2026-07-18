@@ -1,4 +1,4 @@
-import { recordActivityLog } from '../../lib/activityLog'
+import { recordActivityLog } from '../activityLog'
 import { assertRecordExists, UserFacingError } from '../../lib/errors'
 import { canAssignProjectTo } from '../../domain/permissions'
 import { makeId } from '../../lib/format'
@@ -6,7 +6,7 @@ import type { RepositoryDeps, ProjectRepository } from '../repositories/types'
 import { addProject, removeProject, replaceProjectAssignments, updateProject } from './appDataReducers'
 
 export function createLocalProjectRepository(ctx: RepositoryDeps): ProjectRepository {
-  const { profile, data, setData } = ctx
+  const { profile, data, setData, activityLogs } = ctx
 
   const assertLeader = () => {
     if (profile.role !== 'leader' || profile.is_active === false || profile.must_change_password === true) {
@@ -36,7 +36,7 @@ export function createLocalProjectRepository(ctx: RepositoryDeps): ProjectReposi
           return replaceProjectAssignments(current, created, memberIds, memberOptions)
         })
       }
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         entityType: 'project',
         entityId: projectId,
@@ -51,7 +51,7 @@ export function createLocalProjectRepository(ctx: RepositoryDeps): ProjectReposi
       assertLeader()
       assertRecordExists(data.projects.find((item) => item.id === projectId))
       setData((current) => updateProject(current, projectId, updated))
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         entityType: 'project',
         entityId: projectId,
@@ -66,7 +66,7 @@ export function createLocalProjectRepository(ctx: RepositoryDeps): ProjectReposi
       assertRecordExists(data.projects.find((item) => item.id === project.id))
       assertMembers(nextMemberIds)
       setData((current) => replaceProjectAssignments(current, project, nextMemberIds, memberOptions))
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         entityType: 'project_assignment',
         entityId: project.id,
@@ -80,7 +80,7 @@ export function createLocalProjectRepository(ctx: RepositoryDeps): ProjectReposi
       assertLeader()
       assertRecordExists(data.projects.find((item) => item.id === project.id))
       setData((current) => removeProject(current, project.id))
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         entityType: 'project',
         entityId: project.id,

@@ -287,7 +287,7 @@ ROADMAP Phase 3-4의 "master를 repository로 위임" 작업과 겹친다. 위�
 
 **설명**
 기존 master 경로의 `activity_logs` 기록은 여전히 클라이언트 best-effort라 네트워크 단절·탭 닫힘·RLS 오류 시 누락될 수 있다. 다만 검토 상태 승인·반려와 피드백 생성은 `202607110010` RPC 내부에서 본 작업과 같은 트랜잭션으로 기록한다.
-근거: [src/lib/activityLog.ts](../src/lib/activityLog.ts), [supabase/migrations/202607110010_atomic_review_activity_logs.sql](../supabase/migrations/202607110010_atomic_review_activity_logs.sql).
+근거: 현행 writer는 [src/data/activityLog.ts](../src/data/activityLog.ts)와 local/remote adapter로 이동했다. 기존 migration 근거는 [202607110010_atomic_review_activity_logs.sql](../supabase/migrations/202607110010_atomic_review_activity_logs.sql)이다.
 
 **목적**
 감사 이력을 데이터 정정·책임 추적의 신뢰 근거로 만든다(작업과 이력의 원자성).
@@ -766,7 +766,7 @@ supabase 클라이언트를 목킹한 계약 테스트.
 - **개선 방법**: `age`(권장) 또는 `gpg --symmetric`(AES256, MDC)로 교체하거나, 최소한 암호화 파일 sha256을 step summary에 기록해 복원 시 대조.
 
 ### P3-6. 문서화되지 않은 계층 규칙 위반 정리
-- **설명/근거**: ARCHITECTURE.md는 "lib 순수 유틸", "화면은 src/data만 호출"이라지만 [src/lib/attachments.ts](../src/lib/attachments.ts)가 스토리지 I/O, [src/lib/activityLog.ts](../src/lib/activityLog.ts)가 DB insert를 하고, [src/screens/ReviewsPanel.tsx:15](../src/screens/ReviewsPanel.tsx)가 스토리지 쓰기를 data 계층 밖에서 실행. '알려진 부채' 목록에 미기재.
+- **해결 기록**: 활동 로그 DB write는 [src/data/activityLog.ts](../src/data/activityLog.ts)와 local/remote writer로 이동했고 구형 lib facade는 CLEAN-01에서 삭제했다. 인증·Storage 예외와 현행 계층은 [ARCHITECTURE.md](./ARCHITECTURE.md)에 명시한다.
 - **개선 방법**: 첨부 업로드/삭제를 `ReviewRepository`로 이관해 화면에서 스토리지 접근 제거, 또는 최소한 ARCHITECTURE.md '알려진 부채'에 명시하고 attachments/activityLog를 lib '순수 유틸' 서술과 분리. AuthPanel·PasswordChangePanel의 supabase 직접 import(인증이라 실질 위험 낮음)는 예외로 문서화.
 
 ### P3-7. `handle_new_user` 이메일 선점 권한 상승 점검
@@ -792,7 +792,7 @@ supabase 클라이언트를 목킹한 계약 테스트.
 - **데스크톱 알림 컷오프 strict 비교**: 같은 밀리초 생성 요청이 영구 누락 가능 → `>` 를 `>=`로 검토.
 - **team 딥링크 검증 기준 불일치**: 존재 검증은 전체 profiles, TeamPanel 소비는 member만.
 - **인증 부트스트랩 타임아웃이 유효 세션 signOut**: [useAuthProfile.ts:81-90](../src/app/hooks/useAuthProfile.ts) 8~10초 타임아웃이 느린 네트워크의 유효 세션을 파기.
-- **활동 로그 local/remote 보존 불일치**: 로컬은 40건 절단([activityLog.ts:44](../src/lib/activityLog.ts)), 원격 조회는 100건([fetchAppData.ts:112](../src/data/fetchAppData.ts)).
+- **활동 로그 local/remote 보존 범위**: local writer는 [localActivityLogWriter.ts](../src/data/local/localActivityLogWriter.ts), 원격 조회는 AppData optional query/assembly가 담당한다. 보존 정책 변경은 별도 기능 변경으로 다룬다.
 - **'대기중' 상태 버튼 dead UI**: 항상 비활성.
 - **검토요청 작성 화면 '검토 대상' 표기가 첫 leader 고정**(복수 파트장 시).
 - **Supabase Free egress(월 5GB)·7일 무활동 pause**: P2-6 캡으로 egress 완화, pause는 일일 백업·모니터로 활동 유지(P0-3·P2-8과 연계).

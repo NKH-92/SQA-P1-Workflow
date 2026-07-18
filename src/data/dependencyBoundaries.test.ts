@@ -22,5 +22,6 @@ describe('dependency boundaries', () => {
     expect(result.status).toBe(1)
     expect(output).toContain('domain cannot import data')
     expect(output).toContain('presentation cannot import data adapters or mutations')
+    expect(output).toContain('lib cannot perform database writes')
   })
 })

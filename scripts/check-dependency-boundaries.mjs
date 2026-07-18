@@ -41,6 +41,10 @@ export function findBoundaryViolations(sourceRoot) {
     const sourceLayer = sourceParts[0]
     const source = readFileSync(path, 'utf8')
 
+    if (sourceLayer === 'lib' && /\.(?:insert|update|delete|upsert|rpc)\s*\(/.test(source)) {
+      violations.push(`${sourceParts.join('/')} (lib cannot perform database writes)`)
+    }
+
     for (const specifier of importsFrom(source)) {
       const resolvedTargetParts = targetParts(root, path, specifier)
       const targetLayer = resolvedTargetParts[0]

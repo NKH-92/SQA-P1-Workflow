@@ -94,7 +94,9 @@ describe('workflow security contracts', () => {
     const reusable = workflow('reusable-rls.yml')
 
     expect(ci).toContain('rls:\n    uses: ./.github/workflows/reusable-rls.yml')
-    expect(ci).toContain('needs: [typecheck, lint, test, rls]')
+    expect(ci).toContain('e2e:\n    runs-on: ubuntu-latest')
+    expect(ci).toContain('run: npm run test:e2e')
+    expect(ci).toContain('needs: [typecheck, lint, test, rls, e2e]')
     expect(deploy).toContain('rls:\n    needs: guard\n    uses: ./.github/workflows/reusable-rls.yml')
     expect(deploy).toContain('deploy:\n    needs: rls')
     expect(reusable).toContain('npm run test:rls:full')

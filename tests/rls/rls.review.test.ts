@@ -54,7 +54,7 @@ describeRls(`RLS review requests (${RLS_SKIP_NOTE})`, () => {
     expect(Array.isArray(data)).toBe(true)
   })
 
-  it('allows member to update own pending review only', async () => {
+  it('denies direct member updates and allows the OCC review RPC', async () => {
     const memberAEmail = process.env.RLS_MEMBER_A_EMAIL
     const memberAPassword = process.env.RLS_MEMBER_A_PASSWORD
     const memberARequestId = process.env.RLS_MEMBER_A_PENDING_REVIEW_REQUEST_ID
@@ -68,16 +68,31 @@ describeRls(`RLS review requests (${RLS_SKIP_NOTE})`, () => {
     const client = createClient(url, anonKey, { auth: { persistSession: false } })
     await client.auth.signInWithPassword({ email: memberAEmail, password: memberAPassword })
 
-    const { error } = await client
+    const snapshot = await client
+      .from('review_requests')
+      .select('title,description,due_date,updated_at')
+      .eq('id', memberARequestId)
+      .single()
+    expect(snapshot.error).toBeNull()
+
+    const direct = await client
       .from('review_requests')
       .update({ title: 'RLS smoke test title' })
       .eq('id', memberARequestId)
       .eq('status', 'pending')
+    expect(direct.error).not.toBeNull()
 
-    expect(error).toBeNull()
+    const viaRpc = await client.rpc('update_review_request', {
+      p_review_request_id: memberARequestId,
+      p_expected_updated_at: snapshot.data!.updated_at,
+      p_title: 'RLS smoke test title',
+      p_description: snapshot.data!.description,
+      p_due_date: snapshot.data!.due_date,
+    })
+    expect(viaRpc.error).toBeNull()
   })
 
-  it('blocks direct status updates but allows the leader status RPC', async () => {
+  it('blocks direct status updates but allows the OCC approval RPC', async () => {
     const leaderEmail = process.env.RLS_LEADER_EMAIL
     const leaderPassword = process.env.RLS_LEADER_PASSWORD
     const requestId = process.env.RLS_MEMBER_A_PENDING_REVIEW_REQUEST_ID
@@ -88,12 +103,19 @@ describeRls(`RLS review requests (${RLS_SKIP_NOTE})`, () => {
     const client = createClient(url, anonKey, { auth: { persistSession: false } })
     await client.auth.signInWithPassword({ email: leaderEmail, password: leaderPassword })
 
+    const snapshot = await client
+      .from('review_requests')
+      .select('updated_at')
+      .eq('id', requestId)
+      .single()
+    expect(snapshot.error).toBeNull()
+
     const direct = await client.from('review_requests').update({ status: 'approved' }).eq('id', requestId)
     expect(direct.error).not.toBeNull()
 
-    const viaRpc = await client.rpc('update_review_request_status', {
+    const viaRpc = await client.rpc('approve_review_request', {
       p_review_request_id: requestId,
-      p_status: 'approved',
+      p_expected_updated_at: snapshot.data!.updated_at,
     })
     expect(viaRpc.error).toBeNull()
   })
@@ -111,15 +133,29 @@ describeRls(`RLS review requests (${RLS_SKIP_NOTE})`, () => {
 
     const leader = createClient(url, anonKey, { auth: { persistSession: false } })
     await leader.auth.signInWithPassword({ email: leaderEmail, password: leaderPassword })
+    const leaderSnapshot = await leader
+      .from('review_requests')
+      .select('updated_at')
+      .eq('id', leaderRequestId)
+      .single()
+    expect(leaderSnapshot.error).toBeNull()
     const leaderResult = await leader.rpc('reopen_review_request', {
       p_review_request_id: leaderRequestId,
+      p_expected_updated_at: leaderSnapshot.data!.updated_at,
     })
     expect(leaderResult.error).toBeNull()
 
     const member = createClient(url, anonKey, { auth: { persistSession: false } })
     await member.auth.signInWithPassword({ email: memberEmail, password: memberPassword })
+    const memberSnapshot = await member
+      .from('review_requests')
+      .select('updated_at')
+      .eq('id', memberRequestId)
+      .single()
+    expect(memberSnapshot.error).toBeNull()
     const memberResult = await member.rpc('reopen_review_request', {
       p_review_request_id: memberRequestId,
+      p_expected_updated_at: memberSnapshot.data!.updated_at,
     })
     expect(memberResult.error).not.toBeNull()
   })
@@ -134,9 +170,21 @@ describeRls(`RLS review requests (${RLS_SKIP_NOTE})`, () => {
 
     const client = createClient(url, anonKey, { auth: { persistSession: false } })
     await client.auth.signInWithPassword({ email: leaderEmail, password: leaderPassword })
+    const snapshot = await client
+      .from('review_requests')
+      .select('updated_at')
+      .eq('id', requestId)
+      .single()
+    expect(snapshot.error).toBeNull()
     const results = await Promise.all([
-      client.rpc('reopen_review_request', { p_review_request_id: requestId }),
-      client.rpc('reopen_review_request', { p_review_request_id: requestId }),
+      client.rpc('reopen_review_request', {
+        p_review_request_id: requestId,
+        p_expected_updated_at: snapshot.data!.updated_at,
+      }),
+      client.rpc('reopen_review_request', {
+        p_review_request_id: requestId,
+        p_expected_updated_at: snapshot.data!.updated_at,
+      }),
     ])
     expect(results.filter((result) => !result.error)).toHaveLength(1)
 
@@ -168,37 +216,67 @@ describeRls(`RLS review requests (${RLS_SKIP_NOTE})`, () => {
     await otherMember.auth.signInWithPassword({ email: otherMemberEmail, password: otherMemberPassword })
     const foreignAttempt = await otherMember.rpc('resubmit_review_request', {
       p_review_request_id: requestId,
+      p_expected_updated_at: new Date(0).toISOString(),
       p_comment: 'foreign resubmit',
     })
     expect(foreignAttempt.error).not.toBeNull()
 
     const member = createClient(url, anonKey, { auth: { persistSession: false } })
     await member.auth.signInWithPassword({ email: memberEmail, password: memberPassword })
-    const edit = await member
+    const editSnapshot = await member
       .from('review_requests')
-      .update({ title: 'Resubmit history fixture corrected' })
+      .select('description,due_date,updated_at')
       .eq('id', requestId)
-      .eq('status', 'rejected')
-      .select('id')
+      .single()
+    expect(editSnapshot.error).toBeNull()
+
+    const edit = await member.rpc('update_review_request', {
+      p_review_request_id: requestId,
+      p_expected_updated_at: editSnapshot.data!.updated_at,
+      p_title: 'Resubmit history fixture corrected',
+      p_description: editSnapshot.data!.description,
+      p_due_date: editSnapshot.data!.due_date,
+    })
     expect(edit.error).toBeNull()
-    expect(edit.data).toEqual([{ id: requestId }])
+
+    const firstResubmitSnapshot = await member
+      .from('review_requests')
+      .select('updated_at')
+      .eq('id', requestId)
+      .single()
+    expect(firstResubmitSnapshot.error).toBeNull()
 
     const firstResubmit = await member.rpc('resubmit_review_request', {
       p_review_request_id: requestId,
+      p_expected_updated_at: firstResubmitSnapshot.data!.updated_at,
       p_comment: 'first correction complete',
     })
     expect(firstResubmit.error).toBeNull()
 
     const leader = createClient(url, anonKey, { auth: { persistSession: false } })
     await leader.auth.signInWithPassword({ email: leaderEmail, password: leaderPassword })
+    const rejectSnapshot = await leader
+      .from('review_requests')
+      .select('updated_at')
+      .eq('id', requestId)
+      .single()
+    expect(rejectSnapshot.error).toBeNull()
     const secondReject = await leader.rpc('reject_review_request', {
       p_review_request_id: requestId,
+      p_expected_updated_at: rejectSnapshot.data!.updated_at,
       p_comment: 'second rejection reason',
     })
     expect(secondReject.error).toBeNull()
 
+    const secondResubmitSnapshot = await member
+      .from('review_requests')
+      .select('updated_at')
+      .eq('id', requestId)
+      .single()
+    expect(secondResubmitSnapshot.error).toBeNull()
     const secondResubmit = await member.rpc('resubmit_review_request', {
       p_review_request_id: requestId,
+      p_expected_updated_at: secondResubmitSnapshot.data!.updated_at,
       p_comment: 'second correction complete',
     })
     expect(secondResubmit.error).toBeNull()
@@ -229,13 +307,21 @@ describeRls(`RLS review requests (${RLS_SKIP_NOTE})`, () => {
 
     const member = createClient(url, anonKey, { auth: { persistSession: false } })
     await member.auth.signInWithPassword({ email: memberEmail, password: memberPassword })
+    const snapshot = await member
+      .from('review_requests')
+      .select('updated_at')
+      .eq('id', requestId)
+      .single()
+    expect(snapshot.error).toBeNull()
     const results = await Promise.all([
       member.rpc('resubmit_review_request', {
         p_review_request_id: requestId,
+        p_expected_updated_at: snapshot.data!.updated_at,
         p_comment: 'concurrent correction A',
       }),
       member.rpc('resubmit_review_request', {
         p_review_request_id: requestId,
+        p_expected_updated_at: snapshot.data!.updated_at,
         p_comment: 'concurrent correction B',
       }),
     ])
@@ -253,7 +339,7 @@ describeRls(`RLS review requests (${RLS_SKIP_NOTE})`, () => {
     expect(data?.review_feedback.filter((item) => item.author_role === 'member')).toHaveLength(1)
   })
 
-  it('scopes feedback correction to the author and comment column', async () => {
+  it('denies every authenticated direct feedback update and delete', async () => {
     const leaderEmail = process.env.RLS_LEADER_EMAIL
     const leaderPassword = process.env.RLS_LEADER_PASSWORD
     const leaderBEmail = process.env.RLS_LEADER_B_EMAIL
@@ -267,13 +353,10 @@ describeRls(`RLS review requests (${RLS_SKIP_NOTE})`, () => {
     const leader = createClient(url, anonKey, { auth: { persistSession: false } })
     await leader.auth.signInWithPassword({ email: leaderEmail, password: leaderPassword })
     const ownerUpdate = await leader.from('review_feedback').update({ comment: 'owner corrected' }).eq('id', ownerId)
-    expect(ownerUpdate.error).toBeNull()
+    expect(ownerUpdate.error).not.toBeNull()
     const foreignUpdate = await leader.from('review_feedback').update({ comment: 'foreign edit' }).eq('id', otherAuthorId).select('id')
-    expect(foreignUpdate.error).toBeNull()
-    expect(foreignUpdate.data).toEqual([])
-    // Any concrete value works: the column-level grant (comment only) must reject the leader_id
-    // column itself. (Previously used leader.id, which is undefined on a client instance — the
-    // column was stripped client-side and the request became a no-op that never errored.)
+    expect(foreignUpdate.error).not.toBeNull()
+    // Direct writes stay blocked regardless of which feedback column is targeted.
     const protectedColumns = await leader
       .from('review_feedback')
       .update({ leader_id: '00000000-0000-0000-0000-000000000000' })
@@ -283,6 +366,6 @@ describeRls(`RLS review requests (${RLS_SKIP_NOTE})`, () => {
     const leaderB = createClient(url, anonKey, { auth: { persistSession: false } })
     await leaderB.auth.signInWithPassword({ email: leaderBEmail, password: leaderBPassword })
     const ownerDelete = await leaderB.from('review_feedback').delete().eq('id', otherAuthorId)
-    expect(ownerDelete.error).toBeNull()
+    expect(ownerDelete.error).not.toBeNull()
   })
 })

@@ -96,11 +96,11 @@ CI(`deploy-worker.yml`)와 동일한 wrangler 버전·`--compatibility-date`를 
 
 `public/_headers`가 Vite 빌드 시 `dist/_headers`로 복사되어 Cloudflare Workers static assets에 적용됩니다.
 
-- `Content-Security-Policy`: `connect-src`에 Supabase(`https://*.supabase.co`, `wss://*.supabase.co`)만 허용
+- `Content-Security-Policy`: `connect-src`에 Supabase(`https://*.supabase.co`, `wss://*.supabase.co`)만 허용하고, 첨부 미리보기 제거에 맞춰 `img-src`의 `blob:` 권한은 허용하지 않음
 - `frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`
 - 외부 폰트 CDN은 사용하지 않습니다 (Inter·Newsreader·JetBrains Mono를 `@fontsource-variable`로 번들에 셀프 호스팅)
 
-배포 후 브라우저 DevTools Console에서 CSP violation이 없는지, 로그인·Storage signed URL이 동작하는지 확인하세요.
+배포 후 브라우저 DevTools Console에서 CSP violation이 없는지, 로그인과 첨부 없는 검토요청 생성·조회가 동작하는지 확인하세요.
 
 ### 롤백
 

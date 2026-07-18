@@ -37,7 +37,7 @@
 - 앱 로그인 화면에 **가입 UI가 없고** 로그인만 가능하다. 미초대 계정은 `BlockedProfile` 안내가 표시된다.
 - 파트장은 `pending` 검토만 `완료`/`반려`로 전환할 수 있고, `approved`/`rejected`에서는 확인 후 `다시 열기`로 `pending`에 복귀할 수 있다. 파트원에게는 재오픈 UI가 없다.
 - 검토요청 작성·수정·상세 화면에는 첨부 업로드·URL·열기 기능이 없고, 업무 자료는 별도 사내 메신저로 전달하라는 안내만 표시된다.
-- Stage A에서는 기존 Storage 객체와 `attachment_url`을 호환 목적으로 보존하지만 앱은 이를 만들거나 읽지 않는다. 운영 purge와 Stage B 제거는 [REVIEW_WORKFLOW_HARDENING_RUNBOOK.md](./REVIEW_WORKFLOW_HARDENING_RUNBOOK.md)의 차단 조건을 따른다.
+- 최종 Stage B 스키마에는 `review-attachments` bucket·정책과 `review_requests.attachment_url`이 없으며, cleanup migration은 객체가 남으면 적용 전에 실패해야 한다.
 - 마스터 초대 카드에서 가입한 사용자를 `비활성화`/`활성화`할 수 있고, 비활성 계정은 로그인 후 안내 화면만 표시된다.
 - `npm test`와 `npm run build`가 CI에서 통과한다.
 
@@ -53,7 +53,7 @@
 
 ## RLS 수동 검증
 
-> 자동화된 RLS 테스트가 `tests/rls/`에 있다. `supabase start && supabase db reset` 후 `supabase status -o env`의 local URL/key를 설정하고 `node scripts/setup-rls-fixtures.mjs`로 fixture를 만든 다음 `npm run test:rls`를 실행한다. 전용 명령은 환경이 없으면 skip하지 않고 실패한다. CI와 Deploy Worker도 동일한 local Supabase fixture job을 필수 gate로 실행한다. 아래 수동 시나리오는 자동 테스트가 못 덮는 항목의 보완이다.
+> 자동화된 RLS 테스트가 `tests/rls/`에 있다. 새 local stack의 `supabase start`는 모든 migration을 즉시 적용하므로, CI와 Deploy Worker는 Stage B 파일을 runner 임시 경로에 보관한 상태로 직전 migration까지 시작하고 파일을 즉시 복원한다. 이어 disposable local bucket을 Storage API로 제거한 뒤 `supabase migration up --local`로 Stage B를 적용한다. 이후 `supabase status -o env`의 local URL/key를 설정하고 `node scripts/setup-rls-fixtures.mjs`로 fixture를 만든 다음 `npm run test:rls`를 실행한다. 전용 명령은 환경이 없으면 skip하지 않고 실패한다. 아래 수동 시나리오는 자동 테스트가 못 덮는 항목의 보완이다.
 
 Supabase에 최소 3명(`leader`, `member A`, `member B`)을 등록한 뒤 각 계정으로 로그인한다.
 
@@ -69,13 +69,14 @@ Supabase에 최소 3명(`leader`, `member A`, `member B`)을 등록한 뒤 각 �
 - `profile_notes.profile_id`는 member, `profile_notes.leader_id`는 leader만 허용되는지 확인한다. `review_feedback.leader_id`는 호환성을 위해 유지된 작성자 ID이며 `author_role`과 실제 프로필 역할이 일치해야 한다.
 - `activity_logs`는 leader가 전체를 조회하고, member는 본인이 actor이거나 target인 로그만 조회할 수 있어야 한다.
 - `member`가 `activity_logs.target_user_id`를 임의로 지정해 insert하려 하면 RLS가 거부해야 한다.
-- `member A`가 본인 `pending` 요청을 수정·삭제하고 본인 `rejected` 요청은 수정만 할 수 있어야 한다. `member B`의 요청이나 `approved` 요청은 수정·삭제할 수 없어야 한다.
+- `member`와 `leader`의 `review_requests`·`review_feedback` 직접 INSERT/UPDATE/DELETE는 모두 거부되고, 생성·수정·상태 전이·회수·피드백 변경은 허용된 OCC RPC로만 성공해야 한다.
 - 본인 아닌 member의 `resubmit_review_request` 호출은 거부되고, 본인 rejected 요청은 같은 ID로 재요청되어야 한다. 동시 재요청은 하나만 성공해야 한다.
 - 활성 파트장은 종결 검토요청을 재오픈할 수 있고, member·비활성 파트장·미인증 호출은 `reopen_review_request` RPC에서 거부되어야 한다.
 - 같은 종결 요청에 대한 동시 재오픈 호출은 하나만 성공하고, 최종 상태는 `pending`이며 status audit 이벤트는 한 건이어야 한다.
 - `withdraw_review_request`는 요청자 자신의 최신 `pending` 행만 필수 사유와 OCC 조건으로 철회하고, 행과 이벤트 이력을 유지해야 한다.
 - 읽음 처리는 `review_read_receipts`와 DB 시각을 사용하며, 사용자는 자신의 영수증과 권한이 있는 요청의 이벤트만 조회할 수 있어야 한다.
-- `mark_password_changed()`는 Auth 비밀번호 변경을 관찰하기 전에는 실패하고, `profiles` 물리 삭제는 service role에도 차단되어야 한다.
+- `mark_password_changed()`의 모든 overload와 구형 review RPC signature는 제거 상태여야 하며, 실제 Auth 비밀번호 hash 변경만 `must_change_password=false`를 만들고 `profiles` 물리 삭제는 service role에도 차단되어야 한다.
+- anon은 `public` schema USAGE가 없고, authenticated/service role은 필요한 schema USAGE만 가지며 CREATE는 없어야 한다. 새 routine의 전역 default ACL에는 PUBLIC EXECUTE가 없어야 한다.
 - `member` 계정을 `profiles.is_active = false`로 설정하면 본인 데이터 조회·쓰기가 RLS에서 거부되어야 한다.
 - `leader` 계정을 `profiles.is_active = false`로 설정해도 API로 제품·프로젝트·검토요청을 조회·수정할 수 없어야 한다.
 - `leader`는 `profiles.is_active`를 변경할 수 있어야 한다.
@@ -100,3 +101,5 @@ npm test
 npm run build
 npm run dev
 ```
+
+Stage B에서는 추가로 `src/migrations.stageB.test.ts`와 `tests/rls/rls.storage.test.ts`가 최초/경합 zero-object guard, 최종 Storage 부재, legacy overload 제거, schema/routine/default ACL을 검증한다. 로컬 Supabase를 사용할 수 없으면 PR CI의 필수 RLS job 결과를 배포 증거에 연결한다.

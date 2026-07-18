@@ -5,7 +5,7 @@ SQA P1 Workflow의 현행 구조와 유지보수 규칙. 코드가 곧 사실이
 ## 시스템 한 줄 요약
 
 10인 SQA 파트의 업무 배정·검토요청·프로젝트 현황을 관리하는 SPA.
-React 18 + TypeScript + Vite, 백엔드는 Supabase(Postgres + Auth + Storage, RLS가 권한의 원천),
+React 18 + TypeScript + Vite, 백엔드는 Supabase(Postgres + Auth, RLS가 권한의 원천),
 배포는 Cloudflare Workers 정적 자산. 라우팅은 URL 해시(`#/reviews?id=...`) 기반.
 
 ## 소스 구조
@@ -41,7 +41,7 @@ src/
 ├─ domain/permissions.ts     RLS 정책의 클라이언트 거울 (실행 가능한 문서 — 테스트로 고정)
 ├─ hooks/                    공용 훅 (useTeamSummaries, useModalDismiss)
 ├─ lib/                      순수 유틸과 브라우저/외부 adapter. dates·format·priority·csv는 순수,
-│                            attachments·activityLog·desktopNotifications는 Storage/DB/브라우저 I/O 예외
+│                            activityLog·desktopNotifications는 DB/브라우저 I/O 예외
 ├─ demo/ + demoData.ts       익명 데모 데이터 (preview 모드) — noPrivateSeedInSrc.test.ts가 익명성 강제
 ├─ types/ + types.ts         도메인 타입 배럴 (domain.ts + view.ts)
 └─ security/                 회귀 가드 테스트 (사설 데이터 유입 금지)
@@ -50,8 +50,8 @@ src/
 ## 계층 규칙
 
 - **의존 방향**: screens → features → lib/domain/types. features가 screens를 임포트하지 않는다.
-- **데이터 접근**: 업무 데이터는 `src/data`의 함수만 호출한다. 현재 `attachments` lifecycle과
-  client activity telemetry는 `lib` adapter를 화면이 호출하는 명시적 예외이며 repository로 이전할 부채다.
+- **데이터 접근**: 업무 데이터는 `src/data`의 함수만 호출한다. client activity telemetry는
+  `lib` adapter를 화면이 호출하는 명시적 예외이며 repository로 이전할 부채다.
 - **local/remote 등가성**: 데모(local)와 원격(remote)은 같은 Repository 인터페이스를 구현하고,
   검증 규칙(RLS 등가 가드)도 동일하게 동작해야 한다. 한쪽만 고치면 데모로 확인한 동작과 실서비스가 어긋난다.
 - **단일 기준 함수**: 마감 긴급도는 `lib/dates.ts`의 `dueUrgency`, 검토 정렬은 `lib/priority.ts`,
@@ -101,5 +101,5 @@ src/
   repository 위임으로 통일하는 작업은 [ROADMAP.md](./ROADMAP.md) Phase 3-4.
 - Shell 사이드바·CommandPalette의 탭 라벨 목록이 각자 유지된다(추가 시 두 곳 동기화 필요).
 - 대형 화면(Projects·Master·Team) 컴포넌트 테스트 부재 — ROADMAP Phase 3-2·3-3.
-- `lib/attachments.ts`와 `lib/activityLog.ts`의 I/O가 계층 예외로 남아 있다. attachment cleanup과
-  client telemetry를 repository로 옮길 때 원격 계약 테스트를 함께 이전한다.
+- `lib/activityLog.ts`의 I/O가 계층 예외로 남아 있다. client telemetry를 repository로 옮길 때
+  원격 계약 테스트를 함께 이전한다.

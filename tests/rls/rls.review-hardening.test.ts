@@ -186,13 +186,13 @@ describeRls(`RLS hardened review workflow (${RLS_SKIP_NOTE})`, () => {
     expect(tombstone.data?.voided_at).toBeTruthy()
   })
 
-  it('keeps the legacy password RPC fail-closed until Auth changes the password', async () => {
+  it('observes the Auth password change without exposing the removed legacy RPC', async () => {
     const client = await authenticatedClient(
       'RLS_HARDENED_PENDING_PASSWORD_EMAIL',
       'RLS_HARDENED_PENDING_PASSWORD',
     )
-    const bypass = await client.rpc('mark_password_changed')
-    expect(bypass.error).not.toBeNull()
+    const removedBeforeChange = await client.rpc('mark_password_changed')
+    expect(removedBeforeChange.error).not.toBeNull()
 
     const before = await client
       .from('profiles')
@@ -204,9 +204,16 @@ describeRls(`RLS hardened review workflow (${RLS_SKIP_NOTE})`, () => {
 
     const passwordChange = await client.auth.updateUser({ password: 'Rls-Test-Password-2026!-Changed' })
     expect(passwordChange.error).toBeNull()
-    const acknowledged = await client.rpc('mark_password_changed')
-    expect(acknowledged.error).toBeNull()
-    expect(acknowledged.data?.must_change_password).toBe(false)
+    const after = await client
+      .from('profiles')
+      .select('must_change_password')
+      .eq('id', requiredEnv('RLS_HARDENED_PENDING_PASSWORD_USER_ID'))
+      .single()
+    expect(after.error).toBeNull()
+    expect(after.data?.must_change_password).toBe(false)
+
+    const removedAfterChange = await client.rpc('mark_password_changed')
+    expect(removedAfterChange.error).not.toBeNull()
   })
 
   it('blocks physical profile deletion even for the service role', async () => {

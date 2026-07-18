@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import publicHeaders from '../public/_headers?raw'
 
 const workflows = import.meta.glob('../.github/workflows/*.yml', {
   query: '?raw',
@@ -8,6 +9,10 @@ const workflows = import.meta.glob('../.github/workflows/*.yml', {
 
 function readWorkflow(name: string) {
   return (workflows[`../.github/workflows/${name}`] ?? '').replace(/\r\n/g, '\n')
+}
+
+function readPublicHeaders() {
+  return publicHeaders.replace(/\r\n/g, '\n')
 }
 
 describe('production workflow guards', () => {
@@ -38,7 +43,9 @@ describe('production workflow guards', () => {
     (name) => {
       const workflow = readWorkflow(name)
       expect(workflow).toContain('supabase start')
-      expect(workflow).toContain('supabase db reset')
+      expect(workflow).toContain('mv "$stage_b_migration" "$held_migration"')
+      expect(workflow).toContain('node scripts/purge-review-attachments.mjs --execute --confirm=PURGE_REVIEW_ATTACHMENTS')
+      expect(workflow).toContain('supabase migration up --local')
       expect(workflow).toContain('node scripts/setup-rls-fixtures.mjs')
       expect(workflow).toContain('echo "SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY"')
       expect(workflow).toContain('npm run test:rls')
@@ -78,6 +85,10 @@ describe('production workflow guards', () => {
     expect(workflow).not.toContain('Repair migration history (optional)')
     expect(workflow).not.toContain('repair_applied:')
     expect(workflow).not.toContain('repair_reverted:')
+    expect(workflow).toContain('- name: Guard Stage B Storage handoff')
+    expect(workflow).toContain('SQA_REVIEW_ATTACHMENTS_BUCKET_STILL_EXISTS')
+    expect(workflow.indexOf('- name: Guard Stage B Storage handoff'))
+      .toBeLessThan(workflow.indexOf('- name: Push pending migrations'))
   })
 
   it('verifies assignment migration versions and RPC security attributes', () => {
@@ -98,13 +109,17 @@ describe('production workflow guards', () => {
     expect(workflow).toContain("version = '20260716200422'")
     expect(workflow).toContain("version = '202607170001'")
     expect(workflow).toContain("version = '20260717123840'")
+    expect(workflow).toContain("version = '20260718073243'")
     expect(workflow).toContain("to_regprocedure('public.add_product_assignment(uuid,uuid)')")
     expect(workflow).toContain("to_regprocedure('public.add_duty_assignment(uuid,uuid)')")
     expect(workflow).toContain("to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)')")
     expect(workflow).toContain('direct_write_gate=')
     expect(workflow).toContain('review_resubmission_gate=')
-    expect(workflow).toContain("policyname = 'review_requests_update_self_pending_or_rejected'")
-    expect(workflow).toContain("to_regprocedure('public.resubmit_review_request(uuid,text)')")
+    expect(workflow).toContain("tablename in ('review_requests', 'review_feedback')")
+    expect(workflow).toContain("to_regprocedure('public.resubmit_review_request(uuid,timestamp with time zone,text)')")
+    expect(workflow).toContain("to_regprocedure('public.resubmit_review_request(uuid,text)') is null")
+    expect(workflow).toContain("has_schema_privilege('service_role', 'private', 'CREATE')")
+    expect(workflow).toContain('defaclnamespace = 0')
     expect(workflow).toContain("'public.review_requests', 'review_round', 'UPDATE'")
     expect(workflow).toContain('project_assignments_bump_project_revision')
     expect(workflow).toContain("to_regprocedure('public.bump_project_revision_from_assignment()')")
@@ -120,7 +135,8 @@ describe('production workflow guards', () => {
     expect(workflow).toContain("tgenabled in ('O', 'A')")
     expect(workflow).toContain('BEFORE INSERT OR UPDATE OF user_id')
     expect(workflow).toContain("pg_get_viewdef('public.public_leader_profiles'::regclass, true)")
-    expect(workflow).toContain("not has_column_privilege('authenticated', 'public.review_requests', 'status', 'UPDATE')")
+    expect(workflow).toContain("not has_table_privilege('authenticated', 'public.review_requests', 'UPDATE')")
+    expect(workflow).toContain("attname = 'attachment_url'")
     expect(workflow).toContain("to_regclass('private.review_status_events')")
     expect(workflow).toContain("to_regclass('private.audit_events')")
     expect(workflow).toContain('count(*) >= 13')
@@ -134,8 +150,8 @@ describe('production workflow guards', () => {
     expect(workflow).toContain("to_regprocedure('public.count_active_leaders_except(uuid)')")
     expect(workflow).toContain("pg_advisory_xact_lock")
     expect(workflow).toContain('transactional review activity-log')
-    expect(workflow).toContain("public.update_review_request_status(uuid,public.review_status)")
-    expect(workflow).toContain("policyname = 'review_feedback_insert_leader'")
+    expect(workflow).toContain("public.approve_review_request(uuid,timestamp with time zone)")
+    expect(workflow).toContain("tablename in ('review_requests', 'review_feedback') and cmd in ('INSERT', 'UPDATE', 'DELETE', 'ALL')")
     expect(workflow).toContain("pg_get_functiondef(to_regprocedure('public.is_active_leader()')) like '%password_is_current()%'")
     expect(workflow).toContain('role-only leader RLS policy')
     expect(workflow).toContain('leader_ui_gate=')
@@ -204,6 +220,7 @@ describe('production workflow guards', () => {
     expect(workflow).toContain("version = '20260716200422'")
     expect(workflow).toContain("version = '202607170001'")
     expect(workflow).toContain("version = '20260717123840'")
+    expect(workflow).toContain("version = '20260718073243'")
     expect(workflow).toContain("to_regprocedure('public.add_product_assignment(uuid,uuid)')")
     expect(workflow).toContain("to_regprocedure('public.add_duty_assignment(uuid,uuid)')")
     expect(workflow).toContain("to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)')")
@@ -216,15 +233,18 @@ describe('production workflow guards', () => {
     expect(workflow).toContain("provolatile = 'v'")
     expect(workflow).toContain('review_contract_ready=')
     expect(workflow).toContain('review_resubmission_ready=')
-    expect(workflow).toContain("policyname = 'review_requests_update_self_pending_or_rejected'")
-    expect(workflow).toContain("to_regprocedure('public.resubmit_review_request(uuid,text)')")
+    expect(workflow).toContain("tablename = 'review_requests' and cmd in ('INSERT', 'UPDATE', 'DELETE', 'ALL')")
+    expect(workflow).toContain("to_regprocedure('public.resubmit_review_request(uuid,timestamp with time zone,text)')")
+    expect(workflow).toContain("to_regprocedure('public.resubmit_review_request(uuid,text)') is null")
+    expect(workflow).toContain("has_schema_privilege('service_role', 'private', 'CREATE')")
+    expect(workflow).toContain('defaclnamespace = 0')
     expect(workflow).toContain('environment: production')
     expect(workflow).toContain('leader_view_ready=')
     expect(workflow).toContain('transactional review activity-log contract')
     expect(workflow).toContain('count(*) >= 13')
     expect(workflow).toContain("tgname = 'profile_notes_private_audit'")
     expect(workflow).toContain("tgname = 'announcements_private_audit'")
-    expect(workflow).toContain("policyname = 'review_feedback_insert_leader'")
+    expect(workflow).toContain("not has_table_privilege('authenticated', 'public.review_feedback', 'INSERT')")
     expect(workflow).toContain('role-only leader RLS policy')
     expect(workflow).toContain('leader_ui_ready=')
     expect(workflow).toContain("to_regprocedure('public.replace_product_assignments_with_reason(uuid,uuid[],text)')")
@@ -314,6 +334,12 @@ describe('production workflow guards', () => {
     expect(workflow).toContain('content-security-policy')
     expect(workflow).toContain('x-content-type-options:')
     expect(healthPosition).toBeGreaterThan(deployPosition)
+  })
+
+  it('does not retain blob image permission after attachment previews are removed', () => {
+    const headers = readPublicHeaders()
+    expect(headers).toContain("img-src 'self' data:")
+    expect(headers).not.toMatch(/img-src[^;]*\bblob:/)
   })
 
   it('probes the configured Supabase URL and anon key before building', () => {

@@ -34,6 +34,26 @@ if ($ProjectRef) {
   npx --yes "supabase@$SupabaseCliVersion" link --project-ref $ProjectRef
 }
 
+$stageBMigration = Join-Path $root 'supabase\migrations\20260718073243_finalize_review_workflow_hardening.sql'
+if (Test-Path -LiteralPath $stageBMigration) {
+  $preflightSql = @"
+select 'stage_b_storage_handoff_ok' where
+  not exists (select 1 from storage.objects where bucket_id = 'review-attachments')
+  and not exists (select 1 from storage.buckets where id = 'review-attachments');
+"@
+  $preflightFile = Join-Path ([System.IO.Path]::GetTempPath()) ("supabase-stage-b-preflight-{0}.sql" -f [Guid]::NewGuid().ToString('N'))
+  try {
+    Set-Content -Path $preflightFile -Value $preflightSql -Encoding UTF8
+    $preflightOutput = npx --yes "supabase@$SupabaseCliVersion" db query --linked --file $preflightFile 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0 -or $preflightOutput -notmatch 'stage_b_storage_handoff_ok') {
+      throw 'SQA_REVIEW_ATTACHMENTS_BUCKET_STILL_EXISTS: run the approved Storage API purge and verify objectCount=0, bucketExists=false before Stage B.'
+    }
+  }
+  finally {
+    Remove-Item -LiteralPath $preflightFile -Force -ErrorAction SilentlyContinue
+  }
+}
+
 Write-Host "Pushing migrations..."
 npx --yes "supabase@$SupabaseCliVersion" db push
 
@@ -146,9 +166,31 @@ select 'announcement_board_ok' where
   and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'announcements' and policyname = 'announcements_update_leader' and qual like '%is_active_leader()%' and with_check like '%is_active_leader()%')
   and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'announcements' and policyname = 'announcements_delete_leader' and qual like '%is_active_leader()%');
 select 'latest_migration_version_ok' where
-  exists (select 1 from supabase_migrations.schema_migrations where version = '20260716200422');
-select id from storage.buckets where id = 'review-attachments';
-select policyname from pg_policies where tablename = 'review_requests' and policyname in ('review_requests_update_self_pending', 'review_requests_delete_self_pending');
+  exists (select 1 from supabase_migrations.schema_migrations where version = '20260718073243');
+select 'review_stage_b_cleanup_ok' where
+  not exists (select 1 from storage.buckets where id = 'review-attachments')
+  and not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname like 'review_attachments_%')
+  and not exists (select 1 from pg_attribute where attrelid = 'public.review_requests'::regclass and attname = 'attachment_url' and not attisdropped)
+  and to_regprocedure('public.mark_password_changed()') is null
+  and not has_table_privilege('authenticated', 'public.review_requests', 'INSERT')
+  and not has_table_privilege('authenticated', 'public.review_requests', 'UPDATE')
+  and not has_table_privilege('authenticated', 'public.review_requests', 'DELETE')
+  and not has_table_privilege('authenticated', 'public.review_feedback', 'INSERT')
+  and not has_table_privilege('authenticated', 'public.review_feedback', 'UPDATE')
+  and not has_table_privilege('authenticated', 'public.review_feedback', 'DELETE')
+  and to_regprocedure('public.update_review_request_status(uuid,public.review_status)') is null
+  and to_regprocedure('public.reject_review_request(uuid,text)') is null
+  and to_regprocedure('public.reopen_review_request(uuid)') is null
+  and to_regprocedure('public.resubmit_review_request(uuid,text)') is null
+  and not has_schema_privilege('anon', 'public', 'USAGE')
+  and has_schema_privilege('authenticated', 'public', 'USAGE')
+  and not has_schema_privilege('authenticated', 'public', 'CREATE')
+  and has_schema_privilege('service_role', 'public', 'USAGE')
+  and not has_schema_privilege('service_role', 'public', 'CREATE')
+  and not has_schema_privilege('authenticated', 'private', 'USAGE')
+  and has_schema_privilege('service_role', 'private', 'USAGE')
+  and not has_schema_privilege('service_role', 'private', 'CREATE')
+  and exists (select 1 from pg_default_acl where defaclrole = 'postgres'::regrole and defaclnamespace = 0 and defaclobjtype = 'f' and defaclacl::text not like '%{=X%' and defaclacl::text not like '%,=X%' and defaclacl::text not like '%anon=X%' and defaclacl::text not like '%authenticated=X%' and defaclacl::text not like '%service_role=X%');
 select 'realtime_pub_' || tablename from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'review_requests';
 "@
 
@@ -156,7 +198,7 @@ $tempSql = Join-Path ([System.IO.Path]::GetTempPath()) ("supabase-verify-{0}.sql
 try {
   Set-Content -Path $tempSql -Value $verificationSql -Encoding UTF8
 
-  Write-Host "Verifying RPC functions, storage bucket, review RLS, and announcement-board invariants..."
+  Write-Host "Verifying RPC functions, Stage B cleanup/ACL, review RLS, and announcement-board invariants..."
   $verifyOutput = npx --yes "supabase@$SupabaseCliVersion" db query --linked --file $tempSql 2>&1 | Out-String
 
   if ($LASTEXITCODE -ne 0) {
@@ -181,28 +223,17 @@ try {
     'assignment_rpc_security_ok',
     'profile_note_private_audit_ok',
     'announcement_board_ok',
-    'latest_migration_version_ok'
-  )
-  $expectedPolicies = @(
-    'review_requests_update_self_pending',
-    'review_requests_delete_self_pending'
+    'latest_migration_version_ok',
+    'review_stage_b_cleanup_ok'
   )
 
   $missingRpc = @($expectedRpc | Where-Object { $verifyOutput -notmatch [regex]::Escape($_) })
-  $missingBucket = $verifyOutput -notmatch 'review-attachments'
-  $missingPolicies = @($expectedPolicies | Where-Object { $verifyOutput -notmatch [regex]::Escape($_) })
   $missingRealtime = $verifyOutput -notmatch 'realtime_pub_review_requests'
 
-  if ($missingRpc.Count -gt 0 -or $missingBucket -or $missingPolicies.Count -gt 0 -or $missingRealtime) {
+  if ($missingRpc.Count -gt 0 -or $missingRealtime) {
     Write-Warning "Verification incomplete — check results:"
     if ($missingRpc.Count -gt 0) {
       Write-Warning "  Missing verification marker: $($missingRpc -join ', ')"
-    }
-    if ($missingBucket) {
-      Write-Warning "  Missing storage bucket: review-attachments"
-    }
-    if ($missingPolicies.Count -gt 0) {
-      Write-Warning "  Missing policies: $($missingPolicies -join ', ')"
     }
     if ($missingRealtime) {
       Write-Warning "  Missing realtime publication table: review_requests (202607090001)"

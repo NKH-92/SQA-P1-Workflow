@@ -92,6 +92,56 @@ export function summarizeObjects(objects) {
   }
 }
 
+function hasStorageHttpStatus(error, expectedStatus) {
+  return [error?.status, error?.httpStatusCode, error?.statusCode]
+    .some((candidate) => Number(candidate) === expectedStatus)
+}
+
+export function isMissingBucketError(error) {
+  if (!error) return false
+  const codes = [error.statusCode, error.code, error.error]
+    .filter((value) => typeof value === 'string')
+    .map((value) => value.toLowerCase())
+  if (codes.includes('nosuchbucket') || codes.includes('bucketnotfound')) return true
+
+  const message = String(error.message ?? '').toLowerCase()
+  return hasStorageHttpStatus(error, 404)
+    && message.includes('bucket')
+    && (message.includes('not found') || message.includes('does not exist') || message.includes('missing'))
+}
+
+export async function getBucketPresence(storageClient, bucket) {
+  const { data, error } = await storageClient.getBucket(bucket)
+  if (error) {
+    if (isMissingBucketError(error)) return { exists: false }
+    throw error
+  }
+  if (data == null) {
+    throw new Error('Storage getBucket returned neither bucket data nor an error.')
+  }
+  return { exists: true }
+}
+
+export async function deleteEmptyBucket(storageClient, bucket) {
+  const { error } = await storageClient.deleteBucket(bucket)
+  if (error && !isMissingBucketError(error)) {
+    return {
+      bucketDeleted: false,
+      bucketAlreadyAbsent: false,
+      bucketExistsAfter: null,
+      errorCode: error.statusCode ?? error.status ?? 'storage_bucket_delete_failed',
+    }
+  }
+
+  const finalPresence = await getBucketPresence(storageClient, bucket)
+  return {
+    bucketDeleted: error == null,
+    bucketAlreadyAbsent: error != null,
+    bucketExistsAfter: finalPresence.exists,
+    errorCode: finalPresence.exists ? 'storage_bucket_still_exists' : null,
+  }
+}
+
 export async function removeInBatches(bucketClient, objects) {
   const failures = []
   for (let index = 0; index < objects.length; index += DELETE_BATCH_SIZE) {
@@ -131,22 +181,54 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     auth: { persistSession: false, autoRefreshToken: false },
   })
   const bucketClient = client.storage.from(bucket)
-  const objects = await listAllObjects(bucketClient)
+  const bucketPresence = await getBucketPresence(client.storage, bucket)
+  const objects = bucketPresence.exists ? await listAllObjects(bucketClient) : []
   const inventory = summarizeObjects(objects)
   const report = {
     generatedAt: new Date().toISOString(),
     mode: options.execute ? 'execute' : 'dry-run',
     bucket,
     target,
+    bucketExists: bucketPresence.exists,
     inventory,
   }
 
-  console.log(JSON.stringify({ bucket, ...inventory }))
+  console.log(JSON.stringify({ bucket, bucketExists: bucketPresence.exists, ...inventory }))
   if (options.verbose) console.error(JSON.stringify({ objectNames: objects.map((object) => object.name) }))
 
   if (!options.execute) {
     if (options.outputPath) {
       console.log(JSON.stringify({ reportPath: await saveReport(options.outputPath, report) }))
+    }
+    return 0
+  }
+
+  if (!bucketPresence.exists) {
+    const terminalPresence = await getBucketPresence(client.storage, bucket)
+    report.execution = {
+      attemptedObjectCount: 0,
+      failedObjectCount: 0,
+      failedBatchCount: 0,
+      verifiedRemainingObjectCount: 0,
+      verifiedRemainingTotalBytes: 0,
+      verifiedRemainingNameDigestSha256: inventory.nameDigestSha256,
+      bucketDeleteAttempted: false,
+      bucketDeleted: false,
+      bucketAlreadyAbsent: true,
+      bucketExistsAfter: terminalPresence.exists,
+      verifiedBucketAbsent: !terminalPresence.exists,
+      failures: [],
+    }
+    console.log(JSON.stringify(report.execution))
+    if (options.outputPath) {
+      console.log(JSON.stringify({ reportPath: await saveReport(options.outputPath, report) }))
+    }
+    if (terminalPresence.exists) {
+      console.error(JSON.stringify({
+        error: 'Bucket was recreated during absence verification.',
+        bucketExistsAfter: true,
+      }))
+      return 1
     }
     return 0
   }
@@ -161,19 +243,45 @@ export async function run(argv = process.argv.slice(2), env = process.env) {
     verifiedRemainingObjectCount: remainingInventory.objectCount,
     verifiedRemainingTotalBytes: remainingInventory.totalBytes,
     verifiedRemainingNameDigestSha256: remainingInventory.nameDigestSha256,
+    bucketDeleteAttempted: false,
+    bucketDeleted: false,
+    bucketAlreadyAbsent: false,
+    bucketExistsAfter: true,
+    verifiedBucketAbsent: false,
     failures,
   }
   report.execution = execution
-  console.log(JSON.stringify(execution))
-
-  if (options.outputPath) {
-    console.log(JSON.stringify({ reportPath: await saveReport(options.outputPath, report) }))
-  }
   if (failures.length > 0 || remainingObjects.length > 0) {
+    console.log(JSON.stringify(execution))
+    if (options.outputPath) {
+      console.log(JSON.stringify({ reportPath: await saveReport(options.outputPath, report) }))
+    }
     console.error(JSON.stringify({
       error: 'Purge verification failed.',
       failedObjectCount: execution.failedObjectCount,
       verifiedRemainingObjectCount: execution.verifiedRemainingObjectCount,
+    }))
+    return 1
+  }
+
+  const bucketDeletion = await deleteEmptyBucket(client.storage, bucket)
+  Object.assign(execution, {
+    bucketDeleteAttempted: true,
+    bucketDeleted: bucketDeletion.bucketDeleted,
+    bucketAlreadyAbsent: bucketDeletion.bucketAlreadyAbsent,
+    bucketExistsAfter: bucketDeletion.bucketExistsAfter,
+    verifiedBucketAbsent: bucketDeletion.bucketExistsAfter === false,
+    bucketDeleteErrorCode: bucketDeletion.errorCode,
+  })
+  console.log(JSON.stringify(execution))
+  if (options.outputPath) {
+    console.log(JSON.stringify({ reportPath: await saveReport(options.outputPath, report) }))
+  }
+  if (bucketDeletion.errorCode != null || bucketDeletion.bucketExistsAfter) {
+    console.error(JSON.stringify({
+      error: 'Bucket deletion verification failed.',
+      bucketDeleteErrorCode: bucketDeletion.errorCode,
+      bucketExistsAfter: bucketDeletion.bucketExistsAfter,
     }))
     return 1
   }

@@ -94,7 +94,7 @@
 | 항목 | 한도 (Free) | 점검 방법 | 주의 |
 |------|-------------|-----------|------|
 | Supabase DB | 500MB | Dashboard → Database → 사용량 | 10명 규모로는 수년치 여유 |
-| Supabase Storage | 1GB | Dashboard → Storage | 리뷰 첨부 기능 폐지. Stage A 배포 후 승인된 purge와 Stage B 제거가 끝날 때까지만 기존 버킷을 호환 유지 |
+| Supabase Storage | 1GB | Dashboard → Storage | 리뷰 첨부 기능 폐지. 승인된 purge와 Stage B 배포 후 `review-attachments` 버킷이 없어야 하며 신규 앱 버킷을 만들지 않음 |
 | Supabase 프로젝트 일시정지 | **7일 비활성 시 자동 pause** | — | 장기 연휴 주의 — 재개 절차는 [OPERATIONS.md](./OPERATIONS.md) 장애 확인 순서 참고 |
 | Supabase 자동 백업 | 없음 (Free 내장 백업 없음) | Actions **Backup DB** run green 확인 | 매일 자동 암호화 DB 백업(아티팩트 90일)이 복구 수단. 폐기 전 기존 Storage 객체는 별도 승인·보존 판단 필요([OPERATIONS.md](./OPERATIONS.md)) |
 | Cloudflare Workers | 10만 요청/일 | Dashboard → Workers 메트릭 | 10명 규모로는 도달 불가 |

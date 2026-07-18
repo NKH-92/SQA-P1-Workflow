@@ -39,9 +39,13 @@ describe('review workflow hardening Stage B migration', () => {
 
   it('splits disposable migration replay around the same Storage API handoff', () => {
     for (const workflow of [ciWorkflow, deployWorkflow]) {
-      expect(workflow).toContain('supabase db reset --version 20260718054127')
+      expect(workflow).toContain('held_migration="$RUNNER_TEMP/$(basename "$stage_b_migration")"')
+      expect(workflow).toContain('mv "$stage_b_migration" "$held_migration"')
+      expect(workflow).toContain('trap restore_stage_b EXIT')
       expect(workflow).toContain('node scripts/purge-review-attachments.mjs --execute --confirm=PURGE_REVIEW_ATTACHMENTS')
       expect(workflow).toContain('supabase migration up --local')
+      expect(workflow.indexOf('node scripts/purge-review-attachments.mjs --execute'))
+        .toBeGreaterThan(workflow.indexOf('supabase start'))
       expect(workflow.indexOf('supabase migration up --local'))
         .toBeGreaterThan(workflow.indexOf('node scripts/purge-review-attachments.mjs --execute'))
     }

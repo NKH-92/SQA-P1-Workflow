@@ -38,10 +38,20 @@ jobs:
         with:
           version: 2.109.1
       - run: npm ci
-      - name: Start local Supabase and apply pre-Stage-B migrations
+      - name: Start local Supabase with Stage B held back
         run: |
+          stage_b_migration="supabase/migrations/20260718073243_finalize_review_workflow_hardening.sql"
+          held_migration="$RUNNER_TEMP/$(basename "$stage_b_migration")"
+          restore_stage_b() {
+            if [ -f "$held_migration" ]; then
+              mv "$held_migration" "$stage_b_migration"
+            fi
+          }
+          trap restore_stage_b EXIT
+          mv "$stage_b_migration" "$held_migration"
           supabase start
-          supabase db reset --version 20260718054127
+          restore_stage_b
+          trap - EXIT
       - name: Remove disposable local attachment bucket through Storage API
         run: |
           eval "$(supabase status -o env)"

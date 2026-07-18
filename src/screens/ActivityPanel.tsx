@@ -7,6 +7,67 @@ import { formatDate } from '../lib/format'
 import { relativeDateLabel } from '../lib/dates'
 import { toUserMessage } from '../lib/errors'
 
+const SENSITIVE_AUDIT_FIELD = /(^|_)(password|encrypted_password|token|secret|service_key|session|credential)(_|$)/i
+
+function isSensitiveAuditField(field: string) {
+  return field !== 'must_change_password' && SENSITIVE_AUDIT_FIELD.test(field)
+}
+
+function safeAuditFields(event: AuditEvent) {
+  return event.changed_fields.filter((field) => !isSensitiveAuditField(field))
+}
+
+function safeAuditDelta(delta: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(delta).filter(([field]) => !isSensitiveAuditField(field)),
+  )
+}
+
+function auditValueText(value: unknown) {
+  if (value === null) return 'null'
+  if (value === undefined) return '—'
+  if (typeof value === 'string') return value
+  return JSON.stringify(value, null, 2)
+}
+
+function AuditEventDetails({ event }: { event: AuditEvent }) {
+  const fields = safeAuditFields(event)
+  const before = safeAuditDelta(event.before_delta)
+  const after = safeAuditDelta(event.after_delta)
+  const isLegacyLifecycle = event.action !== 'updated'
+    && fields.length === 1
+    && fields[0] === 'id'
+
+  if (isLegacyLifecycle) {
+    return <p className="audit-legacy-note">이전 감사 형식 — 상세 snapshot 없음</p>
+  }
+
+  return (
+    <details className="audit-event-details">
+      <summary>{event.action === 'updated' ? '필드별 변경 보기' : '업무 snapshot 보기'}</summary>
+      <div className="audit-field-list">
+        {fields.map((field) => (
+          <div className="audit-field" key={field}>
+            <strong>{field}</strong>
+            {event.action !== 'inserted' && (
+              <div>
+                <span>{event.action === 'updated' ? '이전' : '삭제 전'}</span>
+                <pre>{auditValueText(before[field])}</pre>
+              </div>
+            )}
+            {event.action !== 'deleted' && (
+              <div>
+                <span>{event.action === 'updated' ? '이후' : '생성 값'}</span>
+                <pre>{auditValueText(after[field])}</pre>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </details>
+  )
+}
+
 export function ActivityPanel({ data }: { data: AppData }) {
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<'activity' | 'audit'>('activity')
@@ -36,7 +97,18 @@ export function ActivityPanel({ data }: { data: AppData }) {
   }), [data.activityLogs, normalizedQuery])
   const visibleAudit = useMemo(() => auditEvents.filter((event) => {
     if (!normalizedQuery) return true
-    return [event.actor_name, event.entity_type, event.entity_id, event.action, event.reason, ...event.changed_fields]
+    const searchableBefore = JSON.stringify(safeAuditDelta(event.before_delta))
+    const searchableAfter = JSON.stringify(safeAuditDelta(event.after_delta))
+    return [
+      event.actor_name,
+      event.entity_type,
+      event.entity_id,
+      event.action,
+      event.reason,
+      ...safeAuditFields(event),
+      searchableBefore,
+      searchableAfter,
+    ]
       .filter(Boolean).join(' ').toLowerCase().includes(normalizedQuery)
   }), [auditEvents, normalizedQuery])
 
@@ -75,14 +147,15 @@ export function ActivityPanel({ data }: { data: AppData }) {
         </Section>
       ) : (
         <Section title="변경 필드 감사 이력" icon={<FileClock size={18} />}>
-          <p className="empty-copy" role="note">민감한 전체 행 대신 변경된 필드와 전후 값, 사유, 호출 출처만 저장합니다.</p>
+          <p className="empty-copy" role="note">명시적으로 허용된 업무 필드의 생성·삭제 snapshot과 수정 전후 값만 저장합니다.</p>
           {auditError && <p className="notice">감사 이력을 불러오지 못했습니다. {auditError}</p>}
           <div className="activity-list">
             {visibleAudit.map((event) => (
               <article className="activity-row" key={event.id}>
                 <div>
                   <strong>{event.actor_name ?? '시스템'} · {event.entity_type} {event.action}</strong>
-                  <small>{relativeDateLabel(event.changed_at)} · {event.changed_fields.join(', ') || '식별자'} · {event.reason ?? '사유 미기록'}</small>
+                  <small>{relativeDateLabel(event.changed_at)} · {safeAuditFields(event).join(', ') || '식별자'} · {event.reason ?? '사유 미기록'}</small>
+                  <AuditEventDetails event={event} />
                 </div>
                 <Badge status="pending">{event.source}</Badge>
               </article>

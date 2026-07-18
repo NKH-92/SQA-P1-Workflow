@@ -1,5 +1,14 @@
 # SQA P1 Workflow 로드맵
 
+## CAPA 2026-07-18 실행 상태
+
+| 패키지 | 상태 | 비고 |
+|---|---|---|
+| Phase 0 | 완료(로컬) / CI 재실행 대기 | 기준 SHA 로컬 gate green, GitHub runner provisioning failure 증적 |
+| WP1 audit integrity v3 | 로컬 구현 완료 / RLS CI 대기 | append-only migration, UI, contract/RLS test, readiness gate |
+| WP2–WP7 | 대기 | 선행 PR merge SHA green 후 순차 진행 |
+| WP8 Stage B | 운영자 승인 대기 | WP3 운영 배포·rollback window 종료·최신 backup 증적 전 merge 금지 |
+
 - 현재 위치: **Phase 0(운영 배포) 완료 — 2026-07-09 서명** ([MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md) 최종 서명·추가 배포 기록 참조). Phase 1(파일럿·운영 안착)이 다음 단계다.
 - 우선순위: ① 배포·운영 안착 → ② 알림 강화 → ③ 품질·테스트 보강 (통계·보고 확장은 후순위 보류).
 - 원칙: 사용자 10명, **전 구간 무료 티어 유지** (Supabase Free + Cloudflare Workers Free + GitHub Free).

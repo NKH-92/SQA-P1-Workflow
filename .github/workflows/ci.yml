@@ -104,12 +104,25 @@ jobs:
             node scripts/setup-rls-fixtures.mjs
           } >> "$GITHUB_ENV"
       - run: npm run test:rls
-      - name: Verify private status audit event
+      - name: Verify private status and authoritative mutation audit
         run: |
           count=$(psql "$SUPABASE_DB_URL" -tAc "select count(*) from private.review_status_events")
           [ "$count" -ge 1 ] || { echo "::error::RLS status RPC produced no private audit event"; exit 1; }
           mutation_count=$(psql "$SUPABASE_DB_URL" -tAc "select count(*) from private.audit_events")
           [ "$mutation_count" -ge 1 ] || { echo "::error::RLS fixtures produced no private mutation audit event"; exit 1; }
+          audit_v3_ready=$(psql "$SUPABASE_DB_URL" -tAc "select
+            exists (select 1 from supabase_migrations.schema_migrations where version = '20260718153410')
+            and to_regprocedure('private.build_audit_business_snapshot(text,jsonb)') is not null
+            and not has_function_privilege('authenticated', 'private.build_audit_business_snapshot(text,jsonb)', 'EXECUTE')
+            and not has_function_privilege('anon', 'private.build_audit_business_snapshot(text,jsonb)', 'EXECUTE')
+            and coalesce((select prosrc like '%v_after := v_new_sanitized%' and prosrc like '%schema_version%'
+                           from pg_proc where oid = to_regprocedure('private.record_mutation_audit()')), false)
+            and (select count(*) = 16 from pg_trigger
+                  where tgfoid = to_regprocedure('private.record_mutation_audit()') and tgenabled in ('O', 'A'))
+            and has_function_privilege('authenticated', 'public.list_audit_events(integer,bigint)', 'EXECUTE')
+            and not has_function_privilege('anon', 'public.list_audit_events(integer,bigint)', 'EXECUTE')
+            and exists (select 1 from private.audit_events where schema_version = 3)")
+          [ "$audit_v3_ready" = "t" ] || { echo "::error::Authoritative audit v3 readiness verification failed"; exit 1; }
       - if: ${{ always() }}
         run: supabase stop --no-backup
 

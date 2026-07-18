@@ -103,3 +103,18 @@ src/
 - 대형 화면(Projects·Master·Team) 컴포넌트 테스트 부재 — ROADMAP Phase 3-2·3-3.
 - `lib/activityLog.ts`의 I/O가 계층 예외로 남아 있다. client telemetry를 repository로 옮길 때
   원격 계약 테스트를 함께 이전한다.
+
+## 권위 있는 감사기록 v3
+
+`private.audit_events`는 사용자 안내용 `public.activity_logs`와 분리된 트랜잭션
+감사 원장이다. `private.record_mutation_audit()`가 원 업무 mutation과 같은 transaction에서
+기록하므로 감사 저장이 실패하면 업무 mutation도 실패한다.
+
+- INSERT는 엔터티별 명시적 allowlist의 생성 snapshot을 `after_delta`에 저장한다.
+- UPDATE는 allowlist 업무 필드 중 실제로 바뀐 값만 전후 delta로 저장한다.
+- DELETE는 삭제 직전 allowlist snapshot을 `before_delta`에 저장한다.
+- `updated_at` noise와 임의 `metadata`, credential 계열 필드는 allowlist에 없다.
+- 새 audit trigger entity가 helper allowlist에 없으면 mutation은
+  `SQA_AUDIT_ENTITY_UNSUPPORTED`로 fail-closed한다.
+- private schema/table/helper는 브라우저 역할에 노출하지 않고, active leader만
+  `public.list_audit_events`를 호출한다.

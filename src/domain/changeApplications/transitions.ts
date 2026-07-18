@@ -1,4 +1,4 @@
-import type { ActivityLogInput } from '../../data/repositories/activityLogWriter'
+import type { ActivityLogInput } from '../activityLog'
 import type {
   AppData,
   ChangeApplication,

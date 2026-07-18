@@ -8,7 +8,7 @@ import { daysUntil } from '../../lib/dates'
 import {
   selectProductChangeTaskContexts,
   type ProductChangeTaskContext,
-} from '../../data/selectors/changeTaskContexts'
+} from '../../domain/changeApplications/taskContexts'
 
 export { selectProductChangeTaskContexts, type ProductChangeTaskContext }
 

@@ -2,7 +2,7 @@ import type { AppData, Profile } from '../types'
 import type { TabId } from '../app/types'
 import { daysUntil, dueUrgency, eventTime, relativeDateLabel, relativeDaysAgo } from './dates'
 import { isReviewUnread, latestRelevantReviewEvent } from './readState'
-import { selectProductChangeTaskContexts } from '../features/change-applications/selectors'
+import { selectProductChangeTaskContexts } from '../domain/changeApplications/taskContexts'
 
 export type AppNotification = {
   id: string

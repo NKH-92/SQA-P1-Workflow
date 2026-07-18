@@ -1,14 +1,6 @@
-import type { ActivityEntityType, Profile } from '../../types'
+import type { ActivityLogInput } from '../../domain/activityLog'
 
-export type ActivityLogInput = {
-  actor: Profile
-  targetUserId?: string | null
-  entityType: ActivityEntityType
-  entityId?: string | null
-  action: string
-  summary: string
-  metadata?: Record<string, unknown>
-}
+export type { ActivityLogInput } from '../../domain/activityLog'
 
 export interface ActivityLogWriter {
   write(input: ActivityLogInput): Promise<void>

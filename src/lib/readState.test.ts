@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { AppData, Profile, ReviewEvent, ReviewRequest } from '../types'
-import { countUnreadReviews, isReviewUnread } from './readState'
+import {
+  buildReviewReadReceipts,
+  countUnreadReviews,
+  isReviewUnread,
+  latestRelevantReviewEventIdsByRequest,
+} from './readState'
 
 const leader: Profile = { id: 'leader', email: 'leader@example.com', name: '파트장', role: 'leader' }
 const member: Profile = { id: 'member', email: 'member@example.com', name: '파트원', role: 'member' }
@@ -16,6 +21,12 @@ const submitted: ReviewEvent = {
 const feedback: ReviewEvent = {
   ...submitted, id: 11, actor_id: leader.id, actor_name_snapshot: leader.name,
   event_type: 'feedback_added', from_status: null, to_status: null, transaction_id: 2,
+}
+const voidedFeedback: ReviewEvent = {
+  ...feedback,
+  id: 12,
+  event_type: 'feedback_voided',
+  transaction_id: 3,
 }
 
 function data(events: ReviewEvent[], lastSeen?: number): AppData {
@@ -43,5 +54,18 @@ describe('server-backed review read state', () => {
 
   it('uses the same request-level predicate for the navigation badge', () => {
     expect(countUnreadReviews(leader, data([submitted]))).toBe(1)
+  })
+
+  it('uses feedback_voided as the latest relevant member event for every receipt projection', () => {
+    expect(isReviewUnread(request, member, data([feedback, voidedFeedback]))).toBe(true)
+    expect(latestRelevantReviewEventIdsByRequest([request], member, [feedback, voidedFeedback]))
+      .toEqual(new Map([[request.id, 12]]))
+    expect(buildReviewReadReceipts([request], member, [feedback, voidedFeedback], '2026-07-18T00:02:00.000Z'))
+      .toEqual([{
+        user_id: member.id,
+        review_request_id: request.id,
+        last_seen_event_id: 12,
+        read_at: '2026-07-18T00:02:00.000Z',
+      }])
   })
 })

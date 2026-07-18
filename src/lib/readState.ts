@@ -1,4 +1,4 @@
-import type { AppData, Profile, ReviewEvent, ReviewRequest } from '../types'
+import type { AppData, Profile, ReviewEvent, ReviewReadReceipt, ReviewRequest } from '../types'
 
 const leaderRelevantEvents = new Set<ReviewEvent['event_type']>(['submitted', 'resubmitted'])
 const memberRelevantEvents = new Set<ReviewEvent['event_type']>([
@@ -24,6 +24,42 @@ export function latestRelevantReviewEvent(
     if (event.review_request_id !== request.id || !isRelevantReviewEvent(event, request, profile)) return latest
     return !latest || Number(event.id) > Number(latest.id) ? event : latest
   }, null)
+}
+
+export function latestRelevantReviewEventIdsByRequest(
+  requests: ReviewRequest[],
+  profile: Profile,
+  events: ReviewEvent[],
+): Map<string, number> {
+  const requestsById = new Map(requests.map((request) => [request.id, request]))
+  const latestByRequest = new Map<string, number>()
+
+  for (const event of events) {
+    const request = requestsById.get(event.review_request_id)
+    if (!request || !isRelevantReviewEvent(event, request, profile)) continue
+    latestByRequest.set(
+      request.id,
+      Math.max(latestByRequest.get(request.id) ?? 0, Number(event.id)),
+    )
+  }
+
+  return latestByRequest
+}
+
+export function buildReviewReadReceipts(
+  requests: ReviewRequest[],
+  profile: Profile,
+  events: ReviewEvent[],
+  readAt = new Date().toISOString(),
+): ReviewReadReceipt[] {
+  return [...latestRelevantReviewEventIdsByRequest(requests, profile, events)].map(
+    ([reviewRequestId, lastSeenEventId]) => ({
+      user_id: profile.id,
+      review_request_id: reviewRequestId,
+      last_seen_event_id: lastSeenEventId,
+      read_at: readAt,
+    }),
+  )
 }
 
 /** 목록 dot, 사이드바 뱃지, 알림 센터가 같은 서버 영수증 판정을 공유한다. */

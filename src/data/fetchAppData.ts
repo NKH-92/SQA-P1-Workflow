@@ -16,7 +16,7 @@ export { mergeAnnouncements, sortAnnouncements } from './announcementCollection'
 
 export type FetchAppDataResult = AssembledAppData
 
-export const REVIEW_REQUEST_SELECT = 'id,requester_id,title,description,due_date,status,review_round,rejection_count,last_submitted_at,status_changed_at,closed_at,withdrawn_at,withdrawn_by,withdrawal_reason,created_at,updated_at,profiles(name,email),review_feedback(id,review_request_id,leader_id,author_role,comment,created_at,updated_at,voided_at,voided_by,void_reason,profiles(name))'
+export const REVIEW_REQUEST_SELECT = 'id,requester_id,title,description,due_date,status,review_round,rejection_count,last_submitted_at,status_changed_at,closed_at,withdrawn_at,withdrawn_by,withdrawal_reason,created_at,updated_at,profiles!review_requests_requester_id_fkey(name,email),review_feedback(id,review_request_id,leader_id,author_role,comment,created_at,updated_at,voided_at,voided_by,void_reason,profiles!review_feedback_leader_id_fkey(name))'
 
 // Pending requests remain visible regardless of age so members can always
 // finish work in progress. Closed requests are intentionally bounded to the

@@ -28,6 +28,13 @@ describe('review request load budget', () => {
     expect(REVIEW_REQUEST_SELECT).not.toContain('*')
   })
 
+  it('pins profile embeds to the intended foreign keys after review audit relationships are added', () => {
+    expect(REVIEW_REQUEST_SELECT).toContain('profiles!review_requests_requester_id_fkey(name,email)')
+    expect(REVIEW_REQUEST_SELECT).toContain('profiles!review_feedback_leader_id_fkey(name)')
+    expect(REVIEW_REQUEST_SELECT.match(/profiles!/g)).toHaveLength(2)
+    expect(REVIEW_REQUEST_SELECT).not.toMatch(/(^|,)profiles\(/)
+  })
+
   it('uses the same six-month boundary as the dashboard history window', () => {
     expect(REVIEW_HISTORY_MONTHS).toBe(6)
     expect(reviewHistoryCutoff(new Date('2026-07-11T00:00:00.000Z'))).toBe('2026-01-11T00:00:00.000Z')

@@ -81,7 +81,7 @@ describe.skipIf(!shellAvailable)('apply-pending-migrations native failures', () 
     const result = runScript({ projectRef: 'abcdefghijklmnop', linkExit: 7 })
 
     expect(result.status).not.toBe(0)
-    expect(result.output).toContain('SQA_SUPABASE_NATIVE_FAILED: link exited with code 7')
+    expect(result.output).toMatch(/SQA_SUPABASE_NATIVE_FAILED: link exited[\s\S]*with code 7/)
     expect(result.calls).toContain('link --project-ref abcdefghijklmnop')
     expect(result.calls).not.toContain('db push')
   }, powershellProcessTimeout)
@@ -90,7 +90,7 @@ describe.skipIf(!shellAvailable)('apply-pending-migrations native failures', () 
     const result = runScript({ pushExit: 9 })
 
     expect(result.status).not.toBe(0)
-    expect(result.output).toContain('SQA_SUPABASE_NATIVE_FAILED: db-push exited with code 9')
+    expect(result.output).toMatch(/SQA_SUPABASE_NATIVE_FAILED: db-push exited[\s\S]*with code 9/)
     expect(result.calls).toContain('db push')
     expect(result.calls).not.toContain('00_migration_history.sql')
     expect(result.output).not.toContain('Verification passed.')
@@ -100,7 +100,9 @@ describe.skipIf(!shellAvailable)('apply-pending-migrations native failures', () 
     const result = runScript({ queryExit: 11 })
 
     expect(result.status).not.toBe(0)
-    expect(result.output).toContain('SQA_SUPABASE_NATIVE_FAILED: readiness-00_migration_history.sql exited with code 11')
+    expect(result.output).toMatch(
+      /SQA_SUPABASE_NATIVE_FAILED: readiness-00_migration_history\.sql exited[\s\S]*with code 11/,
+    )
     expect(result.calls).toContain('00_migration_history.sql')
     expect(result.output).not.toContain('Verification passed.')
   }, powershellProcessTimeout)

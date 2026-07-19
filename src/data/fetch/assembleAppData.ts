@@ -1,7 +1,4 @@
 import type {
-  ActivityLog,
-  AllowedUser,
-  Announcement,
   AppData,
   ChangeActionItem,
   ChangeApplication,
@@ -16,75 +13,29 @@ import type {
   Profile,
   Project,
   ProjectAssignment,
-  ReviewRequest,
   ReviewEvent,
   ReviewReadReceipt,
+  ReviewRequest,
 } from '../../types'
-
-type QueryResult<T> = { data: T | null; error: unknown }
-type SettledQueryResult<T> = PromiseSettledResult<QueryResult<T>>
+import { createEmptyAppData } from '../appData'
+import type { ChangeQueryResults } from './changeQueries'
+import type { CoreQueryResults } from './coreQueries'
+import type { OptionalQueryResults, SettledQueryResult } from './optionalQueries'
+import type { ReviewQueryResults } from './reviewQueries'
 
 export type AssembledAppData = AppData & {
   optionalWarnings: string[]
 }
 
-export type CoreAppDataResults = {
-  profilesResult: QueryResult<Profile[]>
-  productsResult: QueryResult<Product[]>
-  dutyMajorCategoriesResult: QueryResult<DutyMajorCategory[]>
-  dutiesResult: QueryResult<Duty[]>
-  productAssignmentsResult: QueryResult<ProductAssignment[]>
-  dutyAssignmentsResult: QueryResult<DutyAssignment[]>
-  reviewRequestsResult: QueryResult<ReviewRequest[]>
-  reviewEventsResult?: QueryResult<ReviewEvent[]>
-  reviewReadReceiptsResult?: QueryResult<ReviewReadReceipt[]>
-  projectsResult: QueryResult<Project[]>
-  projectAssignmentsResult: QueryResult<ProjectAssignment[]>
-  changeApplicationsResult: QueryResult<ChangeApplication[]>
-  changeActionItemsResult: QueryResult<ChangeActionItem[]>
-  productChangeTasksResult: QueryResult<ProductChangeTask[]>
-  changeProductScopeResult: QueryResult<ChangeProductScopeRow[]>
-  changeAssigneeOptionsResult: QueryResult<ChangeAssigneeOption[]>
-}
-
-export type OptionalAppDataResults = readonly [
-  SettledQueryResult<AllowedUser[]>,
-  SettledQueryResult<AppData['profileNotes']>,
-  SettledQueryResult<ActivityLog[]>,
-  SettledQueryResult<Array<Pick<Profile, 'id' | 'name'>>>,
-  SettledQueryResult<Announcement[]>,
-]
+export type CoreAppDataResults = CoreQueryResults & ReviewQueryResults & ChangeQueryResults
+export type OptionalAppDataResults = OptionalQueryResults
 
 type ReviewRequestMerger = (
   pending: ReviewRequest[] | null | undefined,
   recentClosed: ReviewRequest[] | null | undefined,
 ) => ReviewRequest[]
 
-export function emptyAppData(): AppData {
-  return {
-    announcements: [],
-    changeApplications: [],
-    changeActionItems: [],
-    productChangeTasks: [],
-    changeProductScope: [],
-    changeAssigneeOptions: [],
-    profiles: [],
-    allowedUsers: [],
-    products: [],
-    dutyMajorCategories: [],
-    duties: [],
-    productAssignments: [],
-    dutyAssignments: [],
-    reviewRequests: [],
-    reviewEvents: [],
-    reviewReadReceipts: [],
-    auditEvents: [],
-    projects: [],
-    projectAssignments: [],
-    profileNotes: [],
-    activityLogs: [],
-  }
-}
+export const emptyAppData = createEmptyAppData
 
 function optionalDataOrWarning<T>(
   result: SettledQueryResult<T>,
@@ -126,7 +77,7 @@ export function assembleAppData(
 
   let profiles = (profilesResult.data ?? []) as Profile[]
   const leaderProfiles = optionalDataOrWarning(
-    optionalResults[3],
+    optionalResults.leaderProfiles,
     '파트장 프로필',
     optionalWarnings,
     [] as Array<Pick<Profile, 'id' | 'name'>>,
@@ -148,10 +99,10 @@ export function assembleAppData(
   }
 
   // Warning order is user-visible and intentionally differs from query order.
-  const announcements = optionalDataOrWarning(optionalResults[4], '공지', optionalWarnings, previous.announcements)
-  const allowedUsers = optionalDataOrWarning(optionalResults[0], '초대 목록', optionalWarnings, previous.allowedUsers)
-  const profileNotes = optionalDataOrWarning(optionalResults[1], '프로필 메모', optionalWarnings, previous.profileNotes)
-  const activityLogs = optionalDataOrWarning(optionalResults[2], '활동 로그', optionalWarnings, previous.activityLogs)
+  const announcements = optionalDataOrWarning(optionalResults.announcements, '공지', optionalWarnings, previous.announcements)
+  const allowedUsers = optionalDataOrWarning(optionalResults.allowedUsers, '초대 목록', optionalWarnings, previous.allowedUsers)
+  const profileNotes = optionalDataOrWarning(optionalResults.profileNotes, '프로필 메모', optionalWarnings, previous.profileNotes)
+  const activityLogs = optionalDataOrWarning(optionalResults.activityLogs, '활동 로그', optionalWarnings, previous.activityLogs)
 
   return {
     announcements,

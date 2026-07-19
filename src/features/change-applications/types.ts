@@ -1,8 +1,20 @@
 import type {
+  AppData,
   ChangeActionKind,
   ChangeApplicationSource,
   ProductChangeTaskStatus,
 } from '../../types'
+
+export type ChangeApplicationFeatureData = Pick<
+  AppData,
+  | 'changeApplications'
+  | 'changeActionItems'
+  | 'productChangeTasks'
+  | 'changeProductScope'
+  | 'products'
+  | 'productAssignments'
+  | 'profiles'
+>
 
 export type { ChangeApplicationInput, ChangeTaskDraft } from '../../data/contracts'
 

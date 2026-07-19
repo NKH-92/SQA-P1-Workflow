@@ -8,13 +8,16 @@ function freshness(announcement: Announcement): number {
 export function sortAnnouncements(items: Announcement[]): Announcement[] {
   return [...items].sort((left, right) => {
     if (left.is_pinned !== right.is_pinned) return left.is_pinned ? -1 : 1
-    if (left.is_pinned && right.is_pinned) {
-      const pinnedDifference =
-        Date.parse(right.pinned_at ?? right.created_at) - Date.parse(left.pinned_at ?? left.created_at)
-      if (pinnedDifference !== 0) return pinnedDifference
-    }
-    const createdDifference = Date.parse(right.created_at) - Date.parse(left.created_at)
-    return createdDifference !== 0 ? createdDifference : right.id.localeCompare(left.id)
+
+    const leftTime = Date.parse(
+      left.is_pinned ? left.pinned_at ?? left.updated_at ?? left.created_at : left.created_at,
+    )
+    const rightTime = Date.parse(
+      right.is_pinned ? right.pinned_at ?? right.updated_at ?? right.created_at : right.created_at,
+    )
+
+    if (leftTime !== rightTime) return rightTime - leftTime
+    return right.id.localeCompare(left.id)
   })
 }
 

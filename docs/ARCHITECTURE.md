@@ -1,120 +1,79 @@
-# 아키텍처 개요
+# 아키텍처
 
-SQA P1 Workflow의 현행 구조와 유지보수 규칙. 코드가 곧 사실이며, 이 문서는 "어디를 어떻게 고치는가"의 지도다.
+이 문서는 현재 코드의 유지보수 경계를 설명한다. 기능·UI 문구·DOM/ARIA·해시 경로·권한·RPC 인자는 호환 계약이며, 구조 변경만으로 바꾸지 않는다.
 
-## 시스템 한 줄 요약
+## 런타임 구조
 
-10인 SQA 파트의 업무 배정·검토요청·프로젝트 현황을 관리하는 SPA.
-React 18 + TypeScript + Vite, 백엔드는 Supabase(Postgres + Auth, RLS가 권한의 원천),
-배포는 Cloudflare Workers 정적 자산. 라우팅은 URL 해시(`#/reviews?id=...`) 기반.
+SQA P1 Workflow는 React 18 + TypeScript + Vite SPA다. Supabase Auth/Postgres/RLS가 인증과 영속 권한을 담당하고 Cloudflare Worker가 정적 자산을 제공한다. URL은 `#/reviews?id=...` 형식의 해시 경로를 사용한다.
 
-## 소스 구조
-
-```
-src/
-├─ main.tsx / App.tsx        진입점. App은 인증·데이터·내비 훅을 조립하고 화면을 분기한다
-├─ app/                      앱 셸 계층
-│  ├─ AppRoutes.tsx          탭 → 화면 매핑 (역할 가드 포함)
-│  ├─ hooks/                 useAppData(세대 토큰 refresh) · useAuthProfile(부트스트랩)
-│  │                         · useMutationRunner(재진입 가드) · useHashNavigation · usePreviewRoleChange
-│  │                         · useBackgroundRefresh(5분 폴링+창 복귀) · useRealtimeReviewInserts(INSERT 구독)
-│  │                         · useDesktopNotifications(파트장 OS 알림 — 실패는 조용히 무시)
-│  ├─ types.ts               UI 계층 타입 (TabId 재수출, MutateFn, ToastMessage …)
-│  └─ constants.ts           emptyData, deleteWarnings
-├─ data/                     데이터 접근 계층 (UI는 여기의 함수만 호출)
-│  ├─ index.ts               공개 API (mutations 재수출)
-│  ├─ fetchAppData.ts        전체 AppData 로드 (원격)
-│  ├─ repositoryContext.ts   createRepositoryContext → { profile, data, setData, isRemote }
-│  ├─ repositories/types.ts  Review/Project/Master Repository 인터페이스 + RepositoryDeps
-│  ├─ local/                 데모(preview) 구현 — appDataReducers 순수 리듀서 사용
-│  ├─ remote/                Supabase 구현 — 상태 전이·원자적 다중행 쓰기는 RPC, 단순 CRUD는 RLS+행수/OCC 가드
-│  └─ mutations/             도메인별 뮤테이션 진입점. reviews/projects는 repository에 위임,
-│                            master는 일부 인라인 분기 잔존(ROADMAP Phase 3-4에서 위임 예정)
-├─ features/                 기능 단위 (화면 컴포넌트·셀렉터·검증기·훅)
-│  ├─ master/                기준 구조 — products/duties/invites 하위 폴더 + shared/
-│  ├─ reviews/               selectors·validators·useReviewDraft·useReviewSelection
-│  │                         + components/ (List·Kanban·Detail·RequestItem·ComposerModal)
-│  ├─ projects/              selectors + components/ (Board·Card·ComposerModal·AssignmentEditModal)
-│  └─ dashboard/             prioritySelectors — 파트장 홈 우선순위 큐 (순수 함수, 테스트됨)
-├─ screens/                  탭 단위 화면. 상태·뮤테이션 배선을 소유하고 표현은 features에 위임
-├─ components/               공용 컴포넌트 (ui/ 프리미티브, CommandPalette, NotificationPanel, ErrorBoundary)
-├─ domain/permissions.ts     RLS 정책의 클라이언트 거울 (실행 가능한 문서 — 테스트로 고정)
-├─ hooks/                    공용 훅 (useTeamSummaries, useModalDismiss)
-├─ lib/                      순수 유틸과 브라우저/외부 adapter. dates·format·priority·csv는 순수,
-│                            activityLog·desktopNotifications는 DB/브라우저 I/O 예외
-├─ demo/ + demoData.ts       익명 데모 데이터 (preview 모드) — noPrivateSeedInSrc.test.ts가 익명성 강제
-├─ types/ + types.ts         도메인 타입 배럴 (domain.ts + view.ts)
-└─ security/                 회귀 가드 테스트 (사설 데이터 유입 금지)
+```text
+App / app hooks
+  -> screens (화면 조립과 presentation)
+    -> features (controller hooks, selectors, feature components)
+      -> data public API
+        -> RepositorySet composition root
+          -> local adapters | Supabase adapters
+domain (순수 전이/권한/공유 도메인 모델)
+lib (저수준 순수 유틸리티)
 ```
 
-## 계층 규칙
+## 계층별 책임
 
-- **의존 방향**: screens → features → lib/domain/types. features가 screens를 임포트하지 않는다.
-- **데이터 접근**: 업무 데이터는 `src/data`의 함수만 호출한다. client activity telemetry는
-  `lib` adapter를 화면이 호출하는 명시적 예외이며 repository로 이전할 부채다.
-- **local/remote 등가성**: 데모(local)와 원격(remote)은 같은 Repository 인터페이스를 구현하고,
-  검증 규칙(RLS 등가 가드)도 동일하게 동작해야 한다. 한쪽만 고치면 데모로 확인한 동작과 실서비스가 어긋난다.
-- **단일 기준 함수**: 마감 긴급도는 `lib/dates.ts`의 `dueUrgency`, 검토 정렬은 `lib/priority.ts`,
-  미확인 판정은 `lib/readState.ts`의 `isReviewUnread` — 화면마다 재구현하지 않는다.
-- **탭 목록의 원천**: `lib/navigation.ts`의 `APP_TABS`/`TabId`. `app/types.ts`가 재수출한다.
+- `src/domain`: React와 DB에 의존하지 않는 권한, 변경신청 상태 전이, 활동 로그 fact, 변경업무 context를 소유한다. 상태 전이는 actor, 시각, ID를 입력으로 받고 `{ data, logFacts }`를 반환한다.
+- `src/data`: 계약, 조회 pipeline, repository interface, local/remote adapter, mutation orchestration을 소유한다. UI 상태 setter는 React 타입이 아닌 `AppDataUpdater` 계약으로 받는다.
+- `src/data/repositories/createRepositorySet.ts`: local/remote 선택의 유일한 composition root다. `RepositoryContext`의 `mode`, `capabilities`, `repositories`는 필수다.
+- `src/features`: 화면별 controller hook, selector, validator, presentation component를 소유한다. controller가 mutation facade와 repository context를 사용하고 presentation은 adapter를 직접 선택하지 않는다.
+- `src/screens`: feature를 조립하고 화면 상태를 표시한다. DB adapter나 mutation 구현을 직접 import하지 않는다. 공지 정렬처럼 읽기 전용 collection selector는 허용한다.
+- `src/app`: 인증, refresh, hash navigation, desktop notification, command palette 단축키, mutation runner를 조립한다.
+- `src/lib`: 날짜, 표시, CSV, 오류, 알림 등 저수준 유틸리티다. DB write를 두지 않는다.
 
-## 권한 모델
+Supabase Auth 자체를 다루는 `AuthPanel`과 `PasswordChangePanel`은 repository 대상 업무 데이터가 아니므로 인증 client를 직접 사용한다.
 
-- 역할은 `leader`(파트장) / `member`(파트원) 둘뿐. 진짜 권한은 **Supabase RLS**가 강제하고,
-  클라이언트의 `domain/permissions.ts`는 그 거울이다(UI 표시용). RLS 정책을 바꾸면 둘 다 바꾼다.
-- `must_change_password=true`·`is_active=false`는 RLS 레벨에서 데이터 접근이 차단된다.
-- 위험한 쓰기(상태 전이, 배정 교체, 프로젝트 생성)는 SECURITY DEFINER RPC로만 수행한다.
+## Repository 계약
 
-## DB·마이그레이션
+`RepositorySet`은 review, announcement, project, team, change application, product admin, duty admin, invite admin, activity log writer를 제공한다. Product/Duty/Invite는 독립 interface와 독립 adapter object다. `src/data/mutations/master.ts`는 기존 import를 위한 re-export만 유지한다.
 
-- `supabase/migrations/`는 **append-only 불변 이력** — 절대 수정·병합하지 않는다.
-  규칙과 적용 절차는 [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md).
-- `src/migrations.test.ts`가 마이그레이션 텍스트를 회귀 고정한다. 새 마이그레이션 추가 시 함께 갱신.
+AppData 조회는 `coreQueries`, `reviewQueries`, `changeQueries`, `optionalQueries`, `auditQueries`로 나뉜다. optional 결과는 위치 기반 배열이 아닌 이름 있는 객체이며, 부분 실패 시 직전 정상 snapshot과 warning을 유지한다.
 
-## 실행 모드
+## 화면 구조
 
-| 모드 | Supabase env | 동작 |
-|---|---|---|
-| production / development | 필수 | 실 데이터. 누락 시 설정 오류 화면 |
-| preview | 비움 | 데모 데이터(src/demoData.ts), 로그인 없이 UI 확인. 역할 전환 토글 제공 |
+- Change Applications, Reviews, Projects, Team, Product/Duty/Invite Master, Announcements, Activity는 controller hook과 presentation이 분리되어 있다.
+- CommandPalette는 `commandPaletteModel.ts`의 순수 결과 모델과 UI keyboard controller로 분리된다.
+- Shell의 파생 count는 `shellModel.ts`, 밀도 저장은 `useDensityPreference.ts`에 있다.
+- feature 입력은 전체 AppData 대신 필요한 `Pick<AppData, ...>` 계약을 우선한다.
 
-## 테스트 지도
+## 강제되는 경계
 
-| 대상 | 위치 | 비고 |
-|---|---|---|
-| 순수 로직 (dates·priority·stats·csv·errors…) | `src/lib/*.test.ts` | |
-| 셀렉터·검증기 | `src/features/**/**.test.ts` | 우선순위 큐 포함 |
-| 데이터 계층 (mutations·reducers) | `src/data/**/*.test.ts` | 데모/원격 가드 등가성 |
-| 화면 렌더 | `src/screens/ReviewsPanel.test.tsx` | 다른 대형 화면은 ROADMAP Phase 3 |
-| 마이그레이션·스크립트 회귀 | `src/migrations.test.ts`, `src/scripts.test.ts` | |
-| 보안 가드 | `src/security/noPrivateSeedInSrc.test.ts` | 사설 데이터 유입 금지 |
-| RLS 자동 테스트 | `tests/rls/` | `npm run test:rls`; env 미구성 시 fail-closed. CI·Deploy가 결정적 local fixture로 실행 |
+`npm run lint`는 ESLint 뒤에 `scripts/check-dependency-boundaries.mjs`를 실행한다. 이 검사는 import 문자열의 `../` 개수가 아니라 해석된 실제 경로를 사용한다.
 
-## 디자인
+- domain -> data/features/screens 금지
+- data -> features/screens 금지
+- features -> screens 금지
+- lib -> data/features/screens 금지
+- presentation -> data mutation/local/remote adapter 직접 import 금지
+- repository contract -> React import 금지
 
-토큰 계약은 [DESIGN.md](../DESIGN.md) — 색·크기·간격·라운드·그림자는 토큰으로만.
-`src/styles.css`가 유일한 스타일 파일이며 섹션 주석으로 구획한다.
+`scripts/fixtures/dependency-boundaries`의 깊은 상대경로 위반 fixture가 실패하는지 unit test로 고정한다.
 
-## 알려진 부채 (의도적 보류)
+## 단일 원천
 
-- `data/mutations/master.ts`의 add/update/import 경로에 `ctx.isRemote` 인라인 분기가 남아 있다 —
-  repository 위임으로 통일하는 작업은 [ROADMAP.md](./ROADMAP.md) Phase 3-4.
-- Shell 사이드바·CommandPalette의 탭 라벨 목록이 각자 유지된다(추가 시 두 곳 동기화 필요).
-- 대형 화면(Projects·Master·Team) 컴포넌트 테스트 부재 — ROADMAP Phase 3-2·3-3.
-- `lib/activityLog.ts`의 I/O가 계층 예외로 남아 있다. client telemetry를 repository로 옮길 때
-  원격 계약 테스트를 함께 이전한다.
+- 빈 AppData: `src/data/appData.ts`
+- 공지 정렬: `src/data/announcementCollection.ts`
+- repository 선택: `src/data/repositories/createRepositorySet.ts`
+- RLS 실행: `scripts/run-local-rls-gate.mjs`
+- readiness SQL 목록과 migration version: `scripts/sql/verify/manifest.json`
+- 역할별 navigation metadata: `src/lib/navigation.ts`
 
-## 권위 있는 감사기록 v3
+## 데이터베이스 불변조건
 
-`private.audit_events`는 사용자 안내용 `public.activity_logs`와 분리된 트랜잭션
-감사 원장이다. `private.record_mutation_audit()`가 원 업무 mutation과 같은 transaction에서
-기록하므로 감사 저장이 실패하면 업무 mutation도 실패한다.
+`supabase/migrations`의 기존 파일은 append-only 이력이다. 수정, 삭제, rename하지 않는다. schema 변경은 새 migration으로만 추가하고 manifest/migration contract/RLS fixture를 함께 갱신한다. 공개 mutation은 RLS와 RPC 권한을 우회하지 않는다.
 
-- INSERT는 엔터티별 명시적 allowlist의 생성 snapshot을 `after_delta`에 저장한다.
-- UPDATE는 allowlist 업무 필드 중 실제로 바뀐 값만 전후 delta로 저장한다.
-- DELETE는 삭제 직전 allowlist snapshot을 `before_delta`에 저장한다.
-- `updated_at` noise와 임의 `metadata`, credential 계열 필드는 allowlist에 없다.
-- 새 audit trigger entity가 helper allowlist에 없으면 mutation은
-  `SQA_AUDIT_ENTITY_UNSUPPORTED`로 fail-closed한다.
-- private schema/table/helper는 브라우저 역할에 노출하지 않고, active leader만
-  `public.list_audit_events`를 호출한다.
+## 검증 지도
+
+- 정적: typecheck, ESLint, dependency boundary checker
+- 도메인/데이터/UI: Vitest
+- 브라우저 계약: Playwright preview 10개 시나리오
+- DB 권한: pinned Supabase CLI + Docker의 full RLS gate
+- 산출물: production build + bundle budget + security header render
+
+세부 실행 순서는 [TEST_PLAN.md](./TEST_PLAN.md), 운영 차단 조건은 [OPERATIONS.md](./OPERATIONS.md)를 따른다.

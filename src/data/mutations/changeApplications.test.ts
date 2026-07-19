@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createPreviewData, previewLeader, previewMember } from '../../demoData'
 import type { AppData, Profile } from '../../types'
-import type { RepositoryContext } from '../repositoryContext'
+import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
 import {
   archiveChangeApplication,
   cancelProductChangeTask,
@@ -19,12 +19,10 @@ function harness(initial = createPreviewData()) {
   const setData: RepositoryContext['setData'] = (next) => {
     current = typeof next === 'function' ? next(current) : next
   }
-  const context = (profile: Profile): RepositoryContext => ({
-    isRemote: false,
-    profile,
+  const context = (profile: Profile): RepositoryContext => (createRepositoryContextFromDeps('local', {    profile,
     data: current,
     setData,
-  })
+  }))
   return { get data() { return current }, context }
 }
 
@@ -120,7 +118,11 @@ describe('local change application mutations', () => {
     const task = state.data.productChangeTasks.find((item) => item.action_item_id === actionId)!
 
     await cancelProductChangeTask(state.context(previewLeader), task.id, '적용 범위에서 제외')
-    const repository = createLocalChangeApplicationRepository(state.context(previewLeader))
+    const context = state.context(previewLeader)
+    const repository = createLocalChangeApplicationRepository({
+      ...context,
+      activityLogs: context.repositories.activityLogs,
+    })
 
     await expect(repository.saveChangeApplication({
       ...payload,
@@ -138,7 +140,11 @@ describe('local change application mutations', () => {
     const payload = input(state.data)
     const applicationId = await saveChangeApplication(state.context(previewLeader), payload, true)
     const before = state.data
-    const repository = createLocalChangeApplicationRepository(state.context(previewLeader))
+    const context = state.context(previewLeader)
+    const repository = createLocalChangeApplicationRepository({
+      ...context,
+      activityLogs: context.repositories.activityLogs,
+    })
 
     await expect(repository.saveChangeApplication({
       ...payload,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createProject, saveProjectAssignments } from './projects'
-import type { RepositoryContext } from '../repositoryContext'
+import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
 import type { AppData, Profile, Project } from '../../types'
 
 describe('createProject (demo)', () => {
@@ -44,7 +44,7 @@ describe('createProject (demo)', () => {
     }
 
     const projectId = await createProject(
-      { isRemote: false, profile: leader, data, setData },
+      createRepositoryContextFromDeps('local', {profile: leader, data, setData }),
       {
         project: {
           name: 'Demo Project',
@@ -138,7 +138,7 @@ describe('saveProjectAssignments (demo)', () => {
     }
 
     await saveProjectAssignments(
-      { isRemote: false, profile: leader, data, setData },
+      createRepositoryContextFromDeps('local', {profile: leader, data, setData }),
       {
         project,
         nextMemberIds: [memberB.id],

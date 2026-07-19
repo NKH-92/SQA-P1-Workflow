@@ -1,5 +1,8 @@
 # SQA P1 Workflow 유지보수 리팩토링 계획
 
+> 이 문서는 2026-07-17 실행 기록으로 보존합니다. 현재 교정 리팩토링의 authoritative plan은
+> [`docs/refactoring/MASTER_PLAN_2026-07-19.md`](refactoring/MASTER_PLAN_2026-07-19.md)입니다.
+
 > 상태: 실행 전 계획
 > 기준일: 2026-07-17
 > 작성 근거: 저장소 정적 점검, 현재 테스트/빌드 기준선, GPT-5.6 Sol Pro(Web AI) 검토

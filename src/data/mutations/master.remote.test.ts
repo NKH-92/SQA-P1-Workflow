@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppData, Profile } from '../../types'
-import type { RepositoryContext } from '../repositoryContext'
+import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
 
 const { activityLogMock, rpcMock, fromMock, trace } = vi.hoisted(() => {
   const callTrace: string[] = []
@@ -25,7 +25,7 @@ vi.mock('../../lib/supabase', () => ({
   hasSupabaseConfig: true,
   supabase: { rpc: rpcMock, from: fromMock },
 }))
-vi.mock('../../lib/activityLog', () => ({
+vi.mock('../activityLog', () => ({
   recordActivityLog: activityLogMock,
 }))
 
@@ -59,7 +59,7 @@ function remoteContext(profile: Profile = leader): RepositoryContext {
     profileNotes: [],
     activityLogs: [],
   }
-  return { isRemote: true, profile, data, setData: vi.fn() }
+  return createRepositoryContextFromDeps('remote', {profile, data, setData: vi.fn() })
 }
 
 describe('single assignment RPC contracts (remote)', () => {

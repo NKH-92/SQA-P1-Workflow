@@ -1,6 +1,10 @@
-import { recordActivityLog } from '../../lib/activityLog'
+import { recordActivityLog } from '../activityLog'
 import { UserFacingError } from '../../lib/errors'
 import { reviewStatusLabels } from '../../lib/format'
+import {
+  buildReviewReadReceipts,
+  latestRelevantReviewEvent,
+} from '../../lib/readState'
 import type { ReviewFeedback } from '../../types'
 import type { RepositoryDeps, ReviewRepository } from '../repositories/types'
 import {
@@ -26,7 +30,7 @@ import {
 } from './appDataReducers'
 
 export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewRepository {
-  const { profile, data, setData } = ctx
+  const { profile, data, setData, activityLogs } = ctx
 
   return {
     async saveReviewRequest({ editingReviewId, payload }) {
@@ -44,7 +48,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
           throw new UserFacingError('본인의 요청만 수정할 수 있습니다.')
         }
         setData((current) => updateReviewRequest(current, editingReviewId, payload))
-        await recordActivityLog(setData, {
+        await recordActivityLog(activityLogs, {
           actor: profile,
           entityType: 'review_request',
           entityId: editingReviewId,
@@ -57,7 +61,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
 
       const reviewId = newId('review')
       setData((current) => createReviewRequest(current, profile, reviewId, payload))
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         entityType: 'review_request',
         entityId: reviewId,
@@ -81,7 +85,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       }
       if (reason.trim().length < 2) throw new UserFacingError('회수 사유를 2자 이상 입력해 주세요.')
       setData((current) => withdrawReviewRequest(current, requestId, profile, reason.trim()))
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         entityType: 'review_request',
         entityId: requestId,
@@ -99,7 +103,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       assertCanReject(request.status)
       const feedbackId = newId('feedback')
       setData((current) => rejectReviewRequestReducer(current, requestId, profile, comment.trim(), feedbackId))
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         targetUserId: request?.requester_id ?? null,
         entityType: 'review_request',
@@ -116,7 +120,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       if (!request) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
       assertReviewStatusTransition(request.status, status)
       setData((current) => setReviewStatus(current, requestId, status, profile))
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         targetUserId: request?.requester_id ?? null,
         entityType: 'review_request',
@@ -133,7 +137,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       if (!request) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
       assertCanReopen(request.status)
       setData((current) => setReviewStatus(current, requestId, 'pending', profile))
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         targetUserId: request.requester_id,
         entityType: 'review_request',
@@ -157,7 +161,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       setData((current) =>
         resubmitReviewRequestReducer(current, requestId, profile, comment.trim(), feedbackId),
       )
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         entityType: 'review_request',
         entityId: requestId,
@@ -187,7 +191,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
         profiles: { name: profile.name },
       }
       setData((current) => appendReviewFeedback(current, requestId, item, profile))
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         targetUserId: request?.requester_id ?? null,
         entityType: 'review_feedback',
@@ -212,7 +216,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       const request = data.reviewRequests.find((item) => item.id === feedback.review_request_id)
       const trimmedComment = comment.trim()
       setData((current) => updateReviewFeedback(current, feedbackId, trimmedComment, profile))
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         targetUserId: request?.requester_id ?? null,
         entityType: 'review_feedback',
@@ -236,7 +240,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       if (reason.trim().length < 2) throw new UserFacingError('무효화 사유를 2자 이상 입력해 주세요.')
       const request = data.reviewRequests.find((item) => item.id === feedback.review_request_id)
       setData((current) => voidReviewFeedback(current, feedbackId, profile, reason.trim()))
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         targetUserId: request?.requester_id ?? null,
         entityType: 'review_feedback',
@@ -252,18 +256,18 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       if (!request || (profile.role !== 'leader' && request.requester_id !== profile.id)) {
         throw new UserFacingError('검토요청을 찾을 수 없습니다.')
       }
-      const relevantTypes = profile.role === 'leader'
-        ? new Set(['submitted', 'resubmitted'])
-        : new Set(['feedback_added', 'feedback_updated', 'approved', 'rejected', 'reopened'])
-      const latest = (data.reviewEvents ?? [])
-        .filter((event) => event.review_request_id === requestId && relevantTypes.has(event.event_type))
-        .reduce((max, event) => Math.max(max, event.id), 0)
-      if (latest === 0) return
+      const latest = latestRelevantReviewEvent(request, profile, data)
+      if (!latest) return
       setData((current) => ({
         ...current,
         reviewReadReceipts: [
           ...(current.reviewReadReceipts ?? []).filter((receipt) => !(receipt.user_id === profile.id && receipt.review_request_id === requestId)),
-          { user_id: profile.id, review_request_id: requestId, last_seen_event_id: latest, read_at: new Date().toISOString() },
+          {
+            user_id: profile.id,
+            review_request_id: requestId,
+            last_seen_event_id: Number(latest.id),
+            read_at: new Date().toISOString(),
+          },
         ],
       }))
     },
@@ -272,26 +276,12 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       const relevantRequests = data.reviewRequests.filter((request) =>
         profile.role === 'leader' || request.requester_id === profile.id,
       )
-      const relevantIds = new Set(relevantRequests.map((request) => request.id))
-      const relevantTypes = profile.role === 'leader'
-        ? new Set(['submitted', 'resubmitted'])
-        : new Set(['feedback_added', 'feedback_updated', 'approved', 'rejected', 'reopened'])
-      const latestByRequest = new Map<string, number>()
-      for (const event of data.reviewEvents ?? []) {
-        if (!relevantIds.has(event.review_request_id) || !relevantTypes.has(event.event_type)) continue
-        latestByRequest.set(event.review_request_id, Math.max(latestByRequest.get(event.review_request_id) ?? 0, event.id))
-      }
       const now = new Date().toISOString()
       setData((current) => ({
         ...current,
         reviewReadReceipts: [
           ...(current.reviewReadReceipts ?? []).filter((receipt) => receipt.user_id !== profile.id),
-          ...[...latestByRequest].map(([reviewRequestId, lastSeenEventId]) => ({
-            user_id: profile.id,
-            review_request_id: reviewRequestId,
-            last_seen_event_id: lastSeenEventId,
-            read_at: now,
-          })),
+          ...buildReviewReadReceipts(relevantRequests, profile, data.reviewEvents ?? [], now),
         ],
       }))
     },

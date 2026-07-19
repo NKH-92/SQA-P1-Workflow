@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { createRepositoryContextFromDeps } from '../repositoryContext'
 import { createPreviewData, previewLeader, previewMember } from '../../demoData'
 import {
   createReviewRequest,
@@ -120,14 +121,12 @@ describe('master delete activity logging (demo)', () => {
     const { deleteProduct } = await import('../mutations/master')
 
     await deleteProduct(
-      {
-        isRemote: false,
-        profile: previewLeader,
+      createRepositoryContextFromDeps('local', {        profile: previewLeader,
         data,
         setData: (updater) => {
           next = typeof updater === 'function' ? updater(next) : updater
         },
-      },
+      }),
       product!.id,
     )
 
@@ -143,12 +142,10 @@ describe('master delete activity logging (demo)', () => {
     const { deleteProduct } = await import('../mutations/master')
 
     await expect(deleteProduct(
-      {
-        isRemote: false,
-        profile: previewLeader,
+      createRepositoryContextFromDeps('local', {        profile: previewLeader,
         data,
         setData: () => undefined,
-      },
+      }),
       product.id,
     )).rejects.toThrow('변경 적용 이력이 있는 제품은 삭제할 수 없습니다')
   })
@@ -162,14 +159,12 @@ describe('master delete activity logging (demo)', () => {
     const { deleteAllowedUser } = await import('../mutations/master')
 
     await deleteAllowedUser(
-      {
-        isRemote: false,
-        profile: previewLeader,
+      createRepositoryContextFromDeps('local', {        profile: previewLeader,
         data,
         setData: (updater) => {
           next = typeof updater === 'function' ? updater(next) : updater
         },
-      },
+      }),
       invite!.id,
     )
 

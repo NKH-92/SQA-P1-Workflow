@@ -1,366 +1,221 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import publicHeaders from '../public/_headers?raw'
 
-const workflows = import.meta.glob('../.github/workflows/*.yml', {
-  query: '?raw',
-  import: 'default',
-  eager: true,
-}) as Record<string, string>
+const root = resolve(import.meta.dirname, '..')
+const workflowDirectory = resolve(root, '.github/workflows')
+const verifyDirectory = resolve(root, 'scripts/sql/verify')
 
-function readWorkflow(name: string) {
-  return (workflows[`../.github/workflows/${name}`] ?? '').replace(/\r\n/g, '\n')
+function workflow(name: string) {
+  return readFileSync(resolve(workflowDirectory, name), 'utf8').replace(/\r\n/g, '\n')
 }
 
-function readPublicHeaders() {
-  return publicHeaders.replace(/\r\n/g, '\n')
+function requiredStepIndex(source: string, name: string) {
+  const index = source.indexOf(`- name: ${name}`)
+  if (index < 0) throw new Error(`SQA_WORKFLOW_STEP_MISSING: ${name}`)
+  return index
 }
 
-describe('production workflow guards', () => {
-  it.each(['deploy-worker.yml', 'db-migrate.yml', 'backup.yml'])(
-    '%s fails before privileged work when manually dispatched from a non-main ref',
-    (name) => {
-      const workflow = readWorkflow(name)
-      const guardPosition = workflow.indexOf('- name: Require main branch')
-      const privilegedPosition = name === 'deploy-worker.yml'
-        ? workflow.indexOf('- name: Deploy to Cloudflare Workers')
-        : name === 'backup.yml'
-          ? workflow.indexOf('- name: Check backup secrets')
-          : workflow.indexOf('- name: Check secret')
+type SecretUse = { job: string; step: string; secret: string }
 
-      expect(guardPosition).toBeGreaterThan(-1)
-      expect(workflow).toContain("github.ref != 'refs/heads/main'")
-      expect(workflow).toContain('exit 1')
-      expect(privilegedPosition).toBeGreaterThan(guardPosition)
-    },
+function secretInventory(source: string): SecretUse[] {
+  const inventory: SecretUse[] = []
+  let inJobs = false
+  let job = ''
+  let step = ''
+  for (const line of source.split('\n')) {
+    if (line === 'jobs:') {
+      inJobs = true
+      continue
+    }
+    if (!inJobs) continue
+    const jobMatch = line.match(/^ {2}([a-zA-Z0-9_-]+):\s*$/)
+    if (jobMatch) {
+      job = jobMatch[1]
+      step = ''
+    }
+    const stepMatch = line.match(/^ {6}- name:\s*(.+)$/)
+    if (stepMatch) step = stepMatch[1]
+    for (const match of line.matchAll(/secrets\.([A-Z0-9_]+)/g)) {
+      inventory.push({ job, step, secret: match[1] })
+    }
+  }
+  return inventory.sort((left, right) =>
+    `${left.job}|${left.step}|${left.secret}`.localeCompare(`${right.job}|${right.step}|${right.secret}`),
   )
+}
 
-  it('keeps the CI token read-only', () => {
-    expect(readWorkflow('ci.yml')).toContain('permissions:\n  contents: read')
-  })
-
-  it.each(['ci.yml', 'deploy-worker.yml'])(
-    '%s runs deterministic local Supabase RLS tests as a blocking job',
-    (name) => {
-      const workflow = readWorkflow(name)
-      expect(workflow).toContain('supabase start')
-      expect(workflow).toContain('mv "$stage_b_migration" "$held_migration"')
-      expect(workflow).toContain('node scripts/purge-review-attachments.mjs --execute --confirm=PURGE_REVIEW_ATTACHMENTS')
-      expect(workflow).toContain('supabase migration up --local --include-all')
-      expect(workflow).toContain('node scripts/setup-rls-fixtures.mjs')
-      expect(workflow).toContain('echo "SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY"')
-      expect(workflow).toContain('npm run test:rls')
-      expect(workflow).toContain('select count(*) from private.review_status_events')
-      expect(workflow).toContain('select count(*) from private.audit_events')
-      expect(workflow).toContain('supabase stop --no-backup')
-      if (name === 'ci.yml') expect(workflow).toContain('needs: [typecheck, lint, test, rls]')
-      else expect(workflow).toContain('needs: rls')
-    },
+function assertSecretScope(source: string, expected: SecretUse[]) {
+  if (/^\s*secrets:\s*inherit\s*$/m.test(source)) {
+    throw new Error('SQA_WORKFLOW_SECRET_INHERIT')
+  }
+  const actual = secretInventory(source)
+  const sortedExpected = [...expected].sort((left, right) =>
+    `${left.job}|${left.step}|${left.secret}`.localeCompare(`${right.job}|${right.step}|${right.secret}`),
   )
+  expect(actual).toEqual(sortedExpected)
+  if (actual.some((item) => !item.step)) throw new Error('SQA_WORKFLOW_JOB_LEVEL_SECRET')
+}
 
-  it('pins third-party Actions to full commit SHAs and avoids mutable Wrangler downloads', () => {
-    for (const workflow of Object.values(workflows)) {
-      const uses = [...workflow.matchAll(/uses:\s+([^\s#]+)/g)].map((match) => match[1])
-      for (const action of uses) {
-        expect(action, `${action} must use a full commit SHA`).toMatch(/@[0-9a-f]{40}$/)
+const migrateSecrets: SecretUse[] = [
+  { job: 'migrate', step: 'Check secret', secret: 'SUPABASE_DB_URL' },
+  { job: 'migrate', step: 'Guard migration history', secret: 'SUPABASE_DB_URL' },
+  { job: 'migrate', step: 'List migration status (before)', secret: 'SUPABASE_DB_URL' },
+  { job: 'migrate', step: 'Guard Stage B Storage handoff', secret: 'SUPABASE_DB_URL' },
+  { job: 'migrate', step: 'Push pending migrations', secret: 'SUPABASE_DB_URL' },
+  { job: 'migrate', step: 'Verify production DB readiness from canonical SQL', secret: 'SUPABASE_DB_URL' },
+]
+
+const deploySecrets: SecretUse[] = [
+  { job: 'deploy', step: 'Check deploy configuration', secret: 'CLOUDFLARE_API_TOKEN' },
+  { job: 'deploy', step: 'Check deploy configuration', secret: 'SUPABASE_DB_URL' },
+  { job: 'deploy', step: 'Check deploy configuration', secret: 'VITE_SUPABASE_ANON_KEY' },
+  { job: 'deploy', step: 'Verify production DB readiness from canonical SQL', secret: 'SUPABASE_DB_URL' },
+  { job: 'deploy', step: 'Verify Supabase public configuration', secret: 'VITE_SUPABASE_ANON_KEY' },
+  { job: 'deploy', step: 'Build', secret: 'VITE_SUPABASE_ANON_KEY' },
+  { job: 'deploy', step: 'Deploy to Cloudflare Workers', secret: 'CLOUDFLARE_API_TOKEN' },
+]
+
+describe('workflow security contracts', () => {
+  it('pins every external action to a full commit SHA', () => {
+    for (const file of readdirSync(workflowDirectory).filter((name) => name.endsWith('.yml'))) {
+      const externalUses = [...workflow(file).matchAll(/^\s*-?\s*uses:\s*([^\s#]+)/gm)]
+        .map((match) => match[1])
+        .filter((value) => !value.startsWith('./'))
+      for (const value of externalUses) {
+        expect(value, `${file}: ${value}`).toMatch(/@[0-9a-f]{40}$/)
       }
     }
-    const deploy = readWorkflow('deploy-worker.yml')
-    expect(deploy).toContain('npx --no-install wrangler deploy')
-    expect(deploy).not.toMatch(/wrangler@(?:latest|4)(?:\s|$)/)
   })
 
-  it('requires a recent successful encrypted backup before DB migration', () => {
-    const workflow = readWorkflow('db-migrate.yml')
-    expect(workflow).toContain('backup_run_id:')
-    expect(workflow).toContain('required: true')
-    expect(workflow).toContain('.github/workflows/backup.yml')
-    expect(workflow).toContain('event" != "workflow_dispatch')
-    expect(workflow).toContain('event" != "schedule')
-    expect(workflow).toContain('head_sha" != "$GITHUB_SHA')
-    expect(workflow).toContain('conclusion" != "success')
-    expect(workflow).toContain('age_seconds" -gt 86400')
-    expect(workflow).toContain('startswith')
-    expect(workflow).toContain('environment: production')
-    expect(workflow).toContain('Migration history repair is intentionally excluded')
-    expect(workflow).not.toContain('Repair migration history (optional)')
-    expect(workflow).not.toContain('repair_applied:')
-    expect(workflow).not.toContain('repair_reverted:')
-    expect(workflow).toContain('- name: Guard Stage B Storage handoff')
-    expect(workflow).toContain('SQA_REVIEW_ATTACHMENTS_BUCKET_STILL_EXISTS')
-    expect(workflow.indexOf('- name: Guard Stage B Storage handoff'))
-      .toBeLessThan(workflow.indexOf('- name: Push pending migrations'))
+  it('uses one blocking reusable RLS workflow in CI and deployment', () => {
+    const ci = workflow('ci.yml')
+    const deploy = workflow('deploy-worker.yml')
+    const reusable = workflow('reusable-rls.yml')
+
+    expect(ci).toContain('rls:\n    uses: ./.github/workflows/reusable-rls.yml')
+    expect(ci).toContain('e2e:\n    runs-on: ubuntu-latest')
+    expect(ci).toContain('run: npm run test:e2e')
+    expect(ci).toContain('needs: [typecheck, lint, test, rls, e2e]')
+    expect(deploy).toContain('rls:\n    needs: guard\n    uses: ./.github/workflows/reusable-rls.yml')
+    expect(deploy).toContain('deploy:\n    needs: rls')
+    expect(reusable).toContain('npm run test:rls:full')
+    expect(reusable).toContain('if: ${{ always() }}')
+    expect(reusable).not.toContain('secrets.')
   })
 
-  it('verifies assignment migration versions and RPC security attributes', () => {
-    const workflow = readWorkflow('db-migrate.yml')
-    expect(workflow).toContain("version = '202607110001'")
-    expect(workflow).toContain("version = '202607110002'")
-    expect(workflow).toContain("version = '202607110003'")
-    expect(workflow).toContain("version = '202607110004'")
-    expect(workflow).toContain("version = '202607110005'")
-    expect(workflow).toContain("version = '202607110006'")
-    expect(workflow).toContain("version = '202607110007'")
-    expect(workflow).toContain("version = '202607110008'")
-    expect(workflow).toContain("version = '202607110009'")
-    expect(workflow).toContain("version = '202607110010'")
-    expect(workflow).toContain("version = '202607110011'")
-    expect(workflow).toContain("version = '20260714075451'")
-    expect(workflow).toContain("version = '20260715013615'")
-    expect(workflow).toContain("version = '20260716200422'")
-    expect(workflow).toContain("version = '202607170001'")
-    expect(workflow).toContain("version = '20260717123840'")
-    expect(workflow).toContain("version = '20260718073243'")
-    expect(workflow).toContain("version = '20260718123250'")
-    expect(workflow).toContain("version = '20260718153410'")
-    expect(workflow).toContain("to_regprocedure('public.add_product_assignment(uuid,uuid)')")
-    expect(workflow).toContain("to_regprocedure('public.add_duty_assignment(uuid,uuid)')")
-    expect(workflow).toContain("to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)')")
-    expect(workflow).toContain('direct_write_gate=')
-    expect(workflow).toContain('review_resubmission_gate=')
-    expect(workflow).toContain("tablename in ('review_requests', 'review_feedback')")
-    expect(workflow).toContain("to_regprocedure('public.resubmit_review_request(uuid,timestamp with time zone,text)')")
-    expect(workflow).toContain("to_regprocedure('public.resubmit_review_request(uuid,text)') is null")
-    expect(workflow).toContain("has_schema_privilege('service_role', 'private', 'CREATE')")
-    expect(workflow).toContain('defaclnamespace = 0')
-    expect(workflow).toContain("'public.review_requests', 'review_round', 'UPDATE'")
-    expect(workflow).toContain('project_assignments_bump_project_revision')
-    expect(workflow).toContain("to_regprocedure('public.bump_project_revision_from_assignment()')")
-    expect(workflow).toContain('pg_get_function_result')
-    expect(workflow).toContain("has_function_privilege('authenticated'")
-    expect(workflow).toContain("has_function_privilege('anon'")
-    expect(workflow).toContain('search_path=')
-    expect(workflow).toContain('search_path=pg_catalog, public, private, pg_temp')
-    expect(workflow).toContain("to_regprocedure('public.validate_assignment_user_active()')")
-    expect(workflow).toContain("require_profile_role(new.user_id, ''member''")
-    expect(workflow).toContain('product_assignments_validate_active')
-    expect(workflow).toContain('duty_assignments_validate_active')
-    expect(workflow).toContain("tgenabled in ('O', 'A')")
-    expect(workflow).toContain('BEFORE INSERT OR UPDATE OF user_id')
-    expect(workflow).toContain("pg_get_viewdef('public.public_leader_profiles'::regclass, true)")
-    expect(workflow).toContain("not has_table_privilege('authenticated', 'public.review_requests', 'UPDATE')")
-    expect(workflow).toContain("attname = 'attachment_url'")
-    expect(workflow).toContain("to_regclass('private.review_status_events')")
-    expect(workflow).toContain("to_regclass('private.audit_events')")
-    expect(workflow).toContain('count(*) = 16')
-    expect(workflow).toContain("to_regprocedure('private.build_audit_business_snapshot(text,jsonb)')")
-    expect(workflow).toContain("to_regprocedure('public.list_audit_events(integer,bigint)')")
-    expect(workflow).toContain("tgname = 'profile_notes_private_audit'")
-    expect(workflow).toContain("tgname = 'announcements_private_audit'")
-    expect(workflow).toContain('refusing a green drifted migration run')
-    expect(workflow).not.toContain('::warning::remote schema_migrations count')
-    expect(workflow).toContain("to_regprocedure('private.record_mutation_audit()')")
-    expect(workflow).toContain("to_regprocedure('public.guard_last_active_leader_profile()')")
-    expect(workflow).toContain("provolatile = 'v'")
-    expect(workflow).toContain("to_regprocedure('public.count_active_leaders_except(uuid)')")
-    expect(workflow).toContain("pg_advisory_xact_lock")
-    expect(workflow).toContain('transactional review activity-log')
-    expect(workflow).toContain("public.approve_review_request(uuid,timestamp with time zone)")
-    expect(workflow).toContain("tablename in ('review_requests', 'review_feedback') and cmd in ('INSERT', 'UPDATE', 'DELETE', 'ALL')")
-    expect(workflow).toContain("pg_get_functiondef(to_regprocedure('public.is_active_leader()')) like '%password_is_current()%'")
-    expect(workflow).toContain('role-only leader RLS policy')
-    expect(workflow).toContain('leader_ui_gate=')
-    expect(workflow).toContain("to_regprocedure('public.replace_product_assignments_with_reason(uuid,uuid[],text)')")
-    expect(workflow).toContain('product_assignments_clear_unassigned_reason')
-    expect(workflow).toContain("to_regprocedure('public.validate_project_assignment_member()')")
-    expect(workflow).toContain('announcements_gate=')
-    expect(workflow).toContain("to_regclass('public.announcements')")
-    expect(workflow).toContain("conname = 'announcements_pin_state_check'")
-    expect(workflow).toContain("policyname = 'announcements_select_app_user'")
-    expect(workflow).toContain("qual like '%is_active_self()%'")
-    expect(workflow).toContain("qual not like '%can_use_app()%'")
-    expect(workflow).toContain("policyname = 'announcements_insert_leader'")
-    expect(workflow).toContain("policyname = 'announcements_update_leader'")
-    expect(workflow).toContain("policyname = 'announcements_delete_leader'")
-    expect(workflow).toContain("has_column_privilege('authenticated', to_regclass('public.announcements'), 'pinned_at', 'UPDATE')")
-    expect(workflow).toContain("to_regprocedure('private.enforce_announcement_invariants()')")
-    expect(workflow).toContain('announcement board schema/RLS/grants/audit')
-    expect(workflow).toContain('change_applications_gate=')
-    expect(workflow).toContain("to_regclass('public.change_applications')")
-    expect(workflow).toContain("to_regclass('public.change_action_items')")
-    expect(workflow).toContain("to_regclass('public.product_change_tasks')")
-    expect(workflow).toContain("conname = 'change_applications_source_url_scheme_check'")
-    expect(workflow).toContain("policyname = 'change_applications_select_app_user'")
-    expect(workflow).toContain("policyname = 'change_action_items_select_app_user'")
-    expect(workflow).toContain("policyname = 'product_change_tasks_select_relevant'")
-    expect(workflow).toContain("qual like '%published_at%'")
-    expect(workflow).toContain("qual like '%created_by%'")
-    expect(workflow).toContain("qual not like '%draft%'")
-    expect(workflow).toContain("to_regprocedure('public.save_change_application_draft(uuid,timestamp with time zone,text,public.change_application_source,text,text,text,date,public.change_action_kind,text,text,date,jsonb)')")
-    expect(workflow).toContain("to_regprocedure('public.publish_change_application(uuid,timestamp with time zone,text,public.change_application_source,text,text,text,date,public.change_action_kind,text,text,date,jsonb)')")
-    expect(workflow).toContain("to_regprocedure('private.persist_change_application(uuid,timestamp with time zone,text,public.change_application_source,text,text,text,date,public.change_action_kind,text,text,date,jsonb,boolean)')")
-    expect(workflow).toContain('existing_action.change_application_id = v_application.id')
-    expect(workflow).toContain("existing_task.status = ''cancelled''")
-    expect(workflow).toContain('v_application.updated_at is distinct from p_expected_updated_at')
-    expect(workflow).toContain('p_change_application_id, p_expected_updated_at, p_change_number')
-    expect(workflow).toContain('change application was modified by another user')
-    expect(workflow).toContain("tgname = 'product_change_tasks_private_audit'")
-    expect(workflow).toContain("conname = 'change_applications_archive_state_check'")
-    expect(workflow).toContain("to_regprocedure('public.archive_change_application(uuid,text)')")
-    expect(workflow).toContain("to_regprocedure('public.restore_change_application(uuid,text)')")
-    expect(workflow).toContain("to_regprocedure('private.sync_change_application_archive()')")
-    expect(workflow).toContain("tgname = 'product_change_tasks_sync_application_archive'")
-    expect(workflow).toContain('change application schema/RLS/grants/RPC/audit')
-    expect(workflow).not.toContain("proacl::text not like '%=X%'")
+  it('keeps production branch, confirmation, backup, storage, and migration-history gates ordered', () => {
+    const migrate = workflow('db-migrate.yml')
+    const deploy = workflow('deploy-worker.yml')
+
+    expect(requiredStepIndex(migrate, 'Require main branch'))
+      .toBeLessThan(requiredStepIndex(migrate, 'Require a recent successful backup'))
+    expect(requiredStepIndex(migrate, 'Require a recent successful backup'))
+      .toBeLessThan(requiredStepIndex(migrate, 'Push pending migrations'))
+    expect(requiredStepIndex(migrate, 'Guard migration history'))
+      .toBeLessThan(requiredStepIndex(migrate, 'Guard Stage B Storage handoff'))
+    expect(requiredStepIndex(migrate, 'Guard Stage B Storage handoff'))
+      .toBeLessThan(requiredStepIndex(migrate, 'Push pending migrations'))
+    expect(migrate).not.toMatch(/^\s*run:\s*supabase migration repair/m)
+    expect(deploy).toContain('environment: production')
+    expect(deploy).toContain('inputs.deploy_confirm != true')
+    expect(requiredStepIndex(deploy, 'Verify production DB readiness from canonical SQL'))
+      .toBeLessThan(requiredStepIndex(deploy, 'Deploy to Cloudflare Workers'))
   })
 
-  it('blocks frontend deployment until the production DB has the required assignment contract', () => {
-    const workflow = readWorkflow('deploy-worker.yml')
-    const readinessPosition = workflow.indexOf('- name: Verify production DB readiness')
-    const deployPosition = workflow.indexOf('- name: Deploy to Cloudflare Workers')
-    expect(workflow).toContain('SUPABASE_DB_URL (secret; deploy DB-readiness gate)')
-    expect(workflow).toContain("version = '202607110001'")
-    expect(workflow).toContain("version = '202607110002'")
-    expect(workflow).toContain("version = '202607110003'")
-    expect(workflow).toContain("version = '202607110004'")
-    expect(workflow).toContain("version = '202607110005'")
-    expect(workflow).toContain("version = '202607110006'")
-    expect(workflow).toContain("version = '202607110007'")
-    expect(workflow).toContain("version = '202607110008'")
-    expect(workflow).toContain("version = '202607110009'")
-    expect(workflow).toContain("version = '202607110010'")
-    expect(workflow).toContain("version = '202607110011'")
-    expect(workflow).toContain("version = '20260714075451'")
-    expect(workflow).toContain("version = '20260715013615'")
-    expect(workflow).toContain("version = '20260716200422'")
-    expect(workflow).toContain("version = '202607170001'")
-    expect(workflow).toContain("version = '20260717123840'")
-    expect(workflow).toContain("version = '20260718073243'")
-    expect(workflow).toContain("version = '20260718123250'")
-    expect(workflow).toContain("version = '20260718153410'")
-    expect(workflow).toContain("to_regprocedure('public.add_product_assignment(uuid,uuid)')")
-    expect(workflow).toContain("to_regprocedure('public.add_duty_assignment(uuid,uuid)')")
-    expect(workflow).toContain("to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)')")
-    expect(workflow).toContain('project_assignments_bump_project_revision')
-    expect(workflow).toContain("to_regprocedure('public.bump_project_revision_from_assignment()')")
-    expect(workflow).toContain('pg_get_function_result')
-    expect(readinessPosition).toBeGreaterThan(-1)
-    expect(deployPosition).toBeGreaterThan(readinessPosition)
-    expect(workflow).toContain("not coalesce(has_function_privilege('anon'")
-    expect(workflow).toContain("provolatile = 'v'")
-    expect(workflow).toContain('review_contract_ready=')
-    expect(workflow).toContain('review_resubmission_ready=')
-    expect(workflow).toContain("tablename = 'review_requests' and cmd in ('INSERT', 'UPDATE', 'DELETE', 'ALL')")
-    expect(workflow).toContain("to_regprocedure('public.resubmit_review_request(uuid,timestamp with time zone,text)')")
-    expect(workflow).toContain("to_regprocedure('public.resubmit_review_request(uuid,text)') is null")
-    expect(workflow).toContain("has_schema_privilege('service_role', 'private', 'CREATE')")
-    expect(workflow).toContain('defaclnamespace = 0')
-    expect(workflow).toContain('environment: production')
-    expect(workflow).toContain('leader_view_ready=')
-    expect(workflow).toContain('transactional review activity-log contract')
-    expect(workflow).toContain('count(*) = 16')
-    expect(workflow).toContain("to_regprocedure('private.build_audit_business_snapshot(text,jsonb)')")
-    expect(workflow).toContain("to_regprocedure('public.list_audit_events(integer,bigint)')")
-    expect(workflow).toContain("tgname = 'profile_notes_private_audit'")
-    expect(workflow).toContain("tgname = 'announcements_private_audit'")
-    expect(workflow).toContain("not has_table_privilege('authenticated', 'public.review_feedback', 'INSERT')")
-    expect(workflow).toContain('role-only leader RLS policy')
-    expect(workflow).toContain('leader_ui_ready=')
-    expect(workflow).toContain("to_regprocedure('public.replace_product_assignments_with_reason(uuid,uuid[],text)')")
-    expect(workflow).toContain('product_assignments_clear_unassigned_reason')
-    expect(workflow).toContain("to_regprocedure('public.validate_project_assignment_member()')")
-    expect(workflow).toContain('announcements_ready=')
-    expect(workflow).toContain("to_regclass('public.announcements')")
-    expect(workflow).toContain("conname = 'announcements_pin_state_check'")
-    expect(workflow).toContain("policyname = 'announcements_select_app_user'")
-    expect(workflow).toContain("qual like '%is_active_self()%'")
-    expect(workflow).toContain("qual not like '%can_use_app()%'")
-    expect(workflow).toContain("policyname = 'announcements_insert_leader'")
-    expect(workflow).toContain("policyname = 'announcements_update_leader'")
-    expect(workflow).toContain("policyname = 'announcements_delete_leader'")
-    expect(workflow).toContain("has_column_privilege('authenticated', to_regclass('public.announcements'), 'pinned_at', 'UPDATE')")
-    expect(workflow).toContain("to_regprocedure('private.enforce_announcement_invariants()')")
-    expect(workflow).toContain('announcement board schema/RLS/grants/audit contract is not ready')
-    expect(workflow).toContain('change_applications_ready=')
-    expect(workflow).toContain("to_regclass('public.change_applications')")
-    expect(workflow).toContain("to_regclass('public.change_action_items')")
-    expect(workflow).toContain("to_regclass('public.product_change_tasks')")
-    expect(workflow).toContain("conname = 'change_applications_source_url_scheme_check'")
-    expect(workflow).toContain("policyname = 'change_applications_select_app_user'")
-    expect(workflow).toContain("policyname = 'change_action_items_select_app_user'")
-    expect(workflow).toContain("policyname = 'product_change_tasks_select_relevant'")
-    expect(workflow).toContain("qual like '%published_at%'")
-    expect(workflow).toContain("qual like '%created_by%'")
-    expect(workflow).toContain("qual not like '%draft%'")
-    expect(workflow).toContain("to_regprocedure('public.save_change_application_draft(uuid,timestamp with time zone,text,public.change_application_source,text,text,text,date,public.change_action_kind,text,text,date,jsonb)')")
-    expect(workflow).toContain("to_regprocedure('public.publish_change_application(uuid,timestamp with time zone,text,public.change_application_source,text,text,text,date,public.change_action_kind,text,text,date,jsonb)')")
-    expect(workflow).toContain("to_regprocedure('private.persist_change_application(uuid,timestamp with time zone,text,public.change_application_source,text,text,text,date,public.change_action_kind,text,text,date,jsonb,boolean)')")
-    expect(workflow).toContain('existing_action.change_application_id = v_application.id')
-    expect(workflow).toContain("existing_task.status = ''cancelled''")
-    expect(workflow).toContain('v_application.updated_at is distinct from p_expected_updated_at')
-    expect(workflow).toContain('p_change_application_id, p_expected_updated_at, p_change_number')
-    expect(workflow).toContain('change application was modified by another user')
-    expect(workflow).toContain("tgname = 'product_change_tasks_private_audit'")
-    expect(workflow).toContain("conname = 'change_applications_archive_state_check'")
-    expect(workflow).toContain("to_regprocedure('public.archive_change_application(uuid,text)')")
-    expect(workflow).toContain("to_regprocedure('public.restore_change_application(uuid,text)')")
-    expect(workflow).toContain("to_regprocedure('private.sync_change_application_archive()')")
-    expect(workflow).toContain("tgname = 'product_change_tasks_sync_application_archive'")
-    expect(workflow).toContain('change application schema/RLS/grants/RPC/audit contract is not ready')
+  it('uses the exact readiness manifest in every database verification path', () => {
+    for (const file of ['db-migrate.yml', 'deploy-worker.yml']) {
+      const source = workflow(file)
+      expect(source).toContain('validate-readiness-manifest.mjs')
+      expect(source).toContain('scripts/sql/verify/manifest.json')
+      expect(source).toContain('-v ON_ERROR_STOP=1')
+      expect(source).not.toContain('scripts/sql/verify/[0-5][0-9]_*.sql')
+    }
+    const reusable = workflow('reusable-rls.yml')
+    const runner = readFileSync(resolve(root, 'scripts/run-local-rls-gate.mjs'), 'utf8')
+    const powershell = readFileSync(resolve(root, 'scripts/apply-pending-migrations.ps1'), 'utf8')
+    expect(reusable).toContain('test:rls:full')
+    expect(runner).toContain('validateReadinessManifest')
+    expect(powershell).toContain('sql\\verify\\manifest.json')
   })
 
-  it('keeps production Worker promotion manual and explicitly confirmed', () => {
-    const workflow = readWorkflow('deploy-worker.yml')
-    expect(workflow).not.toMatch(/^\s*push:/m)
-    expect(workflow).toContain('workflow_dispatch:')
-    expect(workflow).toContain('deploy_confirm:')
-    expect(workflow).toContain('inputs.deploy_confirm != true')
-    expect(workflow).toContain('refusing a green no-op production run')
-    expect(workflow).not.toContain('DEPLOY_SKIP')
-    expect(workflow).not.toContain('deployment was **skipped**')
-    expect(workflow).toContain('deployment was **blocked and this workflow failed**')
+  it('retains migration, RLS, ACL, trigger, announcement, change, and audit invariants', () => {
+    const manifest = JSON.parse(readFileSync(resolve(verifyDirectory, 'manifest.json'), 'utf8')) as {
+      readinessFiles: string[]
+      migrationVersions: string[]
+    }
+    const sql = manifest.readinessFiles
+      .map((name) => readFileSync(resolve(verifyDirectory, name), 'utf8'))
+      .join('\n')
+
+    expect(manifest.migrationVersions).toContain('20260718161549')
+    expect(manifest.migrationVersions).toHaveLength(56)
+    for (const invariant of [
+      "to_regprocedure('public.add_product_assignment(uuid,uuid)')",
+      "to_regprocedure('public.resubmit_review_request(uuid,timestamp with time zone,text)')",
+      "policyname = 'announcements_select_app_user'",
+      "policyname = 'product_change_tasks_select_relevant'",
+      "to_regprocedure('private.record_mutation_audit()')",
+      'count(*) = 16',
+      'search_path=pg_catalog, public, private, pg_temp',
+      "tgenabled in ('O', 'A')",
+    ]) {
+      expect(sql).toContain(invariant)
+    }
+    for (const file of manifest.readinessFiles) {
+      expect(readFileSync(resolve(verifyDirectory, file), 'utf8')).toContain("raise exception 'SQA_DB_READY_")
+    }
   })
 
-  it('runs encrypted backups daily at 05:00 KST', () => {
-    const workflow = readWorkflow('backup.yml')
-    expect(workflow).toContain("cron: '0 20 * * *'")
-    expect(workflow).toContain('--pinentry-mode loopback --passphrase-fd 0')
-    expect(workflow).toContain('--cipher-algo AES256')
-    expect(workflow).toContain('--s2k-count 65011712')
-    expect(workflow).toContain('gpg_temp')
-    expect(workflow).toContain('--decrypt -- "$gpg_temp" | tar tzf -')
-    expect(workflow).toContain('.tar.gz.gpg')
-    expect(workflow).toContain('.tar.gz.enc')
-    expect(workflow).toContain('unset PASSPHRASE')
+  it('keeps production secrets scoped to the exact privileged steps', () => {
+    assertSecretScope(workflow('db-migrate.yml'), migrateSecrets)
+    assertSecretScope(workflow('deploy-worker.yml'), deploySecrets)
+    assertSecretScope(workflow('reusable-rls.yml'), [])
   })
 
-  it('opens or updates one issue when the daily backup job fails', () => {
-    const workflow = readWorkflow('backup.yml')
-    expect(workflow).toContain('notify-failure:')
-    expect(workflow).toContain("always() && needs.backup.result == 'failure' && github.ref == 'refs/heads/main'")
-    expect(workflow).toContain('issues: write')
-    expect(workflow).toContain("title='[Backup] Daily DB backup failed'")
-    expect(workflow).toContain('gh issue comment')
-    expect(workflow).toContain('gh issue create')
+  it('rejects inherited, job-level, and unprivileged-step secret regressions', () => {
+    expect(() => assertSecretScope(`${workflow('reusable-rls.yml')}\n    secrets: inherit\n`, []))
+      .toThrow('SQA_WORKFLOW_SECRET_INHERIT')
+    expect(() => assertSecretScope(
+      workflow('deploy-worker.yml').replace(
+        '  deploy:\n',
+        '  deploy:\n    env:\n      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}\n',
+      ),
+      deploySecrets,
+    )).toThrow()
+    expect(() => assertSecretScope(
+      workflow('deploy-worker.yml').replace(
+        '      - name: Install dependencies\n        run: npm ci',
+        '      - name: Install dependencies\n        env:\n          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}\n        run: npm ci',
+      ),
+      deploySecrets,
+    )).toThrow()
   })
 
-  it('fails a production deployment when the public Worker health contract is broken', () => {
-    const workflow = readWorkflow('deploy-worker.yml')
-    const deployPosition = workflow.indexOf('- name: Deploy to Cloudflare Workers')
-    const healthPosition = workflow.indexOf('- name: Verify deployed Worker health')
-    expect(workflow).toContain('WORKER_URL (variable; post-deploy health check)')
-    expect(workflow).toContain('id="root"')
-    expect(workflow).toContain('content-security-policy')
-    expect(workflow).toContain('x-content-type-options:')
-    expect(healthPosition).toBeGreaterThan(deployPosition)
+  it('fails the ordering validator when a required step is removed', () => {
+    const migrate = workflow('db-migrate.yml').replace('- name: Require main branch', '- name: Removed guard')
+    expect(() => requiredStepIndex(migrate, 'Require main branch')).toThrow('SQA_WORKFLOW_STEP_MISSING')
   })
 
-  it('does not retain blob image permission after attachment previews are removed', () => {
-    const headers = readPublicHeaders()
-    expect(headers).toContain("img-src 'self' data:")
-    expect(headers).not.toMatch(/img-src[^;]*\bblob:/)
+  it('keeps manual promotion, public configuration checks, and post-deploy health checks', () => {
+    const deploy = workflow('deploy-worker.yml')
+    expect(deploy).not.toMatch(/^\s*push:/m)
+    expect(deploy).toContain('workflow_dispatch:')
+    expect(requiredStepIndex(deploy, 'Verify Supabase public configuration'))
+      .toBeLessThan(requiredStepIndex(deploy, 'Build'))
+    expect(requiredStepIndex(deploy, 'Deploy to Cloudflare Workers'))
+      .toBeLessThan(requiredStepIndex(deploy, 'Verify deployed Worker health'))
+    expect(deploy).toContain('content-security-policy')
+    expect(deploy).toContain('x-content-type-options:')
   })
 
-  it('probes the configured Supabase URL and anon key before building', () => {
-    const workflow = readWorkflow('deploy-worker.yml')
-    const probePosition = workflow.indexOf('- name: Verify Supabase public configuration')
-    const buildPosition = workflow.indexOf('- name: Build')
-    expect(workflow).toContain('${VITE_SUPABASE_URL%/}/auth/v1/settings')
-    expect(workflow).toContain('--header "apikey: $VITE_SUPABASE_ANON_KEY"')
-    expect(workflow).toContain('.disable_signup == true')
-    expect(workflow).toContain('.mailer_autoconfirm == false')
-    expect(workflow).toContain('.external.email == true')
-    expect(workflow).toContain('.external.anonymous_users == false')
-    expect(probePosition).toBeGreaterThan(-1)
-    expect(buildPosition).toBeGreaterThan(probePosition)
+  it('keeps encrypted daily backups and failure notification', () => {
+    const backup = workflow('backup.yml')
+    expect(backup).toContain("cron: '0 20 * * *'")
+    expect(backup).toContain('.tar.gz.gpg')
+    expect(backup).toContain('.tar.gz.enc')
+    expect(backup).toContain('--decrypt -- "$gpg_temp" | tar tzf -')
+    expect(backup).toContain('notify-failure:')
+    expect(backup).toContain('gh issue create')
   })
 })

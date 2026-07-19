@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppData, Profile, ReviewRequest } from '../../types'
-import type { RepositoryContext } from '../repositoryContext'
+import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
 
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(async (): Promise<{ data: unknown; error: unknown }> => ({ data: null, error: null })),
@@ -39,7 +39,7 @@ function remoteContext(profile: Profile = member): RepositoryContext {
     reviewEvents: [], reviewReadReceipts: [], auditEvents: [], projects: [], projectAssignments: [],
     profileNotes: [], activityLogs: [],
   }
-  return { isRemote: true, profile, data, setData: vi.fn() }
+  return createRepositoryContextFromDeps('remote', {profile, data, setData: vi.fn() })
 }
 
 describe('review mutation contracts (remote)', () => {

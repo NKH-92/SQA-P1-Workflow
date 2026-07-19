@@ -1,4 +1,5 @@
 import { UserFacingError } from '../../lib/errors'
+import { buildReviewReadReceipts } from '../../lib/readState'
 import { supabase } from '../../lib/supabase'
 import type { RepositoryDeps, ReviewRepository } from '../repositories/types'
 import {
@@ -163,30 +164,15 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
     async markAllRelevantReviewsSeen() {
       const { error } = await supabase!.rpc('mark_all_relevant_reviews_seen')
       if (error) throw error
-      const relevantTypes = profile.role === 'leader'
-        ? new Set(['submitted', 'resubmitted'])
-        : new Set(['feedback_added', 'feedback_updated', 'feedback_voided', 'approved', 'rejected', 'reopened'])
-      const latestByRequest = new Map<string, number>()
-      for (const event of data.reviewEvents ?? []) {
-        if (!relevantTypes.has(event.event_type)) continue
-        const request = data.reviewRequests.find((item) => item.id === event.review_request_id)
-        if (!request || (profile.role !== 'leader' && request.requester_id !== profile.id)) continue
-        latestByRequest.set(
-          event.review_request_id,
-          Math.max(latestByRequest.get(event.review_request_id) ?? 0, Number(event.id)),
-        )
-      }
+      const relevantRequests = data.reviewRequests.filter((request) =>
+        profile.role === 'leader' || request.requester_id === profile.id,
+      )
       const now = new Date().toISOString()
       setData((current) => ({
         ...current,
         reviewReadReceipts: [
           ...(current.reviewReadReceipts ?? []).filter((receipt) => receipt.user_id !== profile.id),
-          ...[...latestByRequest].map(([reviewRequestId, lastSeenEventId]) => ({
-            user_id: profile.id,
-            review_request_id: reviewRequestId,
-            last_seen_event_id: lastSeenEventId,
-            read_at: now,
-          })),
+          ...buildReviewReadReceipts(relevantRequests, profile, data.reviewEvents ?? [], now),
         ],
       }))
     },

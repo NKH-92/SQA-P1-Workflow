@@ -1,4 +1,9 @@
-export { createRepositoryContext, type RepositoryContext } from './repositoryContext'
+export {
+  createRepositoryContext,
+  createRepositoryContextForMode,
+  type RepositoryCapabilities,
+  type RepositoryContext,
+} from './repositoryContext'
 export {
   fetchAuditEvents,
   fetchProductChangeTaskHistory,

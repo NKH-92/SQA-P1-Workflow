@@ -1,4 +1,3 @@
-import type { Dispatch, SetStateAction } from 'react'
 import type {
   Announcement,
   AppData,
@@ -16,6 +15,8 @@ import type {
   ProjectInput,
   ReviewRequestPayload,
 } from '../contracts'
+import type { AppDataUpdater } from './appDataUpdater'
+import type { ActivityLogWriter } from './activityLogWriter'
 
 export type ReviewRepository = {
   saveReviewRequest(input: {
@@ -151,9 +152,54 @@ export type ChangeApplicationRepository = {
   restoreChangeApplication(changeApplicationId: string, reason: string): Promise<void>
 }
 
+export type RepositorySet = {
+  reviews: ReviewRepository
+  projects: ProjectRepository
+  announcements: AnnouncementRepository
+  changeApplications: ChangeApplicationRepository
+  products: ProductAdminRepository
+  duties: DutyAdminRepository
+  invites: InviteAdminRepository
+  team: TeamRepository
+  activityLogs: ActivityLogWriter
+}
+
+export type ProductAdminRepository = Pick<MasterRepository,
+  | 'importProducts'
+  | 'addProduct'
+  | 'saveProductAssignments'
+  | 'assignProduct'
+  | 'updateProduct'
+  | 'deleteProduct'
+>
+
+export type DutyAdminRepository = Pick<MasterRepository,
+  | 'addDutyMajorCategory'
+  | 'addDuty'
+  | 'saveDutyAssignments'
+  | 'assignDuty'
+  | 'updateDutyMajorCategory'
+  | 'updateDuty'
+  | 'deleteDuty'
+  | 'deleteDutyMajorCategory'
+>
+
+export type InviteAdminRepository = Pick<MasterRepository,
+  | 'importInvites'
+  | 'addAllowedUser'
+  | 'updateInvite'
+  | 'toggleProfileActive'
+  | 'deleteAllowedUser'
+>
+
+export type TeamRepository = {
+  addProfileNote(input: { profileId: string; note: string }): Promise<void>
+}
+
 /** local·remote repository가 공통으로 받는 의존성 (RepositoryContext에서 isRemote를 뺀 형태). */
 export type RepositoryDeps = {
   profile: Profile
   data: AppData
-  setData: Dispatch<SetStateAction<AppData>>
+  setData: AppDataUpdater
+  activityLogs: ActivityLogWriter
 }

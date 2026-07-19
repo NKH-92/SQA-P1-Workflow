@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { AppRoutes } from './app/AppRoutes'
 import { useAppData } from './app/hooks/useAppData'
 import { useBackgroundRefresh } from './app/hooks/useBackgroundRefresh'
@@ -9,10 +9,11 @@ import { useAuthProfile } from './app/hooks/useAuthProfile'
 import { useHashNavigation } from './app/hooks/useHashNavigation'
 import { useMutationRunner } from './app/hooks/useMutationRunner'
 import { useDeepLinkEntity } from './app/hooks/useDeepLinkEntity'
+import { useCommandPalette } from './app/hooks/useCommandPalette'
+import { useReviewNotificationController } from './app/hooks/useReviewNotificationController'
 import { reconciledProfile } from './app/profileSync'
 import { CommandPalette } from './components/CommandPalette'
 import { canManageTeamData } from './domain/permissions'
-import { createRepositoryContext, markAllRelevantReviewsSeen } from './data'
 import { toUserMessage } from './lib/errors'
 import { buildNotifications } from './lib/notifications'
 import { countUnreadReviews } from './lib/readState'
@@ -30,7 +31,6 @@ import {
 } from './screens'
 
 function App() {
-  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const reportWarningsRef = useRef<(warnings: string[]) => void>(() => {})
   const {
     data,
@@ -135,28 +135,8 @@ function App() {
     profile?.is_active !== false &&
     !(hasSupabaseConfig && profile?.must_change_password)
 
-  // Cmd/Ctrl+K 로 빠른 이동 팔레트를 연다. 입력 중에도 열리도록 target을 가리지 않는다.
-  useEffect(() => {
-    if (!commandPaletteAvailable) {
-      setCommandPaletteOpen(false)
-      return
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
-        event.preventDefault()
-        setCommandPaletteOpen((value) => !value)
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [commandPaletteAvailable])
-
-  const markAllNotificationsRead = () => {
-    if (!profile) return
-    void mutate(async () => {
-      await markAllRelevantReviewsSeen(createRepositoryContext(profile, data, setData))
-    }, '검토 알림을 모두 읽음 처리했습니다.')
-  }
+  const commandPalette = useCommandPalette(commandPaletteAvailable)
+  const markAllNotificationsRead = useReviewNotificationController(profile, data, setData, mutate)
 
   // signOut이 resetNavigation까지 수행한다(useAuthProfile → useHashNavigation).
   const handleSignOut = async () => {
@@ -230,7 +210,7 @@ function App() {
         notifications={notifications}
         desktopNotifications={leaderMode ? desktopNotifications : undefined}
         onMarkAllRead={markAllNotificationsRead}
-        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+        onOpenCommandPalette={commandPalette.show}
         onRefresh={() => {
           refreshData().catch((error) => setMessage({ text: toUserMessage(error), tone: 'error' }))
         }}
@@ -249,8 +229,8 @@ function App() {
         />
       </Shell>
       <CommandPalette
-        open={commandPaletteOpen}
-        onClose={() => setCommandPaletteOpen(false)}
+        open={commandPalette.open}
+        onClose={commandPalette.close}
         profile={profile}
         data={data}
         leaderMode={leaderMode}

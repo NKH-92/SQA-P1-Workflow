@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react'
-import type { AppData, Profile, Role } from '../types'
+import { useState } from 'react'
+import type { Profile, Role } from '../types'
 import type { TabId, ToastMessage } from '../app/types'
 import { roleLabels } from '../lib/format'
 import { navigationItemsForRole, tabHeaderLabel } from '../lib/navigation'
 import type { AppNotification } from '../lib/notifications'
 import type { DesktopNotificationControls } from '../app/hooks/useDesktopNotifications'
 import { NotificationPanel } from '../components/NotificationPanel'
-import { buildShellModel } from './shellModel'
+import { buildShellModel, type ShellFeatureData } from './shellModel'
+import { useDensityPreference } from './useDensityPreference'
 import {
   BarChart3,
   Bell,
@@ -26,17 +27,6 @@ import {
   Users,
   X,
 } from 'lucide-react'
-
-type Density = 'comfortable' | 'compact'
-
-function loadDensity(): Density {
-  if (typeof localStorage === 'undefined') return 'comfortable'
-  try {
-    return localStorage.getItem('ui:density') === 'compact' ? 'compact' : 'comfortable'
-  } catch {
-    return 'comfortable'
-  }
-}
 
 export function Shell({
   activeTab,
@@ -62,7 +52,7 @@ export function Shell({
   activeTab: TabId
   setActiveTab: (tab: TabId, entityId?: string) => void
   profile: Profile
-  data: AppData
+  data: ShellFeatureData
   leaderMode: boolean
   message: ToastMessage | null
   saving: boolean
@@ -82,16 +72,7 @@ export function Shell({
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
-  // 간격 압축 모드. 문서 루트 data-density 속성으로 CSS 프리셋을 전환한다.
-  const [density, setDensity] = useState<Density>(loadDensity)
-  useEffect(() => {
-    document.documentElement.dataset.density = density
-    try {
-      localStorage.setItem('ui:density', density)
-    } catch {
-      // 저장이 막힌 환경(사생활 보호 모드 등)에서도 토글 자체는 동작해야 한다.
-    }
-  }, [density])
+  const { density, toggleDensity } = useDensityPreference()
   const { memberCount, unreadNotifications, tabs } = buildShellModel({
     data,
     profile,
@@ -255,7 +236,7 @@ export function Shell({
             <button
               aria-pressed={density === 'compact'}
               className="icon-button"
-              onClick={() => setDensity(density === 'compact' ? 'comfortable' : 'compact')}
+              onClick={toggleDensity}
               title={density === 'compact' ? '간격 보통으로 보기' : '간격 압축해서 보기'}
               type="button"
             >

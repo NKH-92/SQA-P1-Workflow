@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { emptyData } from '../../app/constants'
-import type { AppData, ChangeActionItem, ChangeApplication, ProductChangeTask, Profile } from '../../types'
+import type { AppData, ChangeActionItem, ProductChangeTask, Profile } from '../../types'
+import { buildChangeApplication, buildProductChangeTask } from '../../test/builders'
 import {
   calculateChangeProgress,
   canEditChangeApplication,
@@ -10,22 +11,7 @@ import {
 } from './selectors'
 
 const member: Profile = { id: 'member-1', email: 'member@example.test', name: '담당자', role: 'member' }
-const application: ChangeApplication = {
-  id: 'change-1',
-  change_number: 'CC-2026-001',
-  source: 'official',
-  title: '제조원 변경',
-  summary: '요약',
-  source_url: null,
-  effective_date: '2026-08-01',
-  status: 'published',
-  created_by: 'leader-1',
-  published_at: '2026-07-01T00:00:00.000Z',
-  cancelled_at: null,
-  cancellation_reason: null,
-  created_at: '2026-07-01T00:00:00.000Z',
-  updated_at: '2026-07-01T00:00:00.000Z',
-}
+const application = buildChangeApplication()
 const actionItem: ChangeActionItem = {
   id: 'action-1',
   change_application_id: application.id,
@@ -40,7 +26,7 @@ const actionItem: ChangeActionItem = {
 
 function task(id: string, status: ProductChangeTask['status'], assigneeId: string | null = member.id): ProductChangeTask {
   const processed = status === 'completed' || status === 'not_applicable'
-  return {
+  return buildProductChangeTask({
     id,
     action_item_id: actionItem.id,
     product_id: `product-${id}`,
@@ -61,7 +47,7 @@ function task(id: string, status: ProductChangeTask['status'], assigneeId: strin
     reopen_reason: null,
     created_at: application.created_at,
     updated_at: application.updated_at,
-  }
+  })
 }
 
 function dataWithTasks(tasks: ProductChangeTask[]): AppData {

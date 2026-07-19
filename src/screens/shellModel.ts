@@ -13,6 +13,22 @@ export type ShellModel = {
   tabs: Partial<Record<TabId, ShellTabState>>
 }
 
+export type ShellFeatureData = Pick<
+  AppData,
+  | 'profiles'
+  | 'reviewRequests'
+  | 'productChangeTasks'
+  | 'projects'
+  | 'projectAssignments'
+  | 'announcements'
+  | 'activityLogs'
+  | 'products'
+  | 'productAssignments'
+  | 'duties'
+  | 'dutyAssignments'
+  | 'allowedUsers'
+>
+
 export function buildShellModel({
   data,
   profile,
@@ -21,7 +37,7 @@ export function buildShellModel({
   unreadReviewsCount,
   notifications,
 }: {
-  data: AppData
+  data: ShellFeatureData
   profile: Profile
   leaderMode: boolean
   pendingCount: number

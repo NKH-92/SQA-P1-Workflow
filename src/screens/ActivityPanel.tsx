@@ -1,42 +1,22 @@
 import { useMemo, useState } from 'react'
 import { FileClock, MessageSquare, Search } from 'lucide-react'
 import { Badge, Section } from '../components/ui'
-import { fetchAuditEvents } from '../data'
 import type { AppData, AuditEvent } from '../types'
 import { formatDate } from '../lib/format'
 import { relativeDateLabel } from '../lib/dates'
-import { toUserMessage } from '../lib/errors'
-
-const SENSITIVE_AUDIT_FIELD = /(^|_)(password|encrypted_password|token|secret|service_key|session|credential)(_|$)/i
-
-function isSensitiveAuditField(field: string) {
-  return field !== 'must_change_password' && SENSITIVE_AUDIT_FIELD.test(field)
-}
-
-function safeAuditFields(event: AuditEvent) {
-  return event.changed_fields.filter((field) => !isSensitiveAuditField(field))
-}
-
-function safeAuditDelta(delta: Record<string, unknown>) {
-  return Object.fromEntries(
-    Object.entries(delta).filter(([field]) => !isSensitiveAuditField(field)),
-  )
-}
-
-function auditValueText(value: unknown) {
-  if (value === null) return 'null'
-  if (value === undefined) return '—'
-  if (typeof value === 'string') return value
-  return JSON.stringify(value, null, 2)
-}
+import {
+  auditValueText,
+  isLegacyAuditLifecycle,
+  safeAuditDelta,
+  safeAuditFields,
+} from '../features/activity/auditModel'
+import { useAuditFeed } from '../features/activity/useAuditFeed'
 
 function AuditEventDetails({ event }: { event: AuditEvent }) {
   const fields = safeAuditFields(event)
   const before = safeAuditDelta(event.before_delta)
   const after = safeAuditDelta(event.after_delta)
-  const isLegacyLifecycle = event.action !== 'updated'
-    && fields.length === 1
-    && fields[0] === 'id'
+  const isLegacyLifecycle = isLegacyAuditLifecycle(event)
 
   if (isLegacyLifecycle) {
     return <p className="audit-legacy-note">이전 감사 형식 — 상세 snapshot 없음</p>
@@ -71,23 +51,7 @@ function AuditEventDetails({ event }: { event: AuditEvent }) {
 export function ActivityPanel({ data }: { data: AppData }) {
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<'activity' | 'audit'>('activity')
-  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>(data.auditEvents ?? [])
-  const [auditLoading, setAuditLoading] = useState(false)
-  const [auditError, setAuditError] = useState<string | null>(null)
-
-  const loadAudit = async (append: boolean) => {
-    setAuditLoading(true)
-    setAuditError(null)
-    try {
-      const beforeId = append && auditEvents.length > 0 ? auditEvents[auditEvents.length - 1].id : null
-      const next = await fetchAuditEvents(beforeId)
-      setAuditEvents((current) => (append ? [...current, ...next] : next))
-    } catch (error) {
-      setAuditError(toUserMessage(error))
-    } finally {
-      setAuditLoading(false)
-    }
-  }
+  const { events: auditEvents, loading: auditLoading, error: auditError, load: loadAudit } = useAuditFeed(data.auditEvents ?? [])
 
   const normalizedQuery = query.trim().toLowerCase()
   const visibleLogs = useMemo(() => data.activityLogs.filter((log) => {

@@ -2,21 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import type { AppData, Profile, ReviewRequest, ReviewStatus } from '../types'
 import type { ReviewStatusFilter, MutateFn } from '../app/types'
-import {
-  addReviewFeedback,
-  createRepositoryContext,
-  fetchWithdrawnReviewRequestsPage,
-  markReviewSeen,
-  mergeReviewRequests,
-  reopenReviewRequest,
-  resubmitReviewRequest,
-  rejectReviewRequest,
-  saveReviewRequest,
-  updateReviewStatus,
-  updateReviewFeedback,
-  voidReviewFeedback,
-  withdrawReviewRequest,
-} from '../data'
 import { toUserMessage, UserFacingError } from '../lib/errors'
 import { isReviewUnread } from '../lib/readState'
 import {
@@ -30,6 +15,7 @@ import { ReviewKanban } from '../features/reviews/components/ReviewKanban'
 import { ReviewList } from '../features/reviews/components/ReviewList'
 import { useReviewDraft } from '../features/reviews/useReviewDraft'
 import { useReviewSelection } from '../features/reviews/useReviewSelection'
+import { useReviewController } from '../features/reviews/useReviewController'
 import { LayoutGrid, List, Send } from 'lucide-react'
 
 export function ReviewsPanel({
@@ -47,6 +33,7 @@ export function ReviewsPanel({
   initialSelectedId?: string | null
   onInitialSelectionApplied?: () => void
 }) {
+  const controller = useReviewController(profile, data, setData)
   const [editingReviewId, setEditingReviewId] = useState<string | null>(null)
   const [pendingWithdrawId, setPendingWithdrawId] = useState<string | null>(null)
   const [isReviewComposerOpen, setReviewComposerOpen] = useState(false)
@@ -62,13 +49,9 @@ export function ReviewsPanel({
     setArchiveLoading(true)
     setArchiveError(null)
     try {
-      const requests = await fetchWithdrawnReviewRequestsPage(page)
-      setData((current) => ({
-        ...current,
-        reviewRequests: mergeReviewRequests(current.reviewRequests, requests),
-      }))
+      const loadedCount = await controller.loadArchivePage(page)
       setArchivePage(page)
-      setArchiveHasMore(requests.length === 50)
+      setArchiveHasMore(loadedCount === 50)
     } catch (error) {
       setArchiveError(toUserMessage(error))
     } finally {
@@ -114,15 +97,15 @@ export function ReviewsPanel({
     const target = scopedReviewRequests.find((request) => request.id === id)
     if (target && statusFilter !== 'all' && target.status !== statusFilter) setStatusFilter('all')
     setSelectedReviewId(id)
-    void markReviewSeen(createRepositoryContext(profile, data, setData), id).catch(() => undefined)
-  }, [data, profile, scopedReviewRequests, setData, setSelectedReviewId, statusFilter])
+    void controller.markSeen(id).catch(() => undefined)
+  }, [controller, scopedReviewRequests, setSelectedReviewId, statusFilter])
 
   useEffect(() => {
     if (!initialSelectedId) return
     const target = scopedReviewRequests.find((request) => request.id === initialSelectedId)
     if (target && statusFilter !== 'all' && target.status !== statusFilter) setStatusFilter('all')
-    if (target) void markReviewSeen(createRepositoryContext(profile, data, setData), target.id).catch(() => undefined)
-  }, [data, initialSelectedId, profile, scopedReviewRequests, setData, statusFilter])
+    if (target) void controller.markSeen(target.id).catch(() => undefined)
+  }, [controller, initialSelectedId, scopedReviewRequests, statusFilter])
 
   const {
     form,
@@ -166,7 +149,6 @@ export function ReviewsPanel({
 
   const createReview = () =>
     mutate(async () => {
-      const ctx = createRepositoryContext(profile, data, setData)
       const title = form.title.trim()
       const description = form.description.trim()
       if (!title || !description) {
@@ -176,10 +158,7 @@ export function ReviewsPanel({
       if (form.deadlineMode === 'date' && !dueDate) {
         throw new UserFacingError('검토 기한 날짜를 선택해 주세요.')
       }
-      const result = await saveReviewRequest(ctx, {
-        editingReviewId,
-        payload: { title, description, due_date: dueDate },
-      })
+      const result = await controller.save(editingReviewId, { title, description, due_date: dueDate })
       if (result.isUpdate) {
         setEditingReviewId(null)
         resetForm()
@@ -195,7 +174,7 @@ export function ReviewsPanel({
     const reason = window.prompt('회수 사유를 입력하세요.')?.trim()
     if (!reason) return
     void mutate(async () => {
-      await withdrawReviewRequest(createRepositoryContext(profile, data, setData), requestId, reason)
+      await controller.withdraw(requestId, reason)
       setPendingWithdrawId(null)
       if (selectedReviewId === requestId) setSelectedReviewId(null)
     }, '검토요청을 회수 보관함으로 옮겼습니다.')
@@ -205,41 +184,41 @@ export function ReviewsPanel({
     mutate(async () => {
       const trimmedComment = comment.trim()
       if (!trimmedComment) throw new UserFacingError('반려 사유를 피드백에 입력해 주세요.')
-      await rejectReviewRequest(createRepositoryContext(profile, data, setData), requestId, trimmedComment)
+      await controller.reject(requestId, trimmedComment)
     }, '검토요청을 반려했습니다.')
 
   const updateStatus = async (id: string, status: ReviewStatus): Promise<boolean> =>
     mutate(async () => {
-      await updateReviewStatus(createRepositoryContext(profile, data, setData), id, status)
+      await controller.updateStatus(id, status)
     }, '검토요청 상태를 변경했습니다.')
 
   const reopenReview = async (id: string): Promise<boolean> =>
     mutate(async () => {
-      await reopenReviewRequest(createRepositoryContext(profile, data, setData), id)
+      await controller.reopen(id)
     }, '검토요청을 다시 열었습니다.')
 
   const resubmitReview = async (id: string, comment: string): Promise<boolean> =>
     mutate(async () => {
       const trimmedComment = comment.trim()
       if (!trimmedComment) throw new UserFacingError('재검토 요청 피드백을 입력해 주세요.')
-      await resubmitReviewRequest(createRepositoryContext(profile, data, setData), id, trimmedComment)
+      await controller.resubmit(id, trimmedComment)
     }, '같은 검토요청으로 재검토를 요청했습니다.')
 
   const updateFeedback = async (feedbackId: string, comment: string): Promise<boolean> =>
     mutate(async () => {
-      await updateReviewFeedback(createRepositoryContext(profile, data, setData), feedbackId, comment)
+      await controller.updateFeedback(feedbackId, comment)
     }, '피드백을 수정했습니다.')
 
   const voidFeedback = async (feedbackId: string, reason: string): Promise<boolean> =>
     mutate(async () => {
-      await voidReviewFeedback(createRepositoryContext(profile, data, setData), feedbackId, reason)
+      await controller.voidFeedback(feedbackId, reason)
     }, '피드백을 무효화했습니다.')
 
   const addFeedback = (requestId: string, comment: string): Promise<boolean> =>
     mutate(async () => {
       const trimmedComment = comment.trim()
       if (!trimmedComment) return
-      await addReviewFeedback(createRepositoryContext(profile, data, setData), requestId, trimmedComment)
+      await controller.addFeedback(requestId, trimmedComment)
     }, '피드백을 남겼습니다.')
 
   return (

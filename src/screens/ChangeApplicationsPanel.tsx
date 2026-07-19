@@ -20,20 +20,6 @@ import {
 import type { MutateFn } from '../app/types'
 import { CopyLinkButton } from '../components/ui/CopyLinkButton'
 import { Badge, EmptyState, Section } from '../components/ui'
-import {
-  archiveChangeApplication,
-  cancelChangeApplication,
-  cancelProductChangeTask,
-  completeProductChangeTask,
-  createRepositoryContext,
-  fetchProductChangeTaskHistory,
-  markProductChangeTaskNotApplicable,
-  reassignProductChangeTasks,
-  reopenProductChangeTask,
-  restoreChangeApplication,
-  restoreProductChangeScope,
-  saveChangeApplication,
-} from '../data'
 import { ChangeActionModal, type ChangeActionDialog, type ChangeActionDialogResult } from '../features/change-applications/components/ChangeActionModal'
 import { ChangeApplicationComposer } from '../features/change-applications/components/ChangeApplicationComposer'
 import {
@@ -64,6 +50,7 @@ import {
   type ChangeAttentionFilter,
   type ChangeTaskStatusFilter,
 } from '../features/change-applications/viewModel'
+import { useChangeApplicationController } from '../features/change-applications/useChangeApplicationController'
 import { daysUntil, dueDateLabel } from '../lib/dates'
 import { formatDate } from '../lib/format'
 import type {
@@ -92,6 +79,7 @@ export function ChangeApplicationsPanel({
   initialSelectedId?: string | null
   onInitialSelectionApplied?: () => void
 }) {
+  const controller = useChangeApplicationController(profile, data, setData)
   const leaderMode = profile.role === 'leader'
   const [viewMode, setViewMode] = useState<ChangeApplicationViewMode>(leaderMode ? 'change' : 'product')
   const [statusFilter, setStatusFilter] = useState<ChangeTaskStatusFilter>(leaderMode ? 'all' : 'pending')
@@ -137,7 +125,7 @@ export function ChangeApplicationsPanel({
       productChangeTasks: mergeProductChangeTasks(data.productChangeTasks, retainedHistoryTasks, false),
     }
   }, [data, retainedHistoryTasks])
-  const remoteHistoryIsCapped = createRepositoryContext(profile, data, setData).isRemote
+  const remoteHistoryIsCapped = controller.historyIsCapped
   const isHistoryLoaded = (applicationId: string) => {
     const cached = historyCache[applicationId]
     return Boolean(
@@ -213,7 +201,7 @@ export function ChangeApplicationsPanel({
     setHistoryLoadingId(applicationId)
     setHistoryError(null)
     try {
-      const history = await fetchProductChangeTaskHistory(actionItemIds)
+      const history = await controller.fetchHistory(actionItemIds)
       setHistoryCache((current) => ({
         ...current,
         [applicationId]: { actionItemKey, tasks: history },
@@ -232,7 +220,7 @@ export function ChangeApplicationsPanel({
   }
 
   const saveComposer = (input: ChangeApplicationInput, publish: boolean) => mutate(async () => {
-    const id = await saveChangeApplication(createRepositoryContext(profile, data, setData), input, publish)
+    const id = await controller.save(input, publish)
     setSelectedApplicationId(id)
     setViewMode('change')
     setStatusFilter('all')
@@ -244,51 +232,50 @@ export function ChangeApplicationsPanel({
 
   const runDialog = (result: ChangeActionDialogResult) => {
     if (!dialog) return Promise.resolve(false)
-    const ctx = createRepositoryContext(profile, data, setData)
     if (dialog.kind === 'complete') {
       return mutate(
-        () => completeProductChangeTask(ctx, dialog.task.id, result.note, result.proxyReason),
+        () => controller.completeTask(dialog.task.id, result.note, result.proxyReason),
         `${dialog.task.product_name} 적용업무를 완료했습니다.`,
       )
     }
     if (dialog.kind === 'not_applicable') {
       return mutate(
-        () => markProductChangeTaskNotApplicable(ctx, dialog.task.id, result.reason, result.proxyReason),
+        () => controller.markNotApplicable(dialog.task.id, result.reason, result.proxyReason),
         `${dialog.task.product_name} 적용업무를 해당 없음으로 처리했습니다.`,
       )
     }
     if (dialog.kind === 'reopen') {
       return mutate(
-        () => reopenProductChangeTask(ctx, dialog.task.id, result.reason),
+        () => controller.reopenTask(dialog.task.id, result.reason),
         `${dialog.task.product_name} 적용업무를 다시 열었습니다.`,
       )
     }
     if (dialog.kind === 'reassign') {
       return mutate(
-        () => reassignProductChangeTasks(ctx, [dialog.task.id], result.assigneeId, result.reason),
+        () => controller.reassignTasks([dialog.task.id], result.assigneeId, result.reason),
         `${dialog.task.product_name} 적용 책임자를 변경했습니다.`,
       )
     }
     if (dialog.kind === 'cancel_task') {
       return mutate(
-        () => cancelProductChangeTask(ctx, dialog.task.id, result.reason),
+        () => controller.cancelTask(dialog.task.id, result.reason),
         `${dialog.task.product_name} 적용업무를 취소했습니다.`,
       )
     }
     if (dialog.kind === 'archive_application') {
       return mutate(
-        () => archiveChangeApplication(ctx, dialog.application.id, result.reason),
+        () => controller.archiveApplication(dialog.application.id, result.reason),
         `${dialog.application.change_number} 변경건을 보관했습니다.`,
       )
     }
     if (dialog.kind === 'restore_application') {
       return mutate(
-        () => restoreChangeApplication(ctx, dialog.application.id, result.reason),
+        () => controller.restoreApplication(dialog.application.id, result.reason),
         `${dialog.application.change_number} 변경건을 활성 목록으로 복원했습니다.`,
       )
     }
     return mutate(
-      () => cancelChangeApplication(ctx, dialog.application.id, result.reason),
+      () => controller.cancelApplication(dialog.application.id, result.reason),
       `${dialog.application.change_number} 변경건을 취소했습니다.`,
     )
   }
@@ -354,7 +341,7 @@ export function ChangeApplicationsPanel({
                 const reason = window.prompt('제품을 변경 적용범위에 복원하는 사유를 입력하세요.')?.trim()
                 if (!reason) return
                 void mutate(
-                  () => restoreProductChangeScope(createRepositoryContext(profile, data, setData), task.id, reason),
+                  () => controller.restoreScope(task.id, reason),
                   `${task.product_name} 제품을 변경 적용범위에 복원했습니다.`,
                 )
               }}

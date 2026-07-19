@@ -1,10 +1,10 @@
-import { recordActivityLog } from '../../lib/activityLog'
+import { recordActivityLog } from '../activityLog'
 import { assertAffectedRows, assertRecordExists, UserFacingError } from '../../lib/errors'
 import { supabase } from '../../lib/supabase'
 import type { RepositoryDeps, ProjectRepository } from '../repositories/types'
 
 export function createSupabaseProjectRepository(ctx: RepositoryDeps): ProjectRepository {
-  const { profile, data, setData } = ctx
+  const { profile, data, setData, activityLogs } = ctx
 
   return {
     async createProject({ project, memberIds }) {
@@ -17,14 +17,14 @@ export function createSupabaseProjectRepository(ctx: RepositoryDeps): ProjectRep
       })
       if (error) throw error
       const projectId = typeof createdId === 'string' ? createdId : null
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         entityType: 'project',
         entityId: projectId,
         action: 'created',
         summary: `${project.name} 프로젝트를 생성했습니다.`,
         metadata: { deadline: project.deadline, status: project.status, assigned_user_ids: memberIds },
-      }, { isRemote: true })
+      })
       return projectId
     },
 
@@ -45,14 +45,14 @@ export function createSupabaseProjectRepository(ctx: RepositoryDeps): ProjectRep
         throw error
       }
       assertAffectedRows(affected)
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         entityType: 'project',
         entityId: projectId,
         action: 'updated',
         summary: `${updated.name} 프로젝트 정보를 수정했습니다.`,
         metadata: updated,
-      }, { isRemote: true })
+      })
     },
 
     async saveProjectAssignments({ project, nextMemberIds }) {
@@ -78,14 +78,14 @@ export function createSupabaseProjectRepository(ctx: RepositoryDeps): ProjectRep
           ),
         }))
       }
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         entityType: 'project_assignment',
         entityId: project.id,
         action: 'updated',
         summary: `${project.name} 프로젝트 배정을 ${nextMemberIds.length}명으로 조정했습니다.`,
         metadata: { assigned_user_ids: nextMemberIds },
-      }, { isRemote: true })
+      })
     },
 
     async deleteProject(project) {
@@ -96,13 +96,13 @@ export function createSupabaseProjectRepository(ctx: RepositoryDeps): ProjectRep
         .select('id')
       if (error) throw error
       assertAffectedRows(affected)
-      await recordActivityLog(setData, {
+      await recordActivityLog(activityLogs, {
         actor: profile,
         entityType: 'project',
         entityId: project.id,
         action: 'deleted',
         summary: `${project.name} 프로젝트를 삭제했습니다.`,
-      }, { isRemote: true })
+      })
     },
   }
 }

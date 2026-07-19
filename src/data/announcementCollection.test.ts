@@ -124,6 +124,44 @@ describe('announcementCollection', () => {
     expect(merged.find(({ id }) => id === 'regular')?.title).toBe('regular')
   })
 
+  it('uses descending id immediately when pinned effective timestamps are equal', () => {
+    const items = [
+      announcement({
+        id: 'pinned-tie-a',
+        is_pinned: true,
+        pinned_at: '2026-07-08T00:00:00.000Z',
+        created_at: '2026-07-07T00:00:00.000Z',
+      }),
+      announcement({
+        id: 'pinned-tie-z',
+        is_pinned: true,
+        pinned_at: '2026-07-08T00:00:00.000Z',
+        created_at: '2026-07-01T00:00:00.000Z',
+      }),
+      announcement({
+        id: 'updated-tie-a',
+        is_pinned: true,
+        pinned_at: null,
+        updated_at: '2026-07-09T00:00:00.000Z',
+        created_at: '2026-07-08T00:00:00.000Z',
+      }),
+      announcement({
+        id: 'updated-tie-z',
+        is_pinned: true,
+        pinned_at: null,
+        updated_at: '2026-07-09T00:00:00.000Z',
+        created_at: '2026-07-01T00:00:00.000Z',
+      }),
+    ]
+
+    expect(sortAnnouncements(items).map(({ id }) => id)).toEqual([
+      'updated-tie-z',
+      'updated-tie-a',
+      'pinned-tie-z',
+      'pinned-tie-a',
+    ])
+  })
+
   it('accepts nullish inputs', () => {
     const single = announcement({ id: 'single' })
 

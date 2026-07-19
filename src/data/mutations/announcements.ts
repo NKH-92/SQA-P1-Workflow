@@ -1,8 +1,6 @@
 import { UserFacingError } from '../../lib/errors'
 import type { Announcement } from '../../types'
 import type { AnnouncementPayload } from '../contracts'
-import { createLocalAnnouncementRepository } from '../local/localAnnouncementRepository'
-import { createSupabaseAnnouncementRepository } from '../remote/supabaseAnnouncementRepository'
 import type { RepositoryContext } from '../repositoryContext'
 
 export type { AnnouncementPayload }
@@ -17,12 +15,6 @@ function normalizeAnnouncementPayload(payload: AnnouncementPayload): Announcemen
   return { title, body, is_pinned: payload.is_pinned }
 }
 
-function announcementRepository(ctx: RepositoryContext) {
-  return ctx.isRemote
-    ? createSupabaseAnnouncementRepository(ctx)
-    : createLocalAnnouncementRepository(ctx)
-}
-
 export async function saveAnnouncement(
   ctx: RepositoryContext,
   input: {
@@ -31,7 +23,7 @@ export async function saveAnnouncement(
     payload: AnnouncementPayload
   },
 ): Promise<void> {
-  return announcementRepository(ctx).saveAnnouncement({
+  return ctx.repositories.announcements.saveAnnouncement({
     editingAnnouncementId: input.editingAnnouncementId,
     expectedUpdatedAt: input.expectedUpdatedAt,
     payload: normalizeAnnouncementPayload(input.payload),
@@ -42,12 +34,12 @@ export async function toggleAnnouncementPin(
   ctx: RepositoryContext,
   announcement: Announcement,
 ): Promise<void> {
-  return announcementRepository(ctx).toggleAnnouncementPin(announcement)
+  return ctx.repositories.announcements.toggleAnnouncementPin(announcement)
 }
 
 export async function deleteAnnouncement(
   ctx: RepositoryContext,
   announcement: Announcement,
 ): Promise<void> {
-  return announcementRepository(ctx).deleteAnnouncement(announcement)
+  return ctx.repositories.announcements.deleteAnnouncement(announcement)
 }

@@ -14,6 +14,9 @@ const followUpMigration = readText(
 const purgeScript = readText('scripts/purge-review-attachments.mjs')
 const verificationSql = readText('scripts/verify-review-hardening-followup.sql')
 const localMigrationScript = readText('scripts/apply-pending-migrations.ps1')
+const localRlsGateScript = readText('scripts/run-local-rls-gate.mjs')
+const reviewReadinessSql = readText('scripts/sql/verify/20_review_workflow.sql')
+const reusableRlsWorkflow = readText('.github/workflows/reusable-rls.yml')
 const config = readText('supabase/config.toml')
 const ciWorkflow = readText('.github/workflows/ci.yml')
 const deployWorkflow = readText('.github/workflows/deploy-worker.yml')
@@ -56,20 +59,24 @@ describe('review workflow hardening Stage B migration', () => {
   })
 
   it('splits disposable migration replay around the same Storage API handoff', () => {
+    expect(localRlsGateScript).toContain('20260718073243_finalize_review_workflow_hardening.sql')
+    expect(localRlsGateScript).toContain('20260718123250_remove_obsolete_review_status_rpc.sql')
+    expect(localRlsGateScript).toContain('renameSync(source, destination)')
+    expect(localRlsGateScript).toContain('restoreMigrations(heldMigrations)')
+    expect(localRlsGateScript).toContain("'--confirm=PURGE_REVIEW_ATTACHMENTS'")
+    expect(localRlsGateScript).toContain("runSupabase(['migration', 'up', '--local', '--include-all'])")
+    expect(localRlsGateScript).toContain('toRootRelativePath(evidenceSql)')
+    expect(localRlsGateScript).toContain('runCanonicalSql(verificationSql, temporaryDirectory)')
+    expect(localRlsGateScript).toContain('SQA_RLS_GATE_UNSUPPORTED_CANONICAL_SQL')
+    expect(localRlsGateScript.indexOf("'--confirm=PURGE_REVIEW_ATTACHMENTS'"))
+      .toBeGreaterThan(localRlsGateScript.indexOf("runSupabase(['start'])"))
+    expect(localRlsGateScript.indexOf("runSupabase(['migration', 'up', '--local', '--include-all'])"))
+      .toBeGreaterThan(localRlsGateScript.indexOf("'--confirm=PURGE_REVIEW_ATTACHMENTS'"))
     for (const workflow of [ciWorkflow, deployWorkflow]) {
-      expect(workflow).toContain('held_migration="$RUNNER_TEMP/$(basename "$stage_b_migration")"')
-      expect(workflow).toContain('follow_up_migration="supabase/migrations/20260718123250_remove_obsolete_review_status_rpc.sql"')
-      expect(workflow).toContain('held_follow_up_migration="$RUNNER_TEMP/$(basename "$follow_up_migration")"')
-      expect(workflow).toContain('mv "$stage_b_migration" "$held_migration"')
-      expect(workflow).toContain('mv "$follow_up_migration" "$held_follow_up_migration"')
-      expect(workflow).toContain('trap restore_stage_b EXIT')
-      expect(workflow).toContain('node scripts/purge-review-attachments.mjs --execute --confirm=PURGE_REVIEW_ATTACHMENTS')
-      expect(workflow).toContain('supabase migration up --local --include-all')
-      expect(workflow.indexOf('node scripts/purge-review-attachments.mjs --execute'))
-        .toBeGreaterThan(workflow.indexOf('supabase start'))
-      expect(workflow.indexOf('supabase migration up --local --include-all'))
-        .toBeGreaterThan(workflow.indexOf('node scripts/purge-review-attachments.mjs --execute'))
+      expect(workflow).toContain('uses: ./.github/workflows/reusable-rls.yml')
     }
+    expect(reusableRlsWorkflow).toContain('run: npm run test:rls:full')
+    expect(reusableRlsWorkflow).toContain('if: ${{ always() }}')
     expect(purgeScript).toContain('storageClient.deleteBucket(bucket)')
     expect(purgeScript).toContain('storageClient.getBucket(bucket)')
   })
@@ -130,7 +137,7 @@ describe('review workflow hardening Stage B migration', () => {
   })
 
   it('requires the follow-up and excludes only catalog extension members from the anon gate', () => {
-    for (const source of [dbMigrateWorkflow, deployWorkflow, localMigrationScript, verificationSql]) {
+    for (const source of [verificationSql, reviewReadinessSql]) {
       expect(source).toContain("version = '20260718123250'")
       expect(source).toContain("pg_catalog.has_function_privilege('anon', function.oid, 'EXECUTE')")
       expect(source).toContain('from pg_catalog.pg_depend dependency')
@@ -143,6 +150,9 @@ describe('review workflow hardening Stage B migration', () => {
       )
       expect(source).toContain("dependency.deptype = 'e'")
       expect(source).not.toContain("extension.extname = 'citext'")
+    }
+    for (const consumer of [dbMigrateWorkflow, deployWorkflow, localMigrationScript]) {
+      expect(consumer).toContain('manifest.json')
     }
     expect(dbMigrateWorkflow).not.toMatch(/alter\s+extension\s+citext\s+set\s+schema/i)
   })

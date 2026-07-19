@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppData, Profile, Project } from '../../types'
-import type { RepositoryContext } from '../repositoryContext'
+import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
 import { UserFacingError } from '../../lib/errors'
 
 const mocks = vi.hoisted(() => ({
@@ -12,7 +12,7 @@ vi.mock('../../lib/supabase', () => ({
   hasSupabaseConfig: true,
   supabase: { rpc: mocks.rpc },
 }))
-vi.mock('../../lib/activityLog', () => ({ recordActivityLog: mocks.recordActivityLog }))
+vi.mock('../activityLog', () => ({ recordActivityLog: mocks.recordActivityLog }))
 
 import { saveProjectAssignments } from './projects'
 
@@ -49,7 +49,7 @@ function remoteContext(): RepositoryContext {
     profileNotes: [],
     activityLogs: [],
   }
-  return { isRemote: true, profile: leader, data, setData: vi.fn() }
+  return createRepositoryContextFromDeps('remote', {profile: leader, data, setData: vi.fn() })
 }
 
 describe('project assignment mutation contract (remote)', () => {

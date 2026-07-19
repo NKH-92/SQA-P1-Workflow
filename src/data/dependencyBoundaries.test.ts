@@ -1,28 +1,27 @@
-import { readdirSync, readFileSync } from 'node:fs'
-import { dirname, join, relative } from 'node:path'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const dataRoot = dirname(fileURLToPath(import.meta.url))
+const repositoryRoot = resolve(dataRoot, '../..')
+const checker = resolve(repositoryRoot, 'scripts/check-dependency-boundaries.mjs')
 
-function sourceFiles(directory: string): string[] {
-  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(directory, entry.name)
-    if (entry.isDirectory()) return sourceFiles(path)
-    return /\.(?:ts|tsx)$/.test(entry.name) ? [path] : []
+describe('dependency boundaries', () => {
+  it('keeps production layers within the declared dependency graph', () => {
+    expect(() => execFileSync(process.execPath, [checker], { cwd: repositoryRoot })).not.toThrow()
   })
-}
 
-describe('data dependency boundaries', () => {
-  it('keeps the data layer independent from UI feature modules', () => {
-    const offenders = sourceFiles(dataRoot).flatMap((path) => {
-      const source = readFileSync(path, 'utf8')
-      const imports = [...source.matchAll(/(?:from\s+|import\s*\()['"]([^'"]+)['"]/g)]
-      return imports
-        .filter((match) => match[1].split(/[\\/]/).includes('features'))
-        .map((match) => `${relative(dataRoot, path)} -> ${match[1]}`)
+  it('rejects deeply nested domain and presentation violations', () => {
+    const fixtureRoot = resolve(repositoryRoot, 'scripts/fixtures/dependency-boundaries')
+    const result = spawnSync(process.execPath, [checker, '--root', fixtureRoot], {
+      cwd: repositoryRoot,
+      encoding: 'utf8',
     })
-
-    expect(offenders).toEqual([])
+    const output = `${result.stdout}${result.stderr}`
+    expect(result.status).toBe(1)
+    expect(output).toContain('domain cannot import data')
+    expect(output).toContain('presentation cannot import data adapters or mutations')
+    expect(output).toContain('lib cannot perform database writes')
   })
 })

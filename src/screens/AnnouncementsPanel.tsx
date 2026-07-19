@@ -11,12 +11,8 @@ import {
   UserRound,
 } from 'lucide-react'
 import { CopyLinkButton, EmptyState, Modal } from '../components/ui'
-import {
-  createRepositoryContext,
-  deleteAnnouncement as deleteAnnouncementMutation,
-  saveAnnouncement as saveAnnouncementMutation,
-  toggleAnnouncementPin as toggleAnnouncementPinMutation,
-} from '../data'
+import { sortAnnouncements } from '../data/announcementCollection'
+import { useAnnouncementController } from '../features/announcements/useAnnouncementController'
 import type { MutateFn } from '../app/types'
 import type { AppData, Profile } from '../types'
 import './AnnouncementsPanel.css'
@@ -48,20 +44,6 @@ function timestamp(value: string | null | undefined) {
 function formatAnnouncementDate(value: string | null | undefined) {
   const parsed = timestamp(value)
   return parsed > 0 ? dateFormatter.format(new Date(parsed)) : '날짜 없음'
-}
-
-function compareAnnouncements(left: Announcement, right: Announcement) {
-  if (left.is_pinned !== right.is_pinned) return left.is_pinned ? -1 : 1
-
-  const leftTime = left.is_pinned
-    ? timestamp(left.pinned_at ?? left.updated_at ?? left.created_at)
-    : timestamp(left.created_at)
-  const rightTime = right.is_pinned
-    ? timestamp(right.pinned_at ?? right.updated_at ?? right.created_at)
-    : timestamp(right.created_at)
-
-  if (leftTime !== rightTime) return rightTime - leftTime
-  return right.id.localeCompare(left.id)
 }
 
 function AnnouncementEditorModal({
@@ -159,6 +141,7 @@ export function AnnouncementsPanel({
   initialSelectedId?: string | null
   onInitialSelectionApplied?: () => void
 }) {
+  const controller = useAnnouncementController(profile, data, setData)
   const leaderMode = profile.role === 'leader' && profile.is_active !== false && profile.must_change_password !== true
   const [query, setQuery] = useState('')
   const [selectedAnnouncementId, setSelectedAnnouncementId] = useState<string | null>(null)
@@ -172,7 +155,7 @@ export function AnnouncementsPanel({
     [data.profiles],
   )
   const sortedAnnouncements = useMemo(
-    () => [...data.announcements].sort(compareAnnouncements),
+    () => sortAnnouncements(data.announcements),
     [data.announcements],
   )
   const filteredAnnouncements = useMemo(() => {
@@ -247,14 +230,10 @@ export function AnnouncementsPanel({
     if (!leaderMode || !form.title.trim() || !form.body.trim()) return
     const editingId = editingAnnouncement?.id ?? null
     const ok = await mutate(async () => {
-      await saveAnnouncementMutation(createRepositoryContext(profile, data, setData), {
-        editingAnnouncementId: editingId,
-        expectedUpdatedAt: editingAnnouncement?.updated_at ?? null,
-        payload: {
-          title: form.title.trim(),
-          body: form.body.trim(),
-          is_pinned: form.isPinned,
-        },
+      await controller.save(editingId, editingAnnouncement?.updated_at ?? null, {
+        title: form.title.trim(),
+        body: form.body.trim(),
+        is_pinned: form.isPinned,
       })
     }, editingId ? '공지를 수정했습니다.' : '공지를 등록했습니다.')
     if (ok) closeEditor()
@@ -262,12 +241,12 @@ export function AnnouncementsPanel({
 
   const togglePin = (announcement: Announcement) =>
     mutate(async () => {
-      await toggleAnnouncementPinMutation(createRepositoryContext(profile, data, setData), announcement)
+      await controller.togglePin(announcement)
     }, announcement.is_pinned ? '공지 상단 고정을 해제했습니다.' : '공지를 상단에 고정했습니다.')
 
   const deleteAnnouncement = (announcement: Announcement) =>
     mutate(async () => {
-      await deleteAnnouncementMutation(createRepositoryContext(profile, data, setData), announcement)
+      await controller.remove(announcement)
       setPendingDeleteId(null)
       setSelectedAnnouncementId(null)
     }, '공지를 삭제했습니다.')

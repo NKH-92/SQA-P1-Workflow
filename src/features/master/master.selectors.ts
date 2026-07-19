@@ -1,5 +1,16 @@
 import type { AppData, Duty, DutyMajorCategory } from '../../types'
 
+export type MasterFeatureData = Pick<
+  AppData,
+  | 'products'
+  | 'productAssignments'
+  | 'duties'
+  | 'dutyAssignments'
+  | 'dutyMajorCategories'
+  | 'profiles'
+  | 'allowedUsers'
+>
+
 function compareMajorCategories(left: DutyMajorCategory, right: DutyMajorCategory) {
   const leftOrder = left.sort_order ?? Number.MAX_SAFE_INTEGER
   const rightOrder = right.sort_order ?? Number.MAX_SAFE_INTEGER
@@ -24,13 +35,13 @@ function selectMasterSearchMatches(query: string, ...values: Array<string | null
   return values.filter(Boolean).join(' ').toLowerCase().includes(normalized)
 }
 
-function selectFilteredProducts(data: AppData, query: string) {
+function selectFilteredProducts(data: MasterFeatureData, query: string) {
   return data.products.filter((item) =>
     selectMasterSearchMatches(query, item.name, item.category, item.company_name, item.unassigned_reason),
   )
 }
 
-function selectFilteredDuties(data: AppData, query: string) {
+function selectFilteredDuties(data: MasterFeatureData, query: string) {
   return data.duties.filter((item) =>
     selectMasterSearchMatches(
       query,
@@ -41,7 +52,7 @@ function selectFilteredDuties(data: AppData, query: string) {
   )
 }
 
-export function selectDutyTableGroups(data: AppData, query: string) {
+export function selectDutyTableGroups(data: MasterFeatureData, query: string) {
   const filteredDuties = selectFilteredDuties(data, query)
   const filteredMajorCategories = data.dutyMajorCategories
     .filter((category) => {
@@ -67,7 +78,7 @@ export function selectDutyTableGroups(data: AppData, query: string) {
   }))
 }
 
-export function selectProductGroups(data: AppData, query: string) {
+export function selectProductGroups(data: MasterFeatureData, query: string) {
   const filteredProducts = selectFilteredProducts(data, query)
   return {
     ownCompanyProducts: filteredProducts
@@ -83,7 +94,7 @@ export function selectProductGroups(data: AppData, query: string) {
   }
 }
 
-export function selectFilteredAllowedUsers(data: AppData, query: string) {
+export function selectFilteredAllowedUsers(data: MasterFeatureData, query: string) {
   return data.allowedUsers.filter((item) =>
     selectMasterSearchMatches(query, item.name, item.email, item.role),
   )

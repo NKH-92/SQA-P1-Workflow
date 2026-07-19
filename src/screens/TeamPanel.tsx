@@ -5,11 +5,11 @@ import type { AppData, Profile } from '../types'
 import type { MutateFn, TabId } from '../app/types'
 import { downloadCsv } from '../lib/csv'
 import { buildProductAllocationCsvRows } from '../lib/productAllocationCsv'
-import { addProfileNote as addProfileNoteMutation, createRepositoryContext } from '../data'
 import { formatDate, projectStatusLabels, roleLabels } from '../lib/format'
 import { compareProducts, productCategory, productCompanyName, productName } from '../lib/products'
 import type { ProductSortKey } from '../lib/products'
 import { useTeamSummaries } from '../hooks/useTeamSummaries'
+import { useTeamController } from '../features/team/useTeamController'
 import {
   Download,
   Package,
@@ -37,6 +37,7 @@ export function TeamPanel({
   initialSelectedId?: string | null
   onInitialSelectionApplied?: () => void
 }) {
+  const controller = useTeamController(profile, data, setData)
   const { teamMembers, teamSummaries } = useTeamSummaries(data)
   const [memberSearch, setMemberSearch] = useState('')
   const [selectedMemberId, setSelectedMemberId] = useState(teamMembers[0]?.id ?? '')
@@ -89,10 +90,7 @@ export function TeamPanel({
   const addProfileNote = () =>
     mutate(async () => {
       if (!selectedSummary || !profileNote.trim()) return
-      await addProfileNoteMutation(createRepositoryContext(profile, data, setData), {
-        profileId: selectedSummary.member.id,
-        note: profileNote.trim(),
-      })
+      await controller.addProfileNote(selectedSummary.member.id, profileNote.trim())
       setProfileNote('')
     }, '파트원 관리 메모를 저장했습니다.')
 

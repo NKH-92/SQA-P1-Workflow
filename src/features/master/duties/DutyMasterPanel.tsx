@@ -4,16 +4,6 @@ import type { AdminDeleteTable } from '../../../app/types'
 import { downloadCsv } from '../../../lib/csv'
 import { roleLabels } from '../../../lib/format'
 import { canReceiveAssignment } from '../../../domain/permissions'
-import {
-  addDuty as addDutyMutation,
-  addDutyMajorCategory as addDutyMajorCategoryMutation,
-  assignDuty as assignDutyMutation,
-  createRepositoryContext,
-  deleteDuty as deleteDutyRecord,
-  deleteDutyMajorCategory as deleteDutyMajorCategoryRecord,
-  updateDuty as updateDutyMutation,
-  updateDutyMajorCategory as updateDutyMajorCategoryMutation,
-} from '../../../data'
 import { selectDutyTableGroups, selectProductGroups } from '../master.selectors'
 import {
   validateDutyCreate,
@@ -26,8 +16,10 @@ import { DutyAssignModal } from './DutyAssignModal'
 import { DutyRegisterModal } from './DutyRegisterModal'
 import { DutyTable } from './DutyTable'
 import { MajorCategoryRegisterModal } from './MajorCategoryRegisterModal'
+import { useDutyAdminController } from './useDutyAdminController'
 
 export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPanelProps) {
+  const controller = useDutyAdminController(profile, data, setData)
   const [dutyForm, setDutyForm] = useState({ major_category_id: '', name: '' })
   const [majorCategoryForm, setMajorCategoryForm] = useState({ name: '' })
   const [dutyAssignment, setDutyAssignment] = useState({ user_id: '', duty_id: '' })
@@ -74,7 +66,7 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
   const addMajorCategory = async () => {
     const ok = await mutate(async () => {
       const name = validateMajorCategoryCreate(data, majorCategoryForm.name)
-      await addDutyMajorCategoryMutation(createRepositoryContext(profile, data, setData), { name })
+      await controller.addCategory({ name })
       setMajorCategoryForm({ name: '' })
     }, '대분류를 등록했습니다.')
     if (ok) setMajorCategoryRegisterOpen(false)
@@ -86,7 +78,7 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
         majorCategoryId: dutyForm.major_category_id,
         name: dutyForm.name,
       })
-      await addDutyMutation(createRepositoryContext(profile, data, setData), {
+      await controller.add({
         majorCategoryId: payload.majorCategoryId,
         name: payload.name,
       })
@@ -98,7 +90,7 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
   const assignDuty = async () => {
     const ok = await mutate(async () => {
       if (!dutyAssignment.user_id) return
-      await assignDutyMutation(createRepositoryContext(profile, data, setData), {
+      await controller.assign({
         userId: dutyAssignment.user_id,
         dutyId: dutyAssignment.duty_id,
       })
@@ -115,7 +107,7 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
         majorCategoryId: edit.major_category_id,
         name: edit.name,
       })
-      await updateDutyMutation(createRepositoryContext(profile, data, setData), dutyId, {
+      await controller.update(dutyId, {
         name: payload.name,
         major_category_id: payload.majorCategoryId,
       })
@@ -131,7 +123,7 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
       const edit = majorCategoryEdits[majorCategoryId]
       if (!edit?.name.trim()) return
       const name = validateMajorCategoryUpdate(data, majorCategoryId, edit.name)
-      await updateDutyMajorCategoryMutation(createRepositoryContext(profile, data, setData), majorCategoryId, {
+      await controller.updateCategory(majorCategoryId, {
         name,
       })
       setMajorCategoryEdits((current) => {
@@ -143,13 +135,13 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
 
   const deleteDuty = (dutyId: string) =>
     mutate(async () => {
-      await deleteDutyRecord(createRepositoryContext(profile, data, setData), dutyId)
+      await controller.remove(dutyId)
       setPendingDelete(null)
     }, '업무 삭제했습니다.')
 
   const deleteMajorCategory = (majorCategoryId: string) =>
     mutate(async () => {
-      await deleteDutyMajorCategoryRecord(createRepositoryContext(profile, data, setData), majorCategoryId)
+      await controller.removeCategory(majorCategoryId)
       setPendingDelete(null)
     }, '대분류 삭제했습니다.')
 

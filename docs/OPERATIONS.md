@@ -2,6 +2,15 @@
 
 SQA P1 Workflow의 일상 운영·백업·장애 대응 절차입니다.
 
+## 교정 리팩토링 검증과 release 차단 조건
+
+- local RLS는 `npm run test:rls:full`만 canonical 진입점으로 사용한다. runner는 pinned Supabase CLI `2.109.1`로 start -> migration -> fixture -> RLS -> readiness SQL을 실행하고 성공/실패와 관계없이 stop 및 임시 migration 복원을 수행한다.
+- Docker daemon에 연결할 수 없거나 RLS test가 하나라도 skip/fail이면 DB 관련 작업과 전체 리팩토링을 완료로 표시하지 않는다.
+- readiness SQL과 migration version은 `scripts/sql/verify/manifest.json`만 사용한다. workflow에서 glob이나 별도 목록을 만들지 않는다.
+- PowerShell의 Supabase native 호출은 각 호출 직후 `$LASTEXITCODE`를 검사한다. link/push/query 오류 뒤에 다음 단계로 진행하지 않는다.
+- production 순서는 **Backup DB -> DB Migrate -> Deploy Worker**다. 부분 polling이나 Worker build 성공만으로 DB 준비 완료를 주장하지 않는다.
+- 이 리팩토링의 기본 범위는 로컬 구현/검증이다. push, PR, remote migration, Worker deploy는 별도 승인 전 수행하지 않는다.
+
 운영 URL·Supabase project ref는 팀 위키 또는 이 문서 하단에 `<WORKER_URL>`, `<PROJECT_REF>` 형태로만 기록하고, 저장소에는 커밋하지 않습니다.
 
 ## 사전 준비 (Supabase CLI)

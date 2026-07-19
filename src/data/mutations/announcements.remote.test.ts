@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { UserFacingError } from '../../lib/errors'
 import type { Announcement, AppData, Profile } from '../../types'
-import type { RepositoryContext } from '../repositoryContext'
+import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
 
 const mocks = vi.hoisted(() => {
   const mutationSelect = vi.fn()
@@ -76,7 +76,7 @@ function remoteContext(): RepositoryContext {
     profileNotes: [],
     activityLogs: [],
   }
-  return { isRemote: true, profile: leader, data, setData: vi.fn() }
+  return createRepositoryContextFromDeps('remote', {profile: leader, data, setData: vi.fn() })
 }
 
 describe('announcement mutation contracts (remote)', () => {

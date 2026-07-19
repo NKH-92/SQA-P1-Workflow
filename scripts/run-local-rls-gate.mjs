@@ -1,11 +1,12 @@
 import {
   existsSync,
   mkdtempSync,
+  readFileSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { validateReadinessManifest } from './validate-readiness-manifest.mjs'
 
@@ -46,6 +47,45 @@ function run(command, args, options = {}) {
 
 function runSupabase(args, options) {
   return run(supabaseCommand, [...supabasePrefix, ...args], options)
+}
+
+function toRootRelativePath(file) {
+  const relativePath = relative(root, file)
+  if (
+    !relativePath
+    || relativePath === '..'
+    || relativePath.startsWith(`..${sep}`)
+    || isAbsolute(relativePath)
+  ) {
+    throw new Error(`SQA_RLS_GATE_SQL_OUTSIDE_ROOT: ${file}`)
+  }
+  return relativePath
+}
+
+function readCanonicalStatements(file) {
+  const source = readFileSync(file, 'utf8').replace(/\r\n?/g, '\n')
+  const blockPattern = /(?:^|\n)\s*(do\s+\$verify\$[\s\S]*?\$verify\$;)/gi
+  const statements = [...source.matchAll(blockPattern)].map((match) => match[1])
+  const remainder = source
+    .replace(blockPattern, '\n')
+    .replace(/^\s*--.*$/gm, '')
+    .trim()
+  if (statements.length === 0 || remainder) {
+    throw new Error(`SQA_RLS_GATE_UNSUPPORTED_CANONICAL_SQL: ${file}`)
+  }
+  return statements
+}
+
+function runCanonicalSql(file, directory) {
+  const statements = readCanonicalStatements(file)
+  statements.forEach((statement, index) => {
+    const statementFile = resolve(
+      directory,
+      `${basename(file, '.sql')}-${String(index + 1).padStart(2, '0')}.sql`,
+    )
+    writeFileSync(statementFile, `${statement}\n`)
+    runSupabase(['db', 'query', '--local', '--file', toRootRelativePath(statementFile)])
+  })
 }
 
 function parseEnvironment(output) {
@@ -146,11 +186,18 @@ begin
 end
 $verify$;
 `)
-  runSupabase(['db', 'query', '--local', '--file', evidenceSql])
+  // Supabase CLI 2.109.1 preserves surrounding quotes as filename bytes when
+  // npx.cmd receives an absolute Windows path containing spaces. All gate SQL
+  // lives below the repository root, so pass guarded cwd-relative paths.
+  runSupabase(['db', 'query', '--local', '--file', toRootRelativePath(evidenceSql)])
 
   const { readinessFiles } = validateReadinessManifest(root)
   for (const file of readinessFiles) {
-    runSupabase(['db', 'query', '--local', '--file', resolve(root, 'scripts/sql/verify', file)])
+    const verificationSql = resolve(root, 'scripts/sql/verify', file)
+    // db query executes through a prepared statement and therefore accepts one
+    // command per file. Canonical files deliberately group multiple fail-closed
+    // DO blocks, so validate their shape and execute each block independently.
+    runCanonicalSql(verificationSql, temporaryDirectory)
   }
   console.log(`SQA_RLS_GATE_OK: ${readinessFiles.length} canonical SQL files`)
 } finally {

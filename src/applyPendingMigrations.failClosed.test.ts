@@ -8,6 +8,7 @@ const powershell = process.platform === 'win32' ? 'powershell.exe' : 'pwsh'
 const shellAvailable = spawnSync(powershell, ['-NoProfile', '-Command', '$PSVersionTable.PSVersion.ToString()'], {
   encoding: 'utf8',
 }).status === 0
+const powershellProcessTimeout = 15_000
 const tempDirectories: string[] = []
 
 function createFakeNpx(directory: string) {
@@ -83,7 +84,7 @@ describe.skipIf(!shellAvailable)('apply-pending-migrations native failures', () 
     expect(result.output).toContain('SQA_SUPABASE_NATIVE_FAILED: link exited with code 7')
     expect(result.calls).toContain('link --project-ref abcdefghijklmnop')
     expect(result.calls).not.toContain('db push')
-  })
+  }, powershellProcessTimeout)
 
   it('does not run readiness verification or print success after db push fails', () => {
     const result = runScript({ pushExit: 9 })
@@ -93,7 +94,7 @@ describe.skipIf(!shellAvailable)('apply-pending-migrations native failures', () 
     expect(result.calls).toContain('db push')
     expect(result.calls).not.toContain('00_migration_history.sql')
     expect(result.output).not.toContain('Verification passed.')
-  })
+  }, powershellProcessTimeout)
 
   it('does not print success after the readiness query fails', () => {
     const result = runScript({ queryExit: 11 })
@@ -102,5 +103,5 @@ describe.skipIf(!shellAvailable)('apply-pending-migrations native failures', () 
     expect(result.output).toContain('SQA_SUPABASE_NATIVE_FAILED: readiness-00_migration_history.sql exited with code 11')
     expect(result.calls).toContain('00_migration_history.sql')
     expect(result.output).not.toContain('Verification passed.')
-  })
+  }, powershellProcessTimeout)
 })

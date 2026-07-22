@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createPreviewData, previewLeader, previewMember } from '../../demoData'
 import type { AppData, Profile } from '../../types'
 import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
@@ -62,6 +62,22 @@ describe('local change application mutations', () => {
     expect(tasks).toHaveLength(2)
     expect(tasks.map((task) => task.assignee_id)).toEqual([previewMember.id, null])
     expect(state.data.activityLogs[0]).toMatchObject({ entity_type: 'change_application', action: 'published' })
+  })
+
+  it('generates internal numbers from the KST business year', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-12-31T15:00:00.000Z'))
+      const state = harness()
+      const payload = { ...input(state.data), source: 'internal' as const, change_number: '' }
+
+      const applicationId = await saveChangeApplication(state.context(previewLeader), payload, false)
+
+      expect(state.data.changeApplications.find((item) => item.id === applicationId)?.change_number)
+        .toMatch(/^INT-2027-\d{4}$/)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('keeps completed rows, records completion evidence, and supports audited reopen', async () => {

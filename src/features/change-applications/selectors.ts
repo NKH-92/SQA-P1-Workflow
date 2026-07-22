@@ -9,6 +9,7 @@ import {
   selectProductChangeTaskContexts,
   type ProductChangeTaskContext,
 } from '../../domain/changeApplications/taskContexts'
+import { summarizeProductTaskCompletion } from '../../domain/changeApplications/completion'
 
 export { selectProductChangeTaskContexts, type ProductChangeTaskContext }
 
@@ -86,23 +87,15 @@ export function selectMyProductChangeTaskContexts(data: ChangeApplicationFeature
 
 export function calculateChangeProgress(contexts: ProductChangeTaskContext[]) {
   const active = contexts.filter(({ task }) => task.status !== 'cancelled')
-  const completed = active.filter(({ task }) => task.status === 'completed').length
-  const notApplicable = active.filter(({ task }) => task.status === 'not_applicable').length
-  const pending = active.filter(({ task }) => task.status === 'pending').length
+  const completion = summarizeProductTaskCompletion(active.map(({ task }) => task))
   const unassigned = active.filter(({ task }) => task.status === 'pending' && !task.assignee_id).length
   const overdue = active.filter(
     ({ task, actionItem }) => task.status === 'pending' && (daysUntil(actionItem.due_date) ?? 0) < 0,
   ).length
-  const processed = completed + notApplicable
   return {
-    total: active.length,
-    completed,
-    notApplicable,
-    pending,
+    ...completion,
     unassigned,
     overdue,
-    processed,
-    percent: active.length > 0 ? Math.round((processed / active.length) * 100) : 0,
   }
 }
 

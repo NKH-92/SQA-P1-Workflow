@@ -5,6 +5,11 @@ import type {
   ProductChangeTask,
   Profile,
 } from '../../types'
+import {
+  FULLY_APPLIED_ARCHIVE_REASON,
+  FULLY_PROCESSED_ARCHIVE_REASON,
+  summarizeProductTaskCompletion,
+} from './completion'
 
 export type ChangeTransitionResult = {
   data: AppData
@@ -45,6 +50,18 @@ export function resolveProductTaskTransition(
   },
 ): ChangeTransitionResult {
   const { data, actor, task, application, now } = input
+  const applicationActionIds = new Set(
+    data.changeActionItems
+      .filter((item) => item.change_application_id === application.id)
+      .map((item) => item.id),
+  )
+  const projectedApplicationTasks = data.productChangeTasks
+    .filter((item) => applicationActionIds.has(item.action_item_id))
+    .map((item) => item.id === task.id ? { ...item, status: input.status } : item)
+  const completion = summarizeProductTaskCompletion(projectedApplicationTasks)
+  const archiveReason = completion.allApplied
+    ? FULLY_APPLIED_ARCHIVE_REASON
+    : FULLY_PROCESSED_ARCHIVE_REASON
   const dataAfter: AppData = {
     ...data,
     changeApplications: updateApplication(data, application.id, (item) => ({
@@ -53,7 +70,7 @@ export function resolveProductTaskTransition(
       archived_at: input.autoArchive ? now : item.archived_at ?? null,
       archived_by: input.autoArchive ? null : item.archived_by ?? null,
       archive_origin: input.autoArchive ? 'automatic' : item.archive_origin ?? null,
-      archive_reason: input.autoArchive ? '모든 제품 적용업무가 처리되어 자동 보관됨' : item.archive_reason ?? null,
+      archive_reason: input.autoArchive ? archiveReason : item.archive_reason ?? null,
       updated_at: now,
     })),
     productChangeTasks: updateTask(data, task.id, (item) => ({
@@ -88,8 +105,14 @@ export function resolveProductTaskTransition(
       entityType: 'change_application',
       entityId: application.id,
       action: 'auto_archived',
-      summary: `${application.change_number} 변경건의 모든 제품 적용업무가 처리되어 자동 보관되었습니다.`,
-      metadata: { task_id: task.id, final_task_status: input.status },
+      summary: completion.allApplied
+        ? `${application.change_number} 변경건의 모든 제품 적용이 완료되어 자동 보관되었습니다.`
+        : `${application.change_number} 변경건의 모든 제품 적용업무가 처리되어 자동 보관되었습니다.`,
+      metadata: {
+        task_id: task.id,
+        final_task_status: input.status,
+        completion_kind: completion.allApplied ? 'all_applied' : 'processed_with_exceptions',
+      },
     })
   }
   return { data: dataAfter, logFacts }
@@ -111,6 +134,7 @@ export function reopenProductTaskTransition(
       ...item,
       archived_at: null,
       archived_by: null,
+      archive_origin: null,
       archive_reason: null,
       updated_at: now,
     })),

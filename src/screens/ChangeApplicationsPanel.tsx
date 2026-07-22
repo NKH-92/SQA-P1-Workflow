@@ -51,6 +51,7 @@ import {
   type ChangeTaskStatusFilter,
 } from '../features/change-applications/viewModel'
 import { useChangeApplicationController } from '../features/change-applications/useChangeApplicationController'
+import { hasFullyAppliedArchiveSignal } from '../domain/changeApplications/completion'
 import { daysUntil, dueDateLabel } from '../lib/dates'
 import { formatDate } from '../lib/format'
 import type {
@@ -135,6 +136,27 @@ export function ChangeApplicationsPanel({
   }
 
   const allContexts = useMemo(() => selectProductChangeTaskContexts(panelData), [panelData])
+  const completionByApplicationId = useMemo(() => {
+    return new Map(data.changeApplications.map((application) => {
+      const contexts = selectApplicationTaskContexts(panelData, application.id)
+      const cached = historyCache[application.id]
+      const hasExactHistory = !remoteHistoryIsCapped || Boolean(
+        cached
+        && cached.actionItemKey === changeApplicationActionItemKey(data, application.id),
+      )
+      const progress = calculateChangeProgress(contexts)
+      return [application.id, {
+        fullyApplied: hasFullyAppliedArchiveSignal(application) || (hasExactHistory && progress.allApplied),
+        progress,
+      }] as const
+    }))
+  }, [data, historyCache, panelData, remoteHistoryIsCapped])
+  const fullyAppliedApplications = useMemo(
+    () => data.changeApplications
+      .filter((application) => application.status === 'published' && completionByApplicationId.get(application.id)?.fullyApplied)
+      .sort((left, right) => (right.archived_at ?? right.updated_at).localeCompare(left.archived_at ?? left.updated_at)),
+    [completionByApplicationId, data.changeApplications],
+  )
   const scopedContexts = useMemo(
     () => leaderMode
       ? allContexts
@@ -189,6 +211,17 @@ export function ChangeApplicationsPanel({
       setApplicationFilter(application.status)
       setArchiveFilter(application.archived_at ? 'archived' : 'active')
     }
+  }
+
+  const showFullyAppliedApplications = () => {
+    setViewMode('change')
+    setStatusFilter('all')
+    setApplicationFilter('published')
+    setArchiveFilter('all')
+    setActionKindFilter('all')
+    setAttentionFilter('all')
+    setQuery('')
+    setSelectedApplicationId(fullyAppliedApplications[0]?.id ?? null)
   }
 
   const loadFullHistory = async () => {
@@ -389,10 +422,16 @@ export function ChangeApplicationsPanel({
           <strong className="kpi-stat-value">{dueSoonCount}<span className="unit">건</span></strong>
         </button>
         {leaderMode ? (
-          <button className="kpi-stat" data-tone={unassignedCount > 0 ? 'warning' : undefined} onClick={() => { setViewMode('assignee'); setStatusFilter('pending'); setApplicationFilter('published'); setArchiveFilter('active'); setAttentionFilter('unassigned') }} type="button">
-            <span className="kpi-stat-label">담당 미지정<Users size={15} /></span>
-            <strong className="kpi-stat-value">{unassignedCount}<span className="unit">건</span></strong>
-          </button>
+          <>
+            <button className="kpi-stat" data-tone={unassignedCount > 0 ? 'warning' : undefined} onClick={() => { setViewMode('assignee'); setStatusFilter('pending'); setApplicationFilter('published'); setArchiveFilter('active'); setAttentionFilter('unassigned') }} type="button">
+              <span className="kpi-stat-label">담당 미지정<Users size={15} /></span>
+              <strong className="kpi-stat-value">{unassignedCount}<span className="unit">건</span></strong>
+            </button>
+            <button className="kpi-stat" data-tone="success" onClick={showFullyAppliedApplications} type="button">
+              <span className="kpi-stat-label">완료된 변경<CheckCircle2 size={15} /></span>
+              <strong className="kpi-stat-value">{fullyAppliedApplications.length}<span className="unit">건</span></strong>
+            </button>
+          </>
         ) : (
           <button className="kpi-stat" onClick={() => { setStatusFilter('completed'); setApplicationFilter('published'); setArchiveFilter('active'); setAttentionFilter('all') }} type="button">
             <span className="kpi-stat-label">완료 이력<CheckCircle2 size={15} /></span>
@@ -400,6 +439,17 @@ export function ChangeApplicationsPanel({
           </button>
         )}
       </div>
+
+      {leaderMode && fullyAppliedApplications.length > 0 && (
+        <div className="change-completion-notice" role="status">
+          <span className="change-completion-icon"><CheckCircle2 size={20} aria-hidden="true" /></span>
+          <span>
+            <strong>{fullyAppliedApplications.length}건의 변경이 모든 제품에서 적용 완료되었습니다.</strong>
+            <small>담당자 전원이 ‘적용 완료’로 처리한 변경만 집계합니다.</small>
+          </span>
+          <button className="ghost compact" onClick={showFullyAppliedApplications} type="button">완료 변경 보기</button>
+        </div>
+      )}
 
       <Section title="업무 목록" icon={<Filter size={18} />} aside={`${taskContexts.length}건`}>
         <div className="change-list-toolbar">
@@ -466,13 +516,14 @@ export function ChangeApplicationsPanel({
                 const contexts = selectApplicationTaskContexts(panelData, application.id)
                 const progress = calculateChangeProgress(contexts)
                 const selected = selectedApplication?.id === application.id
+                const fullyApplied = completionByApplicationId.get(application.id)?.fullyApplied ?? false
                 const canShowProgress = leaderMode || application.created_by === profile.id || contexts.length > 0
                 const needsFullHistory = remoteHistoryIsCapped
                   && (leaderMode || application.created_by === profile.id)
                   && !isHistoryLoaded(application.id)
                 return (
                   <button className={selected ? 'change-application-card selected' : 'change-application-card'} key={application.id} onClick={() => setSelectedApplicationId(application.id)} type="button">
-                    <span className="change-application-card-top"><span><Badge status={application.status}>{applicationStatusLabel(application.status)}</Badge>{application.archived_at && <Badge>보관</Badge>}</span><span>{application.change_number}</span></span>
+                    <span className="change-application-card-top"><span><Badge status={application.status}>{applicationStatusLabel(application.status)}</Badge>{fullyApplied ? <Badge status="completed">변경 적용 완료</Badge> : application.archived_at && <Badge>보관</Badge>}</span><span>{application.change_number}</span></span>
                     <strong>{application.title}</strong>
                     <small>{applicationCreatorName(data, application)} · 시행 {formatDate(application.effective_date)}</small>
                     {canShowProgress && needsFullHistory ? (
@@ -497,6 +548,12 @@ export function ChangeApplicationsPanel({
             <div className="change-application-detail">
               {selectedApplication ? (
                 <>
+                  {completionByApplicationId.get(selectedApplication.id)?.fullyApplied && (
+                    <div className="change-completion-banner" role="status">
+                      <CheckCircle2 size={22} aria-hidden="true" />
+                      <span><strong>모든 제품 적용 완료</strong><small>모든 제품 담당자의 적용 완료 처리가 끝났습니다.</small></span>
+                    </div>
+                  )}
                   <header className="change-detail-header">
                     <div><span>{selectedApplication.change_number}</span><h2>{selectedApplication.title}</h2><p>{selectedApplication.summary}</p></div>
                     <div className="change-detail-actions">

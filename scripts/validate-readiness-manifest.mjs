@@ -51,11 +51,16 @@ export function validateReadinessManifest(root = repositoryRoot) {
     .filter((name) => /^\d{12,14}_.+\.sql$/.test(name))
     .map((name) => name.split('_', 1)[0])
     .sort()
+  const migrationHistoryVersions = [...readFileSync(
+    resolve(verifyDirectory, '00_migration_history.sql'),
+    'utf8',
+  ).matchAll(/'(\d{12,14})'/g)].map((match) => match[1])
 
   assertExact(readinessFiles, [...readinessFiles].sort(), 'readinessFiles order')
   assertExact(migrationVersions, [...migrationVersions].sort(), 'migrationVersions order')
   assertExact(actualReadinessFiles, readinessFiles, 'readiness SQL set')
   assertExact(actualMigrationVersions, migrationVersions, 'migration version set')
+  assertExact(migrationHistoryVersions, migrationVersions, 'migration history SQL')
 
   return { readinessFiles, migrationVersions }
 }

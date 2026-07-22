@@ -6,6 +6,34 @@ if (!url || !serviceRoleKey) {
   throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required')
 }
 
+let targetUrl
+try {
+  targetUrl = new URL(url)
+} catch {
+  throw new Error('SQA_FIXTURE_TARGET_URL_INVALID')
+}
+
+const targetHostname = targetUrl.hostname
+const isLocalTarget = targetHostname === 'localhost' || targetHostname === '127.0.0.1'
+if (!isLocalTarget) {
+  const targetProjectRef = process.env.RLS_REMOTE_TARGET_REF ?? ''
+  const productionProjectRef = process.env.RLS_PRODUCTION_PROJECT_REF ?? ''
+  const allowedTargetRefs = (process.env.RLS_ALLOWED_TARGET_REFS ?? '').split(/[\s,]+/).filter(Boolean)
+  const remoteDisposableConfirmed = process.env.RLS_ALLOW_REMOTE_DISPOSABLE === '1'
+    && process.env.RLS_CONFIRM_DISPOSABLE_TARGET === 'true'
+    && /^[a-z0-9]{20}$/.test(targetProjectRef)
+    && /^[a-z0-9]{20}$/.test(productionProjectRef)
+    && targetProjectRef !== productionProjectRef
+    && allowedTargetRefs.includes(targetProjectRef)
+    && targetUrl.protocol === 'https:'
+    && targetHostname === `${targetProjectRef}.supabase.co`
+    && targetUrl.pathname === '/'
+    && !targetUrl.search
+    && !targetUrl.hash
+
+  if (!remoteDisposableConfirmed) throw new Error('SQA_FIXTURE_NON_LOCAL_TARGET')
+}
+
 const admin = createClient(url, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 })
@@ -124,6 +152,47 @@ if (feedbackError || !feedbackRows || feedbackRows.length !== 5) {
   throw feedbackError ?? new Error('Feedback fixture ids are incomplete')
 }
 
+// Remote browser contract: published change application with a task owned by member A.
+const anonKey = process.env.SUPABASE_ANON_KEY
+if (!anonKey) throw new Error('SUPABASE_ANON_KEY is required to publish change-application fixtures')
+const memberAClient = createClient(url, anonKey, {
+  auth: { autoRefreshToken: false, persistSession: false },
+})
+const memberASignIn = await memberAClient.auth.signInWithPassword({
+  email: users[1].email,
+  password,
+})
+if (memberASignIn.error) throw memberASignIn.error
+const changeNumber = `RLS-E2E-${Date.now()}`
+const publishedChange = await memberAClient.rpc('publish_change_application', {
+  p_change_application_id: null,
+  p_expected_updated_at: null,
+  p_change_number: changeNumber,
+  p_source: 'official',
+  p_title: 'Remote E2E owned task',
+  p_summary: 'Fixture for assigned change-task owner success path',
+  p_source_url: null,
+  p_effective_date: '2099-01-01',
+  p_action_kind: 'product_standard',
+  p_custom_kind_name: null,
+  p_action_content: 'Complete the controlled product update',
+  p_due_date: '2099-01-10',
+  p_tasks: [{ product_id: product.id, assignee_id: created.memberA.id, product_note: null }],
+})
+if (publishedChange.error || typeof publishedChange.data !== 'string') {
+  throw publishedChange.error ?? new Error('Failed to publish change-application fixture')
+}
+const { data: ownedTask, error: ownedTaskError } = await admin
+  .from('product_change_tasks')
+  .select('id, assignee_id, status')
+  .eq('assignee_id', created.memberA.id)
+  .eq('status', 'pending')
+  .limit(1)
+  .maybeSingle()
+if (ownedTaskError || !ownedTask) {
+  throw ownedTaskError ?? new Error('Owned change-task fixture is missing')
+}
+
 const output = {
   RLS_LEADER_EMAIL: users[0].email,
   RLS_LEADER_PASSWORD: password,
@@ -163,6 +232,8 @@ const output = {
   RLS_LEADER_B_EMAIL: users.find((user) => user.key === 'leaderB').email,
   RLS_LEADER_B_PASSWORD: password,
   RLS_LEADER_B_USER_ID: created.leaderB.id,
+  RLS_OWNED_CHANGE_APPLICATION_ID: publishedChange.data,
+  RLS_OWNED_CHANGE_TASK_ID: ownedTask.id,
 }
 
 for (const [key, value] of Object.entries(output)) console.log(`${key}=${value}`)

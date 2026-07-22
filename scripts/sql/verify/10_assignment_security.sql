@@ -11,6 +11,12 @@ begin
               and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('public.add_duty_assignment(uuid,uuid)')), false)
               and coalesce(has_function_privilege('authenticated', to_regprocedure('public.add_duty_assignment(uuid,uuid)'), 'EXECUTE'), false)
               and not coalesce(has_function_privilege('anon', to_regprocedure('public.add_duty_assignment(uuid,uuid)'), 'EXECUTE'), true)
+              and to_regprocedure('public.try_add_product_assignment(uuid,uuid)') is not null
+              and coalesce(has_function_privilege('authenticated', to_regprocedure('public.try_add_product_assignment(uuid,uuid)'), 'EXECUTE'), false)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.try_add_product_assignment(uuid,uuid)'), 'EXECUTE'), true)
+              and to_regprocedure('public.try_add_duty_assignment(uuid,uuid)') is not null
+              and coalesce(has_function_privilege('authenticated', to_regprocedure('public.try_add_duty_assignment(uuid,uuid)'), 'EXECUTE'), false)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.try_add_duty_assignment(uuid,uuid)'), 'EXECUTE'), true)
               and to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)') is not null
               and coalesce((select pg_get_function_result(to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)')) = 'timestamp with time zone'), false)
               and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('public.replace_project_assignments_if_current(uuid,uuid[],timestamp with time zone)')), false)
@@ -95,7 +101,23 @@ $verify$;
 
 do $verify$
 begin
-  if not ((pg_get_viewdef('public.public_leader_profiles'::regclass, true) like '%can_use_app()%') = true) then
+  if not ((exists (select 1 from supabase_migrations.schema_migrations where version = '20260720231000')
+              and exists (
+                select 1 from pg_class
+                 where oid = 'public.public_leader_profiles'::regclass
+                   and coalesce(reloptions, '{}'::text[]) @> array['security_invoker=true', 'security_barrier=true']
+              )
+              and to_regprocedure('private.list_active_leader_profiles()') is not null
+              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('private.list_active_leader_profiles()')), false)
+              and coalesce((select exists (
+                select 1 from unnest(proconfig) cfg
+                 where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')
+              ) from pg_proc where oid = to_regprocedure('private.list_active_leader_profiles()')), false)
+              and coalesce(pg_get_functiondef(to_regprocedure('private.list_active_leader_profiles()')) like '%public.can_use_app()%', false)
+              and coalesce(has_function_privilege('authenticated', to_regprocedure('private.list_active_leader_profiles()'), 'EXECUTE'), false)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('private.list_active_leader_profiles()'), 'EXECUTE'), true)
+              and coalesce(has_table_privilege('authenticated', 'public.public_leader_profiles', 'SELECT'), false)
+              and not coalesce(has_table_privilege('anon', 'public.public_leader_profiles', 'SELECT'), true)) = true) then
     raise exception 'SQA_DB_READY_LEADER_VIEW_GATE';
   end if;
 end

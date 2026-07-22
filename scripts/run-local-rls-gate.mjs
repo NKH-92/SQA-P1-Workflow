@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -101,10 +102,17 @@ function parseEnvironment(output) {
 }
 
 function holdMigrations(directory) {
-  const names = [
-    '20260718073243_finalize_review_workflow_hardening.sql',
-    '20260718123250_remove_obsolete_review_status_rpc.sql',
-  ]
+  // The first held migration purges a Storage bucket and therefore cannot run
+  // during `supabase start` before the Storage API is available. Hold it and
+  // every later migration, then restore/apply the whole suffix in chronological
+  // order after the purge. Holding only the two destructive files would apply
+  // the older ACL reset *after* newer migrations and silently revoke every new
+  // authenticated RPC grant.
+  const firstHeld = '20260718073243_finalize_review_workflow_hardening.sql'
+  const names = readdirSync(resolve(root, 'supabase/migrations'))
+    .filter((name) => /^\d{12,14}_.+\.sql$/.test(name) && name >= firstHeld)
+    .sort()
+  if (names[0] !== firstHeld) throw new Error(`SQA_RLS_GATE_MIGRATION_MISSING: ${firstHeld}`)
   const held = []
   for (const name of names) {
     const source = resolve(root, 'supabase/migrations', name)
@@ -146,6 +154,7 @@ try {
   })
 
   runSupabase(['migration', 'up', '--local', '--include-all'])
+  runSupabase(['db', 'lint', '--local', '--level', 'error', '--fail-on', 'error'])
   status = parseEnvironment(runSupabase(['status', '-o', 'env'], { capture: true }).stdout)
 
   const fixtureResult = run(process.execPath, ['scripts/setup-rls-fixtures.mjs'], {
@@ -164,11 +173,30 @@ try {
       .map((match) => [match[1], match[2]]),
   )
 
+  // Seed the scale fixture before the RLS suite so the EXPLAIN/bounded gate
+  // is activated (RLS_SCALE_ENABLED=1) rather than permanently skipped.
+  if (!fixtureEnvironment.RLS_LEADER_USER_ID) {
+    throw new Error('SQA_RLS_SCALE_LEADER_MISSING')
+  }
+  run(process.execPath, ['scripts/seed-review-scale-fixture.mjs'], {
+    env: {
+      SUPABASE_URL: status.API_URL,
+      SUPABASE_SERVICE_ROLE_KEY: status.SERVICE_ROLE_KEY,
+      RLS_SCALE_USER_ID: fixtureEnvironment.RLS_LEADER_USER_ID,
+    },
+  })
+
   const testEnvironment = {
     SUPABASE_URL: status.API_URL,
     SUPABASE_ANON_KEY: status.ANON_KEY,
     SUPABASE_SERVICE_ROLE_KEY: status.SERVICE_ROLE_KEY,
     SUPABASE_DB_URL: status.DB_URL,
+    // The scale EXPLAIN gate accepts either name; keep both for psql helpers.
+    DATABASE_URL: status.DB_URL,
+    RLS_SCALE_ENABLED: '1',
+    RLS_SCALE_USER_ID: fixtureEnvironment.RLS_LEADER_USER_ID,
+    RLS_SCALE_USER_EMAIL: fixtureEnvironment.RLS_LEADER_EMAIL,
+    RLS_SCALE_USER_PASSWORD: fixtureEnvironment.RLS_LEADER_PASSWORD,
     ...fixtureEnvironment,
   }
   run(npm, ['run', 'test:rls'], { env: testEnvironment })

@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { describe, expect, it } from 'vitest'
-import { isSupabaseLocalConfigured, RLS_SKIP_NOTE } from './helpers'
+import { isSupabaseRlsTargetConfigured, RLS_SKIP_NOTE } from './helpers'
 
-const describeRls = isSupabaseLocalConfigured() ? describe : describe.skip
+const describeRls = isSupabaseRlsTargetConfigured() ? describe : describe.skip
 
 describeRls(`RLS review requests (${RLS_SKIP_NOTE})`, () => {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? ''

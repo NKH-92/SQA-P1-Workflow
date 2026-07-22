@@ -3,6 +3,7 @@ do $verify$
 begin
   if not ((exists (select 1 from supabase_migrations.schema_migrations where version = '202607170001')
               and exists (select 1 from supabase_migrations.schema_migrations where version = '20260717123840')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '20260722120452')
               and to_regclass('public.change_applications') is not null
               and to_regclass('public.change_action_items') is not null
               and to_regclass('public.product_change_tasks') is not null
@@ -73,6 +74,9 @@ begin
               and not coalesce(has_function_privilege('anon', to_regprocedure('private.sync_change_application_archive()'), 'EXECUTE'), true)
               and coalesce(pg_get_functiondef(to_regprocedure('private.sync_change_application_archive()')) like '%new.status in (''completed'', ''not_applicable'')%', false)
               and coalesce(pg_get_functiondef(to_regprocedure('private.sync_change_application_archive()')) like '%new.status = ''pending''%', false)
+              and coalesce(pg_get_functiondef(to_regprocedure('private.sync_change_application_archive()')) like '%모든 제품 적용이 완료되어 자동 보관됨%', false)
+              and coalesce(pg_get_functiondef(to_regprocedure('private.sync_change_application_archive()')) like '%completion_kind%', false)
+              and coalesce(pg_get_functiondef(to_regprocedure('private.enforce_archive_origin()')) like '%모든 제품 적용이 완료되어 자동 보관됨%', false)
               and exists (select 1 from pg_trigger where tgrelid = to_regclass('public.change_applications') and tgname = 'change_applications_private_audit' and tgfoid = to_regprocedure('private.record_mutation_audit()') and tgenabled in ('O', 'A'))
               and exists (select 1 from pg_trigger where tgrelid = to_regclass('public.change_action_items') and tgname = 'change_action_items_private_audit' and tgfoid = to_regprocedure('private.record_mutation_audit()') and tgenabled in ('O', 'A'))
               and exists (select 1 from pg_trigger where tgrelid = to_regclass('public.product_change_tasks') and tgname = 'product_change_tasks_private_audit' and tgfoid = to_regprocedure('private.record_mutation_audit()') and tgenabled in ('O', 'A'))

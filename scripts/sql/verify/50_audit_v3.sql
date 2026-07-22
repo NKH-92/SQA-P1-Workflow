@@ -12,6 +12,8 @@ begin
               and not coalesce(has_function_privilege('anon', to_regprocedure('private.build_audit_business_snapshot(text,jsonb)'), 'EXECUTE'), true)
               and coalesce(has_function_privilege('authenticated', to_regprocedure('public.list_audit_events(integer,bigint)'), 'EXECUTE'), false)
               and not coalesce(has_function_privilege('anon', to_regprocedure('public.list_audit_events(integer,bigint)'), 'EXECUTE'), true)
+              and coalesce(has_function_privilege('authenticated', to_regprocedure('public.list_audit_events_v2(integer,text)'), 'EXECUTE'), false)
+              and not coalesce(has_function_privilege('anon', to_regprocedure('public.list_audit_events_v2(integer,text)'), 'EXECUTE'), true)
               and (
                 select count(*) = 16 from pg_trigger
                 where tgfoid = to_regprocedure('private.record_mutation_audit()')

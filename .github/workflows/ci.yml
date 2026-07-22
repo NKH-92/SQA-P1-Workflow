@@ -63,9 +63,32 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+  e2e-remote:
+    runs-on: ubuntu-latest
+    needs: [rls]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
+        with:
+          version: 2.109.1
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run remote Supabase browser E2E
+        env:
+          SUPABASE_BIN: supabase
+          REMOTE_E2E_REQUIRED: '1'
+        run: npm run test:e2e:remote
+      - if: ${{ always() }}
+        run: supabase stop --no-backup
   build:
     runs-on: ubuntu-latest
-    needs: [typecheck, lint, test, rls, e2e]
+    needs: [typecheck, lint, test, rls, e2e, e2e-remote]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:

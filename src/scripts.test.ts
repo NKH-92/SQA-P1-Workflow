@@ -1,3 +1,5 @@
+import { spawnSync } from 'node:child_process'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const scripts = import.meta.glob('../scripts/**/*.{ps1,mjs,sql,json}', {
@@ -8,6 +10,28 @@ const scripts = import.meta.glob('../scripts/**/*.{ps1,mjs,sql,json}', {
 
 function readScript(name: string) {
   return scripts[`../scripts/${name}`] ?? ''
+}
+
+const root = resolve(import.meta.dirname, '..')
+
+function runFixtureScript(name: string, url: string) {
+  const secretSentinel = 'fixture-secret-must-not-leak'
+  const result = spawnSync(process.execPath, [resolve(root, 'scripts', name)], {
+    cwd: root,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      SUPABASE_URL: url,
+      SUPABASE_ANON_KEY: 'fixture-anon-must-not-leak',
+      SUPABASE_SERVICE_ROLE_KEY: secretSentinel,
+      RLS_SCALE_USER_ID: '00000000-0000-0000-0000-000000000001',
+    },
+  })
+  return {
+    status: result.status,
+    output: `${result.stdout ?? ''}\n${result.stderr ?? ''}`,
+    secretSentinel,
+  }
 }
 
 describe('migration scripts', () => {
@@ -38,7 +62,7 @@ describe('migration scripts', () => {
     expect(canonicalSql).toContain('announcements_select_app_user')
     expect(canonicalSql).toContain('count(*) = 16')
     expect(canonicalSql).toContain('private.build_audit_business_snapshot(text,jsonb)')
-    expect(canonicalSql).toContain('public.list_audit_events(integer,bigint)')
+    expect(canonicalSql).toContain('public.list_audit_events_v2(integer,text)')
     expect(manifest).toContain('20260718161549')
     expect(script).toContain("SupabaseCliVersion = '2.109.1'")
     expect(script).toContain('function Invoke-SupabaseCommand')
@@ -98,5 +122,44 @@ describe('migration scripts', () => {
     expect(fixtures).toContain('must_change_password: user.mustChangePassword ?? false')
     expect(fixtures).toContain('RLS_MEMBER_A_PENDING_REVIEW_REQUEST_ID')
     expect(fixtures).toContain('RLS_TEST_PROJECT_UPDATED_AT')
+    expect(fixtures).toContain("RLS_ALLOW_REMOTE_DISPOSABLE === '1'")
+    expect(fixtures).toContain("RLS_CONFIRM_DISPOSABLE_TARGET === 'true'")
+    expect(fixtures).toContain('targetHostname === `${targetProjectRef}.supabase.co`')
+    expect(fixtures).toContain('targetProjectRef !== productionProjectRef')
+    expect(fixtures).toContain('allowedTargetRefs.includes(targetProjectRef)')
+
+    const remoteSmoke = readScript('run-dr-remote-smoke.mjs')
+    expect(remoteSmoke).toContain("RLS_ALLOW_REMOTE_DISPOSABLE: '1'")
+    expect(remoteSmoke).toContain('RLS_CONFIRM_DISPOSABLE_TARGET: confirmDisposableTarget')
+    expect(remoteSmoke).toContain('RLS_REMOTE_TARGET_REF: targetProjectRef')
+    expect(remoteSmoke).toContain('RLS_PRODUCTION_PROJECT_REF: productionProjectRef')
+    expect(remoteSmoke).toContain('RLS_ALLOWED_TARGET_REFS: allowedTargetRefs')
   })
+
+  it.each(['setup-rls-fixtures.mjs', 'seed-review-scale-fixture.mjs'])(
+    '%s rejects every non-local or malformed Supabase target before using credentials',
+    (name) => {
+      for (const target of [
+        'https://project-ref.supabase.co',
+        'http://localhost.attacker.example:54321',
+        'http://127.0.0.1.attacker.example:54321',
+        'http://[::1]:54321',
+      ]) {
+        const result = runFixtureScript(name, target)
+        expect(result.status).not.toBe(0)
+        expect(result.output).toContain('SQA_FIXTURE_NON_LOCAL_TARGET')
+        expect(result.output).not.toContain(result.secretSentinel)
+      }
+
+      const malformed = runFixtureScript(name, 'not a URL')
+      expect(malformed.status).not.toBe(0)
+      expect(malformed.output).toContain('SQA_FIXTURE_TARGET_URL_INVALID')
+      expect(malformed.output).not.toContain(malformed.secretSentinel)
+
+      const script = readScript(name)
+      expect(script).toContain("'localhost'")
+      expect(script).toContain("'127.0.0.1'")
+      expect(script.indexOf('new URL(url)')).toBeLessThan(script.indexOf('createClient(url,'))
+    },
+  )
 })

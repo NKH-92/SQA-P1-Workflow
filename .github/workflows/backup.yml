@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: backup-${{ github.ref }}
+  group: sqa-production-release
   cancel-in-progress: false
 
 jobs:
@@ -42,35 +42,47 @@ jobs:
             exit 1
           fi
 
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
       # 버전 고정 — latest는 백업 도구 체인을 비결정적으로 만든다 (복원 리허설과 동일 버전 유지)
       - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
         with:
           version: 2.109.1
 
-      - name: Dump schema and data
+      - name: Dump DR package
         env:
           DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
+          set -Eeuo pipefail
           date=$(TZ=Asia/Seoul date +%F)
           echo "DUMP_DATE=$date" >> "$GITHUB_ENV"
           mkdir -p dump
-          supabase db dump --db-url "$DATABASE_URL" -f "dump/sqa-p1-workflow-$date-schema.sql"
-          supabase db dump --db-url "$DATABASE_URL" --data-only -f "dump/sqa-p1-workflow-$date-data.sql"
+          supabase db dump --db-url "$DATABASE_URL" --role-only -f dump/roles.sql
+          supabase db dump --db-url "$DATABASE_URL" -f dump/schema.sql
+          supabase db dump --db-url "$DATABASE_URL" --data-only -f dump/data.sql
+          supabase db dump --db-url "$DATABASE_URL" --schema supabase_migrations \
+            --data-only -f dump/migration-history.sql
 
-      # OPERATIONS.md 매일 백업 확인 기준과 동일: 크기 > 0, schema에 CREATE TABLE, data에 COPY/INSERT
-      - name: Validate dumps
-        run: |
-          schema="dump/sqa-p1-workflow-$DUMP_DATE-schema.sql"
-          data="dump/sqa-p1-workflow-$DUMP_DATE-data.sql"
-          for f in "$schema" "$data"; do
-            [ -s "$f" ] || { echo "empty or missing dump: $f"; exit 1; }
-          done
-          grep -q "CREATE TABLE" "$schema" || { echo "schema dump has no CREATE TABLE"; exit 1; }
-          grep -Eq "COPY |INSERT " "$data" || { echo "data dump has no COPY/INSERT"; exit 1; }
+          captured_at=$(date -u +%FT%TZ)
+          node scripts/capture-dr-database-evidence.mjs \
+            --captured-at "$captured_at" \
+            --output dump/source-evidence.json
+          storage_object_count=$(node -e \
+            "const e=require('./dump/source-evidence.json'); process.stdout.write(String(e.configuration.storageObjectCount))")
+
+          node scripts/verify-dr-package.mjs --write-manifest dump \
+            --source-sha "$GITHUB_SHA" \
+            --created-at "$captured_at" \
+            --backup-class L2 \
+            --auth-identity-included false \
+            --storage-object-count "$storage_object_count"
 
       # 이 저장소는 public일 수 있고, public repo의 아티팩트는 누구나 내려받을 수 있다.
       # 팀원 이름·이메일이 담긴 덤프는 반드시 암호화된 상태로만 업로드한다.
-      - name: Encrypt dump
+      - name: Encrypt and revalidate DR package
         env:
           PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
         run: |
@@ -86,8 +98,10 @@ jobs:
           gpg_output="$archive.gpg"
           gpg_temp="$gpg_output.tmp"
           legacy_output="$archive.enc"
+          primary_verify="verify-primary"
+          legacy_verify="verify-legacy"
           umask 077
-          trap 'rm -f "$gpg_temp"' EXIT
+          trap 'rm -rf "$gpg_temp" "$archive" dump verify-primary verify-legacy' EXIT
 
           tar czf "$archive" -C dump .
           [ -s "$archive" ] && tar tzf "$archive" >/dev/null || {
@@ -102,21 +116,33 @@ jobs:
             --s2k-count 65011712 --compress-algo none \
             --output "$gpg_temp" -- "$archive"
           [ -s "$gpg_temp" ] || { echo "::error::GPG backup was not created"; exit 1; }
+          mkdir "$primary_verify"
           printf '%s' "$PASSPHRASE" | gpg \
             --batch --no-tty --pinentry-mode loopback --passphrase-fd 0 --no-symkey-cache \
-            --decrypt -- "$gpg_temp" | tar tzf - >/dev/null
+            --decrypt -- "$gpg_temp" | tar xzf - -C "$primary_verify"
+          node scripts/verify-dr-package.mjs "$primary_verify"
           mv -f "$gpg_temp" "$gpg_output"
 
           # Transitional legacy copy. Keep until a .gpg restore rehearsal succeeds and
           # all operators have the updated runbook.
           openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
             -in "$archive" -out "$legacy_output" -pass env:PASSPHRASE
+          mkdir "$legacy_verify"
           openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
-            -in "$legacy_output" -pass env:PASSPHRASE | tar tzf - >/dev/null
+            -in "$legacy_output" -pass env:PASSPHRASE | tar xzf - -C "$legacy_verify"
+          node scripts/verify-dr-package.mjs "$legacy_verify"
 
-          rm -rf dump "$archive"
+          rm -rf dump "$archive" "$primary_verify" "$legacy_verify"
           unset PASSPHRASE
           trap - EXIT
+
+      - name: Assert plaintext removed
+        run: |
+          set -Eeuo pipefail
+          [ ! -d dump ] || { echo "::error::plaintext dump directory remains"; exit 1; }
+          [ ! -e "db-backup-$DUMP_DATE.tar.gz" ] || { echo "::error::plaintext archive remains"; exit 1; }
+          [ ! -d verify-primary ] || { echo "::error::decrypted primary verification directory remains"; exit 1; }
+          [ ! -d verify-legacy ] || { echo "::error::decrypted legacy verification directory remains"; exit 1; }
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -130,9 +156,10 @@ jobs:
       - name: Summary
         run: |
           {
-            echo "## Backup OK — db-backup-$DUMP_DATE (.gpg primary + transitional .enc, 보존 90일)"
+            echo "## Backup OK — L2 application DB package, db-backup-$DUMP_DATE (.gpg primary + transitional .enc, 보존 90일)"
             echo ""
-            echo "복호화·복원 절차: docs/OPERATIONS.md \"매일 백업\" 절 참고"
+            echo "Auth identity 미포함: 이 artifact는 L3/full DR이 아닙니다."
+            echo "복호화·검증·복원 절차: docs/OPERATIONS.md \"매일 백업\" 절 참고"
           } >> "$GITHUB_STEP_SUMMARY"
 
   notify-failure:

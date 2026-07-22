@@ -10,13 +10,22 @@ on:
         required: true
         type: boolean
         default: false
+      ci_run_id:
+        description: "동일 main SHA의 성공한 CI(push) run ID"
+        required: true
+        type: string
+      db_migrate_run_id:
+        description: "24시간 이내 동일 main SHA에서 성공한 DB Migrate run ID"
+        required: true
+        type: string
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: deploy-worker-${{ github.ref }}
-  cancel-in-progress: true
+  group: sqa-production-release
+  cancel-in-progress: false
 
 jobs:
   guard:
@@ -27,6 +36,67 @@ jobs:
         run: |
           echo "::error::Production verification is allowed only from refs/heads/main (received: $GITHUB_REF)."
           exit 1
+
+      - name: Require a successful CI run for this SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+        run: |
+          set -Eeuo pipefail
+          if ! [[ "$CI_RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::ci_run_id must be a numeric GitHub Actions run ID"
+            exit 1
+          fi
+
+          run_json=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID")
+          workflow_path=$(jq -r '.path' <<<"$run_json")
+          event=$(jq -r '.event' <<<"$run_json")
+          head_branch=$(jq -r '.head_branch' <<<"$run_json")
+          head_sha=$(jq -r '.head_sha' <<<"$run_json")
+          conclusion=$(jq -r '.conclusion' <<<"$run_json")
+
+          if [ "$workflow_path" != ".github/workflows/ci.yml" ] \
+            || [ "$event" != "push" ] \
+            || [ "$head_branch" != "main" ] \
+            || [ "$head_sha" != "$GITHUB_SHA" ] \
+            || [ "$conclusion" != "success" ]; then
+            echo "::error::CI gate failed (path=$workflow_path event=$event branch=$head_branch sha=$head_sha expected_sha=$GITHUB_SHA conclusion=$conclusion)"
+            exit 1
+          fi
+
+          echo "CI run $CI_RUN_ID verified for $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require a recent successful DB migration for this SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DB_MIGRATE_RUN_ID: ${{ inputs.db_migrate_run_id }}
+        run: |
+          if ! [[ "$DB_MIGRATE_RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::db_migrate_run_id must be a numeric GitHub Actions run ID"
+            exit 1
+          fi
+
+          run_json=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$DB_MIGRATE_RUN_ID")
+          workflow_path=$(jq -r '.path' <<<"$run_json")
+          event=$(jq -r '.event' <<<"$run_json")
+          head_branch=$(jq -r '.head_branch' <<<"$run_json")
+          head_sha=$(jq -r '.head_sha' <<<"$run_json")
+          conclusion=$(jq -r '.conclusion' <<<"$run_json")
+          updated_at=$(jq -r '.updated_at' <<<"$run_json")
+          age_seconds=$(( $(date -u +%s) - $(date -u -d "$updated_at" +%s) ))
+
+          if [ "$workflow_path" != ".github/workflows/db-migrate.yml" ] \
+            || [ "$event" != "workflow_dispatch" ] \
+            || [ "$head_branch" != "main" ] \
+            || [ "$head_sha" != "$GITHUB_SHA" ] \
+            || [ "$conclusion" != "success" ] \
+            || [ "$age_seconds" -lt 0 ] \
+            || [ "$age_seconds" -gt 86400 ]; then
+            echo "::error::DB migration gate failed (path=$workflow_path event=$event branch=$head_branch sha=$head_sha expected_sha=$GITHUB_SHA conclusion=$conclusion age_seconds=$age_seconds)"
+            exit 1
+          fi
+
+          echo "DB Migrate run $DB_MIGRATE_RUN_ID verified for $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
 
   rls:
     needs: guard
@@ -158,6 +228,9 @@ jobs:
       - name: Build
         run: npm run build
         env:
+          BUILD_PROVENANCE_MODE: production
+          BUILD_PROVENANCE_SHA: ${{ github.sha }}
+          BUILD_PROVENANCE_REF: ${{ github.ref }}
           VITE_APP_MODE: production
           VITE_SUPABASE_URL: ${{ env.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
@@ -171,6 +244,31 @@ jobs:
             echo "## Deploy succeeded"
             echo ""
             echo "Worker \`$WORKER_NAME\` was deployed to Cloudflare."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify deployed build provenance
+        env:
+          BUILD_PROVENANCE_EXPECTED_SHA: ${{ github.sha }}
+          BUILD_PROVENANCE_EXPECTED_REF: ${{ github.ref }}
+        run: |
+          version_file="live-version.json"
+          headers_file="live-version.headers"
+          trap 'rm -f "$version_file" "$headers_file"' EXIT
+
+          curl --fail --silent --show-error \
+            --retry 5 --retry-delay 5 --retry-all-errors --max-time 20 \
+            --dump-header "$headers_file" \
+            "$WORKER_URL/version.json" -o "$version_file"
+          grep -Eqi '^cache-control:[[:space:]]*no-store' "$headers_file" || {
+            echo "::error::Build provenance response must use Cache-Control: no-store"
+            exit 1
+          }
+          node scripts/verify-build-provenance.mjs "$version_file"
+          {
+            echo "- deployed SHA: \`$GITHUB_SHA\`"
+            echo "- lockfile SHA-256: \`$(jq -r '.lockfileSha256' "$version_file")\`"
+            echo "- readiness manifest SHA-256: \`$(jq -r '.readinessManifestSha256' "$version_file")\`"
+            echo "- build provenance: live artifact and checked-out sources matched"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify deployed Worker health

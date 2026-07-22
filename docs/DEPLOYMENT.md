@@ -2,7 +2,7 @@
 
 ## GitHub 저장소
 
-원격 저장소는 GitHub `origin/main`이며, `main` push가 CI·배포 워크플로의 트리거다.
+원격 저장소는 GitHub `origin/main`이며, `main` push는 CI만 실행한다. 운영 DB와 Worker는 수동 승인을 거친 workflow_dispatch로만 변경한다.
 
 - `.env.local`, `node_modules`, `dist`, 백업·시드 로컬 파일은 `.gitignore`로 커밋에서 제외된다.
 - 운영 URL·Supabase project ref·키는 저장소에 커밋하지 않는다 (GitHub Variables/Secrets로만 관리).
@@ -33,11 +33,13 @@ set name = excluded.name,
 
 이 저장소는 GitHub Actions로 **Cloudflare Workers**(`wrangler deploy --assets`)에 정적 SPA를 배포한다.
 
-- **CI** (`.github/workflows/ci.yml`): push/PR 시 `typecheck`, `lint`, `test`, `build` 4 job
-- **Deploy Worker** (`.github/workflows/deploy-worker.yml`): `workflow_dispatch`에서 `main`을 선택하고 `deploy_confirm=true`를 명시한 경우에만 branch guard → RLS → `typecheck` → `lint` → `test` → deploy config check → 운영 DB migration/RPC readiness check → `build` → deploy를 수행한다. `main` push는 CI만 실행하며 자동 운영 배포를 시작하지 않는다.
+- **CI** (`.github/workflows/ci.yml`): push/PR 시 `typecheck`, `lint`, unit, RLS, preview E2E, remote E2E를 실행하고 모두 성공한 뒤 `build`한다.
+- **DB Migrate** (`.github/workflows/db-migrate.yml`): `workflow_dispatch`에서 동일 `main` SHA의 성공한 CI `push` run ID와 24시간 이내 암호화 Backup DB run ID를 모두 검증한 뒤 migration과 canonical readiness를 실행한다.
+- **Deploy Worker** (`.github/workflows/deploy-worker.yml`): `workflow_dispatch`에서 `main`, `deploy_confirm=true`, 동일 SHA의 성공한 `ci_run_id`와 `db_migrate_run_id`를 입력한 경우에만 CI/DB provenance guard → RLS → `typecheck` → `lint` → unit → deploy config check → 운영 DB readiness → `build` → deploy를 수행한다. DB Migrate run은 24시간 이내, `workflow_dispatch`, `main`, 동일 SHA, success여야 한다.
 - 배포 전에는 Supabase URL/anon key와 Auth 설정(signup OFF, email confirmation ON, anonymous OFF)을 실제 endpoint로 확인한다. 배포 후에는 `WORKER_URL`의 root mount·CSP·nosniff를 확인한다. **배포 후 healthcheck가 red면 이미 새 Worker가 올라간 상태**이므로 아래 롤백 절차로 즉시 이전 정상 버전을 재배포하고 원인을 조사한다.
 - 현재 healthcheck는 로그인 전 정적 HTML이 인증 없이 읽힌다는 전제다. Cloudflare Access를 활성화할 때는 Access service token을 healthcheck에 먼저 추가한 뒤 정책을 켠다. 그렇지 않으면 정상적인 `403`도 배포 실패로 판정한다.
-- 프런트가 신규 DB RPC를 사용하기 시작하는 변경은 한 번에 병합하지 않는다. migration-only 반영 → 직전 백업 → DB Migrate postcondition/RLS 확인 → 프런트 반영 순서로 분리한다.
+- 신규 DB RPC를 쓰는 릴리스는 **expand/contract**로 나눈다. 먼저 구 Worker와 신 Worker가 모두 동작하는 additive migration을 같은 SHA로 준비해 `Backup DB → DB Migrate → Deploy Worker` 순서로 승격한다. 구 RPC·직접 쓰기 권한 회수는 신 Worker 안정화와 롤백 기준 갱신 뒤 별도 contract migration에서만 수행한다.
+- Backup DB, DB Migrate, Deploy Worker는 모두 `sqa-production-release` concurrency group을 사용하고 진행 중 실행을 취소하지 않는다. 서로 다른 운영 단계가 겹쳐 부분 승격되는 것을 막는다.
 
 ### GitHub Variables / Secrets
 
@@ -47,9 +49,12 @@ Repository Settings > Secrets and variables > Actions에 다음을 등록한다.
 |---|---|---|
 | Variable | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 계정 ID |
 | Variable | `WORKER_NAME` | Worker 이름 (예: `sqa-p1-workflow`) |
+| Variable | `WORKER_URL` | 배포 후 provenance·healthcheck 대상 URL |
 | Variable | `VITE_SUPABASE_URL` | Supabase 프로젝트 URL |
 | Secret | `VITE_SUPABASE_ANON_KEY` | Supabase anon(publishable) key |
 | Secret | `CLOUDFLARE_API_TOKEN` | Workers 배포 권한이 있는 API 토큰 |
+| Secret | `SUPABASE_DB_URL` | Backup DB·DB Migrate·배포 readiness용 Session pooler URI |
+| Secret | `BACKUP_PASSPHRASE` | 암호화 백업용 암구호 |
 
 빌드 시 `VITE_APP_MODE=production`이 GitHub Actions Build 단계에 주입된다. Supabase env 없이 production 빌드가 배포되면 앱은 로그인 우회 없이 **설정 오류 화면**만 표시한다. 로컬 데모 미리보기는 `VITE_APP_MODE=preview`와 빈 Supabase env로 실행한다.
 
@@ -57,11 +62,11 @@ Repository Settings > Secrets and variables > Actions에 다음을 등록한다.
 
 | 트리거 | Variables/Secrets 미설정 시 | green check 의미 |
 |---|---|---|
-| `push` → `main` | 수동 배포 정책 위반으로 실패 | 운영 배포 없음 |
+| `push` → `main` | CI 설정이 불완전하면 CI 실패 | CI만 실행하며 운영 배포 없음 |
 | `workflow_dispatch` + `deploy_confirm=false` | 확인 단계에서 실패 | 운영 배포 없음 |
-| `workflow_dispatch` + `main` + `deploy_confirm=true` | 설정 누락 시 즉시 실패 | 모든 게이트 통과 시에만 실제 배포 |
+| `workflow_dispatch` + `main` + `deploy_confirm=true` + 유효한 `ci_run_id`·`db_migrate_run_id` | 설정·동일 SHA CI/DB 증거 누락 시 즉시 실패 | 모든 게이트 통과 시에만 실제 배포 |
 
-**주의:** 운영 배포는 자동화하지 않는다. Actions에서 **Deploy Worker**를 `workflow_dispatch`로 실행하고 Branch는 반드시 `main`, `deploy_confirm=true`를 선택해야 한다. 설정 누락, 비-main ref, 확인값 미입력은 모두 즉시 실패한다. 설정 누락을 성공한 테스트 실행으로 처리하는 경로는 없다.
+**주의:** 운영 배포는 자동화하지 않는다. Actions에서 **Deploy Worker**를 `workflow_dispatch`로 실행하고 Branch는 반드시 `main`, `deploy_confirm=true`, 방금 성공한 동일 SHA의 CI run ID와 DB Migrate run ID를 입력해야 한다. 설정 누락, 비-main ref, 확인값·CI/DB 증거 누락은 모두 즉시 실패한다. 설정 누락을 성공한 테스트 실행으로 처리하는 경로는 없다.
 
 ### 수동 배포 (break-glass 전용)
 
@@ -98,17 +103,18 @@ CI(`deploy-worker.yml`)와 동일한 wrangler 버전·`--compatibility-date`를 
 
 - `Content-Security-Policy`: `connect-src`에 Supabase(`https://*.supabase.co`, `wss://*.supabase.co`)만 허용하고, 첨부 미리보기 제거에 맞춰 `img-src`의 `blob:` 권한은 허용하지 않음
 - `frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`
-- 외부 폰트 CDN은 사용하지 않습니다 (Inter·Newsreader·JetBrains Mono를 `@fontsource-variable`로 번들에 셀프 호스팅)
+- 외부 폰트 CDN은 사용하지 않습니다 (Inter·JetBrains Mono를 `@fontsource-variable`로 번들에 셀프 호스팅하며, 한글은 시스템 글꼴로 대체)
 
 배포 후 브라우저 DevTools Console에서 CSP violation이 없는지, 로그인과 첨부 없는 검토요청 생성·조회가 동작하는지 확인하세요.
 
 ### 롤백
 
-GitHub Actions에서 이전 성공 워크플로 run을 **Re-run**하거나, 문제 커밋을 revert한 뒤 main에 push한다.
+GitHub Actions에서 이전 성공한 Deploy Worker run을 **Re-run**하거나, 문제 커밋을 revert한 뒤 `main`에 push한다.
 
 주의사항:
 
-- Re-run은 GitHub 정책상 **run 생성 후 30일까지만** 가능하다. 그보다 오래된 시점으로는 revert + push 경로를 쓴다.
+- Deploy Worker Re-run은 입력에 기록된 동일 SHA의 DB Migrate run이 **24시간 이내**일 때만 provenance guard를 통과한다. GitHub가 이전 run의 Re-run 버튼을 제공하더라도 이 24시간 제한을 우회하지 못한다.
+- 24시간이 지난 롤백은 문제 커밋을 revert하거나 호환되는 수정 커밋을 `main`에 반영한 뒤, 새 동일 SHA에서 `CI → Backup DB → DB Migrate → Deploy Worker`를 다시 수행한다. 오래된 CI·DB Migrate run ID를 재사용하지 않는다.
 - 이 롤백은 **Worker(프런트엔드)만** 되돌린다. DB 마이그레이션은 롤백 스크립트가 없으므로(append-only), DB 문제는 [OPERATIONS.md](./OPERATIONS.md)의 백업 복원 절차를 따른다.
 
 ### SPA 라우팅

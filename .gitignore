@@ -1,5 +1,7 @@
 node_modules/
 dist/
+coverage/
+.wrangler/
 test-results/
 playwright-report/
 *.tsbuildinfo
@@ -16,6 +18,9 @@ data/private/*.local.json
 backup/*.sql
 ops-output/
 supabase/.temp/
+/artifacts/
+/.sqa-local-rls-*/
+/.sqa-remote-e2e-*/
 
 .claude/
 .superloopy/

@@ -6,7 +6,7 @@ import unusedImports from 'eslint-plugin-unused-imports'
 import globals from 'globals'
 
 export default tseslint.config(
-  { ignores: ['dist', 'node_modules', 'scripts/fixtures'] },
+  { ignores: ['dist', 'node_modules', 'scripts/fixtures', 'artifacts'] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],

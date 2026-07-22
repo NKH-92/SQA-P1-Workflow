@@ -58,7 +58,7 @@
 ## 3. 작업 A — Git push 및 CI 확인
 
 ### 목표
-로컬 `main`을 원격에 반영하고, GitHub Actions 4 job(typecheck / lint / test / build)이 통과하는지 확인한다.
+후보 브랜치를 원격에 반영하고 PR로 `main`에 병합한 뒤, 동일 SHA의 CI 전체가 통과하는지 확인한다.
 
 ### 절차
 
@@ -72,9 +72,9 @@
    npm run typecheck
    ```
 
-2. 원격 push (`main`이 protected이면 PR 또는 관리자 승인 필요)
+2. 후보 브랜치 push 및 PR 병합
    ```bash
-   git push origin main
+   git push -u origin <BRANCH>
    ```
 
 3. CI 결과 확인
@@ -82,17 +82,15 @@
    gh run list --limit 5
    gh run watch
    ```
-   **통과 기준**: `typecheck`, `lint`, `test`, `build` 모두 green.
+   **통과 기준**: `typecheck`, `lint`, unit, RLS, preview E2E, remote E2E, `build` 모두 green. 성공한 CI run ID와 full SHA를 기록한다.
 
-> ⚠️ **운영 배포는 자동화하지 않는다.** `main` push는 CI만 실행하고, Deploy Worker는 작업 B 완료 후 `workflow_dispatch`에서 `main` + `deploy_confirm=true`를 명시해야 한다. Secrets/Variables가 없거나 확인값이 false면 운영 단계는 실패·스킵되도록 설계되어 있다.
-> - **권장: 작업 B를 배포 확인보다 먼저** 완료한다.
-> - 아래 완료 기준의 "Deploy Worker green"은 운영 증거를 검토한 뒤 수동 실행했을 때의 기준이다.
-> - CI 테스트만 확인하려면 CI workflow를 사용한다. Deploy Worker는 `workflow_dispatch`에서 `main`과 `deploy_confirm=true`를 명시한 경우에만 운영 배포 단계로 진행한다. 자세한 구분은 [DEPLOYMENT.md](./DEPLOYMENT.md) "배포 성공 vs 스킵 구분" 참고.
+> ⚠️ **운영 배포는 자동화하지 않는다.** `main` push는 CI만 실행한다. DB Migrate에는 동일 SHA의 `ci_run_id`와 `backup_run_id`, Deploy Worker에는 동일 SHA의 `ci_run_id`와 `db_migrate_run_id` 및 `deploy_confirm=true`가 필요하다.
+> - 운영 배포는 작업 B·C·D를 완료한 뒤 **작업 E에서만** 수행한다.
+> - CI 테스트만 확인하려면 CI workflow를 사용한다. 자세한 승격 조건은 [DEPLOYMENT.md](./DEPLOYMENT.md) "배포 성공 vs 스킵 구분"을 참고한다.
 
 ### 완료 기준
 - [ ] 원격 `main`(또는 merge된 PR)에 최신 커밋 반영
 - [ ] CI green
-- [ ] Deploy Worker green (**작업 B 완료 후** 재실행 기준, Actions run ID: `<ACTIONS_RUN_ID>`)
 
 ---
 
@@ -110,6 +108,7 @@ GitHub 저장소 → **Settings → Secrets and variables → Actions**
 |------|---------|------|
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare Dashboard 우측 Account ID | |
 | `WORKER_NAME` | 배포할 Worker 이름 (예: `sqa-p1-workflow`) | |
+| `WORKER_URL` | 배포 후 healthcheck 대상 URL | `https://<worker>.<subdomain>.workers.dev` |
 | `VITE_SUPABASE_URL` | Supabase → Settings → API → Project URL | `https://xxxx.supabase.co` |
 
 ### Secrets (민감)
@@ -122,11 +121,12 @@ GitHub 저장소 → **Settings → Secrets and variables → Actions**
 | `BACKUP_PASSPHRASE` | 새로 정한 백업 암호화 암구호 | 매일 자동 백업 | **분실 시 백업 복원 불가** — 비밀번호 관리자에 보관 |
 
 ### 확인
-- [ ] Variables 3개, Secrets 4개 등록 완료
+- [ ] Variables 4개, Secrets 4개 등록 완료
 - [ ] `git grep`으로 저장소에 URL/키/계정 ID가 **없음**
 
 ### 완료 기준
-- [ ] Deploy Worker `workflow_dispatch`를 `main` + `deploy_confirm=true`로 실행하고 **skip 없이** 완료됨
+- [ ] Variables 4개, Secrets 4개 등록 완료
+- [ ] 실제 운영 URL·키·계정 ID가 저장소에 포함되지 않음
 
 ---
 
@@ -137,23 +137,18 @@ GitHub 저장소 → **Settings → Secrets and variables → Actions**
 
 ### 적용 범위
 
-`supabase/migrations/`의 **현재 총 44개** migration 파일을 순서대로 적용한다 ([SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) 목록 참고). 이번 변경에서는 `20260714075451`을 프런트 배포보다 먼저 별도 migration 단계로 적용하고, 적용 직전 동일 `main` SHA 백업 및 함수·ACL·RLS 검증을 완료한다.
+`supabase/migrations/`의 migration을 순서대로 적용한다. 파일 수·순서·설명은 자동 생성되는 [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md)를 확인하고, 적용 직전 동일 `main` SHA의 CI와 암호화 백업을 검증한다. 기존 migration은 수정·삭제·rename하지 않는다.
 
-> 2026-07-09 서명 시점에는 29개였고, 30번째 `202607090001`(Realtime)은 알림 패키지와 함께 추가되었다 — 적용 기록은 하단 "추가 배포 기록" 참조.
+### 방법 1 — GitHub Actions (권장)
 
-- `202607090001` — 검토요청 INSERT Realtime 발행 (파트장 즉시 알림용, RLS 불변)
-- `202607080001` — 비밀번호 변경 전 RLS 차단 + leader 이름 view + last-active-leader 카운터 잠금
-- `202607070001` ~ `202607070005` — audit RLS, PUBLIC revoke, activity log entity types, last active leader 보호
+1. Actions → **Backup DB**를 동일 `main` SHA에서 실행하고 성공한 run ID를 기록한다.
+2. Actions → **DB Migrate**를 `main`에서 실행한다.
+3. 입력값에 동일 SHA의 성공한 `ci_run_id`와 24시간 이내 `backup_run_id`를 넣는다.
+4. migration history exact set과 canonical readiness가 모두 green인지 확인한다.
 
-| 미적용 migration | 증상 |
-|------------------|------|
-| `202607090001` | Realtime 즉시 반영이 **오류 없이 조용히** 동작하지 않음 — 5분 폴링으로만 갱신 (겉으로는 정상처럼 보이므로 publication 확인 SQL로만 판별 가능) |
-| `202607080001` | `must_change_password=true` 계정이 비밀번호 변경 전에도 REST/RPC로 데이터 접근 가능 (첫 로그인 강제가 UI에만 존재) |
-| `202607070004` | 제품/업무/대분류 삭제 시 activity log insert 실패 |
-| `202607070005` | 마지막 active leader 비활성화·강등 가능 (운영 복구 불가 위험) |
-| `202607070003` | mutation RPC가 PUBLIC/anon에 노출될 수 있음 |
+### 방법 2 — Supabase CLI (break-glass)
 
-### 방법 1 — Supabase CLI (권장)
+Actions를 사용할 수 없는 장애 상황에서만 승인자·대상·백업·후속 검증을 기록하고 실행한다. 이 경로는 workflow provenance guard를 우회하므로 정규 승격에 사용하지 않는다.
 
 ```bash
 npx supabase login
@@ -163,7 +158,7 @@ npx supabase db push
 
 `PROJECT_REF`: Supabase Dashboard URL `https://supabase.com/dashboard/project/<PROJECT_REF>`
 
-### 방법 2 — SQL Editor (수동)
+### 방법 3 — SQL Editor (복구 전용)
 
 Dashboard → **SQL Editor**에서 [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) 목록 순서대로 실행.
 
@@ -171,34 +166,13 @@ Dashboard → **SQL Editor**에서 [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATION
 
 > 이미 적용된 migration은 **다시 실행하지 않는다.**
 
-### 적용 후 확인 SQL
+### 적용 후 확인
 
-> ⚠️ **`schema_migrations` 조회는 CLI `db push`로 적용한 경우에만 유효하다.** `supabase_migrations.schema_migrations`에는 **CLI `db push`로 적용한 migration만 기록**된다. **SQL Editor로 수동 적용**했다면 이 테이블이 비어 있어 아래 첫 쿼리가 **0건/오류**로 나온다 — 이는 실패가 아니다. 이 경우 아래 **constraint·trigger·함수 확인 쿼리로 실제 반영 여부를 검증**한다.
-
-```sql
--- (CLI db push 경로에서만 유효) 적용된 버전 확인
-select version from supabase_migrations.schema_migrations
-where version in ('202607070004', '202607070005', '202607080001');
-
--- (경로 무관) 202607070004: activity_logs entity_type check constraint
-select pg_get_constraintdef(oid)
-from pg_constraint
-where conrelid = 'public.activity_logs'::regclass
-  and conname = 'activity_logs_entity_type_check';
-
--- (경로 무관) 202607070005: last-active-leader 보호 trigger
-select tgname from pg_trigger
-where tgrelid in ('public.profiles'::regclass, 'public.allowed_users'::regclass)
-  and tgname like '%last_active_leader%';
-
--- (경로 무관) 202607080001: 비밀번호 강제 함수와 leader 이름 view 확인
-select proname from pg_proc where proname = 'password_is_current';
-select relname, reloptions from pg_class
-where relname = 'public_leader_profiles';  -- security_invoker=false 여야 함
-```
+`scripts/sql/verify/manifest.json`의 `readinessFiles`를 `psql -X -v ON_ERROR_STOP=1`로 모두 실행하고, 자동 생성된 migration 목록과 원격 `schema_migrations`가 정확히 일치하는지 확인한다. 정규 workflow는 이 검증을 자동 수행한다.
 
 ### 완료 기준
-- [ ] 위 확인 쿼리 결과 정상
+- [ ] 동일 SHA CI·Backup·DB Migrate run ID 기록
+- [ ] migration history exact set과 canonical readiness 통과
 - [ ] 로컬 `npm test -- src/migrations.test.ts` 통과
 
 상세: [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md)
@@ -277,9 +251,9 @@ Supabase → **Authentication → Providers → Email**
 `<WORKER_URL>`에서 빌드된 앱이 Supabase와 연결되어 동작하는지 확인한다.
 
 ### 자동 배포
-작업 B 완료 후 Actions → **Deploy Worker** → `workflow_dispatch` (`main`, `deploy_confirm=true`)
+작업 B·C·D 완료 후 Actions → **Deploy Worker** → `workflow_dispatch` (`main`, `deploy_confirm=true`, 동일 SHA의 성공한 `ci_run_id`와 24시간 이내 `db_migrate_run_id`)
 
-Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy config check → `build` → deploy 순서로 실행된다.
+Deploy Worker 워크플로는 CI/DB provenance → RLS → `typecheck` → `lint` → unit → deploy config/readiness → `build` → deploy → live provenance/healthcheck 순서로 실행된다.
 
 ### 스모크 체크리스트 (15분)
 
@@ -294,6 +268,7 @@ Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy confi
 | 7 | 보안 헤더 | `curl -I <WORKER_URL>` 응답에 `Content-Security-Policy` 등 `public/_headers`의 헤더 포함 (미적용이면 CSP가 전부 무효) |
 
 ### 완료 기준
+- [ ] Deploy Worker가 provenance guard부터 live healthcheck까지 **skip 없이** 성공함 (Actions run ID: `<DEPLOY_RUN_ID>`)
 - [ ] `<WORKER_URL>` 접속·로그인·해시 라우팅·콘솔 치명 오류 없음
 - [ ] 파트장 로그인·CRUD 1회 이상 성공
 - [ ] 보안 헤더(CSP) 적용 확인 + 브라우저 콘솔에 CSP violation 없음
@@ -316,21 +291,11 @@ Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy confi
 - **`must_change_password=true` 계정은 데이터 접근이 차단됨** (202607080001 검증): 임시 계정을 비밀번호 변경 전 상태로 두고, 세션을 얻어 REST/RPC로 `review_requests` 등을 조회·삽입해도 **RLS로 거부**되는지 확인한다. 비밀번호 변경 후에는 정상 접근되는지 대조한다. (자기 `profiles` row 조회와 비밀번호 변경 RPC만 예외)
 
 ### 완료 기준
-- [x] TEST_PLAN RLS 항목 통과 (아래 검증 기록 참조)
-- [x] 실패 0건, 또는 실패 항목·조치 기록
-
-### 검증 기록 (2026-07-09)
-
-- **수행**: 파트장(앱 화면 수동) + Claude(일회용 member 계정으로 REST/RPC/Storage API 직접 호출 29건)
-- **결과: 실패 0건.**
-  - 변경 전(`must_change_password=true`): 본인 profiles 1행 외 전 테이블 조회 0건, 본인 명의 포함 모든 쓰기 RLS 거부 — 202607080001 서버 강제 확인
-  - 변경 후(member): 타인 profiles/review_requests/profile_notes 미노출, 파트장 명의 도용 INSERT 거부, 본인 pending 검토요청 생성·수정·삭제 정상, status 셀프 승인 거부, 본인 role leader 상승 무효(0행), activity_logs 임의 target INSERT 거부, products/projects 쓰기 거부(projects는 created_by leader 트리거 거부), storage 본인 경로 업로드 성공·타인 경로 거부, `public_leader_profiles` 이름만 1행 이상 노출
-  - 파트장 수동: member 간 격리, member 가능 작업이 검토요청 작성뿐임, leader 전체 조회·수정, member 화면 파트장 이름 표시 — 모두 확인
-- **잔여(선택) 항목** — leader 세션이 필요해 자동 검증에서 제외, 앱에서 1분 내 확인 가능:
-  - [ ] 마지막 active leader 본인 비활성화/강등 시도 → DB 거부 확인 (202607070005)
-  - [x] (2026-07-14 정책 변경) 현재 로그인한 활성 leader 본인 배정은 허용, 다른 leader 배정은 거부하는 자동 RLS 테스트 추가
-  - [ ] 테스트 계정 `is_active=false` 전환 후 로그인 → 안내 화면만 표시 확인
-- **정리**: 테스트 중 생성한 검토요청·첨부파일은 삭제 완료. 일회용 계정(rls-test)은 Dashboard·초대 목록에서 삭제할 것.
+- [ ] TEST_PLAN RLS 항목 통과
+- [ ] 실패 0건, 또는 실패 항목·조치와 해당 후보 SHA 기록
+- [ ] 마지막 active leader 비활성화/강등 거부 확인
+- [ ] 비활성 계정 로그인 차단 확인
+- [ ] 검증용 데이터와 일회용 계정 정리
 
 ---
 
@@ -343,60 +308,37 @@ Deploy Worker 워크플로는 `typecheck` → `lint` → `test` → deploy confi
 3. 아티팩트 다운로드 → 복호화(`openssl enc -d ...`, OPERATIONS.md 참고) → 복구 리허설 1회
 
 ### 완료 기준
-- [x] Backup DB run green + `Backup OK` 확인
-- [x] 복호화 성공 + 복구 리허설 1회 성공 기록 (분기 1회 반복)
-
-### 검증 기록 (2026-07-09)
-
-- **수행**: 파트장(워크플로 실행·아티팩트 다운로드·Secret 교체) + Claude(복호화·psql 복원·검증)
-- **백업**: Backup DB 수동 실행 2회 모두 green, 아티팩트 `db-backup-2026-07-09`(약 33KB, 암호화) 생성 확인
-- **⚠️ 리허설이 발견한 문제**: 최초 `BACKUP_PASSPHRASE`를 분실(어디에도 기록 안 됨) — **분실 시 백업 전체 복원 불가**를 실제로 확인. 새 암구호로 Secret 교체 후 백업 재실행으로 해결. **교훈: 암구호는 반드시 비밀번호 관리자에 보관할 것** (분기 리허설 때마다 복호화 가능 여부 확인)
-- **복호화**: `openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000` 성공 → schema(78KB)·data(106KB) 덤프 정상
-- **과거 리허설 기록(현재 후보 SHA의 승인 증거 아님)**: 당시 테스트용 Supabase 프로젝트에서 schema → data 순 적용 결과 에러 0건. 당시 덤프에서 관찰된 managed `auth`/`storage` 객체 포함 여부는 현재 백업 계약이나 현재 후보의 복원 증거로 재사용하지 않는다. 현재 후보는 [RELEASE_EVIDENCE.md](./RELEASE_EVIDENCE.md)의 별도 복원 게이트를 다시 충족해야 한다.
-- **행 수 검증(복원본)**: auth.users 10 / profiles 10 / allowed_users 11 / products 218 / product_assignments 198 / duties 25 / duty_assignments 21 / duty_major_categories 7 / activity_logs 2 — 운영 SQL Editor에서 동일 count 쿼리로 대조 가능
-- **정리**: 복호화된 평문 덤프는 검증 직후 로컬에서 삭제(팀원 정보 포함). 테스트 프로젝트는 리허설 후 삭제 또는 pause 권장
+- [ ] Backup DB run green + `Backup OK` 확인
+- [ ] 암호화 아티팩트의 복호화와 manifest 검증 성공
+- [ ] 폐기 가능한 target에서 복원·Auth UUID/FK/login 검증 성공
+- [ ] 평문 덤프와 검증용 target 정리
 
 ---
 
 ## 10. 진행 체크리스트 (복사용)
 
 ```
-[x] 0. Supabase 프로젝트(서울 ap-northeast-2) + CLI 설치 + 팀 공지 — 완료 (운영 배포됨)
-[x] A. git push / PR merge + CI green (Deploy Worker green은 B 이후) — 완료
-[x] B. GitHub Variables 3개 + Secrets 4개 (A보다 먼저 권장) — 완료 (배포·백업 워크플로 green으로 확인)
-[x] C. Supabase migration ~202607080001 적용 + 확인 (서명 시점 29개) — 완료 (운영 반영됨; 30번째 202607090001은 "추가 배포 기록" 참조)
-[x] D. leader 1명 + member 2명 계정 + Auth Site URL/Redirect + public sign-up OFF 재확인 — 완료 (파트원 온보딩, signup_disabled 라이브 확인)
-[x] E. Workers 배포 + 스모크 + 보안 헤더(CSP) 확인 — 완료 (2026-07-09 라이브 점검: CSP 실적용·service_role 미노출 확인)
-[x] F. RLS 검증 (TEST_PLAN.md) + must_change_password 차단 확인 — 2026-07-09 완료 (작업 F 검증 기록 참조)
-[x] G. Backup DB run green + 복호화·복구 리허설 기록 — 2026-07-09 완료 (작업 G 검증 기록 참조)
+[ ] 0. Supabase 프로젝트(서울 ap-northeast-2) + CLI 설치 + 팀 공지
+[ ] A. git push / PR merge + 동일 SHA CI green
+[ ] B. GitHub Variables / Secrets 확인
+[ ] C. 동일 SHA Backup DB → DB Migrate + readiness 통과
+[ ] D. Auth 설정과 leader/member 계정 확인
+[ ] E. 동일 SHA Deploy Worker + provenance/healthcheck 통과
+[ ] F. RLS 검증 (TEST_PLAN.md) + must_change_password 차단 확인
+[ ] G. 암호화 백업 복호화 + full DR 리허설 기록
 ```
 
 **최종 서명**
 
 | 항목 | 값 |
 |------|-----|
-| 완료일 | 2026-07-09 |
-| 담당 | 파트장 |
+| 완료일 | `<YYYY-MM-DD>` |
+| 담당 | `<OPERATOR>` |
 | 운영 URL | `<WORKER_URL>` (public 저장소 관례상 실값 미기재) |
 | Supabase project ref | `<PROJECT_REF>` (동일) |
-| GitHub HEAD | 배포 코드 기준 6943176 (0~G 서명 당시. **이후 배포 이력은 아래 "추가 배포 기록" 절에 기록** — "이후 커밋은 문서뿐"이라는 이전 문구는 3f4c02b 배포로 무효) |
-| Actions run ID | 29015812702 (Backup DB) |
-| 비고 | 0~G 전부 완료. 2026-07-09 최종 배포 점검(빌드·라이브·인증/RLS·시크릿·문서) 통과 — 상세는 F·G 검증 기록. 첨부파일(Storage) 백업 규정은 **B안(백업 제외) 확정**(OPERATIONS.md) — 사용 규정 팀 공지만 남음 |
-
----
-
-## 10.5 추가 배포 기록 (0~G 서명 이후)
-
-### 2026-07-10 — 알림 패키지 (3f4c02b)
-
-- **앱 코드**: 딥링크 공유·백그라운드 동기화(5분 폴링+창 복귀)·검토요청 Realtime 즉시 반영·파트장 데스크톱 알림. 2026-07-10 00:33 KST main push로 Deploy Worker 자동 배포(green) — 사후 감사에서 확인.
-- **신규 migration `202607090001`** (30번째, Realtime publication — RLS 불변, 멱등):
-  - [x] Actions → **DB Migrate**로 적용 완료 (run ID: 29061734389, 2026-07-10). 운영 이력에 Dashboard 경유 타임스탬프 버전 10개가 섞여 있어 첫 실행이 실패했고, repair 입력(타임스탬프 10개 `reverted` + 기적용 로컬 9개 `applied`)으로 이력 정정 후 202607090001 단독 적용 — realtime publication 검증 통과, 원격 이력 30개 = 로컬 30개 일치. 이후 마이그레이션은 repair 없이 DB Migrate 실행만으로 적용된다.
-- **스모크 (파트장, 10분)**:
-  - [ ] [TEST_PLAN.md](./TEST_PLAN.md) "알림·동기화" 5항목 수행
-- **후속 정리**:
-  - [x] Cloudflare autoconfig **PR #3 닫기** + Workers Builds Git 연동 해제 검증 완료. main `0b112c60`에는 `Workers Builds: sqap1workflow`와 GitHub Actions `deploy` check가 동시에 있었으나, PR #3를 disconnect 사유로 닫은 뒤 probe `ed3c5cb0`에는 GitHub Actions build/typecheck/lint/test/deploy만 존재하고 Workers Builds check가 생성되지 않음(2026-07-10).
-  - [ ] 원격 브랜치 정리: `improve/sqa-p1-final-stabilization`(PR #2로 squash-merge됨), `cloudflare/workers-autoconfig`(PR 닫은 뒤)
+| GitHub HEAD | `<FULL_SHA>` |
+| Actions run ID | CI `<CI_RUN_ID>` / Backup `<BACKUP_RUN_ID>` / DB Migrate `<DB_RUN_ID>` / Deploy `<DEPLOY_RUN_ID>` |
+| 비고 | `<RESULT_AND_FOLLOW_UP>` |
 
 ---
 

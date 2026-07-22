@@ -10,7 +10,7 @@
    - `review_events`, `review_read_receipts`가 존재하고 RLS가 켜져 있다.
    - `mark_password_changed()`는 플래그를 변경하지 않고 Auth 트리거가 관찰한 결과만 반환한다.
    - 리뷰 생성·수정·승인·반려·재요청·회수·피드백 수정·무효화 RPC가 `authenticated`에만 열려 있다.
-4. `Deploy Worker`를 `main`, `deploy_confirm=true`로 실행하고 root mount 및 보안 헤더 healthcheck 완료까지 기다린다.
+4. `Deploy Worker`를 `main`, `deploy_confirm=true`, 방금 성공한 동일 SHA의 `ci_run_id`와 `db_migrate_run_id`로 실행하고 root mount 및 보안 헤더 healthcheck 완료까지 기다린다.
 5. 브라우저에서 신규 검토 작성 화면에 파일 선택/링크가 없고 별도 메신저 안내만 보이는지 확인한다.
 
 Stage A 동안 기존 `attachment_url`, Storage bucket, Storage 정책은 호환 목적으로 유지되지만 앱은 새 첨부를 만들거나 읽지 않는다.
@@ -60,7 +60,7 @@ Stage B `DB Migrate` 사전검사는 대상 객체나 Storage API로 지워야 �
 - `review_hardening_followup_gate=true`
 - `extension_anon_routine_count`는 진단값이며 extension member라는 이유만으로 실패하지 않는다.
 
-병합 뒤에는 동일한 `main` SHA로 새 `Backup DB` → backup run ID를 사용한 `DB Migrate` → `Deploy Worker(deploy_confirm=true)` 순서로 실행하고, 각 workflow의 readiness/healthcheck가 끝날 때까지 기다린다.
+병합 뒤에는 동일한 `main` SHA로 CI green → 새 `Backup DB` → CI/backup run ID를 사용한 `DB Migrate` → `Deploy Worker(deploy_confirm=true, ci_run_id=<동일 SHA CI>, db_migrate_run_id=<방금 성공한 run>)` 순서로 실행하고, 각 workflow의 readiness/healthcheck가 끝날 때까지 기다린다.
 
 ## 롤백과 복구
 

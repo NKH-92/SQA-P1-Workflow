@@ -49,10 +49,13 @@ function localContext(): RepositoryContext {
 
 describe('local missing-record mutation guards', () => {
   it('rejects missing product updates and deletes', async () => {
-    await expect(updateProduct(localContext(), 'missing', { name: 'Updated' })).rejects.toBeInstanceOf(
-      UserFacingError,
-    )
-    await expect(deleteProduct(localContext(), 'missing')).rejects.toBeInstanceOf(UserFacingError)
+    await expect(
+      updateProduct(localContext(), 'missing', { name: 'Updated', expectedUpdatedAt: null, reason: 'test reason' }),
+    ).rejects.toBeInstanceOf(UserFacingError)
+    await expect(deleteProduct(localContext(), 'missing', {
+      expectedUpdatedAt: '2026-07-01T00:00:00.000Z',
+      reason: 'missing-record test',
+    })).rejects.toBeInstanceOf(UserFacingError)
   })
 
   it('rejects missing project updates and deletes', async () => {
@@ -62,9 +65,12 @@ describe('local missing-record mutation guards', () => {
         description: '',
         deadline: null,
         status: 'planned',
-      }),
+      }, missingProject.updated_at ?? null),
     ).rejects.toBeInstanceOf(UserFacingError)
-    await expect(deleteProject(localContext(), missingProject)).rejects.toBeInstanceOf(UserFacingError)
+    await expect(deleteProject(localContext(), missingProject, {
+      expectedUpdatedAt: missingProject.updated_at ?? null,
+      reason: 'missing-record test',
+    })).rejects.toBeInstanceOf(UserFacingError)
   })
 
   it('mirrors remote assignment invariants for missing and ineligible local targets', async () => {

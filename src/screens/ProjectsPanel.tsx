@@ -3,7 +3,8 @@ import type { Dispatch, SetStateAction } from 'react'
 import { Badge, CopyLinkButton, EmptyState, Rows, Section } from '../components/ui'
 import type { AppData, Profile, Project, ProjectStatus } from '../types'
 import { downloadCsv } from '../lib/csv'
-import type { MutateFn } from '../app/types'
+import type { MutateFn, PendingAdminDelete } from '../app/types'
+import type { AuditedDeleteInput } from '../data/contracts'
 import { formatDate, projectStatusLabels } from '../lib/format'
 import { canAssignProjectTo } from '../domain/permissions'
 import { ProjectBoard } from '../features/projects/components/ProjectBoard'
@@ -17,6 +18,7 @@ import {
   selectVisibleProjectAssignments,
 } from '../features/projects/project.selectors'
 import { useProjectController } from '../features/projects/useProjectController'
+import { DeleteConfirmAction } from '../features/master/shared/DeleteConfirmAction'
 import {
   BriefcaseBusiness,
   Download,
@@ -25,7 +27,6 @@ import {
   Plus,
   Save,
   Search,
-  Trash2,
   Users,
 } from 'lucide-react'
 
@@ -51,10 +52,11 @@ export function ProjectsPanel({
   const [projectQuery, setProjectQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | ProjectStatus>('all')
   const [viewMode, setViewMode] = useState<'project' | 'member'>('project')
-  const [projectEdits, setProjectEdits] = useState<Record<string, { name: string; description: string; deadline: string; status: ProjectStatus }>>({})
+  const [projectEdits, setProjectEdits] = useState<Record<string, { name: string; description: string; deadline: string; status: ProjectStatus; expectedUpdatedAt: string | null }>>({})
   const [assignmentEditProjectId, setAssignmentEditProjectId] = useState<string | null>(null)
+  const [assignmentExpectedUpdatedAt, setAssignmentExpectedUpdatedAt] = useState<string | null>(null)
   const [assignmentEditMemberIds, setAssignmentEditMemberIds] = useState<string[]>([])
-  const [pendingProjectDeleteId, setPendingProjectDeleteId] = useState<string | null>(null)
+  const [pendingProjectDelete, setPendingProjectDelete] = useState<PendingAdminDelete | null>(null)
   const leaderMode = profile.role === 'leader'
   // 파트원은 자기 프로젝트만 보므로 사람별 보기가 의미 없다 — 항상 프로젝트별로 고정한다.
   const effectiveViewMode = leaderMode ? viewMode : 'project'
@@ -139,6 +141,7 @@ export function ProjectsPanel({
         description: project.description,
         deadline: project.deadline ?? '',
         status: project.status,
+        expectedUpdatedAt: project.updated_at ?? null,
       },
     }))
 
@@ -158,12 +161,13 @@ export function ProjectsPanel({
         description: edit.description,
         deadline: edit.deadline || null,
         status: edit.status,
-      })
+      }, edit.expectedUpdatedAt)
       cancelProjectEdit(project.id)
     }, '프로젝트 정보를 수정했습니다.')
 
-  const openAssignmentEdit = (projectId: string, userIds: string[]) => {
-    setAssignmentEditProjectId(projectId)
+  const openAssignmentEdit = (project: Project, userIds: string[]) => {
+    setAssignmentEditProjectId(project.id)
+    setAssignmentExpectedUpdatedAt(project.updated_at ?? null)
     setAssignmentEditMemberIds(userIds)
   }
 
@@ -175,18 +179,20 @@ export function ProjectsPanel({
   const saveAssignmentEdit = () =>
     mutate(async () => {
       if (!assignmentEditProjectId) return
-      const project = data.projects.find((item) => item.id === assignmentEditProjectId)
-      if (!project) return
+      const currentProject = data.projects.find((item) => item.id === assignmentEditProjectId)
+      if (!currentProject || !assignmentExpectedUpdatedAt) return
+      const project = { ...currentProject, updated_at: assignmentExpectedUpdatedAt }
       const nextIds = assignmentEditMemberIds.filter((memberId) => memberOptions.some((member) => member.id === memberId))
       await controller.saveAssignments(project, nextIds, memberOptions)
       setAssignmentEditProjectId(null)
+      setAssignmentExpectedUpdatedAt(null)
       setAssignmentEditMemberIds([])
     }, '프로젝트 배정을 수정했습니다.')
 
-  const deleteProject = (project: Project) =>
+  const deleteProject = (project: Project, input: AuditedDeleteInput) =>
     mutate(async () => {
-      await controller.remove(project)
-      setPendingProjectDeleteId(null)
+      await controller.remove(project, input)
+      setPendingProjectDelete(null)
       cancelProjectEdit(project.id)
     }, '프로젝트를 삭제했습니다.')
 
@@ -248,7 +254,10 @@ export function ProjectsPanel({
           onToggle={toggleAssignmentEditMember}
           data={data}
           onSave={() => void saveAssignmentEdit()}
-          onClose={() => setAssignmentEditProjectId(null)}
+          onClose={() => {
+            setAssignmentEditProjectId(null)
+            setAssignmentExpectedUpdatedAt(null)
+          }}
         />
       )}
       <Section title={leaderMode ? '프로젝트별 배정 현황' : '내 배정 업무'} icon={<BriefcaseBusiness size={18} />}>
@@ -335,28 +344,23 @@ export function ProjectsPanel({
                           <>
                             <button
                               className="ghost compact"
-                              onClick={() => openAssignmentEdit(project.id, assignments.map((item) => item.user_id))}
+                              onClick={() => openAssignmentEdit(project, assignments.map((item) => item.user_id))}
                               title="배정 편집"
                               type="button"
                             >
                               <Users size={16} />
                               배정
                             </button>
-                            {pendingProjectDeleteId === project.id ? (
-                              <div className="delete-confirm" title="배정 이력도 함께 삭제됩니다.">
-                                <button className="danger compact" onClick={() => void deleteProject(project)} type="button">
-                                  삭제 확인
-                                </button>
-                                <button className="ghost compact" onClick={() => setPendingProjectDeleteId(null)} type="button">
-                                  취소
-                                </button>
-                              </div>
-                            ) : (
-                              <button className="ghost compact" onClick={() => setPendingProjectDeleteId(project.id)} title="프로젝트 삭제" type="button">
-                                <Trash2 size={16} />
-                                삭제
-                              </button>
-                            )}
+                            <DeleteConfirmAction
+                              table="projects"
+                              id={project.id}
+                              expectedUpdatedAt={project.updated_at}
+                              label="프로젝트"
+                              itemName={project.name}
+                              pendingDelete={pendingProjectDelete}
+                              setPendingDelete={setPendingProjectDelete}
+                              onConfirm={(input) => deleteProject(project, input)}
+                            />
                             <button className="ghost compact" onClick={() => startProjectEdit(project)} title="프로젝트 수정" type="button">
                               <Pencil size={16} />
                               수정

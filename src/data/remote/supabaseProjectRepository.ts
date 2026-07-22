@@ -1,10 +1,12 @@
 import { recordActivityLog } from '../activityLog'
-import { assertAffectedRows, assertRecordExists, UserFacingError } from '../../lib/errors'
+import { assertAffectedRows, UserFacingError } from '../../lib/errors'
 import { supabase } from '../../lib/supabase'
 import type { RepositoryDeps, ProjectRepository } from '../repositories/types'
+import { translateMasterOccError } from './masterOccError'
+import { assertMasterVersion, MASTER_STALE_MESSAGE, normalizeMasterReason } from '../validation/masterOcc'
 
 export function createSupabaseProjectRepository(ctx: RepositoryDeps): ProjectRepository {
-  const { profile, data, setData, activityLogs } = ctx
+  const { profile, setData, activityLogs } = ctx
 
   return {
     async createProject({ project, memberIds }) {
@@ -28,10 +30,8 @@ export function createSupabaseProjectRepository(ctx: RepositoryDeps): ProjectRep
       return projectId
     },
 
-    async updateProject(projectId, updated) {
-      const projectSnapshot = data.projects.find((item) => item.id === projectId)
-      assertRecordExists(projectSnapshot)
-      const expectedUpdatedAt = projectSnapshot.updated_at
+    async updateProject(projectId, updated, expectedUpdatedAt) {
+      if (!expectedUpdatedAt) throw new UserFacingError(MASTER_STALE_MESSAGE)
       const { data: affected, error } = await supabase!
         .from('projects')
         .update(updated)
@@ -88,20 +88,21 @@ export function createSupabaseProjectRepository(ctx: RepositoryDeps): ProjectRep
       })
     },
 
-    async deleteProject(project) {
-      const { data: affected, error } = await supabase!
-        .from('projects')
-        .delete()
-        .eq('id', project.id)
-        .select('id')
-      if (error) throw error
-      assertAffectedRows(affected)
+    async deleteProject(project, input) {
+      const { error } = await supabase!.rpc('delete_project_if_current', {
+        p_id: project.id,
+        p_expected_updated_at: assertMasterVersion(input.expectedUpdatedAt),
+        p_reason: normalizeMasterReason(input.reason),
+        p_correlation_id: crypto.randomUUID(),
+      })
+      if (error) throw translateMasterOccError(error)
       await recordActivityLog(activityLogs, {
         actor: profile,
         entityType: 'project',
         entityId: project.id,
         action: 'deleted',
         summary: `${project.name} 프로젝트를 삭제했습니다.`,
+        metadata: { reason: input.reason.trim() },
       })
     },
   }

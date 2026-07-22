@@ -18,9 +18,10 @@ export function useProjectController(profile: Profile, data: AppData, setData: A
   return {
     create: (project: ProjectInput, memberIds: string[], memberOptions: Profile[]) =>
       createProject(context, { project, memberIds, memberOptions }),
-    update: (projectId: string, project: ProjectInput) => updateProject(context, projectId, project),
+    update: (projectId: string, project: ProjectInput, expectedUpdatedAt: string | null) =>
+      updateProject(context, projectId, project, expectedUpdatedAt),
     saveAssignments: (project: Project, nextMemberIds: string[], memberOptions: Profile[]) =>
       saveProjectAssignments(context, { project, nextMemberIds, memberOptions }),
-    remove: (project: Project) => deleteProject(context, project),
+    remove: (project: Project, input: Parameters<typeof deleteProject>[2]) => deleteProject(context, project, input),
   }
 }

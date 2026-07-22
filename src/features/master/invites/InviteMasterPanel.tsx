@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Download, Search, Upload, Users } from 'lucide-react'
-import type { AdminDeleteTable } from '../../../app/types'
+import type { PendingAdminDelete } from '../../../app/types'
+import type { AuditedDeleteInput } from '../../../data/contracts'
 import type { Role } from '../../../types'
+import { ReasonPromptModal } from '../../../components/ui'
 import { downloadCsv } from '../../../lib/csv'
 import { parseCsvRows, parseInviteImportRows } from '../../../lib/csvImport'
 import { roleLabels } from '../../../lib/format'
@@ -9,7 +11,7 @@ import { canReceiveAssignment } from '../../../domain/permissions'
 import { selectFilteredAllowedUsers } from '../master.selectors'
 import { validateInviteCreate, validateInviteImport, validateInviteUpdate, validateProfileToggle } from '../master.validators'
 import type { MasterSubPanelProps } from '../shared/types'
-import { InviteCard } from './InviteCard'
+import { InviteCard, type InviteEdit } from './InviteCard'
 import { InviteRegisterModal } from './InviteRegisterModal'
 import { useInviteAdminController } from './useInviteAdminController'
 
@@ -19,10 +21,14 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
   const controller = useInviteAdminController(profile, data, setData)
   const [allowedForm, setAllowedForm] = useState({ email: '', name: '', role: 'member' as Role })
   const [adminSearch, setAdminSearch] = useState('')
-  const [pendingDelete, setPendingDelete] = useState<{ table: AdminDeleteTable; id: string } | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<PendingAdminDelete | null>(null)
   const [pendingProfileToggle, setPendingProfileToggle] = useState<{ email: string; nextActive: boolean } | null>(null)
-  const [inviteEdits, setInviteEdits] = useState<Record<string, { email: string; name: string; role: Role }>>({})
+  const [profileToggleReason, setProfileToggleReason] = useState('')
+  const [inviteEdits, setInviteEdits] = useState<Record<string, InviteEdit>>({})
   const [inviteRegisterOpen, setInviteRegisterOpen] = useState(false)
+  // Reason-required update: Save opens this prompt instead of writing directly.
+  const [inviteReasonPrompt, setInviteReasonPrompt] = useState<{ inviteId: string } | null>(null)
+  const [inviteReason, setInviteReason] = useState('')
 
   const memberOptions = data.profiles.filter(canReceiveAssignment)
   const query = adminSearch.trim()
@@ -98,29 +104,51 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
     if (ok) setInviteRegisterOpen(false)
   }
 
-  const saveInviteEdit = (inviteId: string) =>
-    mutate(async () => {
+  const saveInviteEdit = (inviteId: string, reason: string) => {
+    let noop = false
+    return mutate(async () => {
       const edit = inviteEdits[inviteId]
       if (!edit?.name.trim() || !edit.email.trim()) return
       const payload = validateInviteUpdate(data, inviteId, edit)
-      await controller.update(inviteId, payload)
+      const result = await controller.update(inviteId, {
+        ...payload,
+        expectedUpdatedAt: edit.expectedUpdatedAt,
+        reason,
+      })
+      // The server-side invite OCC RPC propagates any linked profile role in
+      // the same transaction, using the pre-edit email as the stable key.
+      noop = result.noop
       setInviteEdits((current) => {
         const next = { ...current }
         delete next[inviteId]
         return next
       })
-    }, '초대 정보를 수정했습니다.')
+    }, () => noop ? '변경된 내용이 없습니다.' : '초대 정보를 수정했습니다.')
+  }
+
+  const confirmInviteReasonPrompt = async () => {
+    if (!inviteReasonPrompt) return
+    const ok = await saveInviteEdit(inviteReasonPrompt.inviteId, inviteReason)
+    if (ok) {
+      setInviteReasonPrompt(null)
+      setInviteReason('')
+    }
+  }
 
   const toggleProfileActive = (email: string, nextActive: boolean) =>
     mutate(async () => {
       const memberProfile = validateProfileToggle(data, email)
-      await controller.toggleProfile(memberProfile.id, nextActive)
+      await controller.toggleProfile(memberProfile.id, nextActive, {
+        expectedUpdatedAt: memberProfile.updated_at ?? null,
+        reason: profileToggleReason,
+      })
       setPendingProfileToggle(null)
+      setProfileToggleReason('')
     }, nextActive ? '계정을 활성화했습니다.' : '계정을 비활성화했습니다.')
 
-  const deleteInvite = (inviteId: string) =>
+  const deleteInvite = (inviteId: string, input: AuditedDeleteInput) =>
     mutate(async () => {
-      await controller.remove(inviteId)
+      await controller.remove(inviteId, input)
       setPendingDelete(null)
     }, '초대 삭제했습니다.')
 
@@ -176,12 +204,17 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
             data={data}
             inviteEdits={inviteEdits}
             setInviteEdits={setInviteEdits}
-            onSave={(inviteId) => void saveInviteEdit(inviteId)}
+            onSave={(inviteId) => setInviteReasonPrompt({ inviteId })}
             pendingDelete={pendingDelete}
             setPendingDelete={setPendingDelete}
             onDelete={deleteInvite}
             pendingProfileToggle={pendingProfileToggle}
-            setPendingProfileToggle={setPendingProfileToggle}
+            setPendingProfileToggle={(value) => {
+              setPendingProfileToggle(value)
+              setProfileToggleReason('')
+            }}
+            profileToggleReason={profileToggleReason}
+            setProfileToggleReason={setProfileToggleReason}
             onToggleProfileActive={(email, nextActive) => void toggleProfileActive(email, nextActive)}
           />
         ))}
@@ -194,6 +227,19 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
         allowedForm={allowedForm}
         setAllowedForm={setAllowedForm}
         onSubmit={addAllowedUser}
+      />
+      <ReasonPromptModal
+        open={inviteReasonPrompt !== null}
+        onClose={() => {
+          setInviteReasonPrompt(null)
+          setInviteReason('')
+        }}
+        title="초대 정보 변경 사유"
+        description="다른 사용자도 확인할 수 있는 변경 사유를 남겨 주세요."
+        reason={inviteReason}
+        setReason={setInviteReason}
+        onSubmit={() => void confirmInviteReasonPrompt()}
+        submitLabel="수정 저장"
       />
     </div>
   )

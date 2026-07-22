@@ -2,12 +2,13 @@ import type { Dispatch, SetStateAction } from 'react'
 import { Pencil, Save } from 'lucide-react'
 import { Badge } from '../../../components/ui'
 import { deleteWarnings } from '../../../app/constants'
-import type { AdminDeleteTable } from '../../../app/types'
+import type { PendingAdminDelete } from '../../../app/types'
+import type { AuditedDeleteInput } from '../../../data/contracts'
 import type { AppData, Role } from '../../../types'
 import { roleLabels } from '../../../lib/format'
 import { DeleteConfirmAction } from '../shared/DeleteConfirmAction'
 
-type InviteEdit = { email: string; name: string; role: Role }
+export type InviteEdit = { email: string; name: string; role: Role; expectedUpdatedAt: string | null }
 
 export function InviteCard({
   item,
@@ -20,6 +21,8 @@ export function InviteCard({
   onDelete,
   pendingProfileToggle,
   setPendingProfileToggle,
+  profileToggleReason,
+  setProfileToggleReason,
   onToggleProfileActive,
 }: {
   item: AppData['allowedUsers'][number]
@@ -27,11 +30,13 @@ export function InviteCard({
   inviteEdits: Record<string, InviteEdit>
   setInviteEdits: Dispatch<SetStateAction<Record<string, InviteEdit>>>
   onSave: (inviteId: string) => void
-  pendingDelete: { table: AdminDeleteTable; id: string } | null
-  setPendingDelete: (value: { table: AdminDeleteTable; id: string } | null) => void
-  onDelete: (inviteId: string) => void
+  pendingDelete: PendingAdminDelete | null
+  setPendingDelete: (value: PendingAdminDelete | null) => void
+  onDelete: (inviteId: string, input: AuditedDeleteInput) => void
   pendingProfileToggle: { email: string; nextActive: boolean } | null
   setPendingProfileToggle: (value: { email: string; nextActive: boolean } | null) => void
+  profileToggleReason: string
+  setProfileToggleReason: (value: string) => void
   onToggleProfileActive: (email: string, nextActive: boolean) => void
 }) {
   const edit = inviteEdits[item.id]
@@ -99,7 +104,17 @@ export function InviteCard({
             <div className="group-actions">
               <button
                 className="ghost compact"
-                onClick={() => setInviteEdits({ ...inviteEdits, [item.id]: { email: item.email, name: item.name, role: item.role } })}
+                onClick={() =>
+                  setInviteEdits({
+                    ...inviteEdits,
+                    [item.id]: {
+                      email: item.email,
+                      name: item.name,
+                      role: item.role,
+                      expectedUpdatedAt: item.updated_at ?? null,
+                    },
+                  })
+                }
                 title="초대 수정"
                 type="button"
               >
@@ -108,12 +123,13 @@ export function InviteCard({
               <DeleteConfirmAction
                 table="allowed_users"
                 id={item.id}
+                expectedUpdatedAt={item.updated_at}
                 label="초대"
                 itemName={item.email}
                 warning={deleteWarnings.allowed_users}
                 pendingDelete={pendingDelete}
                 setPendingDelete={setPendingDelete}
-                onConfirm={() => onDelete(item.id)}
+                onConfirm={(input) => onDelete(item.id, input)}
               />
             </div>
           </div>
@@ -129,9 +145,19 @@ export function InviteCard({
                       ? '활성화하면 이 사용자가 다시 앱 데이터에 접근할 수 있습니다.'
                       : '비활성화하면 이 사용자는 로그인 후 앱 데이터에 접근할 수 없습니다. 기존 배정은 유지됩니다.'}
                   </p>
+                  <label className="wide">
+                    변경 사유
+                    <textarea
+                      maxLength={500}
+                      placeholder="예: 퇴사 처리에 따른 계정 비활성화"
+                      value={profileToggleReason}
+                      onChange={(event) => setProfileToggleReason(event.target.value)}
+                    />
+                  </label>
                   <div className="inline-actions">
                     <button
                       className="danger compact"
+                      disabled={!profileToggleReason.trim()}
                       onClick={() => onToggleProfileActive(item.email, pendingProfileToggle.nextActive)}
                       type="button"
                     >

@@ -128,6 +128,7 @@ describe('master delete activity logging (demo)', () => {
         },
       }),
       product!.id,
+      { expectedUpdatedAt: product!.updated_at ?? null, reason: '중복 제품 정리' },
     )
 
     expect(next.products.some((item) => item.id === product!.id)).toBe(false)
@@ -147,6 +148,7 @@ describe('master delete activity logging (demo)', () => {
         setData: () => undefined,
       }),
       product.id,
+      { expectedUpdatedAt: product.updated_at ?? null, reason: '중복 제품 정리' },
     )).rejects.toThrow('변경 적용 이력이 있는 제품은 삭제할 수 없습니다')
   })
 
@@ -166,6 +168,7 @@ describe('master delete activity logging (demo)', () => {
         },
       }),
       invite!.id,
+      { expectedUpdatedAt: invite!.updated_at ?? null, reason: '만료 초대 정리' },
     )
 
     expect(next.allowedUsers.some((item) => item.id === invite!.id)).toBe(false)

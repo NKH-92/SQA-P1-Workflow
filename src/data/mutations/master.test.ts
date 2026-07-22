@@ -33,9 +33,10 @@ vi.mock('../activityLog', () => ({
   recordActivityLog: activityLogMock,
 }))
 
-const leader: Profile = { id: 'leader-1', email: 'leader@example.com', name: 'Leader', role: 'leader', is_active: true }
-const member: Profile = { id: 'member-1', email: 'member@example.com', name: 'Member', role: 'member', is_active: true }
-const previousMember: Profile = { id: 'member-2', email: 'previous@example.com', name: 'Previous', role: 'member', is_active: true }
+const revision = '2026-07-20T00:00:00.000Z'
+const leader: Profile = { id: 'leader-1', email: 'leader@example.com', name: 'Leader', role: 'leader', is_active: true, updated_at: revision }
+const member: Profile = { id: 'member-1', email: 'member@example.com', name: 'Member', role: 'member', is_active: true, updated_at: revision }
+const previousMember: Profile = { id: 'member-2', email: 'previous@example.com', name: 'Previous', role: 'member', is_active: true, updated_at: revision }
 const inactiveMember: Profile = { ...member, id: 'member-inactive', is_active: false }
 
 function localContext(profile: Profile = leader): RepositoryContext {
@@ -48,9 +49,9 @@ function localContext(profile: Profile = leader): RepositoryContext {
     changeAssigneeOptions: [],
     profiles: [leader, member, previousMember, inactiveMember],
     allowedUsers: [],
-    products: [{ id: 'product-1', name: 'Product', category: '자사', company_name: '자사', sort_order: 1 }],
-    duties: [{ id: 'duty-1', name: 'Duty', major_category_id: 'category-1', sort_order: 1, duty_major_categories: null }],
-    dutyMajorCategories: [{ id: 'category-1', name: 'Category', sort_order: 1 }],
+    products: [{ id: 'product-1', name: 'Product', category: '자사', company_name: '자사', sort_order: 1, updated_at: revision }],
+    duties: [{ id: 'duty-1', name: 'Duty', major_category_id: 'category-1', sort_order: 1, duty_major_categories: null, updated_at: revision }],
+    dutyMajorCategories: [{ id: 'category-1', name: 'Category', sort_order: 1, updated_at: revision }],
     productAssignments: [],
     dutyAssignments: [],
     reviewRequests: [],
@@ -70,7 +71,7 @@ describe('local assignment replacement parity', () => {
   it('rejects inactive leaders before mutating preview data', async () => {
     const ctx = localContext({ ...leader, is_active: false })
 
-    await expect(saveProductAssignments(ctx, { productId: 'product-1', nextMemberIds: ['member-1'] }))
+    await expect(saveProductAssignments(ctx, { productId: 'product-1', nextMemberIds: ['member-1'], reason: '배정 조정' }))
       .rejects.toThrow('활성 파트장 권한이 필요합니다.')
     expect(ctx.setData).not.toHaveBeenCalled()
   })
@@ -78,18 +79,18 @@ describe('local assignment replacement parity', () => {
   it('rejects leaders who still require a password change', async () => {
     const ctx = localContext({ ...leader, must_change_password: true })
 
-    await expect(saveDutyAssignments(ctx, { dutyId: 'duty-1', nextMemberIds: ['member-1'] }))
+    await expect(saveDutyAssignments(ctx, { dutyId: 'duty-1', nextMemberIds: ['member-1'], reason: '배정 조정' }))
       .rejects.toThrow('활성 파트장 권한이 필요합니다.')
     expect(ctx.setData).not.toHaveBeenCalled()
   })
 
   it('rejects inactive or missing members in local product assignments', async () => {
     const inactiveCtx = localContext()
-    await expect(saveProductAssignments(inactiveCtx, { productId: 'product-1', nextMemberIds: ['member-inactive'] }))
+    await expect(saveProductAssignments(inactiveCtx, { productId: 'product-1', nextMemberIds: ['member-inactive'], reason: '배정 조정' }))
       .rejects.toThrow('활성 상태인 파트원에게만 배정할 수 있습니다.')
 
     const missingCtx = localContext()
-    await expect(saveDutyAssignments(missingCtx, { dutyId: 'duty-1', nextMemberIds: ['missing-member'] }))
+    await expect(saveDutyAssignments(missingCtx, { dutyId: 'duty-1', nextMemberIds: ['missing-member'], reason: '배정 조정' }))
       .rejects.toThrow('이미 삭제되었거나 변경할 수 없는 항목입니다.')
     expect(inactiveCtx.setData).not.toHaveBeenCalled()
     expect(missingCtx.setData).not.toHaveBeenCalled()
@@ -98,7 +99,7 @@ describe('local assignment replacement parity', () => {
   it('allows an active leader to replace assignments for active members', async () => {
     const ctx = localContext()
 
-    await saveProductAssignments(ctx, { productId: 'product-1', nextMemberIds: ['member-1'] })
+    await saveProductAssignments(ctx, { productId: 'product-1', nextMemberIds: ['member-1'], reason: '배정 조정' })
     expect(ctx.setData).toHaveBeenCalled()
   })
 
@@ -113,6 +114,7 @@ describe('local assignment replacement parity', () => {
       productId: 'product-1',
       nextMemberIds: [],
       unassignedReason: '담당 제품군 조정 중',
+      reason: '배정 조정',
     })
     expect(nextData.products[0]?.unassigned_reason).toBe('담당 제품군 조정 중')
 
@@ -143,17 +145,28 @@ describe('local assignment replacement parity', () => {
       () => addProduct(ctx, { name: 'New product' }),
       () => addDutyMajorCategory(ctx, { name: 'New category' }),
       () => addDuty(ctx, { majorCategoryId: 'category-1', name: 'New duty' }),
-      () => saveProductAssignments(ctx, { productId: 'product-1', nextMemberIds: [] }),
-      () => saveDutyAssignments(ctx, { dutyId: 'duty-1', nextMemberIds: [] }),
+      () => saveProductAssignments(ctx, { productId: 'product-1', nextMemberIds: [], reason: '배정 조정' }),
+      () => saveDutyAssignments(ctx, { dutyId: 'duty-1', nextMemberIds: [], reason: '배정 조정' }),
       () => assignProduct(ctx, { productId: 'product-1', userId: 'member-1' }),
       () => assignDuty(ctx, { dutyId: 'duty-1', userId: 'member-1' }),
-      () => updateDuty(ctx, 'duty-1', { name: 'Changed duty', major_category_id: 'category-1' }),
-      () => updateInvite(ctx, 'invite-1', { email: 'new@example.com', name: 'New', role: 'member' }),
-      () => toggleProfileActive(ctx, 'member-1', false),
-      () => deleteAllowedUser(ctx, 'invite-1'),
-      () => deleteProduct(ctx, 'product-1'),
-      () => deleteDuty(ctx, 'duty-1'),
-      () => deleteDutyMajorCategory(ctx, 'category-1'),
+      () => updateDuty(ctx, 'duty-1', {
+        name: 'Changed duty',
+        major_category_id: 'category-1',
+        expectedUpdatedAt: null,
+        reason: 'test reason',
+      }),
+      () => updateInvite(ctx, 'invite-1', {
+        email: 'new@example.com',
+        name: 'New',
+        role: 'member',
+        expectedUpdatedAt: null,
+        reason: 'test reason',
+      }),
+      () => toggleProfileActive(ctx, 'member-1', false, { expectedUpdatedAt: null, reason: 'test reason' }),
+      () => deleteAllowedUser(ctx, 'invite-1', { expectedUpdatedAt: null, reason: 'test reason' }),
+      () => deleteProduct(ctx, 'product-1', { expectedUpdatedAt: null, reason: 'test reason' }),
+      () => deleteDuty(ctx, 'duty-1', { expectedUpdatedAt: null, reason: 'test reason' }),
+      () => deleteDutyMajorCategory(ctx, 'category-1', { expectedUpdatedAt: null, reason: 'test reason' }),
     ]
 
     for (const operation of guardedOperations) {
@@ -163,17 +176,52 @@ describe('local assignment replacement parity', () => {
     expect(activityLogMock).not.toHaveBeenCalled()
   })
 
-  it('preserves the intentional local guard exception for product and duty-category updates', async () => {
+  it('keeps product and duty-category update authorization aligned with remote mode', async () => {
     const productCtx = localContext(member)
-    await updateProduct(productCtx, 'product-1', { name: 'Member-side product update' })
-    expect(productCtx.setData).toHaveBeenCalledOnce()
-    expect(activityLogMock).toHaveBeenCalledOnce()
+    await expect(updateProduct(productCtx, 'product-1', {
+      name: 'Member-side product update',
+      expectedUpdatedAt: revision,
+      reason: 'test reason',
+    })).rejects.toThrow('활성 파트장 권한이 필요합니다.')
+    expect(productCtx.setData).not.toHaveBeenCalled()
 
     activityLogMock.mockClear()
     const categoryCtx = localContext(member)
-    await updateDutyMajorCategory(categoryCtx, 'category-1', { name: 'Member-side category update' })
-    expect(categoryCtx.setData).toHaveBeenCalledOnce()
-    expect(activityLogMock).toHaveBeenCalledOnce()
+    await expect(updateDutyMajorCategory(categoryCtx, 'category-1', {
+      name: 'Member-side category update',
+      expectedUpdatedAt: revision,
+      reason: 'test reason',
+    })).rejects.toThrow('활성 파트장 권한이 필요합니다.')
+    expect(categoryCtx.setData).not.toHaveBeenCalled()
+    expect(activityLogMock).not.toHaveBeenCalled()
+  })
+
+  it('reconciles an invite role with its pre-edit-email profile in one local operation', async () => {
+    const ctx = localContext()
+    ctx.data.allowedUsers = [{
+      id: 'invite-1', email: member.email, name: member.name, role: 'member', updated_at: revision,
+    }]
+    let nextData = ctx.data
+    ctx.setData = (updater) => {
+      nextData = typeof updater === 'function' ? updater(nextData) : updater
+    }
+
+    await updateInvite(ctx, 'invite-1', {
+      email: 'new-member@example.com',
+      name: 'Renamed invite',
+      role: 'leader',
+      expectedUpdatedAt: revision,
+      reason: 'role and email correction',
+    })
+
+    expect(nextData.allowedUsers.find((item) => item.id === 'invite-1')).toMatchObject({
+      email: 'new-member@example.com',
+      role: 'leader',
+    })
+    expect(nextData.profiles.find((item) => item.id === member.id)).toMatchObject({
+      name: member.name,
+      role: 'leader',
+    })
   })
 
   it('keeps local assignment no-op silent and logs only after changed state is applied', async () => {
@@ -204,6 +252,36 @@ describe('local assignment replacement parity', () => {
     expect(activityLogMock.mock.calls[0][1]).toMatchObject({
       metadata: { user_id: 'member-1', transferred_task_count: 0 },
     })
+  })
+
+  it('keeps opted-in transfer silent when both the assignment and transfer set are unchanged', async () => {
+    const ctx = localContext()
+    ctx.data.productAssignments = [{
+      id: 'assignment-1', product_id: 'product-1', user_id: 'member-1', products: null, profiles: null,
+    }]
+
+    await assignProduct(ctx, {
+      productId: 'product-1',
+      userId: 'member-1',
+      transferPendingChangeTasks: true,
+      transferReason: '담당자 확인',
+    })
+
+    expect(ctx.setData).not.toHaveBeenCalled()
+    expect(activityLogMock).not.toHaveBeenCalled()
+  })
+
+  it('bumps the local product revision when a new assignment is inserted', async () => {
+    const ctx = localContext()
+    ctx.data.products[0]!.updated_at = '2026-01-01T00:00:00.000Z'
+    let nextData = ctx.data
+    ctx.setData = (updater) => {
+      nextData = typeof updater === 'function' ? updater(nextData) : updater
+    }
+
+    await assignProduct(ctx, { productId: 'product-1', userId: 'member-1' })
+
+    expect(nextData.products[0]?.updated_at).not.toBe('2026-01-01T00:00:00.000Z')
   })
 
   it('atomically mirrors opted-in pending change-task transfer in preview data', async () => {
@@ -298,7 +376,9 @@ describe('local assignment replacement parity', () => {
   it('does not allow local preview to deactivate the last active leader', async () => {
     const ctx = localContext()
 
-    await expect(toggleProfileActive(ctx, leader.id, false)).rejects.toThrow('활성 파트장은 최소 한 명 이상 유지해야 합니다.')
+    await expect(
+      toggleProfileActive(ctx, leader.id, false, { expectedUpdatedAt: revision, reason: 'test reason' }),
+    ).rejects.toThrow('활성 파트장은 최소 한 명 이상 유지해야 합니다.')
     expect(ctx.setData).not.toHaveBeenCalled()
   })
 })

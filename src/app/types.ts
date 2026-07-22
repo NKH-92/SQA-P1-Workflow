@@ -10,6 +10,15 @@ export type AdminDeleteTable =
   | 'products'
   | 'duties'
   | 'duty_major_categories'
+  | 'projects'
+export type PendingAdminDelete = {
+  table: AdminDeleteTable
+  id: string
+  expectedUpdatedAt: string | null
+}
 export type DeadlineMode = 'date' | 'none'
 
-export type MutateFn = (operation: () => Promise<void>, success: string) => Promise<boolean>
+export type MutateFn = (
+  operation: () => Promise<void>,
+  success: string | (() => string),
+) => Promise<boolean>

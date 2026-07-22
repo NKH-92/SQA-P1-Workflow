@@ -17,7 +17,7 @@ describe('ReviewStatsPanel.css contract', () => {
     expect(mobileCss).toMatch(/\.review-stats-kpi-grid\s*\{[^}]*repeat\(2, minmax\(0, 1fr\)\)/s)
   })
 
-  it('uses Warm Paper tokens instead of introducing raw color values', () => {
+  it('uses shared Brand Operations tokens instead of introducing raw color values', () => {
     expect(css).not.toMatch(/#[0-9a-f]{3,8}\b/i)
     expect(css).not.toMatch(/\brgba?\(/i)
     expect(css).toContain('var(--paper-panel)')

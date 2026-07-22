@@ -50,9 +50,24 @@ function optionalDataOrWarning<T>(
   return (result.value.data ?? []) as T
 }
 
+function optionalCappedRowsOrWarning<T>(
+  result: SettledQueryResult<T[]>,
+  label: string,
+  warnings: string[],
+  previous: T[],
+  cap: number,
+): T[] {
+  const rows = optionalDataOrWarning(result, label, warnings, previous)
+  if (rows.length > cap) {
+    warnings.push(`${label}: 최신 ${cap}건만 표시합니다.`)
+  }
+  return rows.slice(0, cap)
+}
+
 export function assembleAppData(
   {
     profilesResult,
+    activeLeaderProfilesResult,
     productsResult,
     dutyMajorCategoriesResult,
     dutiesResult,
@@ -76,13 +91,15 @@ export function assembleAppData(
   const optionalWarnings: string[] = []
 
   let profiles = (profilesResult.data ?? []) as Profile[]
-  const leaderProfiles = optionalDataOrWarning(
-    optionalResults.leaderProfiles,
-    '파트장 프로필',
-    optionalWarnings,
-    [] as Array<Pick<Profile, 'id' | 'name'>>,
-  )
+  // get_core_bootstrap_v2 already returns the authoritative active-leader
+  // directory in the same snapshot. Avoid a redundant view request (and its
+  // separate snapshot/security-definer surface) while preserving member-visible
+  // leader names that are intentionally absent from the regular profiles rows.
+  const leaderProfiles = activeLeaderProfilesResult.data ?? []
   if (leaderProfiles.length > 0) {
+    // Required profiles are authoritative: any id already present there (even with
+    // a changed role or inactive status) must win over a stale leader fallback, so
+    // a deleted/demoted leader can never be resurrected by an optional-query outage.
     const knownIds = new Set(profiles.map((item) => item.id))
     profiles = [
       ...profiles,
@@ -99,10 +116,10 @@ export function assembleAppData(
   }
 
   // Warning order is user-visible and intentionally differs from query order.
-  const announcements = optionalDataOrWarning(optionalResults.announcements, '공지', optionalWarnings, previous.announcements)
-  const allowedUsers = optionalDataOrWarning(optionalResults.allowedUsers, '초대 목록', optionalWarnings, previous.allowedUsers)
-  const profileNotes = optionalDataOrWarning(optionalResults.profileNotes, '프로필 메모', optionalWarnings, previous.profileNotes)
-  const activityLogs = optionalDataOrWarning(optionalResults.activityLogs, '활동 로그', optionalWarnings, previous.activityLogs)
+  const announcements = optionalCappedRowsOrWarning(optionalResults.announcements, '공지', optionalWarnings, previous.announcements, 200)
+  const allowedUsers = optionalCappedRowsOrWarning(optionalResults.allowedUsers, '초대 목록', optionalWarnings, previous.allowedUsers, 1000)
+  const profileNotes = optionalCappedRowsOrWarning(optionalResults.profileNotes, '프로필 메모', optionalWarnings, previous.profileNotes, 1000)
+  const activityLogs = optionalCappedRowsOrWarning(optionalResults.activityLogs, '활동 로그', optionalWarnings, previous.activityLogs, 100)
 
   return {
     announcements,

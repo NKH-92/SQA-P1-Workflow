@@ -17,11 +17,23 @@ git diff --check
 
 DB/repository/운영 변경은 Docker와 pinned Supabase CLI `2.109.1`이 준비된 환경에서 `npm run test:rls:full`까지 성공해야 한다. 일반 unit run에 환경형 RLS test가 skip으로 보이는 것은 개발 피드백일 뿐 완료 증거가 아니다. full runner의 skip 또는 실패는 전체 완료를 차단한다.
 
-Playwright는 다음 10개 시나리오를 독립적으로 차단한다: leader/member navigation, command palette, review lifecycle, project CRUD, product transfer, change task lifecycle, deep-link, density persistence, mobile sidebar, notification/read navigation.
+Playwright **preview** project(`npm run test:e2e`)는 local adapter 회귀용으로 다음 시나리오를 독립적으로 차단한다: leader/member navigation, command palette, review lifecycle, project CRUD, product transfer, change task lifecycle, deep-link, density persistence, mobile sidebar, notification/read navigation, review stats filter, modal focus return.
+
+Playwright **remote** project(`npm run test:e2e:remote`)는 local Supabase + production build 정적 자산으로 UI→Auth→RPC→RLS 종단 12개 시나리오(R-E2E-01~12)를 차단한다. setup만 service role을 사용하고 브라우저에는 anon key와 시험 사용자 credential만 전달한다. production secret 사용을 금지한다. Docker/local Supabase가 없으면 이 게이트는 실행하지 않으며, `REMOTE_E2E_REQUIRED=1`일 때 미구성은 fail-closed다.
+
+권장 CI 순서:
+
+```text
+typecheck / lint / unit
+        ↓
+local-supabase-integration (RLS + remote browser E2E)
+        ↓
+build/release gate
+```
 
 Workflow contract test는 RLS job 삭제, E2E job 삭제, build dependency 누락, secret 과다 주입, readiness manifest 누락/중복, 미등록 `60_*.sql`을 거부한다.
 
-## CAPA WP1 — 감사 lifecycle
+## 감사 로그 lifecycle
 
 - migration contract test는 실제 trigger의 모든 entity type과 v3 helper allowlist가
   정확히 일치하는지 비교한다.
@@ -127,6 +139,24 @@ Supabase에 최소 3명(`leader`, `member A`, `member B`)을 등록한 뒤 각 �
 - 비밀번호 변경(8자 이상)을 완료해 `must_change_password = false`가 되면 이후 정상적으로 데이터가 조회·쓰기된다.
 - 첫 파트장 계정도 동일하게, 비밀번호 변경 전에는 마스터/배정 등 leader 작업이 거부되고 변경 후 정상 동작해야 한다.
 - 위 검증 후, 본문의 `is_active=false` 항목과 member/leader 격리 항목도 함께 확인해 헬퍼가 기존 격리를 깨지 않는지 확인한다.
+
+## DR package 계약
+
+- `src/drPackage.test.ts`는 정상 L2, Auth 없는 L3, checksum 변조, private audit 누락,
+  migration history 누락, duplicate/absolute/traversal path, 빈 dump, CLI entrypoint를 검증한다.
+- `src/workflows.test.ts`는 plaintext artifact 업로드 금지, Backup DB/DB Migrate/Deploy Worker 공통
+  production concurrency, 동일 SHA DB Migrate run 증명, privileged step 단위 secret scope,
+  현행 L2/Auth 미포함 선언을 검증한다.
+- 이 code gate는 production credential 없이 실행한다. 실제 Auth UUID/hash/FK/login/RLS 복원
+  성공은 폐기 가능한 신규 Supabase project의 Full DR rehearsal 전에는 완료로 표시하지 않는다.
+- `src/drEvidenceCapture.test.ts`는 raw row가 digest/count evidence로만 축약되는지, 정렬·중복·
+  Storage/FK 오류와 DB URL/project-ref mismatch가 차단되는지 검증한다.
+- `src/restoredProject.test.ts`는 Auth UUID, 핵심 table checksum/count, migration/config, FK,
+  보존 로그인, Auth settings, RLS/audit/review/change-task evidence를 exact match로 검증한다.
+- `src/rlsTargetGuard.test.ts`와 `src/drRemoteSmoke.test.ts`는 remote RLS가 explicit disposable 확인,
+  production ref 차이, exact Supabase hostname, allowlist를 모두 만족할 때만 실행됨을 검증한다.
+- `.github/workflows/dr-rehearsal.yml`은 manual/environment 승인 전용이며 실제 운영 DoD에서는
+  skip 0인 remote RLS 결과와 redacted evidence artifact를 확인한다.
 
 ## 로컬 검증 명령
 

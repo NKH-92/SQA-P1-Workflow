@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Profile, Role } from '../types'
 import type { TabId, ToastMessage } from '../app/types'
+import type { SyncHealth } from '../app/hooks/useSyncHealth'
 import { roleLabels } from '../lib/format'
 import { navigationItemsForRole, tabHeaderLabel } from '../lib/navigation'
 import type { AppNotification } from '../lib/notifications'
@@ -9,6 +10,7 @@ import { NotificationPanel } from '../components/NotificationPanel'
 import { buildShellModel, type ShellFeatureData } from './shellModel'
 import { useDensityPreference } from './useDensityPreference'
 import {
+  AlertTriangle,
   BarChart3,
   Bell,
   Check,
@@ -38,6 +40,7 @@ export function Shell({
   saving,
   refreshing,
   lastSyncedAt,
+  syncHealth,
   pendingCount,
   unreadReviewsCount,
   notifications,
@@ -58,6 +61,8 @@ export function Shell({
   saving: boolean
   refreshing: boolean
   lastSyncedAt: Date | null
+  /** 백그라운드 동기화 상태 관측 — topbar persistent 경고 표시 여부를 결정한다. */
+  syncHealth: SyncHealth
   pendingCount: number
   unreadReviewsCount: number
   notifications: AppNotification[]
@@ -133,9 +138,16 @@ export function Shell({
   const syncLabel = lastSyncedAt
     ? `마지막 동기화 ${lastSyncedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`
     : null
+  // stale은 최근 성공 여부와 무관하게 백그라운드 동기화가 신뢰할 수 없다는 뜻이므로,
+  // syncLabel(마지막 성공 시각)과 별개로 항상 노출한다. 업무 body/PII는 담지 않는다.
+  const syncWarningTitle = syncHealth.stale
+    ? `동기화가 지연되고 있습니다. 연속 실패 ${syncHealth.consecutiveFailures}회${
+        syncHealth.lastErrorCode ? ` (오류 코드: ${syncHealth.lastErrorCode})` : ''
+      }`
+    : undefined
 
   return (
-    <div className="app-shell">
+    <div className="app-shell brand-shell" data-visual-theme="brand-shell">
       <div className={`overlay${sidebarOpen ? ' visible' : ''}`} onClick={() => setSidebarOpen(false)} />
       <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
         <div className="sidebar-top">
@@ -146,7 +158,7 @@ export function Shell({
               <span>Workflow</span>
             </div>
           </div>
-          <button className="sidebar-close" onClick={() => setSidebarOpen(false)} type="button">
+          <button aria-label="메뉴 닫기" className="sidebar-close" onClick={() => setSidebarOpen(false)} type="button">
             <X size={20} />
           </button>
         </div>
@@ -156,6 +168,7 @@ export function Shell({
               <span className="nav-group-label">{section.label}</span>
               {section.items.map((tab) => (
                 <button
+                  aria-current={activeTab === tab.id ? 'page' : undefined}
                   className={activeTab === tab.id ? 'nav-item active' : 'nav-item'}
                   key={tab.id}
                   onClick={() => {
@@ -207,7 +220,7 @@ export function Shell({
       <main className="content">
         <header className="topbar">
           <div className="topbar-left">
-            <button className="hamburger" onClick={() => setSidebarOpen(true)} type="button">
+            <button aria-label="메뉴 열기" className="hamburger" onClick={() => setSidebarOpen(true)} type="button">
               <Menu size={22} />
             </button>
             <div>
@@ -222,6 +235,12 @@ export function Shell({
           </button>
           <div className="topbar-actions">
             {syncLabel && <span className="sync-label">{syncLabel}</span>}
+            {syncHealth.stale && (
+              <span className="sync-warning" role="status" aria-live="polite" title={syncWarningTitle}>
+                <AlertTriangle aria-hidden="true" size={14} />
+                동기화 지연
+              </span>
+            )}
             {refreshing && (
               <span className="saving" role="status" aria-live="polite">
                 <RefreshCw className="spin" size={14} aria-hidden="true" />
@@ -234,6 +253,7 @@ export function Shell({
               </span>
             )}
             <button
+              aria-label={density === 'compact' ? '간격 보통으로 보기' : '간격 압축해서 보기'}
               aria-pressed={density === 'compact'}
               className="icon-button"
               onClick={toggleDensity}
@@ -252,10 +272,17 @@ export function Shell({
               <Bell size={16} />
               {unreadNotifications > 0 && <span className="dot" aria-hidden="true" />}
             </button>
-            <button className="icon-button" title="새로고침" onClick={onRefresh} type="button" disabled={refreshing || saving}>
+            <button
+              aria-label="새로고침"
+              className="icon-button"
+              title="새로고침"
+              onClick={onRefresh}
+              type="button"
+              disabled={refreshing || saving}
+            >
               <RefreshCw className={refreshing ? 'spin' : undefined} size={16} />
             </button>
-            <button className="icon-button" title="로그아웃" onClick={onSignOut} type="button">
+            <button aria-label="로그아웃" className="icon-button" title="로그아웃" onClick={onSignOut} type="button">
               <LogOut size={16} />
             </button>
           </div>

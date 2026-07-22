@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AppData } from '../../types'
 import type { TabId } from '../types'
 import {
+  DESKTOP_NOTIFICATION_SETTINGS_SCHEMA_VERSION,
   initialNotifiedUpTo,
   loadDesktopNotificationSettings,
   saveDesktopNotificationSettings,
@@ -14,6 +15,12 @@ export type DesktopNotificationControls = {
   enabled: boolean
   permission: NotificationPermission | null
   toggle: () => Promise<void>
+  /** 알림 title에서 requester 이름을 숨긴다. 기본값 false(기존 동작 유지) — opt-in 강화. */
+  hideRequesterName: boolean
+  toggleHideRequesterName: () => void
+  /** 알림 body에 검토 제목을 노출한다. 기본값 false — 잠금화면 노출을 줄이는 안전 기본값. */
+  revealReviewTitle: boolean
+  toggleRevealReviewTitle: () => void
 }
 
 /**
@@ -32,8 +39,12 @@ export function useDesktopNotifications(
   const [permission, setPermission] = useState<NotificationPermission | null>(
     supported ? Notification.permission : null,
   )
+  const [hideRequesterName, setHideRequesterName] = useState(false)
+  const [revealReviewTitle, setRevealReviewTitle] = useState(false)
   const notifiedUpToRef = useRef<string | null>(null)
   const notifiedIdsRef = useRef<Set<string>>(new Set())
+  const hideRequesterNameRef = useRef(false)
+  const revealReviewTitleRef = useRef(false)
   const setActiveTabRef = useRef(setActiveTab)
   useEffect(() => {
     setActiveTabRef.current = setActiveTab
@@ -45,6 +56,10 @@ export function useDesktopNotifications(
     setEnabled(settings.enabled && supported)
     notifiedUpToRef.current = settings.notifiedUpToIso
     notifiedIdsRef.current = new Set()
+    hideRequesterNameRef.current = settings.hideRequesterName
+    setHideRequesterName(settings.hideRequesterName)
+    revealReviewTitleRef.current = settings.revealReviewTitle
+    setRevealReviewTitle(settings.revealReviewTitle)
   }, [profileId, supported])
 
   useEffect(() => {
@@ -53,18 +68,34 @@ export function useDesktopNotifications(
     if (!notifiedUpToRef.current) {
       // 켜진 채 시작한 세션의 첫 데이터 관찰 — 여기 이전 것은 알리지 않는다.
       notifiedUpToRef.current = initialNotifiedUpTo(data)
-      saveDesktopNotificationSettings(profileId, { enabled: true, notifiedUpToIso: notifiedUpToRef.current })
+      saveDesktopNotificationSettings(profileId, {
+        schemaVersion: DESKTOP_NOTIFICATION_SETTINGS_SCHEMA_VERSION,
+        enabled: true,
+        notifiedUpToIso: notifiedUpToRef.current,
+        hideRequesterName: hideRequesterNameRef.current,
+        revealReviewTitle: revealReviewTitleRef.current,
+      })
       return
     }
     const fresh = selectNewPendingReviews(data, notifiedUpToRef.current, notifiedIdsRef.current)
     if (fresh.length === 0) return
     fresh.forEach((alert) => notifiedIdsRef.current.add(alert.notificationKey))
     notifiedUpToRef.current = new Date(fresh[fresh.length - 1].at).toISOString()
-    saveDesktopNotificationSettings(profileId, { enabled: true, notifiedUpToIso: notifiedUpToRef.current })
+    saveDesktopNotificationSettings(profileId, {
+      schemaVersion: DESKTOP_NOTIFICATION_SETTINGS_SCHEMA_VERSION,
+      enabled: true,
+      notifiedUpToIso: notifiedUpToRef.current,
+      hideRequesterName: hideRequesterNameRef.current,
+      revealReviewTitle: revealReviewTitleRef.current,
+    })
     // 앱을 보고 있는 중엔 벨 뱃지로 충분하다 — 창이 뒤에 있을 때만 띄운다.
     if (document.hasFocus()) return
+    const prefs = {
+      hideRequesterName: hideRequesterNameRef.current,
+      revealReviewTitle: revealReviewTitleRef.current,
+    }
     fresh.forEach((alert) => {
-      showPendingReviewNotification(alert, () => {
+      showPendingReviewNotification(alert, prefs, () => {
         window.focus()
         setActiveTabRef.current('reviews', alert.id)
       })
@@ -75,7 +106,13 @@ export function useDesktopNotifications(
     if (!profileId || !supported) return
     if (enabled) {
       setEnabled(false)
-      saveDesktopNotificationSettings(profileId, { enabled: false, notifiedUpToIso: notifiedUpToRef.current })
+      saveDesktopNotificationSettings(profileId, {
+        schemaVersion: DESKTOP_NOTIFICATION_SETTINGS_SCHEMA_VERSION,
+        enabled: false,
+        notifiedUpToIso: notifiedUpToRef.current,
+        hideRequesterName: hideRequesterNameRef.current,
+        revealReviewTitle: revealReviewTitleRef.current,
+      })
       return
     }
     const nextPermission =
@@ -85,8 +122,51 @@ export function useDesktopNotifications(
     // 켜는 시점 이전의 대기 건은 알리지 않는다.
     notifiedUpToRef.current = initialNotifiedUpTo(data)
     setEnabled(true)
-    saveDesktopNotificationSettings(profileId, { enabled: true, notifiedUpToIso: notifiedUpToRef.current })
+    saveDesktopNotificationSettings(profileId, {
+      schemaVersion: DESKTOP_NOTIFICATION_SETTINGS_SCHEMA_VERSION,
+      enabled: true,
+      notifiedUpToIso: notifiedUpToRef.current,
+      hideRequesterName: hideRequesterNameRef.current,
+      revealReviewTitle: revealReviewTitleRef.current,
+    })
   }, [data, enabled, profileId, supported])
 
-  return { supported, enabled, permission, toggle }
+  const toggleHideRequesterName = useCallback(() => {
+    if (!profileId) return
+    const next = !hideRequesterNameRef.current
+    hideRequesterNameRef.current = next
+    setHideRequesterName(next)
+    saveDesktopNotificationSettings(profileId, {
+      schemaVersion: DESKTOP_NOTIFICATION_SETTINGS_SCHEMA_VERSION,
+      enabled,
+      notifiedUpToIso: notifiedUpToRef.current,
+      hideRequesterName: next,
+      revealReviewTitle: revealReviewTitleRef.current,
+    })
+  }, [enabled, profileId])
+
+  const toggleRevealReviewTitle = useCallback(() => {
+    if (!profileId) return
+    const next = !revealReviewTitleRef.current
+    revealReviewTitleRef.current = next
+    setRevealReviewTitle(next)
+    saveDesktopNotificationSettings(profileId, {
+      schemaVersion: DESKTOP_NOTIFICATION_SETTINGS_SCHEMA_VERSION,
+      enabled,
+      notifiedUpToIso: notifiedUpToRef.current,
+      hideRequesterName: hideRequesterNameRef.current,
+      revealReviewTitle: next,
+    })
+  }, [enabled, profileId])
+
+  return {
+    supported,
+    enabled,
+    permission,
+    toggle,
+    hideRequesterName,
+    toggleHideRequesterName,
+    revealReviewTitle,
+    toggleRevealReviewTitle,
+  }
 }

@@ -21,7 +21,8 @@ export function useDutyAdminController(profile: Profile, data: AppData, setData:
     updateCategory: (id: string, input: Parameters<typeof updateDutyMajorCategory>[2]) =>
       updateDutyMajorCategory(context, id, input),
     update: (id: string, input: Parameters<typeof updateDuty>[2]) => updateDuty(context, id, input),
-    remove: (id: string) => deleteDuty(context, id),
-    removeCategory: (id: string) => deleteDutyMajorCategory(context, id),
+    remove: (id: string, input: Parameters<typeof deleteDuty>[2]) => deleteDuty(context, id, input),
+    removeCategory: (id: string, input: Parameters<typeof deleteDutyMajorCategory>[2]) =>
+      deleteDutyMajorCategory(context, id, input),
   }
 }

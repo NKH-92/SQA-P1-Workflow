@@ -14,7 +14,7 @@ const { activityLogMock, rpcMock, fromMock, trace } = vi.hoisted(() => {
     }),
     rpcMock: vi.fn(async () => {
       callTrace.push('supabase')
-      return { error: null as { message: string } | null }
+      return { data: true as boolean | string | null, error: null as { message: string } | null }
     }),
     fromMock: vi.fn(() => ({ insert: vi.fn(async () => ({ error: null })) })),
     trace: callTrace,
@@ -70,19 +70,21 @@ describe('single assignment RPC contracts (remote)', () => {
     })
     rpcMock.mockReset().mockImplementation(async () => {
       trace.push('supabase')
-      return { error: null }
+      return { data: true, error: null }
     })
     fromMock.mockReset().mockImplementation(() => ({ insert: vi.fn(async () => ({ error: null })) }))
   })
 
   it('adds a product assignment without replacing the server-side assignment list', async () => {
-    await assignProduct(remoteContext(), { productId: 'product-1', userId: 'member-1' })
+    const result = await assignProduct(remoteContext(), { productId: 'product-1', userId: 'member-1' })
 
-    expect(rpcMock).toHaveBeenCalledWith('add_product_assignment', {
+    expect(rpcMock).toHaveBeenCalledWith('try_add_product_assignment', {
       p_product_id: 'product-1',
       p_user_id: 'member-1',
     })
+    expect(rpcMock).not.toHaveBeenCalledWith('add_product_assignment', expect.anything())
     expect(rpcMock).not.toHaveBeenCalledWith('replace_product_assignments', expect.anything())
+    expect(result).toEqual({ noop: false })
     expect(activityLogMock).toHaveBeenCalledOnce()
     expect(activityLogMock.mock.calls[0][1]).toMatchObject({
       metadata: { user_id: 'member-1' },
@@ -92,14 +94,35 @@ describe('single assignment RPC contracts (remote)', () => {
   })
 
   it('adds a duty assignment without replacing the server-side assignment list', async () => {
-    await assignDuty(remoteContext(), { dutyId: 'duty-1', userId: 'member-1' })
+    const result = await assignDuty(remoteContext(), { dutyId: 'duty-1', userId: 'member-1' })
 
-    expect(rpcMock).toHaveBeenCalledWith('add_duty_assignment', {
+    expect(rpcMock).toHaveBeenCalledWith('try_add_duty_assignment', {
       p_duty_id: 'duty-1',
       p_user_id: 'member-1',
     })
+    expect(rpcMock).not.toHaveBeenCalledWith('add_duty_assignment', expect.anything())
     expect(rpcMock).not.toHaveBeenCalledWith('replace_duty_assignments', expect.anything())
+    expect(result).toEqual({ noop: false })
     expect(activityLogMock).toHaveBeenCalledOnce()
+  })
+
+  it('reports a no-op and skips the client activity log when the RPC reports the row already existed', async () => {
+    rpcMock.mockImplementationOnce(async () => {
+      trace.push('supabase')
+      return { data: false, error: null }
+    })
+    const productResult = await assignProduct(remoteContext(), { productId: 'product-1', userId: 'member-1' })
+    expect(productResult).toEqual({ noop: true })
+    expect(activityLogMock).not.toHaveBeenCalled()
+
+    trace.length = 0
+    rpcMock.mockImplementationOnce(async () => {
+      trace.push('supabase')
+      return { data: false, error: null }
+    })
+    const dutyResult = await assignDuty(remoteContext(), { dutyId: 'duty-1', userId: 'member-1' })
+    expect(dutyResult).toEqual({ noop: true })
+    expect(activityLogMock).not.toHaveBeenCalled()
   })
 
   it('uses the atomic product-assignment transfer RPC when the leader opts in', async () => {
@@ -116,6 +139,7 @@ describe('single assignment RPC contracts (remote)', () => {
       p_transfer_pending: true,
       p_reason: '제품 담당자 변경에 따른 이관',
     })
+    expect(rpcMock).not.toHaveBeenCalledWith('try_add_product_assignment', expect.anything())
     expect(rpcMock).not.toHaveBeenCalledWith('add_product_assignment', expect.anything())
     expect(activityLogMock).not.toHaveBeenCalled()
   })
@@ -135,18 +159,51 @@ describe('single assignment RPC contracts (remote)', () => {
     expect(rpcMock).toHaveBeenCalledOnce()
   })
 
-  it('saves the unassigned state and reason through the atomic RPC', async () => {
-    await saveProductAssignments(remoteContext(), {
+  it('saves the unassigned state and reason through the OCC-guarded atomic RPC', async () => {
+    const ctx = remoteContext()
+    ctx.data.products = [{ id: 'product-1', name: 'Product', updated_at: '2026-07-01T00:00:00.000Z' }]
+
+    await saveProductAssignments(ctx, {
       productId: 'product-1',
       nextMemberIds: [],
       unassignedReason: '  담당자 협의 중  ',
+      reason: '제품 배정 변경: 담당자 협의 중',
     })
 
-    expect(rpcMock).toHaveBeenCalledWith('replace_product_assignments_with_reason', {
+    expect(rpcMock).toHaveBeenCalledWith('replace_product_assignments_if_current', {
       p_product_id: 'product-1',
       p_member_ids: [],
       p_unassigned_reason: '담당자 협의 중',
+      p_expected_updated_at: '2026-07-01T00:00:00.000Z',
+      p_reason: '제품 배정 변경: 담당자 협의 중',
+      p_correlation_id: expect.any(String),
     })
+  })
+
+  it('suppresses activity log when assignment replacement is a true set no-op', async () => {
+    const ctx = remoteContext()
+    ctx.data.products = [{ id: 'product-1', name: 'Product', updated_at: '2026-07-01T00:00:00.000Z' }]
+    rpcMock.mockResolvedValueOnce({ data: '2026-07-01T00:00:00.000Z', error: null })
+
+    const result = await saveProductAssignments(ctx, {
+      productId: 'product-1',
+      nextMemberIds: [],
+      unassignedReason: null,
+      reason: '동일 배정 재저장',
+    })
+
+    expect(result).toEqual({ noop: true })
+    expect(activityLogMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects saving product assignments without a known revision to check against', async () => {
+    const ctx = remoteContext()
+    ctx.data.products = []
+
+    await expect(
+      saveProductAssignments(ctx, { productId: 'product-1', nextMemberIds: [], reason: '배정 조정' }),
+    ).rejects.toMatchObject({ message: '다른 사용자가 변경했습니다. 새로고침 후 다시 시도해 주세요.' })
+    expect(rpcMock).not.toHaveBeenCalledWith('replace_product_assignments_if_current', expect.anything())
   })
 
   it('checks the Supabase result before writing the client activity log', async () => {
@@ -157,7 +214,7 @@ describe('single assignment RPC contracts (remote)', () => {
     activityLogMock.mockClear()
     rpcMock.mockImplementationOnce(async () => {
       trace.push('supabase')
-      return { error: { message: 'assignment failed' } }
+      return { data: null, error: { message: 'assignment failed' } }
     })
     await expect(assignDuty(remoteContext(), { dutyId: 'duty-1', userId: 'member-1' }))
       .rejects.toMatchObject({ message: 'assignment failed' })

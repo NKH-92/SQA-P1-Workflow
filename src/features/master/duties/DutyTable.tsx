@@ -1,7 +1,8 @@
 import type { Dispatch, SetStateAction } from 'react'
 import { Pencil, Save } from 'lucide-react'
 import { deleteWarnings } from '../../../app/constants'
-import type { AdminDeleteTable } from '../../../app/types'
+import type { PendingAdminDelete } from '../../../app/types'
+import type { AuditedDeleteInput } from '../../../data/contracts'
 import type { AppData, Duty, DutyMajorCategory } from '../../../types'
 import { DeleteConfirmAction } from '../shared/DeleteConfirmAction'
 
@@ -10,7 +11,8 @@ export type DutyTableGroup = {
   duties: Duty[]
 }
 
-type DutyEdit = { major_category_id: string; name: string }
+export type DutyEdit = { major_category_id: string; name: string; expectedUpdatedAt: string | null }
+export type DutyMajorCategoryEdit = { name: string; expectedUpdatedAt: string | null }
 
 export function DutyTable({
   data,
@@ -30,14 +32,14 @@ export function DutyTable({
   dutyTableGroups: DutyTableGroup[]
   dutyEdits: Record<string, DutyEdit>
   setDutyEdits: Dispatch<SetStateAction<Record<string, DutyEdit>>>
-  majorCategoryEdits: Record<string, { name: string }>
-  setMajorCategoryEdits: Dispatch<SetStateAction<Record<string, { name: string }>>>
-  pendingDelete: { table: AdminDeleteTable; id: string } | null
-  setPendingDelete: (value: { table: AdminDeleteTable; id: string } | null) => void
+  majorCategoryEdits: Record<string, DutyMajorCategoryEdit>
+  setMajorCategoryEdits: Dispatch<SetStateAction<Record<string, DutyMajorCategoryEdit>>>
+  pendingDelete: PendingAdminDelete | null
+  setPendingDelete: (value: PendingAdminDelete | null) => void
   onSaveDuty: (dutyId: string) => void
   onSaveMajorCategory: (majorCategoryId: string) => void
-  onDeleteDuty: (dutyId: string) => void
-  onDeleteMajorCategory: (majorCategoryId: string) => void
+  onDeleteDuty: (dutyId: string, input: AuditedDeleteInput) => void
+  onDeleteMajorCategory: (majorCategoryId: string, input: AuditedDeleteInput) => void
 }) {
   const renderMajorCategoryCell = (category: DutyMajorCategory, categoryDutyCount: number) => {
     const majorEdit = majorCategoryEdits[category.id]
@@ -47,7 +49,10 @@ export function DutyTable({
           <input
             value={majorEdit.name}
             onChange={(event) =>
-              setMajorCategoryEdits({ ...majorCategoryEdits, [category.id]: { name: event.target.value } })
+              setMajorCategoryEdits({
+                ...majorCategoryEdits,
+                [category.id]: { ...majorEdit, name: event.target.value },
+              })
             }
           />
           <div className="inline-actions">
@@ -83,7 +88,12 @@ export function DutyTable({
         <div className="group-actions">
           <button
             className="ghost compact"
-            onClick={() => setMajorCategoryEdits({ ...majorCategoryEdits, [category.id]: { name: category.name } })}
+            onClick={() =>
+              setMajorCategoryEdits({
+                ...majorCategoryEdits,
+                [category.id]: { name: category.name, expectedUpdatedAt: category.updated_at ?? null },
+              })
+            }
             title="대분류 수정"
             type="button"
           >
@@ -93,12 +103,13 @@ export function DutyTable({
             <DeleteConfirmAction
               table="duty_major_categories"
               id={category.id}
+              expectedUpdatedAt={category.updated_at}
               label="대분류"
               itemName={category.name}
               warning={deleteWarnings.duty_major_categories}
               pendingDelete={pendingDelete}
               setPendingDelete={setPendingDelete}
-              onConfirm={() => onDeleteMajorCategory(category.id)}
+              onConfirm={(input) => onDeleteMajorCategory(category.id, input)}
             />
           )}
         </div>
@@ -208,7 +219,11 @@ export function DutyTable({
                           onClick={() =>
                             setDutyEdits({
                               ...dutyEdits,
-                              [duty.id]: { name: duty.name, major_category_id: duty.major_category_id },
+                              [duty.id]: {
+                                name: duty.name,
+                                major_category_id: duty.major_category_id,
+                                expectedUpdatedAt: duty.updated_at ?? null,
+                              },
                             })
                           }
                           title="업무 수정"
@@ -219,11 +234,12 @@ export function DutyTable({
                         <DeleteConfirmAction
                           table="duties"
                           id={duty.id}
+                          expectedUpdatedAt={duty.updated_at}
                           label="업무"
                           itemName={duty.name}
                           pendingDelete={pendingDelete}
                           setPendingDelete={setPendingDelete}
-                          onConfirm={() => onDeleteDuty(duty.id)}
+                          onConfirm={(input) => onDeleteDuty(duty.id, input)}
                         />
                       </div>
                     )}

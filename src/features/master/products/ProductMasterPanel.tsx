@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Download, Package, Search, Upload, Users } from 'lucide-react'
 import type { ProductCategory } from '../../../types'
-import type { AdminDeleteTable } from '../../../app/types'
+import type { PendingAdminDelete } from '../../../app/types'
+import type { AuditedDeleteInput } from '../../../data/contracts'
+import { ReasonPromptModal } from '../../../components/ui'
 import { downloadCsv } from '../../../lib/csv'
 import { buildProductAllocationCsvRows } from '../../../lib/productAllocationCsv'
 import { parseCsvRows, parseProductImportRows } from '../../../lib/csvImport'
@@ -33,10 +35,15 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
     transfer_pending_tasks: false,
   })
   const [adminSearch, setAdminSearch] = useState('')
-  const [pendingDelete, setPendingDelete] = useState<{ table: AdminDeleteTable; id: string } | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<PendingAdminDelete | null>(null)
   const [productEdits, setProductEdits] = useState<Record<string, ProductEdit>>({})
   const [productRegisterOpen, setProductRegisterOpen] = useState(false)
   const [productAssignOpen, setProductAssignOpen] = useState(false)
+  // Reason-required update / unassign: Save opens this prompt instead of writing directly.
+  const [productReasonPrompt, setProductReasonPrompt] = useState<
+    { kind: 'update'; productId: string } | { kind: 'unassign' } | null
+  >(null)
+  const [productReason, setProductReason] = useState('')
 
   const memberOptions = data.profiles.filter(canReceiveAssignment)
   const query = adminSearch.trim()
@@ -102,7 +109,12 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
   }
 
   const assignProduct = async () => {
-    const isUnassigned = productAssignment.user_id === UNASSIGNED_PRODUCT_USER_ID
+    if (!productAssignment.user_id || !productAssignment.product_id) return
+    if (productAssignment.user_id === UNASSIGNED_PRODUCT_USER_ID) {
+      setProductAssignOpen(false)
+      setProductReasonPrompt({ kind: 'unassign' })
+      return
+    }
     const transferCount = productAssignment.transfer_pending_tasks
       ? selectProductChangeTaskContexts(data).filter(
           ({ task, application }) =>
@@ -112,56 +124,90 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
             && application.status === 'published',
         ).length
       : 0
+    // The server (not the local cache) decides whether this is a real change or a
+    // pre-existing duplicate no-op; the toast text is resolved after that result
+    // is known, not when mutate() is called.
+    let noop = false
     const ok = await mutate(async () => {
-      if (!productAssignment.user_id || !productAssignment.product_id) return
-      if (isUnassigned) {
-        await controller.saveAssignments({
-          productId: productAssignment.product_id,
-          nextMemberIds: [],
-          unassignedReason: productAssignment.unassigned_reason,
-        })
-      } else {
-        await controller.assign({
-          userId: productAssignment.user_id,
-          productId: productAssignment.product_id,
-          transferPendingChangeTasks: productAssignment.transfer_pending_tasks,
-          transferReason: productAssignment.transfer_pending_tasks
-            ? '제품 담당자 배정 변경에 따른 미완료 적용업무 이관'
-            : undefined,
-        })
-      }
+      const result = await controller.assign({
+        userId: productAssignment.user_id,
+        productId: productAssignment.product_id,
+        transferPendingChangeTasks: productAssignment.transfer_pending_tasks,
+        transferReason: productAssignment.transfer_pending_tasks
+          ? '제품 담당자 배정 변경에 따른 미완료 적용업무 이관'
+          : undefined,
+      })
+      noop = result.noop
       setProductAssignment({ user_id: '', product_id: '', unassigned_reason: '', transfer_pending_tasks: false })
-    }, isUnassigned
-      ? '제품을 미지정 상태로 저장했습니다.'
+    }, () => noop
+      ? '이미 배정되어 있습니다.'
       : transferCount > 0
         ? `담당 제품을 배정하고 미완료 적용업무 ${transferCount}건을 이관했습니다.`
         : '담당 제품을 배정했습니다.')
     if (ok) setProductAssignOpen(false)
   }
 
-  const saveProductEdit = (productId: string) =>
-    mutate(async () => {
+  const confirmUnassignProduct = async (reason: string) => {
+    const ok = await mutate(async () => {
+      if (!productAssignment.product_id) return
+      await controller.saveAssignments({
+        productId: productAssignment.product_id,
+        nextMemberIds: [],
+        unassignedReason: productAssignment.unassigned_reason,
+        reason,
+      })
+      setProductAssignment({ user_id: '', product_id: '', unassigned_reason: '', transfer_pending_tasks: false })
+    }, '제품을 미지정 상태로 저장했습니다.')
+    if (ok) {
+      setProductReasonPrompt(null)
+      setProductReason('')
+    }
+  }
+
+  const saveProductEdit = (productId: string, reason: string) => {
+    let noop = false
+    return mutate(async () => {
       const edit = productEdits[productId]
       if (!edit?.name.trim()) return
+      const product = data.products.find((item) => item.id === productId)
+      if (!product) return
       const name = validateProductUpdate(data, productId, edit.name)
-      await controller.update(productId, {
+      const result = await controller.update(productId, {
         name,
         category: edit.category || '자사',
         company_name: edit.companyName.trim() || (edit.category === '자사' ? '자사' : ''),
         unassigned_reason: data.productAssignments.some((assignment) => assignment.product_id === productId)
           ? null
           : edit.unassignedReason.trim() || null,
+        sort_order: product.sort_order ?? null,
+        expectedUpdatedAt: edit.expectedUpdatedAt,
+        reason,
       })
+      noop = result.noop
       setProductEdits((current) => {
         const next = { ...current }
         delete next[productId]
         return next
       })
-    }, '제품 정보를 수정했습니다.')
+    }, () => noop ? '변경된 내용이 없습니다.' : '제품 정보를 수정했습니다.')
+  }
 
-  const deleteProduct = (productId: string) =>
+  const confirmProductReasonPrompt = async () => {
+    if (!productReasonPrompt) return
+    if (productReasonPrompt.kind === 'unassign') {
+      await confirmUnassignProduct(productReason)
+      return
+    }
+    const ok = await saveProductEdit(productReasonPrompt.productId, productReason)
+    if (ok) {
+      setProductReasonPrompt(null)
+      setProductReason('')
+    }
+  }
+
+  const deleteProduct = (productId: string, input: AuditedDeleteInput) =>
     mutate(async () => {
-      await controller.remove(productId)
+      await controller.remove(productId, input)
       setPendingDelete(null)
     }, '제품 삭제했습니다.')
 
@@ -227,7 +273,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
                 data={data}
                 productEdits={productEdits}
                 setProductEdits={setProductEdits}
-                onSave={(productId) => void saveProductEdit(productId)}
+                onSave={(productId) => setProductReasonPrompt({ kind: 'update', productId })}
                 pendingDelete={pendingDelete}
                 setPendingDelete={setPendingDelete}
                 onDelete={deleteProduct}
@@ -249,7 +295,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
                 data={data}
                 productEdits={productEdits}
                 setProductEdits={setProductEdits}
-                onSave={(productId) => void saveProductEdit(productId)}
+                onSave={(productId) => setProductReasonPrompt({ kind: 'update', productId })}
                 pendingDelete={pendingDelete}
                 setPendingDelete={setPendingDelete}
                 onDelete={deleteProduct}
@@ -275,6 +321,19 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
         productAssignment={productAssignment}
         setProductAssignment={setProductAssignment}
         onSubmit={assignProduct}
+      />
+      <ReasonPromptModal
+        open={productReasonPrompt !== null}
+        onClose={() => {
+          setProductReasonPrompt(null)
+          setProductReason('')
+        }}
+        title={productReasonPrompt?.kind === 'unassign' ? '제품 배정 해제 사유' : '제품 정보 변경 사유'}
+        description="다른 사용자도 확인할 수 있는 변경 사유를 남겨 주세요."
+        reason={productReason}
+        setReason={setProductReason}
+        onSubmit={() => void confirmProductReasonPrompt()}
+        submitLabel={productReasonPrompt?.kind === 'unassign' ? '미지정 저장' : '수정 저장'}
       />
     </div>
   )

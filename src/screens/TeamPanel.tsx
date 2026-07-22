@@ -120,8 +120,10 @@ export function TeamPanel({
           배정 관리
         </button>
       </div>
-      <div className="v2-team-grid">
-        {filteredSummaries.map((summary) => {
+      <div className="team-workbench">
+        <div className="team-directory">
+          <div className="v2-team-grid">
+            {filteredSummaries.map((summary) => {
           const selected = selectedSummary?.member.id === summary.member.id
           const openReviews = summary.reviews.filter((request) => request.status === 'pending')
           return (
@@ -146,15 +148,16 @@ export function TeamPanel({
               </div>
             </button>
           )
-        })}
-      </div>
-      {filteredSummaries.length === 0 && (
-        <EmptyState
-          icon={<Search size={22} />}
-          title="검색 조건에 맞는 파트원이 없습니다."
-          description="이름, 제품, 업무, 프로젝트명으로 검색할 수 있습니다."
-        />
-      )}
+            })}
+          </div>
+          {filteredSummaries.length === 0 && (
+            <EmptyState
+              icon={<Search size={22} />}
+              title="검색 조건에 맞는 파트원이 없습니다."
+              description="이름, 제품, 업무, 프로젝트명으로 검색할 수 있습니다."
+            />
+          )}
+        </div>
 
       {selectedSummary && (
         <div className="detail-panel summary-panel team-member-detail">
@@ -230,6 +233,7 @@ export function TeamPanel({
           </div>
         </div>
       )}
+      </div>
 
       {noteModalOpen && selectedSummary && (
         <div className="modal-backdrop" onMouseDown={() => setNoteModalOpen(false)} role="presentation">

@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { describe, expect, it } from 'vitest'
-import { isSupabaseLocalConfigured, RLS_SKIP_NOTE } from './helpers'
+import { isSupabaseRlsTargetConfigured, RLS_SKIP_NOTE } from './helpers'
 
-const describeRls = isSupabaseLocalConfigured() ? describe : describe.skip
+const describeRls = isSupabaseRlsTargetConfigured() ? describe : describe.skip
 
 describeRls(`RLS public leader profiles (${RLS_SKIP_NOTE})`, () => {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? ''
@@ -42,5 +42,12 @@ describeRls(`RLS public leader profiles (${RLS_SKIP_NOTE})`, () => {
     const { data, error } = await client.from('public_leader_profiles').select('id, name')
     expect(error).toBeNull()
     expect(data).toEqual([])
+  })
+
+  it('does not expose the compatibility view to anonymous callers', async () => {
+    const client = createClient(url, anonKey, { auth: { persistSession: false } })
+    const { data, error } = await client.from('public_leader_profiles').select('id, name')
+    expect(error).not.toBeNull()
+    expect(data).toBeNull()
   })
 })

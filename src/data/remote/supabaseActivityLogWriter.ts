@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase'
+import { reportError } from '../../lib/errorReporter'
 import type { ActivityLogWriter } from '../repositories/activityLogWriter'
 
 export function createSupabaseActivityLogWriter(): ActivityLogWriter {
@@ -13,7 +14,14 @@ export function createSupabaseActivityLogWriter(): ActivityLogWriter {
         summary: input.summary,
         metadata: input.metadata ?? {},
       })
-      if (error) console.warn('활동 로그 저장 실패', error)
+      if (error) {
+        reportError({
+          error,
+          route: globalThis.location?.hash || '#/unknown',
+          role: input.actor.role,
+          operation: 'activity-log-write',
+        })
+      }
     },
   }
 }

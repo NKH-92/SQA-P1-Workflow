@@ -1,7 +1,8 @@
 import type { Dispatch, SetStateAction } from 'react'
 import { Pencil, Save } from 'lucide-react'
 import type { AppData, ProductCategory } from '../../../types'
-import type { AdminDeleteTable } from '../../../app/types'
+import type { PendingAdminDelete } from '../../../app/types'
+import type { AuditedDeleteInput } from '../../../data/contracts'
 import { DeleteConfirmAction } from '../shared/DeleteConfirmAction'
 
 export type ProductEdit = {
@@ -9,6 +10,8 @@ export type ProductEdit = {
   category: ProductCategory | string
   companyName: string
   unassignedReason: string
+  /** Revision snapshotted when the editor opened and sent back as the OCC check. */
+  expectedUpdatedAt: string | null
 }
 
 export function ProductCard({
@@ -26,9 +29,9 @@ export function ProductCard({
   productEdits: Record<string, ProductEdit>
   setProductEdits: Dispatch<SetStateAction<Record<string, ProductEdit>>>
   onSave: (productId: string) => void
-  pendingDelete: { table: AdminDeleteTable; id: string } | null
-  setPendingDelete: (value: { table: AdminDeleteTable; id: string } | null) => void
-  onDelete: (productId: string) => void
+  pendingDelete: PendingAdminDelete | null
+  setPendingDelete: (value: PendingAdminDelete | null) => void
+  onDelete: (productId: string, input: AuditedDeleteInput) => void
 }) {
   const assignments = data.productAssignments.filter((assignment) => assignment.product_id === product.id)
   const edit = productEdits[product.id]
@@ -132,6 +135,7 @@ export function ProductCard({
                       category: product.category ?? '자사',
                       companyName: product.company_name ?? (product.category === '자사' ? '자사' : ''),
                       unassignedReason: product.unassigned_reason ?? '',
+                      expectedUpdatedAt: product.updated_at ?? null,
                     },
                   })
                 }
@@ -143,6 +147,7 @@ export function ProductCard({
               <DeleteConfirmAction
                 table="products"
                 id={product.id}
+                expectedUpdatedAt={product.updated_at}
                 label="제품"
                 itemName={product.name}
                 warning={
@@ -150,7 +155,7 @@ export function ProductCard({
                 }
                 pendingDelete={pendingDelete}
                 setPendingDelete={setPendingDelete}
-                onConfirm={() => onDelete(product.id)}
+                onConfirm={(input) => onDelete(product.id, input)}
               />
             </div>
           </div>

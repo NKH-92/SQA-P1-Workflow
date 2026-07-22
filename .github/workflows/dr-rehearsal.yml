@@ -1,0 +1,220 @@
+name: Full DR Rehearsal
+
+on:
+  workflow_dispatch:
+    inputs:
+      restore_strategy:
+        description: "Official Supabase restore strategy already completed on the disposable target"
+        required: true
+        type: choice
+        options:
+          - platform_clone
+      backup_run_id:
+        description: "Successful Backup DB run ID whose encrypted L2 package supplies source evidence"
+        required: true
+        type: string
+      expected_source_sha:
+        description: "Exact 40-character main SHA used by the selected Backup DB run"
+        required: true
+        type: string
+      target_project_ref:
+        description: "Disposable target Supabase project ref (must be allowlisted)"
+        required: true
+        type: string
+      clone_completed:
+        description: "I confirm Restore to a new project completed and required target settings were reapplied"
+        required: true
+        default: false
+        type: boolean
+      confirm_disposable_target:
+        description: "I confirm the target is disposable and is not production"
+        required: true
+        default: false
+        type: boolean
+      target_disposition:
+        description: "Operator action after evidence is retained"
+        required: true
+        type: choice
+        options:
+          - delete_after_evidence
+          - preserve_approved
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: dr-rehearsal-${{ inputs.target_project_ref }}
+  cancel-in-progress: false
+
+jobs:
+  rehearsal:
+    runs-on: ubuntu-latest
+    environment: dr-rehearsal
+    steps:
+      - name: Check target safety
+        env:
+          TARGET_PROJECT_REF: ${{ inputs.target_project_ref }}
+          PRODUCTION_PROJECT_REF: ${{ secrets.DR_PRODUCTION_PROJECT_REF }}
+          DR_ALLOWED_TARGET_REFS: ${{ vars.DR_ALLOWED_TARGET_REFS }}
+          CONFIRM_DISPOSABLE_TARGET: ${{ inputs.confirm_disposable_target }}
+          CLONE_COMPLETED: ${{ inputs.clone_completed }}
+          RESTORE_STRATEGY: ${{ inputs.restore_strategy }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$TARGET_PROJECT_REF" =~ ^[a-z0-9]{20}$ ]] || { echo "::error::SQA_DR_PROJECT_REF_INVALID"; exit 1; }
+          [[ "$PRODUCTION_PROJECT_REF" =~ ^[a-z0-9]{20}$ ]] || { echo "::error::SQA_DR_PRODUCTION_REF_MISSING"; exit 1; }
+          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::SQA_DR_SOURCE_SHA_INVALID"; exit 1; }
+          [ "$CONFIRM_DISPOSABLE_TARGET" = "true" ] || { echo "::error::SQA_DR_CONFIRM_DISPOSABLE_REQUIRED"; exit 1; }
+          [ "$CLONE_COMPLETED" = "true" ] || { echo "::error::SQA_DR_PLATFORM_CLONE_REQUIRED"; exit 1; }
+          [ "$RESTORE_STRATEGY" = "platform_clone" ] || { echo "::error::SQA_DR_STRATEGY_UNSUPPORTED"; exit 1; }
+          [ "$TARGET_PROJECT_REF" != "$PRODUCTION_PROJECT_REF" ] || { echo "::error::SQA_DR_TARGET_IS_PRODUCTION"; exit 1; }
+          allowed=false
+          while IFS= read -r ref; do
+            [ "$ref" = "$TARGET_PROJECT_REF" ] && allowed=true
+          done < <(printf '%s' "$DR_ALLOWED_TARGET_REFS" | tr ', ' '\n\n' | sed '/^$/d')
+          [ "$allowed" = "true" ] || { echo "::error::SQA_DR_TARGET_NOT_ALLOWLISTED"; exit 1; }
+
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check source backup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BACKUP_RUN_ID: ${{ inputs.backup_run_id }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$BACKUP_RUN_ID" =~ ^[0-9]+$ ]] || { echo "::error::SQA_DR_BACKUP_RUN_ID_INVALID"; exit 1; }
+          run_json=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BACKUP_RUN_ID")
+          workflow_path=$(jq -r '.path' <<<"$run_json")
+          event=$(jq -r '.event' <<<"$run_json")
+          head_branch=$(jq -r '.head_branch' <<<"$run_json")
+          head_sha=$(jq -r '.head_sha' <<<"$run_json")
+          conclusion=$(jq -r '.conclusion' <<<"$run_json")
+          artifact_count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BACKUP_RUN_ID/artifacts" \
+            --jq '[.artifacts[] | select(.expired == false and (.name | startswith("db-backup-")))] | length')
+          if [ "$workflow_path" != ".github/workflows/backup.yml" ] \
+            || { [ "$event" != "workflow_dispatch" ] && [ "$event" != "schedule" ]; } \
+            || [ "$head_branch" != "main" ] \
+            || [ "$head_sha" != "$EXPECTED_SOURCE_SHA" ] \
+            || [ "$conclusion" != "success" ] \
+            || [ "$artifact_count" -ne 1 ]; then
+            echo "::error::SQA_DR_BACKUP_RUN_NOT_TRUSTED"
+            exit 1
+          fi
+
+      - name: Download and decrypt source package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BACKUP_RUN_ID: ${{ inputs.backup_run_id }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+        run: |
+          set +x
+          set -Eeuo pipefail
+          [ -n "${BACKUP_PASSPHRASE:-}" ] || { echo "::error::SQA_DR_BACKUP_PASSPHRASE_MISSING"; exit 1; }
+          [[ "$BACKUP_PASSPHRASE" != *$'\n'* && "$BACKUP_PASSPHRASE" != *$'\r'* ]] \
+            || { echo "::error::SQA_DR_BACKUP_PASSPHRASE_INVALID"; exit 1; }
+          umask 077
+          mkdir -p dr-work/download dr-work/source dr-evidence
+          gh run download "$BACKUP_RUN_ID" --pattern 'db-backup-*' --dir dr-work/download
+          mapfile -t gpg_files < <(find dr-work/download -type f -name '*.tar.gz.gpg')
+          [ "${#gpg_files[@]}" -eq 1 ] || { echo "::error::SQA_DR_GPG_ARTIFACT_COUNT_INVALID"; exit 1; }
+          printf '%s' "$BACKUP_PASSPHRASE" | gpg \
+            --batch --no-tty --pinentry-mode loopback --passphrase-fd 0 --no-symkey-cache \
+            --output dr-work/source.tar.gz --decrypt -- "${gpg_files[0]}"
+          while IFS= read -r archive_path; do
+            normalized=${archive_path#./}
+            case "$normalized" in
+              ''|/*|../*|*/../*|*/..) echo "::error::SQA_DR_ARCHIVE_PATH_INVALID"; exit 1 ;;
+            esac
+          done < <(tar tzf dr-work/source.tar.gz)
+          tar xzf dr-work/source.tar.gz --no-same-owner --no-same-permissions -C dr-work/source
+          node scripts/verify-dr-package.mjs dr-work/source
+          manifest_sha=$(node -e "const m=require('./dr-work/source/dr-manifest.json'); process.stdout.write(m.sourceSha)")
+          [ "$manifest_sha" = "$EXPECTED_SOURCE_SHA" ] || { echo "::error::SQA_DR_PACKAGE_SOURCE_SHA_MISMATCH"; exit 1; }
+          unset BACKUP_PASSPHRASE
+
+      - name: Capture target evidence
+        env:
+          DATABASE_URL: ${{ secrets.DR_TARGET_DB_URL }}
+          DR_EXPECTED_PROJECT_REF: ${{ inputs.target_project_ref }}
+        run: |
+          set -Eeuo pipefail
+          node scripts/capture-dr-database-evidence.mjs \
+            --output dr-evidence/target-evidence.json
+
+      - name: Run restored-project Auth and RLS smoke
+        env:
+          DR_TARGET_SUPABASE_URL: ${{ secrets.DR_TARGET_SUPABASE_URL }}
+          DR_TARGET_ANON_KEY: ${{ secrets.DR_TARGET_ANON_KEY }}
+          DR_TARGET_SERVICE_ROLE_KEY: ${{ secrets.DR_TARGET_SERVICE_ROLE_KEY }}
+          DR_PRESERVED_USER_EMAIL: ${{ secrets.DR_PRESERVED_USER_EMAIL }}
+          DR_PRESERVED_USER_PASSWORD: ${{ secrets.DR_PRESERVED_USER_PASSWORD }}
+          DR_PRESERVED_USER_ID: ${{ secrets.DR_PRESERVED_USER_ID }}
+          DR_PRODUCTION_PROJECT_REF: ${{ secrets.DR_PRODUCTION_PROJECT_REF }}
+          DR_ALLOWED_TARGET_REFS: ${{ vars.DR_ALLOWED_TARGET_REFS }}
+          DR_CONFIRM_DISPOSABLE_TARGET: ${{ inputs.confirm_disposable_target }}
+        run: |
+          set -Eeuo pipefail
+          node scripts/run-dr-remote-smoke.mjs \
+            --target-ref "${{ inputs.target_project_ref }}" \
+            --target-disposition "${{ inputs.target_disposition }}" \
+            --rls-output dr-evidence/rls-results.json \
+            --output dr-work/smoke-evidence.json
+
+      - name: Verify restored project
+        run: |
+          set -Eeuo pipefail
+          node scripts/verify-restored-project.mjs \
+            --source dr-work/source/source-evidence.json \
+            --target dr-evidence/target-evidence.json \
+            --smoke dr-work/smoke-evidence.json \
+            --output dr-evidence/restored-project.json
+
+      - name: Upload redacted rehearsal evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dr-rehearsal-${{ inputs.target_project_ref }}-${{ github.run_id }}
+          path: |
+            dr-evidence/restored-project.json
+            dr-evidence/target-evidence.json
+            dr-evidence/rls-results.json
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Record target disposition
+        if: ${{ success() }}
+        env:
+          TARGET_DISPOSITION: ${{ inputs.target_disposition }}
+          TARGET_PROJECT_REF: ${{ inputs.target_project_ref }}
+        run: |
+          {
+            echo "## Full DR rehearsal passed"
+            echo ""
+            echo "- strategy: platform_clone"
+            echo "- target project ref: $TARGET_PROJECT_REF"
+            echo "- disposition: $TARGET_DISPOSITION"
+            if [ "$TARGET_DISPOSITION" = "delete_after_evidence" ]; then
+              echo "- operator must delete the disposable target after retaining this run ID and evidence artifact"
+            else
+              echo "- preservation requires the dr-rehearsal environment approver's recorded approval"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup plaintext
+        if: ${{ always() }}
+        run: rm -rf dr-work

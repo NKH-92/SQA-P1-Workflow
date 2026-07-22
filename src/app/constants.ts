@@ -14,4 +14,5 @@ export const deleteWarnings: Record<AdminDeleteTable, string> = {
   products: '담당제품 배정은 함께 삭제됩니다. 변경 적용 이력이 있는 제품은 이력 보호를 위해 삭제할 수 없습니다.',
   duties: '업무와 연결된 담당업무 배정이 함께 삭제될 수 있습니다.',
   duty_major_categories: '대분류에 등록된 업무가 있으면 삭제할 수 없습니다.',
+  projects: '프로젝트와 연결된 담당자 배정이 함께 삭제됩니다.',
 }

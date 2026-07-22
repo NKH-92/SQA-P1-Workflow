@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
 import { emptyData } from '../app/constants'
+import { initialSyncHealth } from '../app/hooks/useSyncHealth'
 import { createPreviewData, previewLeader, previewMember } from '../demoData'
 import { sanitizeTabForRole } from '../lib/navigation'
 import type { Profile } from '../types'
@@ -60,6 +61,7 @@ vi.mock('../app/hooks/useAppData', () => ({
     setData: vi.fn(),
     refreshing: false,
     lastSyncedAt: appDataState.lastSyncedAt,
+    syncHealth: initialSyncHealth,
     refreshData: vi.fn(),
     loadReviewRequest: appDataState.loadReviewRequest,
     loadAnnouncement: appDataState.loadAnnouncement,

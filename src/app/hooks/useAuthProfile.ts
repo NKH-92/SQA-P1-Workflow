@@ -169,7 +169,12 @@ export function useAuthProfile(
           setProfile(result.profile)
           setSessionWithoutProfile(false)
           setProfileLoadError(null)
-          await refreshDataRef.current({ initial: true })
+          // Password-pending users must be able to read their own profile so
+          // the change-password route can render, but every app-data bootstrap
+          // is deliberately blocked by can_use_app() until the change finishes.
+          if (!result.profile.must_change_password) {
+            await refreshDataRef.current({ initial: true })
+          }
         } else {
           setProfile(null)
           setSessionWithoutProfile(true)

@@ -1,4 +1,4 @@
-import { LogOut, RefreshCw, WifiOff } from 'lucide-react'
+import { AlertTriangle, LogOut, RefreshCw } from 'lucide-react'
 
 export function ProfileLoadErrorScreen({
   message,
@@ -11,7 +11,7 @@ export function ProfileLoadErrorScreen({
 }) {
   return (
     <main className="center-screen" role="alert">
-      <WifiOff size={32} aria-hidden="true" />
+      <AlertTriangle size={32} aria-hidden="true" />
       <h1>프로필을 불러오지 못했습니다</h1>
       <p>{message}</p>
       <button className="primary" onClick={onRetry} type="button">

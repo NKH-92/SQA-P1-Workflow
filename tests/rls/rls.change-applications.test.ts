@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { describe, expect, it } from 'vitest'
-import { isSupabaseLocalConfigured, RLS_SKIP_NOTE } from './helpers'
+import { isSupabaseRlsTargetConfigured, RLS_SKIP_NOTE } from './helpers'
 
-const describeRls = isSupabaseLocalConfigured() ? describe : describe.skip
+const describeRls = isSupabaseRlsTargetConfigured() ? describe : describe.skip
 
 describeRls(`RLS change applications (${RLS_SKIP_NOTE})`, () => {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? ''
@@ -132,7 +132,7 @@ describeRls(`RLS change applications (${RLS_SKIP_NOTE})`, () => {
     expect(lockedSnapshot.data).toMatchObject({
       archived_by: null,
       archive_origin: 'automatic',
-      archive_reason: '모든 제품 적용업무가 처리되어 자동 보관됨',
+      archive_reason: '모든 제품 적용이 완료되어 자동 보관됨',
     })
     expect(lockedSnapshot.data?.archived_at).toBeTruthy()
     const nonLeaderRestore = await memberA.rpc('restore_change_application', {
@@ -226,7 +226,7 @@ describeRls(`RLS change applications (${RLS_SKIP_NOTE})`, () => {
     expect(automaticallyArchivedAgain.data).toMatchObject({
       archived_by: null,
       archive_origin: 'automatic',
-      archive_reason: '모든 제품 적용업무가 처리되어 자동 보관됨',
+      archive_reason: '모든 제품 적용이 완료되어 자동 보관됨',
     })
     expect(automaticallyArchivedAgain.data?.archived_at).toBeTruthy()
 

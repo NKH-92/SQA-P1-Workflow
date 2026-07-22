@@ -11,6 +11,7 @@ import type {
 } from '../../types'
 import type {
   AnnouncementPayload,
+  AuditedDeleteInput,
   ChangeApplicationInput,
   ProjectInput,
   ReviewRequestPayload,
@@ -41,13 +42,13 @@ export type ProjectRepository = {
     memberIds: string[]
     memberOptions: Profile[]
   }): Promise<string | null>
-  updateProject(projectId: string, updated: ProjectInput): Promise<void>
+  updateProject(projectId: string, updated: ProjectInput, expectedUpdatedAt: string | null): Promise<void>
   saveProjectAssignments(input: {
     project: Project
     nextMemberIds: string[]
     memberOptions: Profile[]
   }): Promise<void>
-  deleteProject(project: Project): Promise<void>
+  deleteProject(project: Project, input: AuditedDeleteInput): Promise<void>
 }
 
 export type MasterProductAssignmentResult =
@@ -65,69 +66,123 @@ export type MasterProductAssignmentResult =
       }>
     }
 
-export type MasterRepository = {
+export type ProductAdminRepository = {
   importProducts(products: Array<{
     name: string
     category: ProductCategory | string
     company_name: string
     sort_order: number | null
   }>): Promise<void>
-  importInvites(invites: Array<{ email: string; name: string; role: Role }>): Promise<void>
-  addAllowedUser(input: { email: string; name: string; role: Role }): Promise<void>
   addProduct(product: {
     name: string
     category: ProductCategory | string
     company_name: string
     sort_order: number | null
   }): Promise<void>
-  addDutyMajorCategory(payload: { name: string; sort_order: number | null }): Promise<void>
-  addDuty(payload: { major_category_id: string; name: string; sort_order: number | null }): Promise<void>
   saveProductAssignments(input: {
     productId: string
     nextMemberIds: string[]
     unassignedReason: string | null
+    /** Operator-authored authoritative audit reason for the replacement. */
+    reason: string
     product?: Product | null
     memberOptions?: Array<{ id: string; name: string; email: string }>
-  }): Promise<void>
-  saveDutyAssignments(input: {
-    dutyId: string
-    nextMemberIds: string[]
-    duty?: {
-      name: string
-      major_category_id: string
-      duty_major_categories?: DutyMajorCategory | Pick<DutyMajorCategory, 'name' | 'sort_order'> | null
-    } | null
-    memberOptions?: Array<{ id: string; name: string; email: string }>
-  }): Promise<void>
+    /** OCC revision; falls back to the product snapshot already in `data` when omitted. */
+    expectedUpdatedAt?: string | null
+  }): Promise<{ noop: boolean }>
   assignProduct(input: {
     userId: string
     productId: string
     transferPending: boolean
     transferReason: string | null
   }): Promise<MasterProductAssignmentResult>
-  assignDuty(input: { userId: string; dutyId: string }): Promise<boolean>
+  /**
+   * Returns `{ noop: true }` when the record already matched every
+   * field in `payload` (D-05: a no-op must not produce a user-facing
+   * activity-log entry, and produces no private audit row either).
+   */
   updateProduct(productId: string, payload: {
     name: string
     category?: ProductCategory | string | null
     company_name?: string | null
     unassigned_reason?: string | null
     sort_order?: number | null
-  }): Promise<void>
+    /** OCC revision the editor last saw; required for the remote adapter. */
+    expectedUpdatedAt: string | null
+    /** Authoritative-audit change reason; required, non-blank. */
+    reason: string
+  }): Promise<{ noop: boolean }>
+  deleteProduct(id: string, input: AuditedDeleteInput): Promise<string | null>
+}
+
+export type DutyAdminRepository = {
+  addDutyMajorCategory(payload: { name: string; sort_order: number | null }): Promise<void>
+  addDuty(payload: { major_category_id: string; name: string; sort_order: number | null }): Promise<void>
+  saveDutyAssignments(input: {
+    dutyId: string
+    nextMemberIds: string[]
+    /** Operator-authored authoritative audit reason for the replacement. */
+    reason: string
+    duty?: {
+      name: string
+      major_category_id: string
+      duty_major_categories?: DutyMajorCategory | Pick<DutyMajorCategory, 'name' | 'sort_order'> | null
+    } | null
+    memberOptions?: Array<{ id: string; name: string; email: string }>
+    /** OCC revision; falls back to the duty snapshot already in `data` when omitted. */
+    expectedUpdatedAt?: string | null
+  }): Promise<{ noop: boolean }>
+  assignDuty(input: { userId: string; dutyId: string }): Promise<boolean>
   updateDutyMajorCategory(
     majorCategoryId: string,
-    payload: { name: string; sort_order?: number | null },
-  ): Promise<void>
+    payload: {
+      name: string
+      sort_order?: number | null
+      expectedUpdatedAt: string | null
+      reason: string
+    },
+  ): Promise<{ noop: boolean }>
   updateDuty(
     dutyId: string,
-    payload: { name: string; major_category_id: string; sort_order?: number | null },
-  ): Promise<void>
-  updateInvite(inviteId: string, payload: { email: string; name: string; role: Role }): Promise<void>
-  toggleProfileActive(profileId: string, nextActive: boolean): Promise<void>
-  deleteAllowedUser(id: string): Promise<string | null>
-  deleteProduct(id: string): Promise<string | null>
-  deleteDuty(id: string): Promise<string | null>
-  deleteDutyMajorCategory(id: string): Promise<string | null>
+    payload: {
+      name: string
+      major_category_id: string
+      sort_order?: number | null
+      assignee_label?: string | null
+      notes?: string | null
+      expectedUpdatedAt: string | null
+      reason: string
+    },
+  ): Promise<{ noop: boolean }>
+  deleteDuty(id: string, input: AuditedDeleteInput): Promise<string | null>
+  deleteDutyMajorCategory(id: string, input: AuditedDeleteInput): Promise<string | null>
 }
+
+export type InviteAdminRepository = {
+  importInvites(invites: Array<{ email: string; name: string; role: Role }>): Promise<void>
+  addAllowedUser(input: { email: string; name: string; role: Role }): Promise<void>
+  updateInvite(inviteId: string, payload: {
+    email: string
+    name: string
+    role: Role
+    expectedUpdatedAt: string | null
+    reason: string
+  }): Promise<{ noop: boolean }>
+  toggleProfileActive(
+    profileId: string,
+    nextActive: boolean,
+    input: { expectedUpdatedAt: string | null; reason: string },
+  ): Promise<{ noop: boolean }>
+  setProfileRole(
+    profileId: string,
+    role: Role,
+    input: { expectedUpdatedAt: string | null; reason: string },
+  ): Promise<{ noop: boolean }>
+  deleteAllowedUser(id: string, input: AuditedDeleteInput): Promise<string | null>
+}
+
+/** Compatibility surface for callers that still consume the aggregate master repository. */
+export type MasterRepository = ProductAdminRepository & DutyAdminRepository & InviteAdminRepository
 
 export type AnnouncementRepository = {
   saveAnnouncement(input: {
@@ -163,34 +218,6 @@ export type RepositorySet = {
   team: TeamRepository
   activityLogs: ActivityLogWriter
 }
-
-export type ProductAdminRepository = Pick<MasterRepository,
-  | 'importProducts'
-  | 'addProduct'
-  | 'saveProductAssignments'
-  | 'assignProduct'
-  | 'updateProduct'
-  | 'deleteProduct'
->
-
-export type DutyAdminRepository = Pick<MasterRepository,
-  | 'addDutyMajorCategory'
-  | 'addDuty'
-  | 'saveDutyAssignments'
-  | 'assignDuty'
-  | 'updateDutyMajorCategory'
-  | 'updateDuty'
-  | 'deleteDuty'
-  | 'deleteDutyMajorCategory'
->
-
-export type InviteAdminRepository = Pick<MasterRepository,
-  | 'importInvites'
-  | 'addAllowedUser'
-  | 'updateInvite'
-  | 'toggleProfileActive'
-  | 'deleteAllowedUser'
->
 
 export type TeamRepository = {
   addProfileNote(input: { profileId: string; note: string }): Promise<void>

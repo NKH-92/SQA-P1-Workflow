@@ -3,6 +3,7 @@ import { assertRecordExists, UserFacingError } from '../../lib/errors'
 import { canAssignProjectTo } from '../../domain/permissions'
 import { makeId } from '../../lib/format'
 import type { RepositoryDeps, ProjectRepository } from '../repositories/types'
+import { assertMasterVersion, MASTER_STALE_MESSAGE, normalizeMasterReason } from '../validation/masterOcc'
 import { addProject, removeProject, replaceProjectAssignments, updateProject } from './appDataReducers'
 
 export function createLocalProjectRepository(ctx: RepositoryDeps): ProjectRepository {
@@ -47,9 +48,11 @@ export function createLocalProjectRepository(ctx: RepositoryDeps): ProjectReposi
       return projectId
     },
 
-    async updateProject(projectId, updated) {
+    async updateProject(projectId, updated, expectedUpdatedAt) {
       assertLeader()
-      assertRecordExists(data.projects.find((item) => item.id === projectId))
+      const currentProject = data.projects.find((item) => item.id === projectId)
+      assertRecordExists(currentProject)
+      if (currentProject.updated_at !== expectedUpdatedAt) throw new UserFacingError(MASTER_STALE_MESSAGE)
       setData((current) => updateProject(current, projectId, updated))
       await recordActivityLog(activityLogs, {
         actor: profile,
@@ -63,7 +66,9 @@ export function createLocalProjectRepository(ctx: RepositoryDeps): ProjectReposi
 
     async saveProjectAssignments({ project, nextMemberIds, memberOptions }) {
       assertLeader()
-      assertRecordExists(data.projects.find((item) => item.id === project.id))
+      const currentProject = data.projects.find((item) => item.id === project.id)
+      assertRecordExists(currentProject)
+      if (!project.updated_at || currentProject.updated_at !== project.updated_at) throw new UserFacingError(MASTER_STALE_MESSAGE)
       assertMembers(nextMemberIds)
       setData((current) => replaceProjectAssignments(current, project, nextMemberIds, memberOptions))
       await recordActivityLog(activityLogs, {
@@ -76,9 +81,14 @@ export function createLocalProjectRepository(ctx: RepositoryDeps): ProjectReposi
       })
     },
 
-    async deleteProject(project) {
+    async deleteProject(project, input) {
       assertLeader()
-      assertRecordExists(data.projects.find((item) => item.id === project.id))
+      const currentProject = data.projects.find((item) => item.id === project.id)
+      assertRecordExists(currentProject)
+      normalizeMasterReason(input.reason)
+      if (assertMasterVersion(currentProject.updated_at) !== assertMasterVersion(input.expectedUpdatedAt)) {
+        throw new UserFacingError(MASTER_STALE_MESSAGE)
+      }
       setData((current) => removeProject(current, project.id))
       await recordActivityLog(activityLogs, {
         actor: profile,
@@ -86,6 +96,7 @@ export function createLocalProjectRepository(ctx: RepositoryDeps): ProjectReposi
         entityId: project.id,
         action: 'deleted',
         summary: `${project.name} 프로젝트를 삭제했습니다.`,
+        metadata: { reason: input.reason.trim() },
       })
     },
   }

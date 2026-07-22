@@ -6,8 +6,10 @@ const REFRESH_MIN_GAP_MS = 30_000
 
 /**
  * 안전망 폴링 + 창 복귀 재조회. Realtime 구독이 주 채널이고, 이 훅은 WebSocket 끊김·차단
- * 환경에서의 공백을 메운다. 실패는 조용히 무시한다 — 다음 주기가 재시도하며,
- * 본 기능(수동 새로고침·뮤테이션 후 갱신)에는 영향이 없다.
+ * 환경에서의 공백을 메운다. 실패는 여기서 UI로 표면화하지 않는다 — 다음 주기가 재시도하며,
+ * 본 기능(수동 새로고침·뮤테이션 후 갱신)에는 영향이 없다. 대신 `refresh`(useAppData의
+ * refreshData)가 실패를 SyncHealth 상태로 기록하므로 관측성은 유지된다. 이 훅의
+ * `.catch(() => {})`는 그 이후 unhandled rejection을 막는 역할만 한다.
  */
 export function useBackgroundRefresh(enabled: boolean, refresh: () => Promise<void>) {
   const refreshRef = useRef(refresh)

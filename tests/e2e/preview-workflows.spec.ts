@@ -53,6 +53,7 @@ test('04 project create update and delete remain one local workflow', async ({ p
   card = page.locator('article[data-project-id]').filter({ hasText: 'E2E 교정 프로젝트 수정' })
   await expect(card).toBeVisible()
   await card.getByRole('button', { name: '삭제' }).click()
+  await card.getByRole('textbox', { name: '삭제 사유' }).fill('E2E 프로젝트 정리')
   await card.getByRole('button', { name: '삭제 확인' }).click()
   await expect(page.getByText('E2E 교정 프로젝트 수정')).toHaveCount(0)
 })
@@ -119,4 +120,69 @@ test('10 notification panel supports read acknowledgement and navigation', async
   }
   await page.getByRole('dialog', { name: '알림' }).getByRole('button', { name: /검토요청 전체 보기/ }).click()
   await expect(page).toHaveURL(/#\/reviews/)
+})
+
+test('11 review stats requester filter keeps KPIs and the exact table aligned', async ({ page }) => {
+  await page.goto('/#/review-stats')
+  await expect(page.getByRole('heading', { name: '검토 통계', exact: true })).toBeVisible()
+
+  const requesterFilter = page.getByRole('combobox', { name: '요청자', exact: true })
+  await requesterFilter.selectOption({ label: '파트원 A' })
+  await expect(requesterFilter).toHaveValue('member-01')
+  await expect(page.getByRole('combobox', { name: '현재 상태', exact: true })).toHaveValue('all')
+  await expect(page.getByRole('article', { name: '요청 건수 1건' })).toBeVisible()
+  await expect(page.getByRole('article', { name: '제출 횟수 1회' })).toBeVisible()
+  await expect(page.getByRole('article', { name: '현재 대기 1건' })).toBeVisible()
+
+  const table = page.getByRole('table')
+  await expect(table.getByRole('row', { name: /파트원 A/ })).toBeVisible()
+  await expect(table.getByRole('row', { name: /파트원 B/ })).toHaveCount(0)
+  await expect(table.locator('tfoot')).toContainText('합계')
+  await expect(table.locator('tfoot td')).toHaveText(['1', '1', '0', '1', '0', '0'])
+})
+
+test('12 a11y: closing a conditionally-unmounted modal returns focus to its trigger', async ({ page }) => {
+  await page.goto('/#/change-applications')
+  const trigger = page.getByRole('button', { name: '적용 완료' }).first()
+  await trigger.focus()
+  await trigger.click()
+
+  const dialog = page.getByRole('dialog', { name: '실제로 적용을 완료했습니까?' })
+  await expect(dialog).toBeVisible()
+
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(trigger).toBeFocused()
+
+  await trigger.click()
+  await expect(dialog).toBeVisible()
+  await dialog.locator('.modal-close').click()
+  await expect(dialog).toHaveCount(0)
+  await expect(trigger).toBeFocused()
+})
+
+test('13 leader sees a durable completed-change signal only after every product is applied', async ({ page }) => {
+  await page.goto('/#/change-applications')
+
+  const exceptionRow = page.locator('.change-task-row').filter({ hasText: '자사제품 C' })
+  await exceptionRow.getByRole('button', { name: '재개' }).click()
+  let dialog = page.getByRole('dialog', { name: '완료 처리를 다시 열까요?' })
+  await dialog.getByPlaceholder('처리 사유를 입력해 주세요.').fill('전 제품 실제 적용 완료 E2E')
+  await dialog.getByRole('button', { name: '다시 열기' }).click()
+
+  for (let index = 0; index < 4; index += 1) {
+    await page.getByRole('button', { name: '적용 완료', exact: true }).first().click()
+    dialog = page.getByRole('dialog', { name: '실제로 적용을 완료했습니까?' })
+    await dialog.getByPlaceholder('예: 제품표준서 Rev.12 반영').fill(`E2E 제품 반영 ${index + 1}`)
+    const proxyReason = dialog.getByPlaceholder('파트장이 담당자 대신 처리하는 사유')
+    if (await proxyReason.count()) await proxyReason.fill('전 제품 완료 신호 E2E')
+    await dialog.getByRole('button', { name: '완료 확인' }).click()
+  }
+
+  await expect(page.getByRole('button', { name: '완료된 변경 1건' })).toBeVisible()
+  await expect(page.getByText('1건의 변경이 모든 제품에서 적용 완료되었습니다.')).toBeVisible()
+  await page.getByRole('button', { name: '완료 변경 보기' }).click()
+  await expect(page.getByRole('combobox', { name: '보관 상태' })).toHaveValue('all')
+  await expect(page.getByText('모든 제품 담당자의 적용 완료 처리가 끝났습니다.')).toBeVisible()
+  await expect(page.getByText('보관 사유: 모든 제품 적용이 완료되어 자동 보관됨')).toBeVisible()
 })

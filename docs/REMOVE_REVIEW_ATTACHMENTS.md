@@ -67,7 +67,7 @@ Remove-Item Env:SUPABASE_URL
 1. `Backup DB` 성공 및 암호화 artifact 확인
 2. backup run ID를 입력한 `DB Migrate` 성공
 3. DB readiness에서 bucket·Storage policy·`attachment_url`·retired/legacy review RPC 부재, 리뷰 direct write 차단, schema/default ACL 확인
-4. `Deploy Worker`, `deploy_confirm=true` 실행
+4. `Deploy Worker`, `deploy_confirm=true`, 동일 SHA의 성공한 `ci_run_id`와 `db_migrate_run_id`로 실행
 5. root mount, CSP, `nosniff` healthcheck 완료
 
 ## 6. 최종 검증과 기록 형식

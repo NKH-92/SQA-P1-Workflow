@@ -4,6 +4,10 @@ import {
   reassignProductTasksTransition,
   resolveProductTaskTransition,
 } from './transitions'
+import {
+  FULLY_APPLIED_ARCHIVE_REASON,
+  FULLY_PROCESSED_ARCHIVE_REASON,
+} from './completion'
 
 function taskFixture() {
   const data = createPreviewData()
@@ -68,5 +72,44 @@ describe('change application pure transitions', () => {
       targetUserId: 'member-explicit',
       action: 'reassigned',
     })
+  })
+
+  it('persists a distinct completion signal only when every active product is applied', () => {
+    const fixture = taskFixture()
+    const action = fixture.data.changeActionItems.find((item) => item.id === fixture.task.action_item_id)!
+    const isolatedData = {
+      ...fixture.data,
+      changeApplications: [fixture.application],
+      changeActionItems: [action],
+      productChangeTasks: [fixture.task],
+    }
+
+    const applied = resolveProductTaskTransition({
+      ...fixture,
+      data: isolatedData,
+      actor: previewLeader,
+      now: '2026-07-19T06:00:00.000Z',
+      status: 'completed',
+      completionNote: '제품 반영 확인',
+      resolutionReason: null,
+      proxyReason: null,
+      autoArchive: true,
+    })
+    const withException = resolveProductTaskTransition({
+      ...fixture,
+      data: isolatedData,
+      actor: previewLeader,
+      now: '2026-07-19T06:05:00.000Z',
+      status: 'not_applicable',
+      completionNote: null,
+      resolutionReason: '적용 대상 아님',
+      proxyReason: null,
+      autoArchive: true,
+    })
+
+    expect(applied.data.changeApplications[0]?.archive_reason).toBe(FULLY_APPLIED_ARCHIVE_REASON)
+    expect(applied.logFacts[applied.logFacts.length - 1]?.metadata).toMatchObject({ completion_kind: 'all_applied' })
+    expect(withException.data.changeApplications[0]?.archive_reason).toBe(FULLY_PROCESSED_ARCHIVE_REASON)
+    expect(withException.logFacts[withException.logFacts.length - 1]?.metadata).toMatchObject({ completion_kind: 'processed_with_exceptions' })
   })
 })

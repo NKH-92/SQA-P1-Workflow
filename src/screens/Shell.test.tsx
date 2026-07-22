@@ -3,6 +3,7 @@ import { cleanup, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { TabId } from '../app/types'
 import type { AppData, Profile } from '../types'
+import { initialSyncHealth, type SyncHealth } from '../app/hooks/useSyncHealth'
 import { Shell } from './Shell'
 
 const leader: Profile = {
@@ -47,7 +48,7 @@ function emptyData(): AppData {
 function renderShell(
   profile: Profile,
   leaderMode: boolean,
-  options: { activeTab?: TabId; data?: AppData } = {},
+  options: { activeTab?: TabId; data?: AppData; syncHealth?: SyncHealth } = {},
 ) {
   return render(
     <Shell
@@ -66,6 +67,7 @@ function renderShell(
       refreshing={false}
       saving={false}
       setActiveTab={vi.fn()}
+      syncHealth={options.syncHealth ?? initialSyncHealth}
       unreadReviewsCount={0}
     >
       <div>화면</div>
@@ -154,5 +156,55 @@ describe('Shell navigation metadata parity', () => {
 
     renderShell(member, false, { activeTab: 'announcements' })
     expect(screen.getByRole('heading', { level: 1, name: '워크스페이스 / 공지' })).toBeInTheDocument()
+  })
+})
+
+describe('Shell sync health warning', () => {
+  afterEach(cleanup)
+
+  it('shows no persistent warning while sync health is healthy', () => {
+    renderShell(leader, true)
+    expect(screen.queryByText('동기화 지연')).not.toBeInTheDocument()
+  })
+
+  it('shows a persistent topbar warning once sync health is stale', () => {
+    const staleHealth: SyncHealth = {
+      consecutiveFailures: 2,
+      lastSuccessAt: new Date('2026-07-20T00:00:00.000Z'),
+      lastFailureAt: new Date('2026-07-20T00:10:00.000Z'),
+      stale: true,
+      lastErrorCode: 'network',
+    }
+    renderShell(leader, true, { syncHealth: staleHealth })
+
+    const warning = screen.getByText('동기화 지연')
+    expect(warning.closest('[role="status"]')).toHaveAttribute('aria-live', 'polite')
+  })
+
+  it('never renders raw error detail text, only the safe error code, inside the warning title', () => {
+    const staleHealth: SyncHealth = {
+      consecutiveFailures: 3,
+      lastSuccessAt: null,
+      lastFailureAt: new Date('2026-07-20T00:10:00.000Z'),
+      stale: true,
+      lastErrorCode: 'network',
+    }
+    renderShell(leader, true, { syncHealth: staleHealth })
+
+    const warning = screen.getByText('동기화 지연').closest('[role="status"]')
+    expect(warning).toHaveAttribute('title', expect.stringContaining('network'))
+    expect(warning?.getAttribute('title')).not.toMatch(/@|review|body/i)
+  })
+
+  it('does not show the warning for a single background failure that is not yet stale', () => {
+    const oneFailure: SyncHealth = {
+      consecutiveFailures: 1,
+      lastSuccessAt: new Date(),
+      lastFailureAt: new Date(),
+      stale: false,
+      lastErrorCode: 'network',
+    }
+    renderShell(leader, true, { syncHealth: oneFailure })
+    expect(screen.queryByText('동기화 지연')).not.toBeInTheDocument()
   })
 })

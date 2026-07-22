@@ -1,4 +1,5 @@
 import { Badge, EmptyState, Section } from '../components/ui'
+import { DashboardMetricStrip } from '../components/ui/DashboardMetricStrip'
 import type { AppData, Profile } from '../types'
 import type { TabId } from '../app/types'
 import { formatDate, reviewStatusLabels } from '../lib/format'
@@ -6,10 +7,12 @@ import { daysUntil, dueDateLabel, relativeDateLabel } from '../lib/dates'
 import { productCategory, productCompanyName, productName } from '../lib/products'
 import { selectMyProductChangeTaskContexts } from '../features/change-applications/selectors'
 import {
+  CalendarClock,
   Check,
   ClipboardList,
   ClipboardPenLine,
   FolderKanban,
+  Inbox,
   Package,
   Send,
 } from 'lucide-react'
@@ -52,6 +55,9 @@ export function Dashboard({
     const days = daysUntil(project.deadline)
     return days != null && days <= 3
   })
+  const activeOwnProjects = ownProjects.filter(({ project }) => project != null && project.status !== 'done')
+  const priorityCount = urgentProjects.length + openReviews.length + pendingChangeContexts.length
+  const assignmentScopeCount = ownProducts.length + ownDuties.length + activeOwnProjects.length
   const introMessage =
     urgentProjects.length > 0 ? (
       <>
@@ -67,13 +73,50 @@ export function Dashboard({
   const todayLabel = new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }).format(new Date())
 
   return (
-    <div className="stack">
-      <div className="page-intro">
-        <h1>좋은 아침이에요, {profile.name}님.</h1>
-        <p>
-          {todayLabel} · {introMessage}
-        </p>
+    <div className="stack member-dashboard">
+      <div className="page-intro dashboard-page-intro">
+        <h1>내 업무 홈</h1>
+        <p>{todayLabel} 기준으로 내게 배정된 업무만 보여줍니다.</p>
       </div>
+
+      <section className="dashboard-hero member-dashboard-hero" aria-labelledby="member-dashboard-title">
+        <div className="dashboard-hero-copy">
+          <span className="dashboard-hero-eyebrow">오늘의 업무 브리핑</span>
+          <h2 id="member-dashboard-title">
+            <span>좋은 아침이에요, {profile.name}님.</span>
+            <span className="dashboard-hero-statement">{introMessage}</span>
+          </h2>
+          <p>검토 답변, 프로젝트 기한, 변경 적용 업무를 한곳에서 확인하세요.</p>
+          <div className="dashboard-hero-pills" aria-label="내 업무 주의 항목">
+            <span>답변 대기 {openReviews.length}건</span>
+            <span>3일 이내 프로젝트 {urgentProjects.length}개</span>
+            <span>미적용 변경업무 {pendingChangeContexts.length}건</span>
+          </div>
+        </div>
+        <div className="member-hero-summary" aria-label="내 업무 요약">
+          <div>
+            <span>먼저 볼 항목</span>
+            <strong>{priorityCount}<small>건</small></strong>
+            <p>검토·임박 프로젝트·변경업무 합계</p>
+          </div>
+          <div>
+            <span>현재 담당 범위</span>
+            <strong>{assignmentScopeCount}<small>개</small></strong>
+            <p>제품·업무·진행 프로젝트 합계</p>
+          </div>
+        </div>
+      </section>
+
+      <DashboardMetricStrip
+        className="member-kpi-strip"
+        label="내 핵심 업무 지표"
+        metrics={[
+          { label: '답변 대기 검토', value: openReviews.length, unit: '건', note: `전체 요청 ${ownReviews.length}건`, icon: <Inbox aria-hidden="true" size={16} />, onOpen: () => setActiveTab('reviews') },
+          { label: '진행 프로젝트', value: activeOwnProjects.length, unit: '개', note: `3일 이내 ${urgentProjects.length}개`, icon: <CalendarClock aria-hidden="true" size={16} />, tone: urgentProjects.length > 0 ? 'warning' : undefined, onOpen: () => setActiveTab('projects') },
+          { label: '담당제품', value: ownProducts.length, unit: '개', note: '내 담당 범위', icon: <Package aria-hidden="true" size={16} />, onOpen: () => setActiveTab('work') },
+          { label: '정기 업무', value: ownDuties.length, unit: '개', note: '반복 담당 업무', icon: <ClipboardList aria-hidden="true" size={16} />, onOpen: () => setActiveTab('work') },
+        ]}
+      />
 
       {latestNote && (
         <div className="leader-memo">
@@ -88,13 +131,13 @@ export function Dashboard({
       )}
 
       {pendingChangeContexts.length > 0 && (
-        <button className="warm-callout" onClick={() => setActiveTab('change-applications')} type="button">
-          <ClipboardPenLine size={18} />
+        <button className="operations-callout member-change-callout" onClick={() => setActiveTab('change-applications')} type="button">
+          <ClipboardPenLine size={18} aria-hidden="true" />
           <span>
             <strong>내 미적용 변경업무 {pendingChangeContexts.length}건</strong>
             <small>{overdueChangeCount > 0 ? `기한 초과 ${overdueChangeCount}건을 먼저 확인하세요.` : '제품별 적용 여부를 확인하고 완료해 주세요.'}</small>
           </span>
-          <span className="warm-callout-arrow">변경 적용 열기 →</span>
+          <span className="operations-callout-arrow">변경 적용 열기 →</span>
         </button>
       )}
 

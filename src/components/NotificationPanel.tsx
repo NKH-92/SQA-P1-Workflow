@@ -92,6 +92,27 @@ export function NotificationPanel({
           {desktopNotifications.permission === 'denied' && (
             <small>브라우저가 이 사이트의 알림을 차단 중입니다. 주소창 자물쇠 → 알림 허용 후 다시 켜 주세요.</small>
           )}
+          {desktopNotifications.enabled && (
+            <div className="notif-pref-privacy">
+              <label>
+                <input
+                  checked={desktopNotifications.hideRequesterName}
+                  onChange={() => desktopNotifications.toggleHideRequesterName()}
+                  type="checkbox"
+                />
+                요청자 이름 숨기기
+              </label>
+              <label>
+                <input
+                  checked={desktopNotifications.revealReviewTitle}
+                  onChange={() => desktopNotifications.toggleRevealReviewTitle()}
+                  type="checkbox"
+                />
+                알림에 검토 제목 표시
+              </label>
+              <small>잠금화면에서도 노출될 수 있어 기본값은 검토 제목을 표시하지 않습니다.</small>
+            </div>
+          )}
         </div>
       )}
       <div className="notif-foot">

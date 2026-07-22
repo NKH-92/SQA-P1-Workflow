@@ -58,5 +58,5 @@ npm run lint       # ESLint
 | [docs/REMOVE_REVIEW_ATTACHMENTS.md](docs/REMOVE_REVIEW_ATTACHMENTS.md) | 리뷰 첨부 Storage 폐기·Stage B 배포 런북 |
 | [docs/SUPABASE_MIGRATIONS.md](docs/SUPABASE_MIGRATIONS.md) | 마이그레이션 정책·목록·확인 SQL |
 | [docs/TEST_PLAN.md](docs/TEST_PLAN.md) | 기능·RLS 검증 시나리오 |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | 배포 이후 단계별 계획 |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | 현재 남은 배포·유지보수 작업 |
 | [DESIGN.md](DESIGN.md) | 디자인 토큰 계약 |

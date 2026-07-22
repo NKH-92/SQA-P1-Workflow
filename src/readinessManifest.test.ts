@@ -23,7 +23,12 @@ function fixture() {
   const migrationDirectory = join(root, 'supabase', 'migrations')
   mkdirSync(verifyDirectory, { recursive: true })
   mkdirSync(migrationDirectory, { recursive: true })
-  for (const file of readinessFiles) writeFileSync(join(verifyDirectory, file), '-- fixture')
+  for (const file of readinessFiles) {
+    const content = file === '00_migration_history.sql'
+      ? migrationVersions.map((version) => `'${version}'`).join(',\n')
+      : '-- fixture'
+    writeFileSync(join(verifyDirectory, file), content)
+  }
   for (const version of migrationVersions) writeFileSync(join(migrationDirectory, `${version}_fixture.sql`), '-- fixture')
 
   const writeManifest = (overrides: Record<string, unknown> = {}) => {
@@ -53,6 +58,12 @@ describe('readiness manifest', () => {
   it('fails when a new numbered SQL file is missing from the manifest', () => {
     const { root, verifyDirectory } = fixture()
     writeFileSync(join(verifyDirectory, '60_new_contract.sql'), '-- unregistered')
+    expect(() => validateReadinessManifest(root)).toThrow('SQA_DB_READY_MANIFEST_MISMATCH')
+  })
+
+  it('fails when canonical migration-history SQL drifts from the manifest', () => {
+    const { root, verifyDirectory } = fixture()
+    writeFileSync(join(verifyDirectory, '00_migration_history.sql'), `'${migrationVersions[0]}'`)
     expect(() => validateReadinessManifest(root)).toThrow('SQA_DB_READY_MANIFEST_MISMATCH')
   })
 

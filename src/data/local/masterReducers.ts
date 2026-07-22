@@ -70,11 +70,15 @@ export function replaceProductAssignments(
 
   return {
     ...data,
+    // Always bump the parent revision, mirroring
+    // replace_product_assignments_if_current, so a second editor holding the
+    // pre-save snapshot fails on their next stale-checked save.
     products: data.products.map((item) =>
       item.id === productId
         ? {
             ...item,
             unassigned_reason: desiredIds.length === 0 ? unassignedReason?.trim() || null : null,
+            updated_at: new Date().toISOString(),
           }
         : item,
     ),
@@ -163,6 +167,11 @@ export function replaceDutyAssignments(
 
   return {
     ...data,
+    // Always bump the parent revision, mirroring
+    // replace_duty_assignments_if_current.
+    duties: data.duties.map((item) =>
+      item.id === dutyId ? { ...item, updated_at: new Date().toISOString() } : item,
+    ),
     dutyAssignments: [
       ...data.dutyAssignments.filter((assignment) => !toRemove.some((item) => item.id === assignment.id)),
       ...toAdd.map((memberId) => {

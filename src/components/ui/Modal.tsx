@@ -4,10 +4,17 @@ import { X } from 'lucide-react'
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
+/** Open-modal stack (bottom → top). Only the topmost modal owns Escape. */
+const openModalStack: symbol[] = []
+
 function getFocusableElements(container: HTMLElement) {
   return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
     (element) => !element.hasAttribute('disabled') && element.tabIndex !== -1,
   )
+}
+
+function isSafeFocusTarget(element: HTMLElement | null | undefined): element is HTMLElement {
+  return Boolean(element) && typeof element!.focus === 'function' && document.contains(element!)
 }
 
 export function Modal({
@@ -45,17 +52,43 @@ export function Modal({
   const resolvedTitleId = titleId ?? generatedTitleId
   const descriptionId = useId()
   const dialogRef = useRef<HTMLElement>(null)
-  const lastFocusedRef = useRef<HTMLElement | null>(null)
+  const triggerRef = useRef<HTMLElement | null>(null)
+  const stackIdRef = useRef(Symbol('modal'))
 
   useEffect(() => {
     if (!open) return
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    lastFocusedRef.current = (document.activeElement as HTMLElement | null) ?? null
     return () => {
       document.body.style.overflow = previousOverflow
     }
   }, [open])
+
+  // Captures the trigger element at the start of this open lifecycle, then
+  // restores focus in the cleanup so every close path is covered: an
+  // `open -> false` prop transition, an Escape/backdrop/submit-triggered
+  // `onClose`, or the caller unmounting the Modal outright (e.g.
+  // `{dialog && <Modal .../>}`). Cleanup runs for all of these because React
+  // always runs the previous effect's cleanup before re-running it or on
+  // unmount, regardless of whether the component stays mounted.
+  useEffect(() => {
+    if (!open) return
+    triggerRef.current = (document.activeElement as HTMLElement | null) ?? null
+    return () => {
+      // Intentionally read `.current` fresh at close time rather than a
+      // setup-time snapshot: the caller owns this ref and it must reflect
+      // whatever it currently points to when the modal actually closes.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      const explicitTarget = returnFocusRef?.current
+      const target = isSafeFocusTarget(explicitTarget)
+        ? explicitTarget
+        : isSafeFocusTarget(triggerRef.current)
+          ? triggerRef.current
+          : null
+      target?.focus()
+      triggerRef.current = null
+    }
+  }, [open, returnFocusRef])
 
   useEffect(() => {
     if (!open) return
@@ -72,11 +105,26 @@ export function Modal({
     return () => window.clearTimeout(timer)
   }, [open, initialFocusRef])
 
+  // Register in the open-modal stack so nested Escape only closes the topmost dialog.
+  useEffect(() => {
+    if (!open) return
+    const id = stackIdRef.current
+    openModalStack.push(id)
+    return () => {
+      const index = openModalStack.lastIndexOf(id)
+      if (index >= 0) openModalStack.splice(index, 1)
+    }
+  }, [open])
+
   useEffect(() => {
     if (!open) return
     const onKeyDown = (event: KeyboardEvent) => {
+      const isTopmost = openModalStack[openModalStack.length - 1] === stackIdRef.current
+      if (!isTopmost) return
+
       if (event.key === 'Escape' && closeOnEscape) {
         event.preventDefault()
+        event.stopPropagation()
         onClose()
         return
       }
@@ -93,15 +141,10 @@ export function Modal({
         first.focus()
       }
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    // Capture phase so the topmost modal sees Escape before ancestors/siblings.
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [open, onClose, closeOnEscape])
-
-  useEffect(() => {
-    if (open) return
-    const target = returnFocusRef?.current ?? lastFocusedRef.current
-    target?.focus()
-  }, [open, returnFocusRef])
 
   if (!open) return null
 

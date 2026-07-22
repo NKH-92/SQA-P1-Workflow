@@ -19,6 +19,6 @@ export function useProductAdminController(profile: Profile, data: AppData, setDa
     assign: (input: Parameters<typeof assignProduct>[1]) => assignProduct(context, input),
     saveAssignments: (input: Parameters<typeof saveProductAssignments>[1]) => saveProductAssignments(context, input),
     update: (id: string, input: Parameters<typeof updateProduct>[2]) => updateProduct(context, id, input),
-    remove: (id: string) => deleteProduct(context, id),
+    remove: (id: string, input: Parameters<typeof deleteProduct>[2]) => deleteProduct(context, id, input),
   }
 }

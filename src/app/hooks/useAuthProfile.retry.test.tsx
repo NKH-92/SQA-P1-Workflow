@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppData, Profile } from '../../types'
 
 const user = { id: 'user-1' }
@@ -11,6 +11,7 @@ const profile: Profile = {
   is_active: true,
   must_change_password: false,
 }
+const profileState = vi.hoisted(() => ({ current: null as Profile | null }))
 
 const authMocks = vi.hoisted(() => ({
   getSession: vi.fn(async () => ({ data: { session: { user } } })),
@@ -32,7 +33,7 @@ vi.mock('../../lib/supabase', () => ({
     from: vi.fn(() => ({
       select: vi.fn(() => ({
         eq: vi.fn(() => ({
-          maybeSingle: vi.fn(async () => ({ data: profile, error: null })),
+          maybeSingle: vi.fn(async () => ({ data: profileState.current, error: null })),
         })),
       })),
     })),
@@ -42,6 +43,13 @@ vi.mock('../../lib/supabase', () => ({
 import { useAuthProfile } from './useAuthProfile'
 
 describe('useAuthProfile retry', () => {
+  beforeEach(() => {
+    profileState.current = profile
+    authMocks.getSession.mockClear()
+    authMocks.getUser.mockClear()
+    authMocks.signOut.mockClear()
+  })
+
   it('retries the initial data load without discarding the valid session', async () => {
     const refreshData = vi
       .fn<(options?: { initial?: boolean }) => Promise<void>>()
@@ -66,5 +74,19 @@ describe('useAuthProfile retry', () => {
     expect(result.current.profileLoadError).toBeNull()
     expect(refreshData).toHaveBeenCalledTimes(2)
     expect(authMocks.signOut).not.toHaveBeenCalled()
+  })
+
+  it('shows a password-pending profile without calling blocked app bootstraps', async () => {
+    profileState.current = { ...profile, must_change_password: true }
+    const refreshData = vi.fn<(options?: { initial?: boolean }) => Promise<void>>()
+    const setData = vi.fn() as unknown as React.Dispatch<React.SetStateAction<AppData>>
+
+    const { result } = renderHook(() =>
+      useAuthProfile(refreshData, setData, vi.fn(), vi.fn(), vi.fn()),
+    )
+
+    await waitFor(() => expect(result.current.profile).toEqual(profileState.current))
+    expect(result.current.profileLoadError).toBeNull()
+    expect(refreshData).not.toHaveBeenCalled()
   })
 })

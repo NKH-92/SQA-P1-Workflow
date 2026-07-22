@@ -7,6 +7,8 @@ export {
 export {
   fetchAuditEvents,
   fetchProductChangeTaskHistory,
+  fetchReviewEventsPage,
+  fetchReviewStatisticsV2,
   fetchWithdrawnReviewRequestsPage,
   mergeReviewRequests,
 } from './fetchAppData'
@@ -57,6 +59,7 @@ export {
   updateDuty,
   updateInvite,
   toggleProfileActive,
+  setProfileRole,
   deleteAllowedUser,
   deleteProduct,
   deleteDuty,

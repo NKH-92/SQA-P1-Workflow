@@ -1,5 +1,5 @@
 import { supabase } from '../../lib/supabase'
-import type { ActivityLog, AllowedUser, Announcement, AppData, Profile } from '../../types'
+import type { ActivityLog, AllowedUser, Announcement, AppData } from '../../types'
 
 type Client = NonNullable<typeof supabase>
 type QueryResult<T> = { data: T | null; error: unknown }
@@ -9,16 +9,16 @@ export type OptionalQueryResults = {
   allowedUsers: SettledQueryResult<AllowedUser[]>
   profileNotes: SettledQueryResult<AppData['profileNotes']>
   activityLogs: SettledQueryResult<ActivityLog[]>
-  leaderProfiles: SettledQueryResult<Array<Pick<Profile, 'id' | 'name'>>>
   announcements: SettledQueryResult<Announcement[]>
 }
 
 export async function fetchOptionalQueries(client: Client): Promise<OptionalQueryResults> {
-  const [allowedUsers, profileNotes, activityLogs, leaderProfiles, announcements] = await Promise.allSettled([
-    client.from('allowed_users').select('*').order('created_at', { ascending: false }),
-    client.from('profile_notes').select('*').order('created_at', { ascending: false }),
-    client.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(100),
-    client.from('public_leader_profiles').select('id,name'),
+  const [allowedUsers, profileNotes, activityLogs, announcements] = await Promise.allSettled([
+    // Fetch one sentinel row beyond each UI cap so truncation is visible rather
+    // than silently presenting an incomplete data set as complete.
+    client.from('allowed_users').select('*').order('created_at', { ascending: false }).limit(1001),
+    client.from('profile_notes').select('*').order('created_at', { ascending: false }).limit(1001),
+    client.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(101),
     client
       .from('announcements')
       .select('*')
@@ -26,13 +26,12 @@ export async function fetchOptionalQueries(client: Client): Promise<OptionalQuer
       .order('pinned_at', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
-      .limit(200),
+      .limit(201),
   ])
   return {
     allowedUsers: allowedUsers as SettledQueryResult<AllowedUser[]>,
     profileNotes: profileNotes as SettledQueryResult<AppData['profileNotes']>,
     activityLogs: activityLogs as SettledQueryResult<ActivityLog[]>,
-    leaderProfiles: leaderProfiles as SettledQueryResult<Array<Pick<Profile, 'id' | 'name'>>>,
     announcements: announcements as SettledQueryResult<Announcement[]>,
   }
 }

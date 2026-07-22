@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createPreviewData, previewLeader, previewMember } from '../demoData'
 import * as dataModule from '../data'
+import { FULLY_APPLIED_ARCHIVE_REASON } from '../domain/changeApplications/completion'
 import { ChangeApplicationsPanel } from './ChangeApplicationsPanel'
 
 const supabaseState = vi.hoisted(() => ({ configured: false }))
@@ -317,6 +318,52 @@ describe('ChangeApplicationsPanel', () => {
       archived.id,
       '추가 반영 필요',
     ))
+  })
+
+  it('keeps an all-products completion signal visible to the leader after automatic archiving', () => {
+    const source = createPreviewData()
+    const target = source.changeApplications.find((item) => item.id === 'change-application-01')!
+    const actionIds = new Set(
+      source.changeActionItems
+        .filter((item) => item.change_application_id === target.id)
+        .map((item) => item.id),
+    )
+    const data = {
+      ...source,
+      changeApplications: source.changeApplications.map((application) => application.id === target.id ? {
+        ...application,
+        archived_at: '2026-07-22T02:00:00.000Z',
+        archived_by: null,
+        archive_origin: 'automatic' as const,
+        archive_reason: FULLY_APPLIED_ARCHIVE_REASON,
+      } : application),
+      productChangeTasks: source.productChangeTasks.map((task) => actionIds.has(task.action_item_id) ? {
+        ...task,
+        status: 'completed' as const,
+        completed_by: task.assignee_id ?? previewLeader.id,
+        completed_by_name: task.assignee_name ?? previewLeader.name,
+        completed_at: '2026-07-22T02:00:00.000Z',
+      } : task),
+    }
+
+    render(
+      <ChangeApplicationsPanel
+        profile={previewLeader}
+        data={data}
+        mutate={vi.fn(async () => true)}
+        setData={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('1건의 변경이 모든 제품에서 적용 완료되었습니다.')).toBeInTheDocument()
+    expect(screen.queryByText('원료 제조원 변경')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '완료 변경 보기' }))
+
+    expect(screen.getByLabelText('보관 상태')).toHaveValue('all')
+    expect(screen.getAllByText('변경 적용 완료').length).toBeGreaterThan(0)
+    expect(screen.getByText('모든 제품 담당자의 적용 완료 처리가 끝났습니다.')).toBeInTheDocument()
+    expect(screen.getAllByText('원료 제조원 변경').length).toBeGreaterThan(0)
   })
 
   it('lets a leader archive a change only when every visible product task is terminal', async () => {

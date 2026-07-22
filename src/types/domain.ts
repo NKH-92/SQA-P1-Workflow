@@ -49,6 +49,7 @@ export interface AllowedUser {
   name: string
   role: Role
   created_at?: string
+  updated_at?: string
 }
 
 export interface Product {
@@ -140,7 +141,7 @@ export interface ReviewRequest {
 }
 
 export interface ReviewEvent {
-  id: number
+  id: string | number
   review_request_id: string
   actor_id: string | null
   actor_name_snapshot: string
@@ -149,15 +150,107 @@ export interface ReviewEvent {
   to_status: ReviewStatus | null
   occurred_at: string
   metadata: Record<string, unknown>
-  transaction_id: number
+  transaction_id: string | number
 }
 
 export interface ReviewReadReceipt {
   user_id: string
   review_request_id: string
-  last_seen_event_id: number
+  last_seen_event_id: string | number
   read_at: string
 }
+
+/** Shared shape for public.get_review_statistics_v2 (remote) and its local-preview parity builder. */
+export type ReviewStatisticsV2MonthRow = {
+  month: string
+  business_date: string
+  backlog_count: number
+}
+
+export type ReviewStatisticsV2MonthlyBreakdownRow = {
+  month: string
+  new_requests: number
+  resubmissions: number
+  approvals: number
+  rejections: number
+  month_end_backlog: number
+}
+
+export type ReviewStatisticsV2RequesterRow = {
+  requester_id: string
+  requester_name: string
+  requester_inactive: boolean
+  new_requests: number
+  resubmissions: number
+  approvals: number
+  rejections: number
+  pending_count: number
+}
+
+export type ReviewStatisticsV2Envelope = {
+  schema_version: 2
+  timezone: 'Asia/Seoul'
+  generated_at: string
+  from: string
+  to: string
+  requester_id: string | null
+  status: ReviewStatus | null
+  new_requests: number
+  resubmissions: number
+  approvals: number
+  rejections: number
+  pending_count: number
+  requester_breakdown: ReviewStatisticsV2RequesterRow[]
+  month_end_backlog: ReviewStatisticsV2MonthRow[]
+  monthly_breakdown: ReviewStatisticsV2MonthlyBreakdownRow[]
+}
+
+export type ReviewStatisticsV2Params = {
+  from: string
+  to: string
+  requesterId?: string | null
+  status?: ReviewStatus | null
+}
+
+/**
+ * Shared envelope shape returned by every one-transaction-snapshot
+ * bootstrap RPC (`get_core_bootstrap_v2`, `get_change_bootstrap_v2`, and the
+ * `get_review_bootstrap_v2` in spirit). `warnings` reports a
+ * server-detected partial condition inside an otherwise-successful snapshot,
+ * such as a bounded startup collection exceeding its display cap.
+ */
+export type BootstrapEnvelope<T> = {
+  schema_version: number
+  snapshot_at: string
+  data: T
+  warnings: string[]
+}
+
+/** public.get_core_bootstrap_v2 payload — profile/product/duty/assignment/project reference data. */
+export type CoreBootstrapV2Data = {
+  profiles: Profile[]
+  leader_profiles: Array<Pick<Profile, 'id' | 'name'>>
+  products: Product[]
+  duty_major_categories: DutyMajorCategory[]
+  duties: Duty[]
+  product_assignments: ProductAssignment[]
+  duty_assignments: DutyAssignment[]
+  projects: Project[]
+  project_assignments: ProjectAssignment[]
+}
+
+export type CoreBootstrapV2Envelope = BootstrapEnvelope<CoreBootstrapV2Data>
+
+/** public.get_change_bootstrap_v2 payload — change application/action/bounded task/scope/assignee. */
+export type ChangeBootstrapV2Data = {
+  change_applications: ChangeApplication[]
+  change_action_items: ChangeActionItem[]
+  product_change_tasks: ProductChangeTask[]
+  change_product_scope: ChangeProductScopeRow[]
+  change_assignee_options: ChangeAssigneeOption[]
+}
+
+export type ChangeBootstrapV2Envelope = BootstrapEnvelope<ChangeBootstrapV2Data>
 
 export interface Project {
   id: string
@@ -296,7 +389,7 @@ export interface ActivityLog {
 }
 
 export interface AuditEvent {
-  id: number
+  id: string
   entity_type: string
   entity_id: string | null
   action: 'inserted' | 'updated' | 'deleted'

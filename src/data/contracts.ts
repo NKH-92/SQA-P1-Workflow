@@ -23,6 +23,12 @@ export type ProjectInput = {
   status: ProjectStatus
 }
 
+/** Revision and operator-authored reason captured when a destructive action is opened. */
+export type AuditedDeleteInput = {
+  expectedUpdatedAt: string | null
+  reason: string
+}
+
 export type ChangeTaskDraft = {
   product_id: string
   assignee_id: string | null

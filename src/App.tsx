@@ -8,6 +8,7 @@ import { useRealtimeReviewInserts } from './app/hooks/useRealtimeReviewInserts'
 import { useAuthProfile } from './app/hooks/useAuthProfile'
 import { useHashNavigation } from './app/hooks/useHashNavigation'
 import { useMutationRunner } from './app/hooks/useMutationRunner'
+import type { MutationErrorReportContext } from './app/hooks/useMutationRunner'
 import { useDeepLinkEntity } from './app/hooks/useDeepLinkEntity'
 import { useCommandPalette } from './app/hooks/useCommandPalette'
 import { useReviewNotificationController } from './app/hooks/useReviewNotificationController'
@@ -37,6 +38,7 @@ function App() {
     setData,
     refreshing,
     lastSyncedAt,
+    syncHealth,
     refreshData,
     loadReviewRequest,
     loadAnnouncement,
@@ -44,7 +46,12 @@ function App() {
   } = useAppData((warnings) =>
     reportWarningsRef.current(warnings),
   )
-  const { saving, message, setMessage, mutate } = useMutationRunner(refreshData)
+  // profile/leaderMode/route는 이 아래에서 정해지므로(이 훅보다 뒤) getter로 최신 값을 넘긴다.
+  const mutationReportContextRef = useRef<MutationErrorReportContext>({ role: 'unknown', route: 'unknown' })
+  const { saving, message, setMessage, mutate } = useMutationRunner(
+    refreshData,
+    () => mutationReportContextRef.current,
+  )
   useEffect(() => {
     reportWarningsRef.current = (warnings) => setMessage({ text: warnings.join(' '), tone: 'warning' })
   }, [setMessage])
@@ -76,6 +83,12 @@ function App() {
   useEffect(() => {
     resetNavigationRef.current = navigation.resetNavigation
   }, [navigation.resetNavigation])
+  useEffect(() => {
+    mutationReportContextRef.current = {
+      role: !profile ? 'unknown' : leaderMode ? 'leader' : 'member',
+      route: navigation.activeTab,
+    }
+  }, [profile, leaderMode, navigation.activeTab])
 
   useEffect(() => {
     if (!profile || !lastSyncedAt) return
@@ -205,6 +218,7 @@ function App() {
         saving={saving}
         refreshing={refreshing}
         lastSyncedAt={lastSyncedAt}
+        syncHealth={syncHealth}
         pendingCount={pendingCount}
         unreadReviewsCount={unreadReviewsCount}
         notifications={notifications}

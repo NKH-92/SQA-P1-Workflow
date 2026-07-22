@@ -2,6 +2,7 @@ import { recordActivityLog } from '../activityLog'
 import { UserFacingError } from '../../lib/errors'
 import type { Product, ProductCategory } from '../../types'
 import type { RepositoryContext } from '../repositoryContext'
+import type { AuditedDeleteInput } from '../contracts'
 import { logAdminActivity } from './adminActivity'
 
 export type ProductInput = {
@@ -49,16 +50,24 @@ export async function saveProductAssignments(
     productId: string
     nextMemberIds: string[]
     unassignedReason?: string | null
+    reason: string
     product?: Product | null
     memberOptions?: Array<{ id: string; name: string; email: string }>
+    expectedUpdatedAt?: string | null
   },
-): Promise<void> {
+): Promise<{ noop: boolean }> {
   const normalizedReason = normalizeUnassignedReason(input.unassignedReason)
-  await ctx.repositories.products.saveProductAssignments({ ...input, unassignedReason: normalizedReason })
+  const result = await ctx.repositories.products.saveProductAssignments({
+    ...input,
+    unassignedReason: normalizedReason,
+  })
+  // A true set no-op must not write a user-facing activity entry.
+  if (result.noop) return { noop: true }
   await logAdminActivity(ctx, 'product_assignment', 'updated', '제품 배정을 조정했습니다.', input.productId, {
     assigned_user_ids: input.nextMemberIds,
     unassigned_reason: input.nextMemberIds.length === 0 ? normalizedReason : null,
   })
+  return { noop: false }
 }
 
 export async function assignProduct(
@@ -69,7 +78,7 @@ export async function assignProduct(
     transferPendingChangeTasks?: boolean
     transferReason?: string
   },
-): Promise<void> {
+): Promise<{ noop: boolean }> {
   const transferPending = input.transferPendingChangeTasks === true
   const transferReason = input.transferReason?.trim() || null
   const result = await ctx.repositories.products.assignProduct({
@@ -78,7 +87,10 @@ export async function assignProduct(
     transferPending,
     transferReason,
   })
-  if (result.kind === 'noop' || result.kind === 'server-audited') return
+  // A no-op duplicate must not produce a client activity log — the assignment already
+  // exists, so nothing actually changed for the private authoritative audit either (D-05).
+  if (result.kind === 'noop') return { noop: true }
+  if (result.kind === 'server-audited') return { noop: false }
 
   const metadata = result.includeTransferredTaskCount
     ? { user_id: input.userId, transferred_task_count: result.transferredTasks.length }
@@ -107,6 +119,7 @@ export async function assignProduct(
       },
     })
   }
+  return { noop: false }
 }
 
 export async function updateProduct(
@@ -118,16 +131,25 @@ export async function updateProduct(
     company_name?: string | null
     unassigned_reason?: string | null
     sort_order?: number | null
+    expectedUpdatedAt: string | null
+    reason: string
   },
-): Promise<void> {
+): Promise<{ noop: boolean }> {
   const normalizedPayload = payload.unassigned_reason === undefined
     ? payload
     : { ...payload, unassigned_reason: normalizeUnassignedReason(payload.unassigned_reason) }
-  await ctx.repositories.products.updateProduct(productId, normalizedPayload)
-  await logAdminActivity(ctx, 'product', 'updated', '제품 정보를 수정했습니다.', productId, normalizedPayload)
+  const result = await ctx.repositories.products.updateProduct(productId, normalizedPayload)
+  // D-05: a no-op update must not add a user-facing activity-log entry either —
+  // nothing actually changed, so there is nothing to announce.
+  if (!result.noop) {
+    await logAdminActivity(ctx, 'product', 'updated', '제품 정보를 수정했습니다.', productId, normalizedPayload)
+  }
+  return result
 }
 
-export async function deleteProduct(ctx: RepositoryContext, id: string): Promise<void> {
-  const name = await ctx.repositories.products.deleteProduct(id)
-  await logAdminActivity(ctx, 'product', 'deleted', `${name ?? '제품'}을 삭제했습니다.`, id)
+export async function deleteProduct(ctx: RepositoryContext, id: string, input: AuditedDeleteInput): Promise<void> {
+  const name = await ctx.repositories.products.deleteProduct(id, input)
+  await logAdminActivity(ctx, 'product', 'deleted', `${name ?? '제품'}을 삭제했습니다.`, id, {
+    reason: input.reason.trim(),
+  })
 }

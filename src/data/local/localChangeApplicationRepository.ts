@@ -11,6 +11,7 @@ import type { ChangeApplicationInput } from '../contracts'
 import type { ChangeApplicationRepository, RepositoryDeps } from '../repositories/types'
 import { selectProductChangeTaskContexts } from '../selectors/changeTaskContexts'
 import { CHANGE_APPLICATION_STALE_MESSAGE } from '../validation/changeApplications'
+import { businessYear } from '../../lib/businessTime'
 import {
   archiveChangeApplicationTransition,
   cancelChangeApplicationTransition,
@@ -278,7 +279,7 @@ export function createLocalChangeApplicationRepository(
       const now = clock.toISOString()
       const result = saveLocalData(data, profile, input, publish, {
         now,
-        year: clock.getFullYear(),
+        year: businessYear(clock),
         createId: makeId,
       })
       await persistTransition(result)

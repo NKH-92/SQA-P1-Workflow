@@ -639,4 +639,327 @@ describe('Supabase migrations', () => {
     expect(migration).toContain("task.status in ('completed', 'not_applicable')")
     expect(migration).not.toContain('delete from public.change_applications')
   })
+
+  it('adds boolean-returning try_add_* assignment RPCs alongside the untouched legacy void RPCs', () => {
+    const migration = readMigration('20260720110000_assignment_try_add_boolean.sql')
+
+    expect(migration).toContain('create or replace function public.try_add_product_assignment')
+    expect(migration).toContain('create or replace function public.try_add_duty_assignment')
+    expect(migration).toContain('returns boolean')
+    expect(migration).toContain("require_profile_role(p_user_id, 'member'")
+    expect(migration).toContain('profile_is_active(p_user_id)')
+    expect(migration).toContain('on conflict (user_id, product_id) do nothing')
+    expect(migration).toContain('on conflict (user_id, duty_id) do nothing')
+    expect(migration).toContain('return found')
+    expect(migration).toContain("set search_path = ''")
+    expect(migration).toContain('revoke all on function public.try_add_product_assignment(uuid, uuid) from public')
+    expect(migration).toContain('revoke all on function public.try_add_product_assignment(uuid, uuid) from anon')
+    expect(migration).toContain('grant execute on function public.try_add_product_assignment(uuid, uuid) to authenticated')
+    expect(migration).toContain('revoke all on function public.try_add_duty_assignment(uuid, uuid) from public')
+    expect(migration).toContain('revoke all on function public.try_add_duty_assignment(uuid, uuid) from anon')
+    expect(migration).toContain('grant execute on function public.try_add_duty_assignment(uuid, uuid) to authenticated')
+    // The legacy void RPCs are compatibility surface (D-06) and must not be dropped or redefined here.
+    expect(migration).not.toContain('drop function public.add_product_assignment')
+    expect(migration).not.toContain('drop function public.add_duty_assignment')
+    expect(migration).not.toContain('create or replace function public.add_product_assignment')
+    expect(migration).not.toContain('create or replace function public.add_duty_assignment')
+  })
+
+  it('adds bounded review bootstrap, cursor event paging, and leader-only server statistics v2', () => {
+    const migration = readMigration('20260720120000_review_query_stats_v2.sql')
+
+    expect(migration).toContain('create or replace function public.get_review_bootstrap_v2()')
+    expect(migration).toContain('create or replace function public.list_review_events_page(')
+    expect(migration).toContain('create or replace function public.get_review_statistics_v2(')
+    expect(migration).toContain("set search_path = ''")
+
+    // Bootstrap: single snapshot, bounded to pending + recent closed, latest relevant event only.
+    expect(migration).toContain("'schema_version', 2")
+    expect(migration).toContain("'snapshot_at', v_snapshot")
+    expect(migration).toContain("'unread_count', v_unread")
+    expect(migration).toContain('distinct on (event.review_request_id)')
+    expect(migration).toContain('public.is_active_leader() or request.requester_id = v_actor_id')
+
+    // Cursor paging: DESC by id, no OFFSET, limit clamped 1-100.
+    expect(migration).toContain('order by event.id desc')
+    expect(migration).toContain('limit greatest(1, least(coalesce(p_limit, 50), 100))')
+    expect(migration).not.toContain('offset')
+    expect(migration).toContain('public.is_active_leader() or request.requester_id = auth.uid()')
+
+    // Statistics v2: leader-only, KST business-date boundary, pending vs month-end backlog separated.
+    expect(migration).toContain('if not public.is_active_leader() then')
+    expect(migration).toContain('private.sqa_business_date(event.occurred_at)')
+    expect(migration).toContain("'pending_count', v_pending_count")
+    expect(migration).toContain("'month_end_backlog', v_backlog")
+    expect(migration).toContain('p_to - p_from > 366')
+
+    // ACL: revoke public/anon, grant authenticated only. No existing object modified.
+    expect(migration).toContain('revoke all on function public.get_review_bootstrap_v2() from public')
+    expect(migration).toContain('revoke all on function public.get_review_bootstrap_v2() from anon')
+    expect(migration).toContain('grant execute on function public.get_review_bootstrap_v2() to authenticated')
+    expect(migration).toContain('revoke all on function public.list_review_events_page(uuid, bigint, integer) from public')
+    expect(migration).toContain('revoke all on function public.list_review_events_page(uuid, bigint, integer) from anon')
+    expect(migration).toContain('grant execute on function public.list_review_events_page(uuid, bigint, integer) to authenticated')
+    expect(migration).toContain('revoke all on function public.get_review_statistics_v2(date, date, uuid, public.review_status) from public')
+    expect(migration).toContain('revoke all on function public.get_review_statistics_v2(date, date, uuid, public.review_status) from anon')
+    expect(migration).toContain('grant execute on function public.get_review_statistics_v2(date, date, uuid, public.review_status) to authenticated')
+    expect(migration).not.toContain('drop function public.get_review_statistics(')
+    expect(migration).not.toContain('drop table public.review_events')
+    expect(migration).not.toContain('alter table public.review_requests drop')
+  })
+
+  it('adds bootstrap RPCs for core and change reference data in a single transaction snapshot', () => {
+    const migration = readMigration('20260720130000_consistent_bootstrap_v2.sql')
+
+    expect(migration).toContain('create or replace function public.get_core_bootstrap_v2()')
+    expect(migration).toContain('create or replace function public.get_change_bootstrap_v2()')
+    expect(migration.match(/security definer/g)?.length ?? 0).toBeGreaterThanOrEqual(2)
+    expect(migration.match(/set search_path = ''/g)?.length ?? 0).toBeGreaterThanOrEqual(2)
+
+    // SET TRANSACTION inside a function body is invalid for PostgREST RPC calls;
+    // consistency is delivered by the follow-up single-statement rewrite
+    // (20260720150000). This migration must not reintroduce the invalid pattern.
+    expect(migration).not.toContain('set transaction isolation level')
+
+    // Shared envelope contract (docs/ARCHITECTURE.md, Bootstrap snapshot contract):
+    // schema_version/snapshot_at/data/warnings, reusing the review bootstrap design.
+    expect(migration.match(/'schema_version', 1/g)?.length).toBe(2)
+    expect(migration.match(/'snapshot_at', v_snapshot/g)?.length).toBe(2)
+    expect(migration.match(/'warnings', '\[\]'::jsonb/g)?.length).toBe(2)
+    expect(migration).toContain("'data', jsonb_build_object(")
+    expect(migration).toContain("'profiles', v_profiles,")
+    expect(migration).toContain("'change_applications', v_change_applications,")
+
+    // get_core_bootstrap_v2: every select mirrors its existing RLS policy predicate exactly.
+    expect(migration).toContain('where profile.id = v_actor_id or v_is_leader')
+    expect(migration).toContain('select 1 from public.product_assignments pa')
+    expect(migration).toContain('where pa.product_id = product.id and pa.user_id = v_actor_id')
+    expect(migration).toContain('where assignment.user_id = v_actor_id or v_is_leader')
+
+    // get_change_bootstrap_v2: mirrors change_applications_select_app_user /
+    // change_action_items_select_app_user / product_change_tasks_select_relevant,
+    // and reuses the existing SECURITY DEFINER directory RPCs rather than duplicating them.
+    expect(migration).toContain("application.published_at is not null and application.status in ('published', 'cancelled')")
+    expect(migration).toContain("and (task.status = 'pending' or task.updated_at >= v_snapshot - interval '6 months')")
+    expect(migration).toContain('from public.list_change_application_product_scope() scope')
+    expect(migration).toContain('from public.list_change_application_assignees() assignee')
+
+    // ACL: revoke public/anon, grant authenticated only. No existing object modified (D-06).
+    expect(migration).toContain('revoke all on function public.get_core_bootstrap_v2() from public')
+    expect(migration).toContain('revoke all on function public.get_core_bootstrap_v2() from anon')
+    expect(migration).toContain('grant execute on function public.get_core_bootstrap_v2() to authenticated')
+    expect(migration).toContain('revoke all on function public.get_change_bootstrap_v2() from public')
+    expect(migration).toContain('revoke all on function public.get_change_bootstrap_v2() from anon')
+    expect(migration).toContain('grant execute on function public.get_change_bootstrap_v2() to authenticated')
+    expect(migration).not.toContain('drop function public.get_core_bootstrap_v2')
+    expect(migration).not.toContain('drop function public.get_change_bootstrap_v2')
+    expect(migration).not.toContain('alter table public.profiles drop')
+    expect(migration).not.toContain('alter table public.change_applications drop')
+  })
+
+  it('adds master OCC RPCs with a required authoritative-audit reason', () => {
+    const migration = readMigration('20260720140000_master_occ_audit_reasons.sql')
+
+    // Product/duty/duty-major-category update OCC.
+    expect(migration).toContain('create or replace function public.update_product_if_current(')
+    expect(migration).toContain('create or replace function public.update_duty_if_current(')
+    expect(migration).toContain('create or replace function public.update_duty_major_category_if_current(')
+
+    // Invite/profile active OCC. Last-active-leader guard is untouched.
+    expect(migration).toContain('create or replace function public.update_allowed_user_if_current(')
+    expect(migration).toContain('create or replace function public.set_profile_active_if_current(')
+    expect(migration).toContain('add column if not exists updated_at timestamptz')
+    expect(migration).toContain('allowed_users_set_updated_at')
+    expect(migration).not.toContain('create or replace function public.guard_last_active_leader_profile')
+    expect(migration).not.toContain('create or replace function public.guard_last_active_leader_allowed_user')
+
+    // Assignment replacement revision (mirrors replace_project_assignments_if_current).
+    expect(migration).toContain('create or replace function public.replace_product_assignments_if_current(')
+    expect(migration).toContain('create or replace function public.replace_duty_assignments_if_current(')
+    expect(migration).toContain('p_expected_updated_at timestamptz')
+    expect(migration).toContain('set updated_at = clock_timestamp()')
+
+    // Every _if_current RPC: active leader, FOR UPDATE, expected-revision compare,
+    // required reason, distinct not-found vs. stale, empty search_path.
+    expect(migration.match(/for update/g)?.length ?? 0).toBeGreaterThanOrEqual(7)
+    expect(migration.match(/SQA_MASTER_NOT_FOUND/g)?.length ?? 0).toBeGreaterThanOrEqual(7)
+    expect(migration.match(/SQA_MASTER_STALE/g)?.length ?? 0).toBeGreaterThanOrEqual(7)
+    expect(migration.match(/SQA_REASON_REQUIRED/g)?.length ?? 0).toBeGreaterThanOrEqual(5)
+    expect(migration.match(/set search_path = ''/g)?.length ?? 0).toBeGreaterThanOrEqual(7)
+    expect(migration).toContain("perform set_config('sqa.audit_reason', v_reason, true)")
+    expect(migration).toContain("perform set_config('sqa.audit_correlation_id', p_correlation_id::text, true)")
+
+    // No-op distinguished from 0-row: a found-but-unchanged record returns without
+    // running the UPDATE (and therefore without a private audit row).
+    expect(migration).toContain('if not v_changed then')
+    expect(migration).toContain('if v_profile.is_active is not distinct from p_is_active then')
+
+    // Expand release: the deployed client keeps its active-leader direct write
+    // path until a later, independently deployable contract migration.
+    expect(migration).toContain('grant insert, update, delete on table')
+    expect(migration).toContain('grant update on table public.profiles to authenticated')
+    expect(migration).not.toContain('revoke update on table public.products from authenticated')
+    expect(migration).not.toContain('drop policy if exists "products_write_leader" on public.products')
+    expect(migration).not.toContain('drop policy if exists "profiles_update_leader" on public.profiles')
+
+    // ACL: revoke public/anon, grant authenticated only.
+    expect(migration).toContain('revoke all on function public.update_product_if_current(uuid, timestamptz, text, text, text, text, integer, text, uuid) from public, anon, authenticated')
+    expect(migration).toContain('grant execute on function public.update_product_if_current(uuid, timestamptz, text, text, text, text, integer, text, uuid) to authenticated')
+    expect(migration).toContain('revoke all on function public.set_profile_active_if_current(uuid, timestamptz, boolean, text, uuid) from public, anon, authenticated')
+    expect(migration).toContain('grant execute on function public.set_profile_active_if_current(uuid, timestamptz, boolean, text, uuid) to authenticated')
+    expect(migration).toContain('revoke all on function public.replace_product_assignments_if_current(uuid, uuid[], text, timestamptz) from public, anon, authenticated')
+    expect(migration).toContain('grant execute on function public.replace_product_assignments_if_current(uuid, uuid[], text, timestamptz) to authenticated')
+
+    // D-06: legacy void RPCs remain untouched compatibility surface.
+    expect(migration).not.toContain('drop function public.replace_product_assignments')
+    expect(migration).not.toContain('drop function public.replace_duty_assignments')
+    expect(migration).not.toContain('create or replace function public.replace_product_assignments(')
+    expect(migration).not.toContain('create or replace function public.replace_product_assignments_with_reason(')
+    expect(migration).not.toContain('create or replace function public.replace_duty_assignments(')
+  })
+
+  it('rewrites bootstrap RPCs as single-statement RETURN SELECT assemblies', () => {
+    const migration = readMigration('20260720150000_single_statement_bootstraps.sql')
+    expect(migration).toContain('create or replace function public.get_review_bootstrap_v2()')
+    expect(migration).toContain('create or replace function public.get_core_bootstrap_v2()')
+    expect(migration).toContain('create or replace function public.get_change_bootstrap_v2()')
+    expect(migration.match(/return \(/g)?.length ?? 0).toBeGreaterThanOrEqual(3)
+    expect(migration).not.toContain('set transaction isolation level')
+    expect(migration).toContain("'snapshot_at'")
+  })
+
+  it('adds profile-role OCC and audited assignment replacement', () => {
+    const migration = readMigration('20260720160000_master_occ_role_assign_audit.sql')
+    expect(migration).toContain('create or replace function public.set_profile_role_if_current(')
+    expect(migration).toContain('p_reason text')
+    expect(migration).toContain('p_correlation_id uuid')
+    expect(migration).toContain("perform set_config('sqa.audit_reason'")
+    expect(migration).toContain('drop function if exists public.replace_product_assignments_if_current(uuid, uuid[], text, timestamptz)')
+    expect(migration).toContain('create or replace function public.replace_product_assignments_if_current(')
+    expect(migration).toContain('create or replace function public.replace_duty_assignments_if_current(')
+    expect(migration).toContain('grant execute on function public.set_profile_role_if_current(uuid, timestamptz, public.app_role, text, uuid) to authenticated')
+    expect(migration).toContain('grant execute on function public.replace_product_assignments_if_current(uuid, uuid[], text, timestamptz, text, uuid) to authenticated')
+  })
+
+  it('canonicalizes assignment replacement member sets for true no-op', () => {
+    const migration = readMigration('20260720170000_assignment_replace_set_noop.sql')
+    expect(migration).toContain('array_agg(distinct x order by x)')
+    expect(migration).toContain('create or replace function public.replace_product_assignments_if_current(')
+    expect(migration).toContain('create or replace function public.replace_duty_assignments_if_current(')
+  })
+
+  it('corrects review-stat scope invariants and makes active leader membership required-snapshot data', () => {
+    const migration = readMigration('20260720161117_fix_review_stats_and_leader_snapshot.sql')
+    expect(migration).toContain("request.created_at >= (p_from::timestamp at time zone 'Asia/Seoul')")
+    expect(migration).toContain('create index if not exists review_requests_created_at_idx')
+    expect(migration).toContain("'{requester_breakdown}'")
+    expect(migration).toContain("'requester_inactive'")
+    expect(migration).toContain("'{data,leader_profiles}'")
+    expect(migration).toContain("'{schema_version}', '2'::jsonb")
+    expect(migration).toContain('if auth.uid() is null or not public.is_active_leader()')
+    expect(migration).toContain('if auth.uid() is null or not public.can_use_app()')
+    expect(migration).toContain('revoke all on function public.get_review_statistics_v2')
+    expect(migration).toContain('revoke all on function public.get_core_bootstrap_v2() from public')
+  })
+
+  it('advances parent OCC revisions only for real add-only assignment inserts', () => {
+    const migration = readMigration('20260720180000_bump_assignment_parent_revisions.sql')
+    expect(migration).toContain('create or replace function public.try_add_product_assignment(')
+    expect(migration).toContain('create or replace function public.try_add_duty_assignment(')
+    expect(migration).toContain('v_inserted := found')
+    expect(migration).toContain('if v_inserted then')
+    expect(migration).toContain('update public.products set updated_at = clock_timestamp()')
+    expect(migration).toContain('update public.duties set updated_at = clock_timestamp()')
+    expect(migration).toContain('if auth.uid() is null or not public.is_active_leader()')
+    expect(migration).toContain('grant execute on function public.try_add_product_assignment(uuid, uuid) to authenticated')
+  })
+
+  it('keeps allowed-user policies gated by active leader access after the OCC split', () => {
+    const migration = readMigration('20260720190000_harden_allowed_user_policies.sql')
+    expect(migration.match(/public\.is_active_leader\(\)/g)).toHaveLength(5)
+    expect(migration).not.toContain('public.is_leader()')
+    expect(migration).toContain('drop policy if exists "allowed_users_leader_all"')
+    expect(migration).toContain('create policy "allowed_users_update_leader_compat"')
+    expect(migration).toContain('grant update on table public.allowed_users to authenticated')
+  })
+
+  it('updates invite and linked profile role atomically under active-leader authorization', () => {
+    const migration = readMigration('20260720200000_atomic_invite_occ.sql')
+    expect(migration).toContain('auth.uid() is null or not public.is_active_leader()')
+    expect(migration).toContain('lower(v_invite.email::text)')
+    expect(migration).toContain('for update')
+    expect(migration).toContain('update public.allowed_users')
+    expect(migration).toContain('update public.profiles')
+    expect(migration.indexOf('update public.profiles')).toBeGreaterThan(migration.indexOf('update public.allowed_users'))
+    expect(migration).toContain('grant execute on function public.update_allowed_user_if_current')
+  })
+
+  it('returns all statistics page aggregates from one statement snapshot', () => {
+    const migration = readMigration('20260720210000_single_snapshot_review_stats.sql')
+    expect(migration).toContain('private.get_review_statistics_v2_single_scope')
+    expect(migration).not.toContain('private.get_review_statistics_v2_legacy')
+    expect(migration).toContain('monthly_event_counts as (')
+    expect(migration).toContain("event.occurred_at at time zone 'Asia/Seoul'")
+    expect(migration).toContain("'{monthly_breakdown}'")
+    expect(migration).toContain('generate_series(')
+    expect(migration).not.toContain('set transaction isolation level')
+  })
+
+  it('exposes review event bigint cursors as exact decimal strings', () => {
+    const migration = readMigration('20260720220000_review_event_text_cursor.sql')
+    expect(migration).toContain('create function public.list_review_events_page_v2(')
+    expect(migration).toContain('p_before_id text')
+    expect(migration).toContain("'id', page.id::text")
+    expect(migration).toContain('event.id < v_before_id')
+    expect(migration).not.toContain(' offset ')
+  })
+
+  it('adds hardened mutation surfaces without breaking the deployed client during expand rollout', () => {
+    const migration = readMigration('20260720230000_full_code_review_hardening.sql')
+    expect(migration).toContain('revoke all on function public.replace_project_assignments(uuid, uuid[]) from public, anon')
+    expect(migration).toContain('grant execute on function public.replace_project_assignments(uuid, uuid[]) to authenticated')
+    expect(migration).toContain('grant execute on function public.add_product_assignment(uuid, uuid) to authenticated')
+    expect(migration).not.toContain('revoke execute on function public.replace_project_assignments(uuid, uuid[]) from authenticated')
+    expect(migration).toContain('v_inserted := found')
+    expect(migration).toContain('if v_inserted then')
+    expect(migration).toContain('grant insert on table public.profile_notes, public.activity_logs to authenticated')
+    expect(migration).toContain('create function public.list_audit_events_v2(')
+    expect(migration).toContain('event.id::text')
+    expect(migration).toContain('create or replace function private.delete_versioned_row(')
+    expect(migration).toContain('get diagnostics v_row_count = row_count')
+    expect(migration).toContain('grant delete on table public.products')
+    expect(migration).toContain('create or replace function public.get_change_bootstrap_v2()')
+    expect(migration).toContain('limit 1001')
+    expect(migration).toContain('limit 5001')
+    expect(migration).toContain('limit 1000')
+    expect(migration).toContain('limit 5000')
+    expect(migration).toContain('SQA_CHANGE_APPLICATIONS_TRUNCATED')
+    expect(migration).toContain('SQA_CHANGE_ACTION_ITEMS_TRUNCATED')
+    expect(migration).toContain('SQA_PRODUCT_CHANGE_TASKS_TRUNCATED')
+  })
+
+  it('keeps the leader directory API while replacing its definer view with an invoker view', () => {
+    const migration = readMigration('20260720231000_harden_leader_directory_view.sql')
+    expect(migration).toContain('create or replace function private.list_active_leader_profiles()')
+    expect(migration).toContain("security definer\nset search_path = ''")
+    expect(migration).toContain('public.can_use_app()')
+    expect(migration).toContain('with (security_invoker = true, security_barrier = true)')
+    expect(migration).toContain('from private.list_active_leader_profiles() leader')
+    expect(migration).toContain('grant execute on function private.list_active_leader_profiles()')
+    expect(migration).toContain('grant select on table public.public_leader_profiles')
+  })
+
+  it('persists all-products application completion separately from exception processing', () => {
+    const migration = readMigration('20260722120452_distinguish_fully_applied_change.sql')
+
+    expect(migration).toContain('create or replace function private.sync_change_application_archive()')
+    expect(migration).toContain("task.status not in ('completed', 'cancelled')")
+    expect(migration).toContain('모든 제품 적용이 완료되어 자동 보관됨')
+    expect(migration).toContain('모든 제품 적용업무가 처리되어 자동 보관됨')
+    expect(migration).toContain("'completion_kind'")
+    expect(migration).toContain("'all_applied'")
+    expect(migration).toContain("'processed_with_exceptions'")
+    expect(migration).toContain("application.archive_origin = 'automatic'")
+    expect(migration).toContain('revoke all on function private.sync_change_application_archive()')
+  })
 })

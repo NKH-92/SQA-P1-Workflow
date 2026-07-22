@@ -95,6 +95,30 @@ describe('change application selectors', () => {
       pending: 2,
       unassigned: 1,
       percent: 50,
+      allApplied: false,
+      allProcessed: false,
+    })
+  })
+
+  it('distinguishes every-product applied from processed with exceptions', () => {
+    const applied = selectProductChangeTaskContexts(dataWithTasks([
+      task('first', 'completed'),
+      task('second', 'completed'),
+    ]))
+    const withException = selectProductChangeTaskContexts(dataWithTasks([
+      task('first', 'completed'),
+      task('second', 'not_applicable'),
+    ]))
+
+    expect(calculateChangeProgress(applied)).toMatchObject({
+      allApplied: true,
+      allProcessed: true,
+      percent: 100,
+    })
+    expect(calculateChangeProgress(withException)).toMatchObject({
+      allApplied: false,
+      allProcessed: true,
+      percent: 100,
     })
   })
 

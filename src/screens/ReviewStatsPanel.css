@@ -59,8 +59,8 @@
   color: var(--paper-dim);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .review-stats-presets {

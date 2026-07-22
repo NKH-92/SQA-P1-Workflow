@@ -1,3 +1,5 @@
+import { businessDateKey, businessDateParts } from '../../lib/businessTime'
+import { compareDecimalIds } from '../../lib/decimalId'
 import type { AppData, Profile, ReviewEvent, ReviewRequest, ReviewStatus } from '../../types'
 
 export const REVIEW_STATS_HISTORY_MONTHS = 6
@@ -42,6 +44,11 @@ export type ReviewStatsRequesterRow = {
   rejectedCount: number
 }
 
+export type ReviewStatsScopes = {
+  currentStateRequests: readonly ReviewRequest[]
+  periodEvents: readonly ReviewEvent[]
+}
+
 export type ReviewStatsMonthRow = {
   month: string
   requestCount: number
@@ -79,7 +86,7 @@ const STATUS_ORDER: ReviewStatus[] = ['pending', 'approved', 'rejected', 'withdr
 const UNKNOWN_REQUESTER_NAME = '알 수 없는 요청자'
 
 function toDateKey(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  return businessDateKey(date)
 }
 
 function parseDateKey(value: string): Date | null {
@@ -88,8 +95,10 @@ function parseDateKey(value: string): Date | null {
   const year = Number(match[1])
   const month = Number(match[2])
   const day = Number(match[3])
-  const date = new Date(year, month - 1, day, 12)
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null
+  // Construct a UTC instant that lands on the intended Asia/Seoul civil date at noon KST.
+  const date = new Date(Date.UTC(year, month - 1, day, 3, 0, 0))
+  const parts = businessDateParts(date)
+  if (parts.year !== year || parts.month !== month || parts.day !== day) return null
   return date
 }
 
@@ -117,31 +126,36 @@ function historyCutoffInstant(now: Date): Date {
 
 /**
  * 완료 행은 cutoff 시각 이후만 로드된다. 날짜 필터가 하루 전체를 포함한다고 말하려면
- * cutoff가 걸친 부분 날짜를 제외하고 다음 로컬 날짜부터 제공해야 한다.
+ * cutoff가 걸친 부분 날짜를 제외하고 다음 Asia/Seoul 업무일부터 제공해야 한다.
  */
-function firstFullyLoadedLocalDate(now: Date): Date {
+function firstFullyLoadedBusinessDate(now: Date): Date {
   const cutoff = historyCutoffInstant(now)
-  const isLocalMidnight =
-    cutoff.getHours() === 0 &&
-    cutoff.getMinutes() === 0 &&
-    cutoff.getSeconds() === 0 &&
-    cutoff.getMilliseconds() === 0
-  if (isLocalMidnight) return cutoff
-  return new Date(cutoff.getFullYear(), cutoff.getMonth(), cutoff.getDate() + 1, 12)
+  const parts = businessDateParts(cutoff)
+  if (parts.hour === 0 && parts.minute === 0 && parts.second === 0) {
+    return parseDateKey(toDateKey(cutoff)) ?? cutoff
+  }
+  // Advance one Asia/Seoul civil day from the cutoff's business date.
+  const next = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + 1, 3, 0, 0))
+  return parseDateKey(toDateKey(next)) ?? next
 }
 
-function subtractLocalMonthsClamped(now: Date, months: number): Date {
-  const day = now.getDate()
-  const result = new Date(now.getFullYear(), now.getMonth(), 1, 12)
-  result.setMonth(result.getMonth() - months)
-  const lastDay = new Date(result.getFullYear(), result.getMonth() + 1, 0, 12).getDate()
-  result.setDate(Math.min(day, lastDay))
-  return result
+function subtractBusinessMonthsClamped(now: Date, months: number): Date {
+  const parts = businessDateParts(now)
+  let year = parts.year
+  let month = parts.month - months
+  while (month <= 0) {
+    month += 12
+    year -= 1
+  }
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  const day = Math.min(parts.day, lastDay)
+  return parseDateKey(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
+    ?? new Date(Date.UTC(year, month - 1, day, 3, 0, 0))
 }
 
 export function getReviewStatsAvailableRange(now = new Date()) {
   return {
-    minDate: toDateKey(firstFullyLoadedLocalDate(now)),
+    minDate: toDateKey(firstFullyLoadedBusinessDate(now)),
     maxDate: toDateKey(now),
   }
 }
@@ -150,7 +164,8 @@ export function resolveReviewStatsRange(filters: ReviewStatsFilters, now = new D
   const { minDate, maxDate } = getReviewStatsAvailableRange(now)
 
   if (filters.preset === 'this-month') {
-    const startOfMonth = toDateKey(new Date(now.getFullYear(), now.getMonth(), 1, 12))
+    const parts = businessDateParts(now)
+    const startOfMonth = `${parts.year}-${String(parts.month).padStart(2, '0')}-01`
     return {
       minDate,
       maxDate,
@@ -163,7 +178,7 @@ export function resolveReviewStatsRange(filters: ReviewStatsFilters, now = new D
   }
 
   if (filters.preset === 'last-3-months') {
-    const requestedStart = toDateKey(subtractLocalMonthsClamped(now, 3))
+    const requestedStart = toDateKey(subtractBusinessMonthsClamped(now, 3))
     return {
       minDate,
       maxDate,
@@ -270,23 +285,40 @@ function statusCounts(requests: ReviewRequest[]): Record<ReviewStatus, number> {
   )
 }
 
-function buildRequesterRows(
-  requests: ReviewRequest[],
-  events: ReviewEvent[],
-  identities: Map<string, RequesterIdentity>,
-): ReviewStatsRequesterRow[] {
-  const grouped = new Map<string, ReviewRequest[]>()
-  for (const request of requests) {
-    const current = grouped.get(request.requester_id)
+function buildRequesterRows({
+  currentStateRequests,
+  periodEvents,
+  identities,
+  requestById,
+}: ReviewStatsScopes & {
+  identities: ReadonlyMap<string, RequesterIdentity>
+  requestById: ReadonlyMap<string, ReviewRequest>
+}): ReviewStatsRequesterRow[] {
+  const requestsByRequester = new Map<string, ReviewRequest[]>()
+  const eventsByRequester = new Map<string, ReviewEvent[]>()
+  const requesterIds = new Set<string>()
+
+  for (const request of currentStateRequests) {
+    requesterIds.add(request.requester_id)
+    const current = requestsByRequester.get(request.requester_id)
     if (current) current.push(request)
-    else grouped.set(request.requester_id, [request])
+    else requestsByRequester.set(request.requester_id, [request])
   }
 
-  return [...grouped.entries()]
-    .map(([requesterId, requesterRequests]) => {
+  for (const event of periodEvents) {
+    const request = requestById.get(event.review_request_id)
+    if (!request) continue
+    requesterIds.add(request.requester_id)
+    const current = eventsByRequester.get(request.requester_id)
+    if (current) current.push(event)
+    else eventsByRequester.set(request.requester_id, [event])
+  }
+
+  return [...requesterIds]
+    .map((requesterId) => {
+      const requesterRequests = requestsByRequester.get(requesterId) ?? []
+      const requesterEvents = eventsByRequester.get(requesterId) ?? []
       const counts = statusCounts(requesterRequests)
-      const requestIds = new Set(requesterRequests.map((request) => request.id))
-      const requesterEvents = events.filter((event) => requestIds.has(event.review_request_id))
       const requestCount = requesterEvents.filter((event) => event.event_type === 'submitted').length
       const resubmissionCount = requesterEvents.filter((event) => event.event_type === 'resubmitted').length
       const submissionCount = requestCount + resubmissionCount
@@ -316,17 +348,21 @@ function monthKeyFromDateKey(dateKey: string): string {
   return dateKey.slice(0, 7)
 }
 
-function monthKeysBetween(startDate: string, endDate: string): string[] {
+export function monthKeysBetween(startDate: string, endDate: string): string[] {
   const start = parseDateKey(startDate)
   const end = parseDateKey(endDate)
   if (!start || !end || start > end) return []
 
-  const cursor = new Date(start.getFullYear(), start.getMonth(), 1, 12)
-  const last = new Date(end.getFullYear(), end.getMonth(), 1, 12)
+  let { year, month } = businessDateParts(start)
+  const endParts = businessDateParts(end)
   const months: string[] = []
-  while (cursor <= last) {
-    months.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`)
-    cursor.setMonth(cursor.getMonth() + 1)
+  while (year < endParts.year || (year === endParts.year && month <= endParts.month)) {
+    months.push(`${year}-${String(month).padStart(2, '0')}`)
+    month += 1
+    if (month > 12) {
+      month = 1
+      year += 1
+    }
   }
   return months
 }
@@ -350,7 +386,7 @@ function buildMonthlyRows(events: ReviewEvent[], range: ReviewStatsRange): Revie
     for (const event of monthEvents) {
       if (!event.to_status) continue
       const current = latestStatusByRequest.get(event.review_request_id)
-      if (!current || Number(event.id) > Number(current.id)) latestStatusByRequest.set(event.review_request_id, event)
+      if (!current || compareDecimalIds(event.id, current.id) > 0) latestStatusByRequest.set(event.review_request_id, event)
     }
     return {
       month,
@@ -371,6 +407,7 @@ export function selectReviewStats(
 ): ReviewStatsResult {
   const range = resolveReviewStatsRange(filters, now)
   const identities = requesterIdentityMap(data.profiles, data.reviewRequests)
+  const requestById = new Map(data.reviewRequests.map((request) => [request.id, request]))
 
   // 대기 요청은 6개월보다 오래된 행도 로드될 수 있으므로 통계 선택지와 결과에 동일 경계를 적용한다.
   const availableRequests = data.reviewRequests.filter((request) => {
@@ -378,7 +415,21 @@ export function selectReviewStats(
     return dateKey !== null && dateKey >= range.minDate && dateKey <= range.maxDate
   })
 
-  const requesterOptions = [...new Set(availableRequests.map((request) => request.requester_id))]
+  const availableEventRequesterIds = (data.reviewEvents ?? []).flatMap((event) => {
+    if (event.event_type === 'withdrawn') return []
+    const request = requestById.get(event.review_request_id)
+    if (!request) return []
+    const timestamp = Date.parse(event.occurred_at)
+    if (Number.isNaN(timestamp)) return []
+    const dateKey = toDateKey(new Date(timestamp))
+    return dateKey >= range.minDate && dateKey <= range.maxDate ? [request.requester_id] : []
+  })
+  const requesterOptions = [
+    ...new Set([
+      ...availableRequests.map((request) => request.requester_id),
+      ...availableEventRequesterIds,
+    ]),
+  ]
     .map((id) => {
       const identity = identities.get(id) ?? { name: UNKNOWN_REQUESTER_NAME, inactive: false }
       return { id, name: identity.name, inactive: identity.inactive }
@@ -415,8 +466,12 @@ export function selectReviewStats(
   const requestCount = filteredEvents.filter((event) => event.event_type === 'submitted').length
   const resubmissionCount = filteredEvents.filter((event) => event.event_type === 'resubmitted').length
   const submissionCount = requestCount + resubmissionCount
-  const requesterRows = buildRequesterRows(eventScopedRequests, filteredEvents, identities)
-    .filter((row) => row.submissionCount + row.approvedCount + row.rejectedCount > 0)
+  const requesterRows = buildRequesterRows({
+    currentStateRequests: filteredRequests,
+    periodEvents: filteredEvents,
+    identities,
+    requestById,
+  })
 
   return {
     range,

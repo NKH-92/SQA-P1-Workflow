@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { isSupabaseLocalConfigured, RLS_SKIP_NOTE } from './helpers'
+import { isSupabaseRlsTargetConfigured, RLS_SKIP_NOTE } from './helpers'
 
-const describeRls = isSupabaseLocalConfigured() ? describe : describe.skip
+const describeRls = isSupabaseRlsTargetConfigured() ? describe : describe.skip
 
 function requiredEnv(name: string): string {
   const value = process.env[name]
@@ -47,7 +47,7 @@ describeRls(`RLS authoritative audit lifecycle (${RLS_SKIP_NOTE})`, () => {
   })
 
   async function auditEventsForAnnouncement() {
-    const result = await leader.rpc('list_audit_events', { p_limit: 100, p_before_id: null })
+    const result = await leader.rpc('list_audit_events_v2', { p_limit: 100, p_before_id: null })
     expect(result.error).toBeNull()
     return (result.data ?? []).filter((event: { entity_id: string | null }) => event.entity_id === announcementId)
   }
@@ -120,10 +120,10 @@ describeRls(`RLS authoritative audit lifecycle (${RLS_SKIP_NOTE})`, () => {
     const direct = await leader.schema('private').from('audit_events').select('id').limit(1)
     expect(direct.error).not.toBeNull()
 
-    const memberList = await member.rpc('list_audit_events', { p_limit: 1, p_before_id: null })
+    const memberList = await member.rpc('list_audit_events_v2', { p_limit: 1, p_before_id: null })
     expect(memberList.error).not.toBeNull()
 
-    const anonymousList = await anonymous.rpc('list_audit_events', { p_limit: 1, p_before_id: null })
+    const anonymousList = await anonymous.rpc('list_audit_events_v2', { p_limit: 1, p_before_id: null })
     expect(anonymousList.error).not.toBeNull()
   })
 })

@@ -4,7 +4,7 @@ SQA P1 Workflow의 일상 운영·백업·장애 대응 절차입니다.
 
 ## 교정 리팩토링 검증과 release 차단 조건
 
-- local RLS는 `npm run test:rls:full`만 canonical 진입점으로 사용한다. runner는 pinned Supabase CLI `2.109.1`로 start -> migration -> fixture -> RLS -> readiness SQL을 실행하고 성공/실패와 관계없이 stop 및 임시 migration 복원을 수행한다.
+- local RLS는 `npm run test:rls:full`만 canonical 진입점으로 사용한다. runner는 pinned Supabase CLI `2.109.1`로 start -> migration -> DB lint(error) -> fixture -> RLS -> readiness SQL을 실행하고 성공/실패와 관계없이 stop 및 임시 migration 복원을 수행한다.
 - Docker daemon에 연결할 수 없거나 RLS test가 하나라도 skip/fail이면 DB 관련 작업과 전체 리팩토링을 완료로 표시하지 않는다.
 - readiness SQL과 migration version은 `scripts/sql/verify/manifest.json`만 사용한다. workflow에서 glob이나 별도 목록을 만들지 않는다.
 - PowerShell의 Supabase native 호출은 각 호출 직후 `$LASTEXITCODE`를 검사한다. link/push/query 오류 뒤에 다음 단계로 진행하지 않는다.
@@ -57,11 +57,17 @@ Realtime·데스크톱 알림은 **실패해도 오류를 표시하지 않도록
 | 데스크톱 알림이 안 뜸 | ① 파트장 계정인가 ② 벨 패널에서 옵트인했는가 ③ 브라우저 사이트 권한이 `허용`인가 ④ 창이 **비포커스**였는가 (앱을 보고 있으면 뱃지만 갱신) | 브라우저 사이트 설정에서 알림 권한 허용 후 벨 패널에서 다시 켜기. 모바일 브라우저는 미지원(뱃지만 동작) |
 | Realtime 연결 실패가 의심됨 | Supabase Dashboard → Logs → Realtime | 연결 실패여도 데이터는 폴링으로 갱신된다 — 즉시성만 떨어짐 |
 
+### 데스크톱 알림과 잠금화면 노출 위험
+
+OS 데스크톱 알림은 화면이 잠겨 있어도(또는 다른 사람이 옆에서 보고 있어도) 그대로 표시될 수 있는 채널이다. 이 앱은 그래서 알림 **body 기본값을 안전한 고정 문구**("새 검토요청이 접수되었습니다. 앱을 열어 확인하세요.")로 두고, 검토 제목은 사용자가 벨 패널에서 "알림에 검토 제목 표시"를 직접 켜야만(opt-in) 노출한다. 요청자 이름은 알림 title에 기본 표시되며, "요청자 이름 숨기기"를 켜면 title에서도 빠진다. 두 설정 모두 계정별 `localStorage`(`desktopNotif:<userId>`, schemaVersion 포함)에 저장되고, 알 수 없는(미래) schemaVersion을 만나면 안전 기본값으로 폴백한다. 공용 PC·화면 공유 중에는 두 옵션 모두 기본값(숨김)으로 두는 것을 권장한다.
+
 ## 매일 백업
 
 ### 자동 백업 (기본) — GitHub Actions
 
-`.github/workflows/backup.yml`이 **매일 05:00 KST**(cron)에 스키마·데이터를 덤프해 AES-256 GPG 대칭 암호화(`.gpg`)와 전환 기간용 OpenSSL 형식(`.enc`)으로 만든 뒤, 두 파일을 실제 복호화·tar 검사하고 워크플로 아티팩트(보존 90일)로 업로드합니다. Actions 탭에서 **Backup DB > Run workflow**로 수동 실행도 가능합니다. DB Migrate는 동일 `main` SHA에서 24시간 이내 **schedule 또는 수동 실행**으로 성공한 백업이 없으면 DB 접속 전에 중단됩니다.
+`.github/workflows/backup.yml`이 **매일 05:00 KST**(cron)에 roles·application schema/data·migration history를 분리해 **L2 DR package**를 만듭니다. 파일별 SHA-256과 필수 audit 객체, 폐기된 Storage surface의 실제 object count 0을 검증한 뒤 AES-256 GPG 대칭 암호화(`.gpg`)와 전환 기간용 OpenSSL 형식(`.enc`)으로 만듭니다. 두 암호문을 실제 복호화해 `dr-manifest.json`과 checksum을 다시 검증하고 plaintext를 삭제한 뒤에만 워크플로 아티팩트(보존 90일)로 업로드합니다. Actions 탭에서 **Backup DB > Run workflow**로 수동 실행도 가능합니다. 상세 등급 계약은 [DR_CONTRACT.md](./DR_CONTRACT.md)를 따릅니다.
+
+이 artifact는 `authIdentityIncluded=false`인 **L2**다. Auth UUID/password hash와 Auth 설정을 포함하지 않으므로 L3, L4, 신규 Supabase project full DR이라고 부르지 않습니다. Backup DB, DB Migrate, Deploy Worker는 공통 `sqa-production-release` concurrency group을 사용하며, DB Migrate는 동일 `main` SHA의 성공한 CI와 24시간 이내 **schedule 또는 수동 실행**으로 성공한 백업이 없으면 DB 접속 전에 중단됩니다.
 
 Backup job이 실패하면 `[Backup] Daily DB backup failed` issue를 새로 만들거나 기존 open issue에 실패 run 링크를 추가합니다. schedule 자체가 장기간 비활성화되는 경우에는 이 알림도 실행되지 않으므로, 외부 uptime/heartbeat 모니터는 별도로 유지해야 합니다.
 
@@ -70,7 +76,7 @@ Backup job이 실패하면 `[Backup] Daily DB backup failed` issue를 새로 만
 | 필요 Secrets | `SUPABASE_DB_URL` (Dashboard > Connect의 Session pooler URI), `BACKUP_PASSPHRASE` (암호화 암구호) |
 | 암호화 이유 | 이 저장소가 public인 동안 아티팩트는 누구나 다운로드 가능 — 팀원 이름·이메일이 담긴 덤프는 평문 업로드 금지 |
 | 암구호 보관 | **분실 시 백업 복원 불가.** 비밀번호 관리자 등 통제된 곳에 보관 |
-| 확인 | 매일 Actions run이 green인지, Job Summary에 `Backup OK`가 있는지 |
+| 확인 | 매일 Actions run이 green인지, Job Summary에 `L2 application DB package`와 Auth identity 미포함 문구가 있는지 |
 
 복원 시 복호화 — 신규 `.gpg` 기본 경로:
 
@@ -78,6 +84,9 @@ Backup job이 실패하면 `[Backup] Daily DB backup failed` issue를 새로 만
 gpg --batch --pinentry-mode loopback --output db-backup.tar.gz \
   --decrypt db-backup-<date>.tar.gz.gpg
 tar tzf db-backup.tar.gz
+mkdir dr-package
+tar xzf db-backup.tar.gz -C dr-package
+node scripts/verify-dr-package.mjs dr-package
 ```
 
 기존·전환 기간 `.enc` 호환 경로:
@@ -85,12 +94,18 @@ tar tzf db-backup.tar.gz
 ```bash
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
   -in db-backup-<date>.tar.gz.enc -out db-backup.tar.gz
-tar xzf db-backup.tar.gz
+tar tzf db-backup.tar.gz
+mkdir dr-package
+tar xzf db-backup.tar.gz -C dr-package
+node scripts/verify-dr-package.mjs dr-package
 ```
 
 ### 수동 백업 (보조)
 
 Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요할 때:
+
+이 경로는 manifest·roles·migration history·암호화 전후 검증을 만들지 않는 보조 raw dump다.
+따라서 L1~L4 등급을 주장하지 않으며, 정식 L2 artifact를 대체하지 않는다.
 
 | 항목 | 내용 |
 |---|---|
@@ -104,7 +119,7 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 
 앱은 리뷰 첨부를 업로드·조회하지 않는다. 기존 `review-attachments` 버킷은 운영자 purge와 0건 확인 뒤 같은 운영 도구가 Storage API로 제거한다. Stage B `DB Migrate` 사전검사는 버킷 부재를 강제하고, 마이그레이션은 객체 race를 재확인한 뒤 정책·호환 스키마를 정리한다. 최종 스키마에는 버킷·정책·`attachment_url`이 모두 없어야 한다.
 
-> **`scripts/backup-db.ps1`은 DB(스키마·데이터)만 덤프하며 Storage 객체를 포함하지 않습니다.** 2026-07-09의 기존 결정은 첨부를 백업 대상에서 제외하는 것이었지만, 실제 purge 전에는 운영자가 이 결정을 재확인하고 승인자를 기록해야 합니다.
+> **`scripts/backup-db.ps1`은 DB(스키마·데이터)만 덤프하며 Storage 객체를 포함하지 않습니다.** 리뷰 첨부는 백업 대상이 아니므로 실제 purge 전 운영자가 이를 재확인하고 승인자를 기록해야 합니다.
 
 삭제 자동화는 [REMOVE_REVIEW_ATTACHMENTS.md](./REMOVE_REVIEW_ATTACHMENTS.md)의 장벽을 따른다. 먼저 파일명을 노출하지 않는 dry-run의 객체 수·digest를 기록하고, 승인된 운영자만 명시적 confirm으로 객체와 빈 bucket을 Storage API로 삭제한다. `verifiedRemainingObjectCount=0`, `verifiedBucketAbsent=true`, `bucketExistsAfter=false`, 재 dry-run `bucketExists=false`와 `objectCount=0`이 모두 확인되기 전에는 Stage B를 적용하지 않는다. `bucketAlreadyAbsent=true` 또는 `bucketDeleteAttempted=false`는 별도 변경 기록 대조와 승인이 필요하다. SQL로 `storage.objects`나 `storage.buckets`를 삭제하지 않는다.
 
@@ -117,9 +132,9 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 | Enable email signup | **OFF** | Authentication → Providers → Email |
 | 계정 생성 | Dashboard **Add user**만 | Authentication → Users |
 
-> 운영 프로젝트에는 `disable_signup: true`가 적용되어 있다 (2026-07-09, Management API로 적용·확인). 설정을 되돌리지 않는 한 재확인은 불필요하다.
+> 운영 프로젝트는 `disable_signup: true`를 유지해야 한다. Deploy Worker가 배포 전 실제 Auth settings endpoint를 검사하므로 이 검증을 생략하지 않는다.
 
-> **수용한 Auth 설정 — "Require current password when updating"는 coordinated rollout 전까지 OFF로 둔다** (2026-07-09 확정). 현재 lockfile은 `@supabase/supabase-js 2.110.0`을 해석해 `current_password`를 지원하지만, 배포된 구형 화면은 이를 보내지 않는다. 따라서 현재 화면·Auth 설정을 함께 교체하고 통합 검증하기 전에는 이 토글을 켜지 않는다.
+> **"Require current password when updating"는 coordinated rollout 전까지 OFF로 둔다.** 현재 client는 `current_password`를 지원하지만 구형 배포 화면은 이를 보내지 않을 수 있다. 화면·Auth 설정을 함께 교체하고 통합 검증하기 전에는 이 토글을 켜지 않는다.
 
 계정 생성 절차와 임시 비밀번호 규칙은 아래 "임시 비밀번호·첫 로그인" 절을 따릅니다.
 
@@ -132,36 +147,96 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 3. 미사용 계정이면 Users에서 삭제
 4. public sign-up이 OFF이므로 미승인 계정은 Dashboard 생성 경로에서만 생깁니다 — 계정 생성은 파트장만 수행합니다
 
-## 분기 복구 리허설
+## 분기 L2 추출 리허설
 
-1. 테스트용 Supabase 프로젝트(또는 로컬 Postgres)를 준비합니다.
-2. 최신 백업 SQL을 `psql` 또는 Supabase SQL Editor로 복원합니다.
+이 절은 application DB 추출·감사 자료가 읽히는지 확인하는 L2 리허설이다. Auth identity,
+신규 project 로그인 또는 full DR을 증명하지 않는다. 신규 Supabase project의 L3/L4 리허설은
+아래 전환 런북과 별도의 Full DR workflow를 사용한다.
 
-   > **백업 범위:** `backup.yml`의 기본 `supabase db dump`는 애플리케이션 DB 백업이며 managed `auth`/`storage` 스키마와 Storage 객체 자체를 완전한 복구 계약으로 보장하지 않습니다. Auth 사용자·설정은 별도 내보내기/재생성 절차가, Storage 객체는 위에서 정한 별도 보관 절차가 필요합니다. 실제 덤프에 우연히 포함된 객체를 장래 복구 보장으로 간주하지 않습니다.
+1. 격리된 로컬 Postgres 또는 폐기 가능한 검증 환경을 준비합니다.
+2. 최신 artifact를 복호화·압축 해제하고 `node scripts/verify-dr-package.mjs <directory>`를 실행합니다.
+3. `roles.sql` → `schema.sql` → `migration-history.sql` → `data.sql` 순서로 적용 가능성을 검토합니다.
+
+   > **백업 범위:** L2 package는 managed `auth`/`storage` schema와 Storage 객체를 포함하지 않습니다. 실제 dump에 우연히 포함된 객체를 장래 복구 보장으로 간주하지 않습니다.
    >
-   > 예시(schema 먼저, data 나중):
+   > 예시(격리된 환경에서만):
    > ```powershell
    > $env:PGPASSWORD = '<DB_PASSWORD>'
-   > psql "<DATABASE_URL>" --set ON_ERROR_STOP=1 --single-transaction -f backup/sqa-p1-workflow-<date>-schema.sql
-   > psql "<DATABASE_URL>" --set ON_ERROR_STOP=1 --single-transaction -f backup/sqa-p1-workflow-<date>-data.sql
+   > psql "<DATABASE_URL>" --set ON_ERROR_STOP=1 -f dr-package/roles.sql
+   > psql "<DATABASE_URL>" --set ON_ERROR_STOP=1 -f dr-package/schema.sql
+   > psql "<DATABASE_URL>" --set ON_ERROR_STOP=1 -f dr-package/migration-history.sql
+   > psql "<DATABASE_URL>" --set ON_ERROR_STOP=1 -f dr-package/data.sql
    > ```
-   > **폴백(덤프에 `auth` 스키마가 없을 때만):** 과거·수동 덤프처럼 `auth.users`가 빠진 백업이라면 `profiles` 복원이 FK 위반으로 실패합니다. 이때만 Dashboard > Authentication > Users에서 동일 이메일 계정을 먼저 만든 뒤 `public.profiles` → 나머지 순으로 복원합니다.
+   > L2 package로 신규 Supabase project에 `profiles`를 복원하면 Auth UUID FK 때문에 실패할 수 있습니다. 이메일이 같은 새 사용자를 만드는 것은 UUID/password hash 보존이 아니므로 L3 폴백으로 인정하지 않습니다.
 
-3. `profiles`, `review_requests`, `products` 행 수를 운영과 대조합니다.
-4. RLS smoke test를 실행합니다 (`tests/rls/setup.sql` 참고).
+4. `profiles`, `review_requests`, `products`, `private.audit_events`, migration history 행 수를 source manifest/evidence와 대조합니다.
+5. 이 환경에 별도 Auth fixture가 있다면 RLS smoke test를 실행하되, 결과를 full DR로 승격하지 않습니다 (`tests/rls/setup.sql` 참고).
    - Supabase local: `supabase start` 후 `SUPABASE_URL=http://127.0.0.1:54321` 등 env 설정, `npm test -- tests/rls`
    - 원격 테스트 DB: 동일 env + `RLS_*` 테스트 계정 변수 설정
    - local/자동화 불가 시 [TEST_PLAN.md](./TEST_PLAN.md)의 RLS 수동 검증 시나리오로 대체
-5. 리허설 날짜·담당·결과를 이 문서 하단 또는 팀 위키에 기록합니다.
+6. 리허설 날짜·담당·artifact run ID·manifest source SHA·결과를 이 문서 하단 또는 팀 위키에 기록합니다.
+
+증거 수집기는 기본적으로 host의 `psql`을 사용한다. Windows 로컬 Docker 검증에서만
+`DR_PSQL_DOCKER_CONTAINER=<local-db-container>`를 설정하면 해당 컨테이너의 `psql`을 사용한다.
+운영 Backup DB workflow에서는 이 변수를 설정하지 않는다.
+
+## 폐기 project Full DR 리허설
+
+이 경로는 Supabase의 공식 [Restore to a new project](https://supabase.com/docs/guides/platform/clone-project)
+전략만 사용한다. 유료 plan·physical backup이 필요하며 현재 beta 기능이다. Dashboard clone은
+Auth 사용자 UUID와 password hash를 포함하지만 Auth settings/API keys, Realtime settings,
+Storage, Edge Functions 등은 별도로 재설정해야 한다. ad-hoc `auth.users` INSERT는 금지한다.
+
+`.github/workflows/dr-rehearsal.yml`은 clone을 생성하거나 production에 접속하지 않는다. 승인자가
+Dashboard에서 만든 폐기 target을 다음 순서로 검증한다.
+
+1. source write를 통제한 시점의 **Backup DB** L2 artifact와 동일 시점의 physical backup을 선택해
+   신규 project로 clone한다. 두 snapshot이 다르면 exact row/checksum 비교가 실패하며 성공으로 우회하지 않는다.
+2. target에서 Auth email signup OFF, email confirmation ON, anonymous OFF, email provider ON과
+   Realtime/extension 설정을 재적용한다. Worker는 배포하지 않는다.
+3. GitHub `dr-rehearsal` environment에 승인자를 지정하고 아래 설정을 등록한다.
+
+| 종류 | 이름 | 용도 |
+|---|---|---|
+| Variable | `DR_ALLOWED_TARGET_REFS` | comma/space 구분 폐기 target ref allowlist |
+| Secret | `DR_PRODUCTION_PROJECT_REF` | target과 production 동일성 즉시 차단 |
+| Secret | `DR_TARGET_DB_URL` | target Session pooler/direct DB URL만 허용 |
+| Secret | `DR_TARGET_SUPABASE_URL` | 정확히 `https://<target-ref>.supabase.co` |
+| Secret | `DR_TARGET_ANON_KEY` | target 공개 Auth/RLS smoke |
+| Secret | `DR_TARGET_SERVICE_ROLE_KEY` | target에만 RLS fixture 생성 |
+| Secret | `DR_PRESERVED_USER_EMAIL` | clone 전부터 존재한 지정 시험계정 |
+| Secret | `DR_PRESERVED_USER_PASSWORD` | 지정 시험계정의 기존 비밀번호 |
+| Secret | `DR_PRESERVED_USER_ID` | source에서 기록한 동일 시험계정 UUID |
+| Secret | `BACKUP_PASSPHRASE` | 선택한 L2 artifact 복호화 |
+
+4. Actions → **Full DR Rehearsal**에서 `platform_clone`, Backup DB run ID와 exact source SHA,
+   target ref를 입력한다. `clone_completed=true`, `confirm_disposable_target=true`를 명시하고
+   `target_disposition`을 선택한다.
+5. workflow는 trusted backup run과 암호문을 검증하고, target DB URL/ref를 결합한 뒤 Auth UUID,
+   핵심 row/checksum, migration, extension/Realtime, Storage 0건, 모든 FK orphan 0을 비교한다.
+6. 보존 시험계정이 기존 비밀번호와 동일 UUID로 로그인되는지 먼저 확인한다. 그 뒤 target에만
+   fixture를 만들고 leader/member/inactive/must-change-password RLS, audit RPC, review lifecycle,
+   change-task 권한 시나리오를 skip 0으로 실행한다.
+7. 성공 artifact의 `restored-project.json`, target evidence, RLS JSON과 run ID를 보관한다.
+   raw source evidence, password, token, key는 artifact에 올리지 않는다.
+8. `delete_after_evidence`를 선택했다면 **operator가 Supabase Dashboard에서 폐기 target을 삭제해야 한다.**
+   `preserve_approved`는 environment 승인 기록과 종료 시각을 남기고 접근을 제한한다.
+
+target은 RLS fixture로 변형되므로 운영 전환 대상으로 재사용하지 않는다. workflow 실패 시 target을
+삭제하고 source production에는 어떤 write, restore, migration repair도 수행하지 않는다.
+
+로컬 RLS/readiness/L2 package 검증은 원격 clone이나 보존 Auth 로그인을 증명하지 않는다.
+Full DR은 `dr-rehearsal` environment와 폐기 가능한 target 자격증명을 사용한 성공 run ID,
+Auth UUID/FK/login 증거가 있을 때만 완료로 판정한다.
 
 ### 운영 장애 시 신규 Supabase 프로젝트 전환 런북
 
-운영 DB가 손상됐거나 기존 프로젝트를 신뢰할 수 없을 때는 기존 DB에 덮어쓰지 말고 신규 프로젝트로 전환합니다. 아래 작업은 장애 책임자와 검증 담당자 2인이 함께 수행합니다.
+운영 DB가 손상됐거나 기존 프로젝트를 신뢰할 수 없을 때는 기존 DB에 덮어쓰지 말고 신규 프로젝트로 전환합니다. **L2 artifact만으로 이 절차를 시작하지 않습니다.** Auth 사용자 UUID/hash를 포함하는 Supabase physical-backup clone 또는 폐기 project에서 검증된 공식 Auth 이전 경로와 L3/L4 manifest가 필요합니다. 아래 작업은 장애 책임자와 검증 담당자 2인이 함께 수행합니다.
 
 1. 장애 시각을 기록하고 기존 Worker 배포를 중단합니다. 손상된 운영 DB에는 추가 migration이나 복원 SQL을 실행하지 않습니다.
 2. 서울 리전(`ap-northeast-2`)에 신규 Supabase 프로젝트를 생성하고 새 프로젝트의 DB URL·project URL·anon key를 비밀번호 관리자에 보관합니다.
-3. 최신 백업 artifact를 내려받아 암구호로 복호화하고, 파일 크기와 schema의 `CREATE TABLE`, data의 `COPY`/`INSERT`를 확인합니다.
-4. 신규 프로젝트에 schema → data 순서로 복원합니다. 오류가 하나라도 있으면 전환하지 말고 새 프로젝트를 다시 비운 뒤 원인을 해결합니다.
+3. 선택한 공식 복구 경로가 Auth UUID/hash를 보존하는지 확인하고, 최신 package를 복호화한 뒤 `verify-dr-package.mjs`로 L3 이상인지 검증합니다. L2이면 중단합니다.
+4. 공식 경로에 맞춰 Auth identity와 application DB를 복원합니다. 오류가 하나라도 있으면 전환하지 말고 폐기 가능한 target에서 원인을 해결합니다.
 5. Auth 설정을 재적용합니다: email signup OFF, Site URL/Redirect URL, SMTP·메일 설정, 비밀번호 최소 길이와 현재 비밀번호 요구 정책을 운영 기준과 대조합니다.
 6. GitHub Actions의 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_DB_URL`을 신규 프로젝트 값으로 교체합니다. 이전 값은 즉시 폐기하지 말고 제한된 비상 롤백 기록으로만 보관합니다.
 7. 신규 DB의 `supabase_migrations.schema_migrations`와 로컬 migration 목록을 대조합니다. 복원된 객체를 확인하지 않고 `migration repair --status applied`를 사용하지 않습니다.
@@ -251,6 +326,12 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 
 새 운영 마이그레이션의 정규 경로는 보호된 **Actions → DB Migrate**(workflow_dispatch)입니다. 로컬 `npx supabase db push`는 Actions를 사용할 수 없는 장애 대응용 break-glass 경로이며, 동일한 백업·대상 프로젝트 확인·검증 증거와 승인 기록 없이는 사용하지 않습니다. 절차와 확인 SQL은 [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) 참고.
 
+**Deploy Worker** production 실행은 Backup DB·DB Migrate와 동일한 `sqa-production-release` concurrency group에서 순차 처리하며 진행 중 실행을 취소하지 않습니다. 입력한 CI run이 `push`·`main`·동일 SHA·success인지, DB Migrate run이 24시간 이내 `workflow_dispatch`·`main`·동일 SHA·success인지 먼저 검증합니다. 빌드는
+`/version.json`에 검토 SHA, Git ref, `package-lock.json`, readiness manifest의 SHA-256을 기록합니다. 배포 후 workflow가
+live `/version.json`을 다시 받아 현재 `github.sha` 및 로컬 두 hash와 일치하는지 확인하고, 응답의
+`Cache-Control: no-store`와 기존 root/CSP/nosniff 검사를 모두 통과해야 합니다. Job Summary의 live SHA 증거가 없으면
+검토한 SHA와 배포된 SHA가 같다고 선언하지 않습니다.
+
 Windows에서 `npm ci`가 `EPERM`으로 실패하면, 다른 터미널·에디터에서 `node_modules`를 잠그고 있지 않은지 확인한 뒤 해당 폴더를 삭제하고 다시 실행하세요.
 
 ## 데이터 시드 재생성 (선택)
@@ -273,12 +354,6 @@ Windows에서 `npm ci`가 `EPERM`으로 실패하면, 다른 터미널·에디�
 | 3 | 병합 후 중복 행 삭제 | `group by name having count(*) > 1` 결과 0건 |
 | 4 | `202607060002` migration 적용 | `products_name_key` 존재, RPC 생성 |
 | 5 | `202607060003` migration 적용 (선택 감사) | `product_dedup_audit`에 기록 확인 |
-
-## 복구 리허설 기록
-
-| 날짜 | 담당 | 백업 파일 | 결과 |
-|---|---|---|---|
-| 2026-07-09 | 파트장 + Claude | db-backup-2026-07-09 (Backup DB run 29015812702) | 성공 — 복호화 후 테스트 프로젝트에 schema→data 복원, 에러 0건. 행 수 대조: 사용자 10 / 제품 218 / 배정 198 / 직무 25. 리허설 중 최초 `BACKUP_PASSPHRASE` 분실 발견 → 교체·재백업으로 해결(암구호는 비밀번호 관리자 보관 필수) |
 
 ## 감사 v3 배포 확인
 

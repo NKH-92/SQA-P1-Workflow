@@ -60,11 +60,16 @@ describe('review workflow hardening Stage B migration', () => {
 
   it('splits disposable migration replay around the same Storage API handoff', () => {
     expect(localRlsGateScript).toContain('20260718073243_finalize_review_workflow_hardening.sql')
-    expect(localRlsGateScript).toContain('20260718123250_remove_obsolete_review_status_rpc.sql')
+    expect(localRlsGateScript).toContain("readdirSync(resolve(root, 'supabase/migrations'))")
+    expect(localRlsGateScript).toContain(
+      ".filter((name) => /^\\d{12,14}_.+\\.sql$/.test(name) && name >= firstHeld)",
+    )
+    expect(localRlsGateScript).toContain('.sort()')
     expect(localRlsGateScript).toContain('renameSync(source, destination)')
     expect(localRlsGateScript).toContain('restoreMigrations(heldMigrations)')
     expect(localRlsGateScript).toContain("'--confirm=PURGE_REVIEW_ATTACHMENTS'")
     expect(localRlsGateScript).toContain("runSupabase(['migration', 'up', '--local', '--include-all'])")
+    expect(localRlsGateScript).toContain("runSupabase(['db', 'lint', '--local', '--level', 'error', '--fail-on', 'error'])")
     expect(localRlsGateScript).toContain('toRootRelativePath(evidenceSql)')
     expect(localRlsGateScript).toContain('runCanonicalSql(verificationSql, temporaryDirectory)')
     expect(localRlsGateScript).toContain('SQA_RLS_GATE_UNSUPPORTED_CANONICAL_SQL')

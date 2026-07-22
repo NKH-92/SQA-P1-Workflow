@@ -143,7 +143,9 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
     const detail = page.getByRole('article').filter({ hasText: reviewTitle }).first()
     await expect(detail.getByRole('button', { name: /완료 처리|승인/ })).toBeVisible()
 
-    // Owner advances updated_at while the leader page still holds the stale revision.
+    // Pause the approval RPC after the browser has captured its expected revision,
+    // then advance updated_at. This keeps Realtime refreshes from racing the test
+    // setup and guarantees the request reaching PostgREST is genuinely stale.
     const member = await signInClient(
       fixtureEnv('REMOTE_E2E_MEMBER_A_EMAIL'),
       fixtureEnv('REMOTE_E2E_MEMBER_A_PASSWORD'),
@@ -154,16 +156,36 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
       .eq('id', reviewId)
       .single()
     expect(snapshot.error).toBeNull()
-    const bump = await member.rpc('update_review_request', {
-      p_review_request_id: reviewId,
-      p_expected_updated_at: snapshot.data!.updated_at,
-      p_title: reviewTitle,
-      p_description: `${snapshot.data!.description ?? ''} concurrent edit`,
-      p_due_date: snapshot.data!.due_date,
+    let concurrentEditInjected = false
+    let concurrentEditCompleted = false
+    let concurrentEditError: unknown
+    await page.route('**/rest/v1/rpc/approve_review_request', async (route) => {
+      if (route.request().method() === 'POST' && !concurrentEditInjected) {
+        concurrentEditInjected = true
+        try {
+          const bump = await member.rpc('update_review_request', {
+            p_review_request_id: reviewId,
+            p_expected_updated_at: snapshot.data!.updated_at,
+            p_title: reviewTitle,
+            p_description: `${snapshot.data!.description ?? ''} concurrent edit`,
+            p_due_date: snapshot.data!.due_date,
+          })
+          concurrentEditError = bump.error
+        } catch (error) {
+          concurrentEditError = error
+        } finally {
+          concurrentEditCompleted = true
+        }
+      }
+      await route.continue()
     })
-    expect(bump.error, 'concurrent owner edit must succeed to create stale state').toBeNull()
 
     await detail.getByRole('button', { name: /완료 처리|승인/ }).click()
+    await expect.poll(
+      () => concurrentEditCompleted,
+      { message: 'approval RPC must pass through the OCC race gate', timeout: 15_000 },
+    ).toBe(true)
+    expect(concurrentEditError, 'concurrent owner edit must succeed to create stale state').toBeNull()
     await expect(page.getByText(/다른 사용자가 변경했습니다|새로고침 후 다시 시도/i).first()).toBeVisible({
       timeout: 15_000,
     })

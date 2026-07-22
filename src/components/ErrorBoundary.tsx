@@ -1,10 +1,18 @@
 import React from 'react'
+import { reportError } from '../lib/errorReporter'
+import type { ErrorReportRole } from '../lib/errorReporter'
+
+type ErrorBoundaryProps = {
+  children: React.ReactNode
+  /** 알려진 경우의 역할. 인증 전 등 알 수 없을 때는 기본값 'unknown'으로 보고된다. */
+  role?: ErrorReportRole
+}
 
 type ErrorBoundaryState = {
   hasError: boolean
 }
 
-export class ErrorBoundary extends React.Component<{ children: React.ReactNode }, ErrorBoundaryState> {
+export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { hasError: false }
 
   static getDerivedStateFromError() {
@@ -12,7 +20,13 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error('Unhandled render error', error, info)
+    reportError({
+      error,
+      route: typeof window !== 'undefined' ? window.location.hash || window.location.pathname : 'unknown',
+      role: this.props.role ?? 'unknown',
+      operation: 'render',
+      context: info.componentStack ?? undefined,
+    })
   }
 
   render() {

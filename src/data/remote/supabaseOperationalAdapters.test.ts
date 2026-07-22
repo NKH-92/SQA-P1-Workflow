@@ -4,11 +4,16 @@ import { createPreviewData, previewLeader } from '../../demoData'
 const mocks = vi.hoisted(() => ({
   from: vi.fn(),
   insert: vi.fn(),
+  reportError: vi.fn(),
 }))
 
 vi.mock('../../lib/supabase', () => ({
   hasSupabaseConfig: true,
   supabase: { from: mocks.from },
+}))
+
+vi.mock('../../lib/errorReporter', () => ({
+  reportError: mocks.reportError,
 }))
 
 import { createSupabaseActivityLogWriter } from './supabaseActivityLogWriter'
@@ -18,6 +23,7 @@ describe('remote operational adapters', () => {
   beforeEach(() => {
     mocks.from.mockReset().mockReturnValue({ insert: mocks.insert })
     mocks.insert.mockReset().mockResolvedValue({ error: null })
+    mocks.reportError.mockReset()
   })
 
   it('persists profile notes through the team repository', async () => {
@@ -57,5 +63,34 @@ describe('remote operational adapters', () => {
       action: 'updated',
       metadata: {},
     }))
+    expect(mocks.reportError).not.toHaveBeenCalled()
+  })
+
+  it('reports activity write failures without forwarding activity payload fields', async () => {
+    const error = new Error('database row included private@example.test')
+    mocks.insert.mockResolvedValueOnce({ error })
+    const writer = createSupabaseActivityLogWriter()
+
+    await writer.write({
+      actor: previewLeader,
+      targetUserId: 'private-target-id',
+      entityType: 'project',
+      entityId: 'private-entity-id',
+      action: 'updated',
+      summary: 'private summary',
+      metadata: { private: 'value' },
+    })
+
+    expect(mocks.reportError).toHaveBeenCalledWith({
+      error,
+      route: expect.any(String),
+      role: 'leader',
+      operation: 'activity-log-write',
+    })
+    const reportInput = mocks.reportError.mock.calls[0]?.[0]
+    expect(reportInput).not.toHaveProperty('targetUserId')
+    expect(reportInput).not.toHaveProperty('entityId')
+    expect(reportInput).not.toHaveProperty('summary')
+    expect(reportInput).not.toHaveProperty('metadata')
   })
 })

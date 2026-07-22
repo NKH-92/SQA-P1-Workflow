@@ -1,12 +1,14 @@
 import { MousePointerClick } from 'lucide-react'
 import { EmptyState } from '../../../components/ui'
-import type { Profile, ReviewRequest, ReviewStatus } from '../../../types'
+import type { Profile, ReviewEvent, ReviewRequest, ReviewStatus } from '../../../types'
+import { ReviewEventHistory } from './ReviewEventHistory'
 import { ReviewRequestItem } from './ReviewRequestItem'
 
 type ReviewDetailProps = {
   profile: Profile
   selectedReview: ReviewRequest | null
   pendingWithdrawId: string | null
+  localEvents?: ReviewEvent[]
   onEdit: (request: ReviewRequest) => void
   onWithdraw: (id: string | null) => void
   withdrawReview: (requestId: string) => void
@@ -23,6 +25,7 @@ export function ReviewDetail({
   profile,
   selectedReview,
   pendingWithdrawId,
+  localEvents = [],
   onEdit,
   onWithdraw,
   withdrawReview,
@@ -37,22 +40,29 @@ export function ReviewDetail({
   return (
     <div className="review-detail-pane" aria-live="polite">
       {selectedReview ? (
-        <ReviewRequestItem
-          addFeedback={addFeedback}
-          key={selectedReview.id}
-          onEdit={onEdit}
-          onWithdraw={onWithdraw}
-          pendingWithdraw={pendingWithdrawId === selectedReview.id}
-          profile={profile}
-          rejectReview={rejectReview}
-          reopenReview={reopenReview}
-          resubmitReview={resubmitReview}
-          updateFeedback={updateFeedback}
-          voidFeedback={voidFeedback}
-          request={selectedReview}
-          updateStatus={updateStatus}
-          withdrawReview={withdrawReview}
-        />
+        <>
+          <ReviewRequestItem
+            addFeedback={addFeedback}
+            key={selectedReview.id}
+            onEdit={onEdit}
+            onWithdraw={onWithdraw}
+            pendingWithdraw={pendingWithdrawId === selectedReview.id}
+            profile={profile}
+            rejectReview={rejectReview}
+            reopenReview={reopenReview}
+            resubmitReview={resubmitReview}
+            updateFeedback={updateFeedback}
+            voidFeedback={voidFeedback}
+            request={selectedReview}
+            updateStatus={updateStatus}
+            withdrawReview={withdrawReview}
+          />
+          <ReviewEventHistory
+            key={`history-${selectedReview.id}`}
+            localEvents={localEvents}
+            reviewRequestId={selectedReview.id}
+          />
+        </>
       ) : (
         <EmptyState
           icon={<MousePointerClick size={22} />}

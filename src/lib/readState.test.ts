@@ -59,12 +59,12 @@ describe('server-backed review read state', () => {
   it('uses feedback_voided as the latest relevant member event for every receipt projection', () => {
     expect(isReviewUnread(request, member, data([feedback, voidedFeedback]))).toBe(true)
     expect(latestRelevantReviewEventIdsByRequest([request], member, [feedback, voidedFeedback]))
-      .toEqual(new Map([[request.id, 12]]))
+      .toEqual(new Map([[request.id, '12']]))
     expect(buildReviewReadReceipts([request], member, [feedback, voidedFeedback], '2026-07-18T00:02:00.000Z'))
       .toEqual([{
         user_id: member.id,
         review_request_id: request.id,
-        last_seen_event_id: 12,
+        last_seen_event_id: '12',
         read_at: '2026-07-18T00:02:00.000Z',
       }])
   })

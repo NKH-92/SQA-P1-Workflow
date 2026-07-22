@@ -10,6 +10,11 @@ import {
   assertFeedbackComment,
   assertReviewStatusTransition,
 } from '../validation/reviews'
+import { translateReviewOccError } from './reviewOccError'
+
+function throwReviewError(error: { message?: string }): never {
+  throw translateReviewOccError(error)
+}
 
 export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepository {
   const { profile, data, setData } = ctx
@@ -26,7 +31,7 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
           p_description: payload.description,
           p_due_date: payload.due_date,
         })
-        if (error) throw error
+        if (error) throwReviewError(error)
         return { reviewId: editingReviewId, isUpdate: true }
       }
 
@@ -35,7 +40,7 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
         p_description: payload.description,
         p_due_date: payload.due_date,
       })
-      if (error) throw error
+      if (error) throwReviewError(error)
       return { reviewId: typeof createdId === 'string' ? createdId : '', isUpdate: false }
     },
 
@@ -47,7 +52,7 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
         p_expected_updated_at: request.updated_at,
         p_reason: reason.trim(),
       })
-      if (error) throw error
+      if (error) throwReviewError(error)
     },
 
     async rejectReviewRequest(requestId, comment) {
@@ -59,7 +64,7 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
         p_expected_updated_at: request.updated_at,
         p_comment: comment.trim(),
       })
-      if (error) throw error
+      if (error) throwReviewError(error)
     },
 
     async updateReviewStatus(requestId, status) {
@@ -71,7 +76,7 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
         p_review_request_id: requestId,
         p_expected_updated_at: request.updated_at,
       })
-      if (error) throw error
+      if (error) throwReviewError(error)
     },
 
     async reopenReviewRequest(requestId) {
@@ -82,7 +87,7 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
         p_review_request_id: requestId,
         p_expected_updated_at: request.updated_at,
       })
-      if (error) throw error
+      if (error) throwReviewError(error)
     },
 
     async resubmitReviewRequest(requestId, comment) {
@@ -98,7 +103,7 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
         p_expected_updated_at: request.updated_at,
         p_comment: comment.trim(),
       })
-      if (error) throw error
+      if (error) throwReviewError(error)
     },
 
     async addReviewFeedback(requestId, comment) {
@@ -107,7 +112,7 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
         p_review_request_id: requestId,
         p_comment: comment.trim(),
       })
-      if (error) throw error
+      if (error) throwReviewError(error)
       return typeof createdId === 'string' ? createdId : null
     },
 
@@ -122,7 +127,7 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
         p_expected_updated_at: feedback.updated_at ?? feedback.created_at,
         p_comment: comment.trim(),
       })
-      if (error) throw error
+      if (error) throwReviewError(error)
     },
 
     async voidReviewFeedback(feedbackId, reason) {
@@ -135,7 +140,7 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
         p_expected_updated_at: feedback.updated_at ?? feedback.created_at,
         p_reason: reason.trim(),
       })
-      if (error) throw error
+      if (error) throwReviewError(error)
     },
 
     async markReviewSeen(requestId) {
@@ -143,8 +148,8 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
         p_review_request_id: requestId,
       })
       if (error) throw error
-      const parsedEventId = Number(latestEventId)
-      if (!Number.isFinite(parsedEventId)) return
+      const parsedEventId = latestEventId == null ? '' : String(latestEventId)
+      if (!/^\d+$/.test(parsedEventId)) return
       setData((current) => ({
         ...current,
         reviewReadReceipts: [

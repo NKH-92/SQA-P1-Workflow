@@ -8,14 +8,15 @@ import {
   type ReviewStatsFilters,
 } from './reviewStats.selectors'
 
-const now = new Date(2026, 6, 15, 12)
+// Fixed Asia/Seoul instants keep this business-day contract host-independent.
+const now = new Date('2026-07-15T03:00:00.000Z')
 const profiles: Profile[] = [
   { id: 'member-a', email: 'a@example.com', name: '가 요청자', role: 'member' },
   { id: 'member-b', email: 'b@example.com', name: '나 요청자', role: 'member', is_active: false },
 ]
 
 function localIso(year: number, month: number, day: number, hour = 12, minute = 0, second = 0, millisecond = 0) {
-  return new Date(year, month - 1, day, hour, minute, second, millisecond).toISOString()
+  return new Date(Date.UTC(year, month - 1, day, hour - 9, minute, second, millisecond)).toISOString()
 }
 
 function review(
@@ -78,10 +79,46 @@ function filters(overrides: Partial<ReviewStatsFilters> = {}): ReviewStatsFilter
   }
 }
 
+function event(
+  id: number,
+  request: ReviewRequest,
+  eventType: ReviewEvent['event_type'],
+  occurredAt: string,
+  toStatus: ReviewStatus | null,
+): ReviewEvent {
+  return {
+    id,
+    review_request_id: request.id,
+    actor_id: request.requester_id,
+    actor_name_snapshot: request.profiles?.name ?? '요청자',
+    event_type: eventType,
+    from_status: eventType === 'submitted' ? null : 'pending',
+    to_status: toStatus,
+    occurred_at: occurredAt,
+    metadata: { estimated: false },
+    transaction_id: id,
+  }
+}
+
+const invariantKeys = [
+  'requestCount',
+  'submissionCount',
+  'resubmissionCount',
+  'pendingCount',
+  'approvedCount',
+  'rejectedCount',
+] as const
+
+function expectRequesterRowInvariant(result: ReturnType<typeof selectReviewStats>) {
+  for (const key of invariantKeys) {
+    expect(result.requesterRows.reduce((sum, row) => sum + row[key], 0), key).toBe(result.kpis[key])
+  }
+}
+
 describe('reviewStats.selectors', () => {
   it('starts at the first fully loaded local day and excludes older pending requests too', () => {
     expect(getReviewStatsAvailableRange(now)).toEqual({ minDate: '2026-01-16', maxDate: '2026-07-15' })
-    expect(getReviewStatsAvailableRange(new Date(2026, 6, 15, 0, 0, 0, 0))).toEqual({
+    expect(getReviewStatsAvailableRange(new Date('2026-07-14T15:00:00.000Z'))).toEqual({
       minDate: '2026-01-15',
       maxDate: '2026-07-15',
     })
@@ -305,5 +342,117 @@ describe('reviewStats.selectors', () => {
       { id: 'removed-member', name: '삭제된 계정 요청자', inactive: false },
     ])
     expect(result.requesterRows[0]?.requesterName).toBe('삭제된 계정 요청자')
+  })
+
+  it('does not leak an old pending request into a requester row with an in-period approval event', () => {
+    const oldPending = review('old-pending', 'member-a', localIso(2026, 2, 1), 'pending', 1)
+    const historicalApproved = review('historical-approved', 'member-a', localIso(2026, 2, 2), 'approved', 7)
+    const reviewEvents = [
+      event(1, historicalApproved, 'approved', localIso(2026, 6, 10), 'approved'),
+    ]
+
+    const result = selectReviewStats(
+      { profiles, reviewRequests: [oldPending, historicalApproved], reviewEvents },
+      filters({
+        preset: 'custom',
+        customStartDate: '2026-06-01',
+        customEndDate: '2026-06-30',
+      }),
+      now,
+    )
+
+    expect(result.kpis).toEqual({
+      requestCount: 0,
+      submissionCount: 0,
+      resubmissionCount: 0,
+      pendingCount: 0,
+      approvedCount: 1,
+      rejectedCount: 0,
+    })
+    expect(result.requesterRows).toHaveLength(1)
+    expect(result.requesterRows[0]).toMatchObject({
+      requesterId: 'member-a',
+      pendingCount: 0,
+      approvedCount: 1,
+    })
+    expectRequesterRowInvariant(result)
+  })
+
+  it('unions current-state and event-only requesters without estimating event counts from review_round', () => {
+    const currentPending = review('current-pending', 'member-a', localIso(2026, 6, 5), 'pending', 1)
+    const removedProfile = review('event-only', 'removed-member', localIso(2025, 12, 1), 'approved', 99)
+    removedProfile.profiles = { name: '삭제된 이벤트 요청자', email: 'removed@example.com' }
+    const reviewEvents = [
+      event(1, currentPending, 'submitted', localIso(2026, 6, 5), 'pending'),
+      event(2, removedProfile, 'approved', localIso(2026, 6, 10), 'approved'),
+    ]
+
+    const result = selectReviewStats(
+      { profiles: [], reviewRequests: [currentPending, removedProfile], reviewEvents },
+      filters({
+        preset: 'custom',
+        customStartDate: '2026-06-01',
+        customEndDate: '2026-06-30',
+      }),
+      now,
+    )
+
+    expect(result.requesterOptions).toContainEqual({
+      id: 'removed-member',
+      name: '삭제된 이벤트 요청자',
+      inactive: false,
+    })
+    expect(result.requesterRows).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        requesterId: 'member-a',
+        requestCount: 1,
+        submissionCount: 1,
+        pendingCount: 1,
+      }),
+      expect.objectContaining({
+        requesterId: 'removed-member',
+        requestCount: 0,
+        submissionCount: 0,
+        pendingCount: 0,
+        approvedCount: 1,
+      }),
+    ]))
+    expectRequesterRowInvariant(result)
+  })
+
+  it('preserves every KPI-to-requester-row invariant across requester and current-status filters', () => {
+    const oldPending = review('old-pending', 'member-a', localIso(2026, 2, 1), 'pending', 1)
+    const oldApproved = review('old-approved', 'member-a', localIso(2026, 2, 2), 'approved', 8)
+    const currentRejected = review('current-rejected', 'member-b', localIso(2026, 6, 3), 'rejected', 1)
+    const reviewRequests = [oldPending, oldApproved, currentRejected]
+    const reviewEvents = [
+      event(1, oldApproved, 'approved', localIso(2026, 6, 10), 'approved'),
+      event(2, currentRejected, 'submitted', localIso(2026, 6, 3), 'pending'),
+      event(3, currentRejected, 'rejected', localIso(2026, 6, 4), 'rejected'),
+    ]
+    const requestOrder = reviewRequests.map((request) => request.id)
+    const eventOrder = reviewEvents.map((reviewEvent) => reviewEvent.id)
+    const requesterIds: ReviewStatsFilters['requesterId'][] = ['all', 'member-a', 'member-b']
+    const statuses: ReviewStatsFilters['status'][] = ['all', 'pending', 'approved', 'rejected', 'withdrawn']
+
+    for (const requesterId of requesterIds) {
+      for (const status of statuses) {
+        const result = selectReviewStats(
+          { profiles, reviewRequests, reviewEvents },
+          filters({
+            preset: 'custom',
+            requesterId,
+            status,
+            customStartDate: '2026-06-01',
+            customEndDate: '2026-06-30',
+          }),
+          now,
+        )
+        expectRequesterRowInvariant(result)
+      }
+    }
+
+    expect(reviewRequests.map((request) => request.id)).toEqual(requestOrder)
+    expect(reviewEvents.map((reviewEvent) => reviewEvent.id)).toEqual(eventOrder)
   })
 })

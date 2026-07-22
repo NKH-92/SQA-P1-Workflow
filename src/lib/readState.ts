@@ -1,4 +1,5 @@
 import type { AppData, Profile, ReviewEvent, ReviewReadReceipt, ReviewRequest } from '../types'
+import { compareDecimalIds, maxDecimalId } from './decimalId'
 
 const leaderRelevantEvents = new Set<ReviewEvent['event_type']>(['submitted', 'resubmitted'])
 const memberRelevantEvents = new Set<ReviewEvent['event_type']>([
@@ -22,7 +23,7 @@ export function latestRelevantReviewEvent(
 ): ReviewEvent | null {
   return (data.reviewEvents ?? []).reduce<ReviewEvent | null>((latest, event) => {
     if (event.review_request_id !== request.id || !isRelevantReviewEvent(event, request, profile)) return latest
-    return !latest || Number(event.id) > Number(latest.id) ? event : latest
+    return !latest || compareDecimalIds(event.id, latest.id) > 0 ? event : latest
   }, null)
 }
 
@@ -30,16 +31,16 @@ export function latestRelevantReviewEventIdsByRequest(
   requests: ReviewRequest[],
   profile: Profile,
   events: ReviewEvent[],
-): Map<string, number> {
+): Map<string, string> {
   const requestsById = new Map(requests.map((request) => [request.id, request]))
-  const latestByRequest = new Map<string, number>()
+  const latestByRequest = new Map<string, string>()
 
   for (const event of events) {
     const request = requestsById.get(event.review_request_id)
     if (!request || !isRelevantReviewEvent(event, request, profile)) continue
     latestByRequest.set(
       request.id,
-      Math.max(latestByRequest.get(request.id) ?? 0, Number(event.id)),
+      maxDecimalId(latestByRequest.get(request.id) ?? null, event.id),
     )
   }
 
@@ -69,7 +70,7 @@ export function isReviewUnread(request: ReviewRequest, profile: Profile, data: A
   const receipt = (data.reviewReadReceipts ?? []).find(
     (item) => item.user_id === profile.id && item.review_request_id === request.id,
   )
-  return !receipt || Number(receipt.last_seen_event_id) < Number(latest.id)
+  return !receipt || compareDecimalIds(receipt.last_seen_event_id, latest.id) < 0
 }
 
 export function countUnreadReviews(profile: Profile, data: AppData) {

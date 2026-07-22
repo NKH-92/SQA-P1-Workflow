@@ -301,6 +301,7 @@ export function ReviewsPanel({
             <div className="kanban-detail">
               <ReviewDetail
                 addFeedback={addFeedback}
+                localEvents={data.reviewEvents}
                 onEdit={openReviewEditor}
                 onWithdraw={(id) => setPendingWithdrawId(id)}
                 pendingWithdrawId={pendingWithdrawId}
@@ -332,6 +333,7 @@ export function ReviewsPanel({
           />
           <ReviewDetail
             addFeedback={addFeedback}
+            localEvents={data.reviewEvents}
             onEdit={openReviewEditor}
             onWithdraw={(id) => setPendingWithdrawId(id)}
             pendingWithdrawId={pendingWithdrawId}

@@ -8,7 +8,7 @@ import { ActivityPanel } from './ActivityPanel'
 
 const events: AuditEvent[] = [
   {
-    id: 5,
+    id: '5',
     entity_type: 'announcement',
     entity_id: '00000000-0000-0000-0000-000000000005',
     action: 'inserted',
@@ -26,7 +26,7 @@ const events: AuditEvent[] = [
     changed_at: '2026-07-18T15:00:00.000Z',
   },
   {
-    id: 4,
+    id: '4',
     entity_type: 'project',
     entity_id: '00000000-0000-0000-0000-000000000004',
     action: 'updated',
@@ -40,7 +40,7 @@ const events: AuditEvent[] = [
     changed_at: '2026-07-18T14:00:00.000Z',
   },
   {
-    id: 3,
+    id: '3',
     entity_type: 'profile_note',
     entity_id: '00000000-0000-0000-0000-000000000003',
     action: 'deleted',
@@ -57,7 +57,7 @@ const events: AuditEvent[] = [
     changed_at: '2026-07-18T13:00:00.000Z',
   },
   {
-    id: 2,
+    id: '2',
     entity_type: 'product',
     entity_id: '00000000-0000-0000-0000-000000000002',
     action: 'deleted',
@@ -71,7 +71,7 @@ const events: AuditEvent[] = [
     changed_at: '2026-07-18T12:00:00.000Z',
   },
   {
-    id: 1,
+    id: '1',
     entity_type: 'profile',
     entity_id: '00000000-0000-0000-0000-000000000001',
     action: 'inserted',

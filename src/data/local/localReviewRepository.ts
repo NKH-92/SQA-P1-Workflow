@@ -265,7 +265,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
           {
             user_id: profile.id,
             review_request_id: requestId,
-            last_seen_event_id: Number(latest.id),
+            last_seen_event_id: String(latest.id),
             read_at: new Date().toISOString(),
           },
         ],

@@ -19,7 +19,15 @@ function appendEvent(
   occurredAt: string,
   metadata: Record<string, unknown> = {},
 ): AppData {
-  const id = Math.max(0, ...(data.reviewEvents ?? []).map((event) => event.id)) + 1
+  const nextId = (data.reviewEvents ?? []).reduce((highest, event) => {
+    try {
+      const candidate = BigInt(event.id)
+      return candidate > highest ? candidate : highest
+    } catch {
+      return highest
+    }
+  }, 0n) + 1n
+  const id = nextId <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(nextId) : nextId.toString()
   return {
     ...data,
     reviewEvents: [

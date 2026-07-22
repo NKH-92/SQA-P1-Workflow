@@ -57,12 +57,12 @@ describe('review read-state repository parity', () => {
     const single = stateHarness()
     await createLocalReviewRepository({ profile: member, data: single.current, setData: single.setData, activityLogs })
       .markReviewSeen(request.id)
-    expect(single.current.reviewReadReceipts?.[0]?.last_seen_event_id).toBe(11)
+    expect(single.current.reviewReadReceipts?.[0]?.last_seen_event_id).toBe('11')
 
     const all = stateHarness()
     await createLocalReviewRepository({ profile: member, data: all.current, setData: all.setData, activityLogs })
       .markAllRelevantReviewsSeen()
-    expect(all.current.reviewReadReceipts?.[0]?.last_seen_event_id).toBe(11)
+    expect(all.current.reviewReadReceipts?.[0]?.last_seen_event_id).toBe('11')
   })
 
   it('projects the same feedback_voided receipt after the remote mark-all RPC', async () => {
@@ -71,6 +71,6 @@ describe('review read-state repository parity', () => {
       .markAllRelevantReviewsSeen()
 
     expect(mocks.rpc).toHaveBeenCalledWith('mark_all_relevant_reviews_seen')
-    expect(state.current.reviewReadReceipts?.[0]?.last_seen_event_id).toBe(11)
+    expect(state.current.reviewReadReceipts?.[0]?.last_seen_event_id).toBe('11')
   })
 })

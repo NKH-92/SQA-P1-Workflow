@@ -438,6 +438,7 @@ export function createPreviewData(): AppData {
     name: member.name,
     role: member.role,
     created_at: createdAt,
+    updated_at: createdAt,
   }))
 
   const profileNotes: ProfileNote[] = []

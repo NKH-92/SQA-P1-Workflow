@@ -3,30 +3,59 @@ import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 
 const assetsDir = path.resolve('dist/assets')
+const manifestPath = path.resolve('dist/.vite/manifest.json')
 const MAX_CHUNK_BYTES = 560 * 1024
-// Event history, strict aggregate-envelope validation, bigint-safe cursors,
-// OCC/modal handling, and the source-backed Brand Shell dashboards
-// are all shipped client-side. The dashboard addition raised the measured total
-// by ~2.1 KiB without adding a dependency; keep the revised ceiling tight with
-// less than 0.6% headroom while preserving the existing per-chunk ceiling.
-const MAX_TOTAL_GZIP_BYTES = 186 * 1024
+// Route-level lazy loading reduced the measured initial JS from ~185.3 KiB to
+// ~140.3 KiB. Splitting gzip dictionaries raises the all-routes sum, so enforce
+// both dimensions: initial navigation and the total code surface.
+const MAX_INITIAL_GZIP_BYTES = 142 * 1024
+const MAX_TOTAL_GZIP_BYTES = 208 * 1024
 
 const names = (await readdir(assetsDir)).filter((name) => name.endsWith('.js'))
 if (names.length === 0) throw new Error('Bundle budget check found no JavaScript assets')
 
 let totalGzipBytes = 0
 const oversized = []
+const gzipBytesByFile = new Map()
 for (const name of names) {
   const content = await readFile(path.join(assetsDir, name))
-  totalGzipBytes += gzipSync(content).byteLength
+  const gzipBytes = gzipSync(content).byteLength
+  gzipBytesByFile.set(`assets/${name}`, gzipBytes)
+  totalGzipBytes += gzipBytes
   if (content.byteLength > MAX_CHUNK_BYTES) oversized.push(`${name}: ${content.byteLength} bytes`)
 }
 
+const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+const initialKeys = new Set()
+const visitInitialImport = (key) => {
+  if (initialKeys.has(key)) return
+  const entry = manifest[key]
+  if (!entry) throw new Error(`Bundle manifest references unknown import: ${key}`)
+  initialKeys.add(key)
+  for (const importedKey of entry.imports ?? []) visitInitialImport(importedKey)
+}
+for (const [key, entry] of Object.entries(manifest)) {
+  if (entry.isEntry) visitInitialImport(key)
+}
+const initialGzipBytes = [...initialKeys].reduce((total, key) => {
+  const file = manifest[key].file
+  const bytes = gzipBytesByFile.get(file)
+  if (bytes == null) throw new Error(`Bundle manifest entry is not a JavaScript asset: ${file}`)
+  return total + bytes
+}, 0)
+
 if (oversized.length > 0) {
   throw new Error(`JavaScript chunk budget exceeded (${MAX_CHUNK_BYTES} bytes):\n${oversized.join('\n')}`)
+}
+if (initialGzipBytes > MAX_INITIAL_GZIP_BYTES) {
+  throw new Error(
+    `Initial JavaScript gzip budget exceeded: ${initialGzipBytes} > ${MAX_INITIAL_GZIP_BYTES} bytes`,
+  )
 }
 if (totalGzipBytes > MAX_TOTAL_GZIP_BYTES) {
   throw new Error(`Total JavaScript gzip budget exceeded: ${totalGzipBytes} > ${MAX_TOTAL_GZIP_BYTES} bytes`)
 }
 
-console.log(`Bundle budget OK: ${names.length} JS chunk(s), ${totalGzipBytes} total gzip bytes`)
+console.log(
+  `Bundle budget OK: ${names.length} JS chunk(s), ${initialGzipBytes} initial / ${totalGzipBytes} total gzip bytes`,
+)

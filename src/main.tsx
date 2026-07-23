@@ -9,6 +9,7 @@ import App from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { loadBuildShaFromVersionFile } from './lib/errorReporter'
 import './styles.css'
+import './styles.final-hardening.css'
 
 // 부가 진단 정보라 fire-and-forget — 실패해도(오프라인, 프리뷰 등) 앱 시작을 막지 않는다.
 void loadBuildShaFromVersionFile()

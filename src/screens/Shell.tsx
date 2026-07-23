@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Profile, Role } from '../types'
 import type { TabId, ToastMessage } from '../app/types'
 import type { SyncHealth } from '../app/hooks/useSyncHealth'
@@ -40,6 +40,7 @@ export function Shell({
   saving,
   refreshing,
   lastSyncedAt,
+  dataWarnings = [],
   syncHealth,
   pendingCount,
   unreadReviewsCount,
@@ -61,6 +62,7 @@ export function Shell({
   saving: boolean
   refreshing: boolean
   lastSyncedAt: Date | null
+  dataWarnings?: string[]
   /** 백그라운드 동기화 상태 관측 — topbar persistent 경고 표시 여부를 결정한다. */
   syncHealth: SyncHealth
   pendingCount: number
@@ -77,6 +79,10 @@ export function Shell({
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
+  const [mobileSidebar, setMobileSidebar] = useState(false)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
+  const sidebarRef = useRef<HTMLElement>(null)
+  const notificationButtonRef = useRef<HTMLButtonElement>(null)
   const { density, toggleDensity } = useDensityPreference()
   const { memberCount, unreadNotifications, tabs } = buildShellModel({
     data,
@@ -102,7 +108,7 @@ export function Shell({
   }
   const navSections: Array<{
     label: string
-    items: Array<{ id: TabId; label: string; icon: React.ReactNode; count?: number; unread?: boolean }>
+    items: Array<{ id: TabId; label: string; icon: React.ReactNode; count?: number; unreadCount?: number }>
   }> = []
   for (const item of navigationItemsForRole(leaderMode)) {
     let section = navSections[navSections.length - 1]
@@ -145,11 +151,93 @@ export function Shell({
         syncHealth.lastErrorCode ? ` (오류 코드: ${syncHealth.lastErrorCode})` : ''
       }`
     : undefined
+  const operationStatus = saving
+    ? { label: '저장 및 동기화 중', tone: 'saving' as const }
+    : refreshing
+      ? { label: '갱신 중', tone: 'saving' as const }
+      : syncHealth.stale
+        ? { label: '동기화 지연', tone: 'warning' as const }
+        : null
+
+  const closeSidebar = useCallback((restoreFocus = true) => {
+    setSidebarOpen(false)
+    if (restoreFocus) window.setTimeout(() => menuButtonRef.current?.focus(), 0)
+  }, [])
+
+  const closeNotifications = useCallback(() => {
+    setNotifOpen(false)
+    window.setTimeout(() => notificationButtonRef.current?.focus(), 0)
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const query = window.matchMedia('(max-width: 1080px)')
+    const apply = () => {
+      setMobileSidebar(query.matches)
+      if (!query.matches) setSidebarOpen(false)
+    }
+    apply()
+    query.addEventListener?.('change', apply)
+    return () => query.removeEventListener?.('change', apply)
+  }, [])
+
+  useEffect(() => {
+    const sidebar = sidebarRef.current
+    if (!sidebar) return
+    if (mobileSidebar && !sidebarOpen) sidebar.setAttribute('inert', '')
+    else sidebar.removeAttribute('inert')
+  }, [mobileSidebar, sidebarOpen])
+
+  useEffect(() => {
+    if (!mobileSidebar || !sidebarOpen) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const focusTimer = window.setTimeout(() => {
+      sidebarRef.current?.querySelector<HTMLElement>('.nav-item')?.focus()
+    }, 0)
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeSidebar()
+        return
+      }
+      if (event.key !== 'Tab' || !sidebarRef.current) return
+      const focusable = [...sidebarRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      )]
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.clearTimeout(focusTimer)
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [closeSidebar, mobileSidebar, sidebarOpen])
 
   return (
     <div className="app-shell brand-shell" data-visual-theme="brand-shell">
-      <div className={`overlay${sidebarOpen ? ' visible' : ''}`} onClick={() => setSidebarOpen(false)} />
-      <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
+      <div
+        aria-hidden="true"
+        className={`overlay${sidebarOpen ? ' visible' : ''}`}
+        onClick={() => closeSidebar()}
+      />
+      <aside
+        ref={sidebarRef}
+        aria-hidden={mobileSidebar && !sidebarOpen ? true : undefined}
+        aria-label="주 메뉴"
+        className={`sidebar${sidebarOpen ? ' open' : ''}`}
+        id="primary-navigation"
+      >
         <div className="sidebar-top">
           {/* 브랜드 마크 'P'는 .brand::before가 그린다 */}
           <div className="brand">
@@ -158,29 +246,39 @@ export function Shell({
               <span>Workflow</span>
             </div>
           </div>
-          <button aria-label="메뉴 닫기" className="sidebar-close" onClick={() => setSidebarOpen(false)} type="button">
+          <button aria-label="메뉴 닫기" className="sidebar-close" onClick={() => closeSidebar()} type="button">
             <X size={20} />
           </button>
         </div>
-        <nav>
+        <nav aria-label="주 메뉴 항목">
           {navSections.map((section) => (
             <div className="nav-group" key={section.label}>
               <span className="nav-group-label">{section.label}</span>
               {section.items.map((tab) => (
                 <button
                   aria-current={activeTab === tab.id ? 'page' : undefined}
+                  aria-label={tab.id === 'reviews'
+                    ? `${tab.label}, 대기 ${tab.count ?? 0}건${tab.unreadCount ? `, 새 알림 ${tab.unreadCount}건` : ''}`
+                    : undefined}
                   className={activeTab === tab.id ? 'nav-item active' : 'nav-item'}
                   key={tab.id}
                   onClick={() => {
                     setActiveTab(tab.id)
-                    setSidebarOpen(false)
+                    // Desktop navigation must not focus the hidden hamburger, while a
+                    // mobile drawer must move focus out before it becomes inert.
+                    closeSidebar(mobileSidebar)
                   }}
                   type="button"
                 >
                   {tab.icon}
                   {tab.label}
                   {typeof tab.count === 'number' && (
-                    <span className={tab.unread ? 'nav-badge unread' : 'nav-badge'}>{tab.count}</span>
+                    <span className="nav-badge">{tab.count}</span>
+                  )}
+                  {Boolean(tab.unreadCount) && (
+                    <span aria-hidden="true" className="nav-unread-badge">
+                      {tab.unreadCount! > 99 ? '99+' : tab.unreadCount}
+                    </span>
                   )}
                 </button>
               ))}
@@ -220,7 +318,15 @@ export function Shell({
       <main className="content">
         <header className="topbar">
           <div className="topbar-left">
-            <button aria-label="메뉴 열기" className="hamburger" onClick={() => setSidebarOpen(true)} type="button">
+            <button
+              ref={menuButtonRef}
+              aria-controls="primary-navigation"
+              aria-expanded={sidebarOpen}
+              aria-label="메뉴 열기"
+              className="hamburger"
+              onClick={() => setSidebarOpen(true)}
+              type="button"
+            >
               <Menu size={22} />
             </button>
             <div>
@@ -235,21 +341,18 @@ export function Shell({
           </button>
           <div className="topbar-actions">
             {syncLabel && <span className="sync-label">{syncLabel}</span>}
-            {syncHealth.stale && (
-              <span className="sync-warning" role="status" aria-live="polite" title={syncWarningTitle}>
-                <AlertTriangle aria-hidden="true" size={14} />
-                동기화 지연
-              </span>
-            )}
-            {refreshing && (
-              <span className="saving" role="status" aria-live="polite">
-                <RefreshCw className="spin" size={14} aria-hidden="true" />
-                갱신 중
-              </span>
-            )}
-            {saving && (
-              <span className="saving" role="status" aria-live="polite">
-                저장 중
+            {operationStatus && (
+              <span
+                aria-label={operationStatus.label}
+                className={operationStatus.tone === 'warning' ? 'sync-warning' : 'saving'}
+                role="status"
+                aria-live="polite"
+                title={operationStatus.tone === 'warning' ? syncWarningTitle : undefined}
+              >
+                {operationStatus.tone === 'warning'
+                  ? <AlertTriangle aria-hidden="true" size={14} />
+                  : <RefreshCw className="spin" size={14} aria-hidden="true" />}
+                <span className="operation-status-label">{operationStatus.label}</span>
               </span>
             )}
             <button
@@ -263,6 +366,9 @@ export function Shell({
               <Rows3 size={16} />
             </button>
             <button
+              ref={notificationButtonRef}
+              aria-expanded={notifOpen}
+              aria-haspopup="dialog"
               aria-label={unreadNotifications > 0 ? `알림 ${unreadNotifications}건` : '알림'}
               className="icon-button topbar-notif"
               onClick={() => setNotifOpen((value) => !value)}
@@ -290,15 +396,27 @@ export function Shell({
             <NotificationPanel
               notifications={notifications}
               desktopNotifications={desktopNotifications}
-              onClose={() => setNotifOpen(false)}
+              onClose={closeNotifications}
               onMarkAllRead={() => {
                 onMarkAllRead()
-                setNotifOpen(false)
+                closeNotifications()
               }}
               onSelect={setActiveTab}
             />
           )}
         </header>
+        {dataWarnings.length > 0 && (
+          <div className="data-stale-banner" role="status" aria-live="polite">
+            <AlertTriangle aria-hidden="true" size={16} />
+            <span>
+              <strong>일부 데이터가 최신이 아닙니다.</strong>
+              <small>{dataWarnings.join(' ')}</small>
+            </span>
+            <button className="ghost compact" disabled={refreshing || saving} onClick={onRefresh} type="button">
+              다시 시도
+            </button>
+          </div>
+        )}
         {children}
       </main>
       {/* 결과 토스트는 우하단 고정 — topbar는 진행 상태 표시만 담당한다. */}

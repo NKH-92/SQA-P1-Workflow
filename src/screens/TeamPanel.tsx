@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { Badge, EmptyState, Rows } from '../components/ui'
 import type { AppData, Profile } from '../types'
@@ -10,6 +10,7 @@ import { compareProducts, productCategory, productCompanyName, productName } fro
 import type { ProductSortKey } from '../lib/products'
 import { useTeamSummaries } from '../hooks/useTeamSummaries'
 import { useTeamController } from '../features/team/useTeamController'
+import { useModalDismiss } from '../hooks/useModalDismiss'
 import {
   Download,
   Package,
@@ -40,27 +41,32 @@ export function TeamPanel({
   const controller = useTeamController(profile, data, setData)
   const { teamMembers, teamSummaries } = useTeamSummaries(data)
   const [memberSearch, setMemberSearch] = useState('')
-  const [selectedMemberId, setSelectedMemberId] = useState(teamMembers[0]?.id ?? '')
+  const [includeInactive, setIncludeInactive] = useState(false)
+  const [selectedMemberId, setSelectedMemberId] = useState(
+    teamMembers.find((member) => member.is_active !== false)?.id ?? '',
+  )
   const [profileNote, setProfileNote] = useState('')
   const [productSortKey, setProductSortKey] = useState<ProductSortKey>('source')
   const [noteModalOpen, setNoteModalOpen] = useState(false)
-
-  useEffect(() => {
-    if (!teamSummaries.length) return
-    if (!teamSummaries.some((summary) => summary.member.id === selectedMemberId)) {
-      setSelectedMemberId(teamSummaries[0].member.id)
-    }
-  }, [selectedMemberId, teamSummaries])
+  const closeNoteModal = useCallback(() => setNoteModalOpen(false), [])
+  useModalDismiss(noteModalOpen, closeNoteModal)
 
   // 커맨드 팔레트에서 넘어온 파트원을 바로 선택한다(검토요청 큐와 같은 딥링크 방식).
   useEffect(() => {
     if (!initialSelectedId) return
-    if (!teamSummaries.some((summary) => summary.member.id === initialSelectedId)) return
+    const target = teamSummaries.find((summary) => summary.member.id === initialSelectedId)
+    if (!target) return
+    if (target.member.is_active === false) setIncludeInactive(true)
+    setMemberSearch('')
     setSelectedMemberId(initialSelectedId)
     onInitialSelectionApplied?.()
   }, [initialSelectedId, onInitialSelectionApplied, teamSummaries])
 
-  const filteredSummaries = teamSummaries.filter((summary) => {
+  const activeMemberCount = teamMembers.filter((member) => member.is_active !== false).length
+  const managedSummaries = includeInactive
+    ? teamSummaries
+    : teamSummaries.filter((summary) => summary.member.is_active !== false)
+  const filteredSummaries = managedSummaries.filter((summary) => {
     const query = memberSearch.trim().toLowerCase()
     if (!query) return true
     const target = [
@@ -74,7 +80,16 @@ export function TeamPanel({
       .toLowerCase()
     return target.includes(query)
   })
-  const selectedSummary = teamSummaries.find((summary) => summary.member.id === selectedMemberId) ?? teamSummaries[0]
+
+  useEffect(() => {
+    const nextSelectedId = filteredSummaries.some((summary) => summary.member.id === selectedMemberId)
+      ? selectedMemberId
+      : filteredSummaries[0]?.member.id ?? ''
+    if (nextSelectedId !== selectedMemberId) setSelectedMemberId(nextSelectedId)
+  }, [filteredSummaries, selectedMemberId])
+
+  const selectedSummary = filteredSummaries.find((summary) => summary.member.id === selectedMemberId)
+    ?? filteredSummaries[0]
   const selectedProducts = selectedSummary
     ? [...selectedSummary.products].sort((left, right) => compareProducts(left, right, productSortKey))
     : []
@@ -99,7 +114,7 @@ export function TeamPanel({
       <div className="page-intro">
         <h1>파트원</h1>
         <p>
-          담당 제품, 정기 업무, 프로젝트 상태를 <strong>{teamMembers.length}명</strong> 기준으로 봅니다.
+          담당 제품, 정기 업무, 프로젝트 상태를 <strong>{activeMemberCount}명</strong> 현원 기준으로 봅니다.
         </p>
       </div>
       <div className="section-toolbar">
@@ -115,6 +130,14 @@ export function TeamPanel({
           <Download size={16} />
           CSV
         </button>
+        <button
+          aria-pressed={includeInactive}
+          className={includeInactive ? 'ghost selected' : 'ghost'}
+          onClick={() => setIncludeInactive((value) => !value)}
+          type="button"
+        >
+          비활성 포함
+        </button>
         <button className="primary" onClick={() => setActiveTab('products')} type="button">
           <Package size={16} />
           배정 관리
@@ -128,6 +151,7 @@ export function TeamPanel({
           const openReviews = summary.reviews.filter((request) => request.status === 'pending')
           return (
             <button
+              aria-pressed={selected}
               className={selected ? 'v2-team-card selected' : 'v2-team-card'}
               key={summary.member.id}
               onClick={() => setSelectedMemberId(summary.member.id)}
@@ -139,6 +163,7 @@ export function TeamPanel({
                   <small>{summary.member.email}</small>
                 </span>
                 <Badge>{roleLabels[summary.member.role]}</Badge>
+                {summary.member.is_active === false && <Badge status="withdrawn">비활성</Badge>}
               </div>
               <div className="metric-strip">
                 <span>제품 <strong>{summary.products.length}</strong></span>
@@ -236,7 +261,7 @@ export function TeamPanel({
       </div>
 
       {noteModalOpen && selectedSummary && (
-        <div className="modal-backdrop" onMouseDown={() => setNoteModalOpen(false)} role="presentation">
+        <div className="modal-backdrop" onMouseDown={closeNoteModal} role="presentation">
           <section
             aria-labelledby="team-note-modal-title"
             aria-modal="true"
@@ -252,7 +277,7 @@ export function TeamPanel({
                 <span>관리 메모</span>
                 <h2 id="team-note-modal-title">{selectedSummary.member.name}</h2>
               </div>
-              <button aria-label="관리 메모 닫기" className="icon-button modal-close" onClick={() => setNoteModalOpen(false)} type="button">
+              <button aria-label="관리 메모 닫기" className="icon-button modal-close" onClick={closeNoteModal} type="button">
                 <X size={18} />
               </button>
             </header>
@@ -289,4 +314,3 @@ export function TeamPanel({
     </div>
   )
 }
-

@@ -87,6 +87,7 @@ describe('useAppData session reset', () => {
     await act(async () => result.current.refreshData())
 
     expect(reportWarnings).toHaveBeenCalledWith([warning])
+    expect(result.current.dataWarnings).toEqual([warning])
   })
 
   it('ignores a previous session refresh that resolves after reset', async () => {

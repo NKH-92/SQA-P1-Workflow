@@ -11,6 +11,25 @@ function readMigration(name: string) {
 }
 
 describe('Supabase migrations', () => {
+  it('enforces changed review content and KST due dates without blocking legacy lifecycle updates', () => {
+    const migration = readMigration('20260723120000_review_input_contract.sql')
+    expect(migration).toContain("tg_op = 'INSERT' or new.title is distinct from old.title")
+    expect(migration).toContain("tg_op = 'INSERT' or new.description is distinct from old.description")
+    expect(migration).toContain("regexp_replace(new.title, '^[[:space:]]+|[[:space:]]+$', '', 'g')")
+    expect(migration).toContain("regexp_replace(new.description, '^[[:space:]]+|[[:space:]]+$', '', 'g')")
+    expect(migration).toContain('char_length(new.title) not between 2 and 200')
+    expect(migration).toContain('char_length(new.description) not between 2 and 20000')
+    expect(migration).toContain('private.sqa_business_date(clock_timestamp())')
+    expect(migration).toContain("tg_op = 'INSERT' or new.due_date is distinct from old.due_date")
+    expect(migration).toContain('before insert or update of title, description, due_date')
+    expect(migration).toContain('grant execute on function private.sqa_business_date(timestamptz) to service_role')
+    expect(migration).toContain(
+      'revoke all on function private.validate_review_request_input_v2() from public, anon, authenticated, service_role',
+    )
+    expect(migration).not.toContain('review_requests_title_length_v2_check')
+    expect(migration).not.toContain('review_requests_description_length_v2_check')
+  })
+
   it('keeps real tenant seed data out of generic migrations', () => {
     const combined = Object.values(migrations).join('\n')
     const privateDomain = ['@', 'hanlim', '.com'].join('')

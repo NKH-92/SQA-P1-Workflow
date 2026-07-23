@@ -204,7 +204,20 @@ export function DutyTable({
                   <td>
                     <div className="pill-row compact">
                       {assignments.map((assignment) => (
-                        <span key={assignment.id}>{assignment.profiles?.name ?? assignment.user_id}</span>
+                        <span
+                          className={data.profiles.find((profile) => profile.id === assignment.user_id)?.is_active === false
+                            ? 'pill-warn'
+                            : undefined}
+                          key={assignment.id}
+                          title={data.profiles.find((profile) => profile.id === assignment.user_id)?.is_active === false
+                            ? '담당자 비활성 · 재배정 필요'
+                            : undefined}
+                        >
+                          {assignment.profiles?.name ?? assignment.user_id}
+                          {data.profiles.find((profile) => profile.id === assignment.user_id)?.is_active === false
+                            ? ' · 비활성'
+                            : ''}
+                        </span>
                       ))}
                       {assignments.length === 0 && duty.assignee_label && <span>{duty.assignee_label}</span>}
                       {isUnassigned && <span className="pill-warn">배정 필요</span>}

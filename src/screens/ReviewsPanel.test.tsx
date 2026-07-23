@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPreviewData, previewLeader, previewMember } from '../demoData'
 import * as dataModule from '../data'
 import type { AppData } from '../types'
+import { reviewDraftStorageKey } from '../features/reviews/useReviewDraft'
 import { ReviewsPanel } from './ReviewsPanel'
 
 function memberDataWithPendingReview(): AppData {
@@ -68,6 +69,35 @@ describe('ReviewsPanel', () => {
     }
   })
 
+  it.each([
+    { roleLabel: '파트장', profile: previewLeader },
+    { roleLabel: '파트원', profile: previewMember },
+  ])('gives the $roleLabel one dedicated archive entry and loads its first page exactly once', async ({ profile }) => {
+    const user = userEvent.setup()
+    const archiveSpy = vi.spyOn(dataModule, 'fetchWithdrawnReviewRequestsPage').mockResolvedValue([])
+
+    render(
+      <ReviewsPanel
+        profile={profile}
+        data={createPreviewData()}
+        mutate={vi.fn()}
+        setData={vi.fn()}
+      />,
+    )
+
+    const filterGroup = screen.getByRole('group', { name: '검토요청 상태 필터' })
+    expect(within(filterGroup).queryByRole('button', { name: /회수됨/ })).not.toBeInTheDocument()
+    const archiveButton = screen.getByRole('button', { name: '회수 보관함' })
+    expect(archiveButton).not.toHaveTextContent('0')
+
+    await user.click(archiveButton)
+    await waitFor(() => expect(archiveSpy).toHaveBeenCalledTimes(1))
+    await user.click(archiveButton)
+    await user.click(archiveButton)
+    expect(archiveSpy).toHaveBeenCalledTimes(1)
+    archiveSpy.mockRestore()
+  })
+
   it('resets form after edit so a new write starts empty', async () => {
     const user = userEvent.setup()
     const data = memberDataWithPendingReview()
@@ -85,7 +115,7 @@ describe('ReviewsPanel', () => {
     expect(within(dialog).getByLabelText(/^제목/)).toHaveValue('수정 테스트 제목')
 
     await user.click(within(dialog).getByRole('button', { name: '검토요청 작성 닫기' }))
-    localStorage.removeItem(`draft:review:${previewMember.id}`)
+    localStorage.removeItem(reviewDraftStorageKey(previewMember.id))
 
     await user.click(screen.getByRole('button', { name: '검토요청 작성' }))
     const newDialog = composerDialog()
@@ -105,7 +135,7 @@ describe('ReviewsPanel', () => {
       saved_at: now.toISOString(),
       expires_at: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     }
-    localStorage.setItem(`draft:review:${previewMember.id}`, JSON.stringify(draft))
+    localStorage.setItem(reviewDraftStorageKey(previewMember.id), JSON.stringify(draft))
 
     render(
       <ReviewsPanel profile={previewMember} data={data} mutate={vi.fn()} setData={() => undefined} />,
@@ -145,7 +175,7 @@ describe('ReviewsPanel', () => {
     await user.type(within(dialog).getByLabelText(/^제목/), '수동 초안')
     await user.click(within(dialog).getByRole('button', { name: '초안 저장' }))
 
-    const raw = localStorage.getItem(`draft:review:${previewMember.id}`)
+    const raw = localStorage.getItem(reviewDraftStorageKey(previewMember.id))
     expect(raw).toContain('수동 초안')
     expect(raw).toContain('expires_at')
   })
@@ -210,9 +240,38 @@ describe('ReviewsPanel', () => {
     expect(textarea).toHaveValue('재시도할 피드백')
   })
 
+  it('acknowledges an unread deep-linked review when a hidden tab becomes visible', async () => {
+    const markSeenSpy = vi.spyOn(dataModule, 'markReviewSeen').mockResolvedValue(undefined as never)
+    const originalVisibilityState = document.visibilityState
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+
+    try {
+      render(
+        <ReviewsPanel
+          profile={previewLeader}
+          data={createPreviewData()}
+          initialSelectedId="review-02"
+          mutate={vi.fn()}
+          setData={vi.fn()}
+        />,
+      )
+
+      expect(markSeenSpy).not.toHaveBeenCalled()
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+      document.dispatchEvent(new Event('visibilitychange'))
+
+      await waitFor(() => expect(markSeenSpy).toHaveBeenCalledWith(expect.anything(), 'review-02'))
+    } finally {
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        value: originalVisibilityState,
+      })
+      markSeenSpy.mockRestore()
+    }
+  })
+
   it('locks the reopen action while its mutation is in flight', async () => {
     const user = userEvent.setup()
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
     const source = createPreviewData()
     const request = { ...source.reviewRequests[0]!, status: 'approved' as const }
     const data = { ...source, reviewRequests: [request] }
@@ -231,6 +290,7 @@ describe('ReviewsPanel', () => {
 
     const reopenButton = screen.getByRole('button', { name: '다시 열기' })
     await user.click(reopenButton)
+    await user.click(within(screen.getByRole('dialog', { name: '검토요청을 다시 열까요?' })).getByRole('button', { name: '다시 열기' }))
     expect(reopenSpy).toHaveBeenCalledTimes(1)
     expect(reopenButton).toBeDisabled()
 
@@ -240,6 +300,5 @@ describe('ReviewsPanel', () => {
     resolveReopen()
     await waitFor(() => expect(reopenButton).not.toBeDisabled())
     reopenSpy.mockRestore()
-    confirmSpy.mockRestore()
   })
 })

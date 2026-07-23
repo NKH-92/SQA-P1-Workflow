@@ -40,7 +40,7 @@ async function flushReviewStatsV2(): Promise<void> {
 }
 
 async function renderReviewStatsPanel(data: AppData) {
-  render(<ReviewStatsPanel data={data} />)
+  render(<ReviewStatsPanel data={data} now={new Date('2026-07-15T03:00:00.000Z')} />)
   await flushReviewStatsV2()
 }
 
@@ -112,13 +112,10 @@ describe('ReviewStatsPanel', () => {
   beforeEach(() => {
     mocks.hasSupabaseConfig = false
     mocks.fetchReviewStatisticsV2.mockReset()
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date(2026, 6, 15, 12))
   })
 
   afterEach(() => {
     cleanup()
-    vi.useRealTimers()
   })
 
   it('starts with the recent six-month preset and exposes inclusive custom date bounds', async () => {

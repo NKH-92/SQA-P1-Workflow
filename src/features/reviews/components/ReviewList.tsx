@@ -16,6 +16,7 @@ type ReviewListProps = {
   selectedReviewId: string | null
   onSelectReview: (id: string) => void
   unreadIds?: Set<string>
+  loading?: boolean
 }
 
 function dueChipTone(dueStatus: ReturnType<typeof dueDateStatus>) {
@@ -34,6 +35,7 @@ export const ReviewList = memo(function ReviewList({
   selectedReviewId,
   onSelectReview,
   unreadIds,
+  loading = false,
 }: ReviewListProps) {
   return (
     <aside className="review-list-pane" aria-label="검토요청 목록">
@@ -43,14 +45,18 @@ export const ReviewList = memo(function ReviewList({
       </div>
       <div className="review-filter-row" role="group" aria-label="검토요청 상태 필터">
         <button
+          aria-pressed={statusFilter === 'all'}
           className={statusFilter === 'all' ? 'filter-chip selected' : 'filter-chip'}
           onClick={() => onStatusFilterChange('all')}
           type="button"
         >
-          전체 {scopedReviewRequests.length}
+          전체 {scopedReviewRequests.length - statusCounts.withdrawn}
         </button>
-        {(Object.entries(reviewStatusLabels) as Array<[ReviewStatus, string]>).map(([value, label]) => (
+        {(Object.entries(reviewStatusLabels) as Array<[ReviewStatus, string]>)
+          .filter(([value]) => value !== 'withdrawn')
+          .map(([value, label]) => (
           <button
+            aria-pressed={statusFilter === value}
             className={statusFilter === value ? 'filter-chip selected' : 'filter-chip'}
             key={value}
             onClick={() => onStatusFilterChange(value)}
@@ -60,8 +66,15 @@ export const ReviewList = memo(function ReviewList({
           </button>
         ))}
       </div>
-      {visibleReviewRequests.length === 0 && (
-        <EmptyState icon={<Inbox size={22} />} title="검토요청이 없습니다." description="필터를 바꾸면 다른 상태의 요청이 보입니다." />
+      {loading && <p className="empty-copy" role="status">회수 보관함을 불러오는 중입니다.</p>}
+      {!loading && visibleReviewRequests.length === 0 && (
+        <EmptyState
+          icon={<Inbox size={22} />}
+          title={statusFilter === 'withdrawn' ? '회수된 검토요청이 없습니다.' : '검토요청이 없습니다.'}
+          description={statusFilter === 'withdrawn'
+            ? '최근 90일 동안 회수된 요청이 여기에 표시됩니다.'
+            : '필터를 바꾸면 다른 상태의 요청이 보입니다.'}
+        />
       )}
       {visibleReviewRequests.map((request) => {
         const dueStatus = dueDateStatus(request.due_date)

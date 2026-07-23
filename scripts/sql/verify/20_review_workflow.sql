@@ -17,6 +17,75 @@ begin
   end if;
 end
 $verify$;
+
+do $verify$
+begin
+  if not ((exists (
+              select 1
+                from supabase_migrations.schema_migrations
+               where version = '20260723120000'
+            )
+            and not exists (
+              select 1
+                from pg_constraint
+               where conrelid = 'public.review_requests'::regclass
+                 and conname in (
+                   'review_requests_title_length_v2_check',
+                   'review_requests_description_length_v2_check'
+                 )
+            )
+            and to_regprocedure('private.validate_review_request_input_v2()') is not null
+            and not coalesce((
+              select prosecdef
+                from pg_proc
+               where oid = to_regprocedure('private.validate_review_request_input_v2()')
+            ), true)
+            and coalesce((
+              select exists (
+                select 1
+                  from unnest(proconfig) cfg
+                 where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')
+              )
+                from pg_proc
+               where oid = to_regprocedure('private.validate_review_request_input_v2()')
+            ), false)
+            and not has_function_privilege(
+              'authenticated',
+              to_regprocedure('private.validate_review_request_input_v2()'),
+              'EXECUTE'
+            )
+            and not has_function_privilege(
+              'service_role',
+              to_regprocedure('private.validate_review_request_input_v2()'),
+              'EXECUTE'
+            )
+            and coalesce(
+              pg_get_functiondef(to_regprocedure('private.validate_review_request_input_v2()'))
+                like '%new.title is distinct from old.title%',
+              false
+            )
+            and coalesce(
+              pg_get_functiondef(to_regprocedure('private.validate_review_request_input_v2()'))
+                like '%new.description is distinct from old.description%',
+              false
+            )
+            and coalesce(
+              pg_get_functiondef(to_regprocedure('private.validate_review_request_input_v2()'))
+                like '%new.due_date is distinct from old.due_date%',
+              false
+            )
+            and exists (
+              select 1
+                from pg_trigger
+               where tgrelid = 'public.review_requests'::regclass
+                 and tgname = 'review_request_input_v2_guard'
+                 and tgfoid = to_regprocedure('private.validate_review_request_input_v2()')
+                 and tgenabled in ('O', 'A')
+            )) = true) then
+    raise exception 'SQA_DB_READY_REVIEW_INPUT_CONTRACT_GATE';
+  end if;
+end
+$verify$;
 do $verify$
 begin
   if not ((exists (select 1 from supabase_migrations.schema_migrations where version = '20260718054122')

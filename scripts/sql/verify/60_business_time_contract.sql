@@ -8,6 +8,7 @@ begin
               and to_regprocedure('private.sqa_business_year()') is not null
               and not coalesce(has_function_privilege('authenticated', to_regprocedure('private.sqa_business_date(timestamp with time zone)'), 'EXECUTE'), true)
               and not coalesce(has_function_privilege('anon', to_regprocedure('private.sqa_business_date(timestamp with time zone)'), 'EXECUTE'), true)
+              and coalesce(has_function_privilege('service_role', to_regprocedure('private.sqa_business_date(timestamp with time zone)'), 'EXECUTE'), false)
               and not coalesce(has_function_privilege('authenticated', to_regprocedure('private.sqa_business_year(timestamp with time zone)'), 'EXECUTE'), true)
               and not coalesce(has_function_privilege('anon', to_regprocedure('private.sqa_business_year(timestamp with time zone)'), 'EXECUTE'), true)
               and not coalesce(has_function_privilege('authenticated', to_regprocedure('private.sqa_business_date()'), 'EXECUTE'), true)

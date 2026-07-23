@@ -1,4 +1,5 @@
 import type { ReviewRequest } from '../types'
+import { businessDateKey, businessDateParts } from './businessTime'
 
 export type ReviewMonthlyStats = {
   month: string
@@ -10,13 +11,9 @@ export type ReviewMonthlyStats = {
 
 function monthKey(value?: string | null) {
   if (!value) return null
-  // created_at is a UTC timestamptz. Bucket by the viewer's local (KST) month so a
-  // request made at, e.g., 2026-07-01 08:30 KST (2026-06-30 23:30 UTC) counts as July,
-  // matching the local-month bucket keys built in buildReviewMonthlyStats.
   const time = Date.parse(value)
   if (Number.isNaN(time)) return null
-  const date = new Date(time)
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+  return businessDateKey(new Date(time)).slice(0, 7)
 }
 
 function processingDays(request: ReviewRequest) {
@@ -26,12 +23,16 @@ function processingDays(request: ReviewRequest) {
   return Math.max(0, Math.round((end - start) / 86400000))
 }
 
-export function buildReviewMonthlyStats(reviewRequests: ReviewRequest[], monthsBack = 6): ReviewMonthlyStats[] {
-  const now = new Date()
+export function buildReviewMonthlyStats(
+  reviewRequests: ReviewRequest[],
+  monthsBack = 6,
+  now = new Date(),
+): ReviewMonthlyStats[] {
+  const { year, month } = businessDateParts(now)
   const monthKeys: string[] = []
   for (let offset = monthsBack - 1; offset >= 0; offset -= 1) {
-    const date = new Date(now.getFullYear(), now.getMonth() - offset, 1)
-    monthKeys.push(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`)
+    const date = new Date(Date.UTC(year, month - 1 - offset, 1))
+    monthKeys.push(`${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`)
   }
 
   return monthKeys.map((month) => {

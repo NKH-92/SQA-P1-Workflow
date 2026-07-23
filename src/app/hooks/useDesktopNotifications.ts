@@ -15,7 +15,7 @@ export type DesktopNotificationControls = {
   enabled: boolean
   permission: NotificationPermission | null
   toggle: () => Promise<void>
-  /** 알림 title에서 requester 이름을 숨긴다. 기본값 false(기존 동작 유지) — opt-in 강화. */
+  /** 알림 title에서 requester 이름을 숨긴다. 잠금화면 안전 기본값은 true. */
   hideRequesterName: boolean
   toggleHideRequesterName: () => void
   /** 알림 body에 검토 제목을 노출한다. 기본값 false — 잠금화면 노출을 줄이는 안전 기본값. */
@@ -39,11 +39,11 @@ export function useDesktopNotifications(
   const [permission, setPermission] = useState<NotificationPermission | null>(
     supported ? Notification.permission : null,
   )
-  const [hideRequesterName, setHideRequesterName] = useState(false)
+  const [hideRequesterName, setHideRequesterName] = useState(true)
   const [revealReviewTitle, setRevealReviewTitle] = useState(false)
   const notifiedUpToRef = useRef<string | null>(null)
   const notifiedIdsRef = useRef<Set<string>>(new Set())
-  const hideRequesterNameRef = useRef(false)
+  const hideRequesterNameRef = useRef(true)
   const revealReviewTitleRef = useRef(false)
   const setActiveTabRef = useRef(setActiveTab)
   useEffect(() => {

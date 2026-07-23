@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import type { AppData, Profile, ReviewRequest, ReviewStatus } from '../types'
 import type { ReviewStatusFilter, MutateFn } from '../app/types'
 import { toUserMessage, UserFacingError } from '../lib/errors'
+import { REVIEW_REQUEST_LIMITS } from '../data/validation/reviews'
 import { isReviewUnread } from '../lib/readState'
 import {
   selectReviewStatusCounts,
@@ -13,6 +14,7 @@ import { ReviewComposerModal } from '../features/reviews/components/ReviewCompos
 import { ReviewDetail } from '../features/reviews/components/ReviewDetail'
 import { ReviewKanban } from '../features/reviews/components/ReviewKanban'
 import { ReviewList } from '../features/reviews/components/ReviewList'
+import { ReasonPromptModal } from '../components/ui'
 import { useReviewDraft } from '../features/reviews/useReviewDraft'
 import { useReviewSelection } from '../features/reviews/useReviewSelection'
 import { useReviewController } from '../features/reviews/useReviewController'
@@ -36,6 +38,8 @@ export function ReviewsPanel({
   const controller = useReviewController(profile, data, setData)
   const [editingReviewId, setEditingReviewId] = useState<string | null>(null)
   const [pendingWithdrawId, setPendingWithdrawId] = useState<string | null>(null)
+  const [withdrawDialogId, setWithdrawDialogId] = useState<string | null>(null)
+  const [withdrawReason, setWithdrawReason] = useState('')
   const [isReviewComposerOpen, setReviewComposerOpen] = useState(false)
   const [statusFilter, setStatusFilter] = useState<ReviewStatusFilter>('all')
   // 칸반은 상태 흐름 전체를 보는 파트장에게 유용하다. 파트원은 목록만.
@@ -45,7 +49,7 @@ export function ReviewsPanel({
   const [archiveLoading, setArchiveLoading] = useState(false)
   const [archiveError, setArchiveError] = useState<string | null>(null)
 
-  const loadArchivePage = async (page: number) => {
+  const loadArchivePage = useCallback(async (page: number) => {
     setArchiveLoading(true)
     setArchiveError(null)
     try {
@@ -57,7 +61,7 @@ export function ReviewsPanel({
     } finally {
       setArchiveLoading(false)
     }
-  }
+  }, [controller])
 
   const scopedReviewRequests = useMemo(
     () => selectScopedReviewRequests(data, profile),
@@ -86,26 +90,56 @@ export function ReviewsPanel({
   )
   const { selectedReviewId, setSelectedReviewId, selectedReview } = useReviewSelection(
     visibleReviewRequests,
-    scopedReviewRequests,
     initialSelectedId,
     onInitialSelectionApplied,
   )
 
-  // 칸반 카드·딥링크는 리스트 상태 필터 밖의 요청을 가리킬 수 있다.
-  // 필터 밖 요청을 선택하면 필터를 '전체'로 풀어 상세와 목록을 일치시킨다.
+  const openArchive = useCallback(() => {
+    setStatusFilter('withdrawn')
+    setReviewView('list')
+    if (archivePage < 0 && !archiveLoading) void loadArchivePage(0)
+  }, [archiveLoading, archivePage, loadArchivePage])
+
+  // 칸반 카드·딥링크가 현재 필터 밖 요청을 가리키면 먼저 목록이 그 요청을
+  // 포함하도록 전환한 뒤 선택한다. 상세는 visible collection에서만 파생된다.
   const selectReview = useCallback((id: string) => {
     const target = scopedReviewRequests.find((request) => request.id === id)
-    if (target && statusFilter !== 'all' && target.status !== statusFilter) setStatusFilter('all')
+    if (!target) return
+    if (target.status === 'withdrawn') {
+      openArchive()
+    } else if (statusFilter !== 'all' && target.status !== statusFilter) {
+      setStatusFilter('all')
+    }
     setSelectedReviewId(id)
-    void controller.markSeen(id).catch(() => undefined)
-  }, [controller, scopedReviewRequests, setSelectedReviewId, statusFilter])
+  }, [openArchive, scopedReviewRequests, setSelectedReviewId, statusFilter])
 
   useEffect(() => {
     if (!initialSelectedId) return
     const target = scopedReviewRequests.find((request) => request.id === initialSelectedId)
-    if (target && statusFilter !== 'all' && target.status !== statusFilter) setStatusFilter('all')
-    if (target) void controller.markSeen(target.id).catch(() => undefined)
-  }, [controller, initialSelectedId, scopedReviewRequests, statusFilter])
+    if (!target) return
+    if (target.status === 'withdrawn') {
+      openArchive()
+    } else if (statusFilter !== 'all' && target.status !== statusFilter) {
+      setStatusFilter('all')
+    }
+  }, [initialSelectedId, openArchive, scopedReviewRequests, statusFilter])
+
+  const markSeenInFlightRef = useRef(new Set<string>())
+  useEffect(() => {
+    if (!selectedReview || !unreadReviewIds.has(selectedReview.id)) return
+    const markSelectedReviewSeen = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+      if (markSeenInFlightRef.current.has(selectedReview.id)) return
+      markSeenInFlightRef.current.add(selectedReview.id)
+      void controller.markSeen(selectedReview.id)
+        .catch(() => undefined)
+        .finally(() => markSeenInFlightRef.current.delete(selectedReview.id))
+    }
+    markSelectedReviewSeen()
+    if (typeof document === 'undefined') return
+    document.addEventListener('visibilitychange', markSelectedReviewSeen)
+    return () => document.removeEventListener('visibilitychange', markSelectedReviewSeen)
+  }, [controller, selectedReview, unreadReviewIds])
 
   const {
     form,
@@ -120,7 +154,11 @@ export function ReviewsPanel({
   } = useReviewDraft(profile.id)
 
   const isReviewSubmitDisabled =
-    !form.title.trim() || !form.description.trim() || (form.deadlineMode === 'date' && !form.due_date)
+    form.title.trim().length < REVIEW_REQUEST_LIMITS.titleMin
+    || form.title.trim().length > REVIEW_REQUEST_LIMITS.titleMax
+    || form.description.trim().length < REVIEW_REQUEST_LIMITS.descriptionMin
+    || form.description.trim().length > REVIEW_REQUEST_LIMITS.descriptionMax
+    || (form.deadlineMode === 'date' && !form.due_date)
 
   const openReviewComposer = () => {
     setEditingReviewId(null)
@@ -171,13 +209,21 @@ export function ReviewsPanel({
     }, editingReviewId ? '검토요청을 수정했습니다.' : '검토요청을 등록했습니다.')
 
   const withdrawReview = (requestId: string) => {
-    const reason = window.prompt('회수 사유를 입력하세요.')?.trim()
-    if (!reason) return
-    void mutate(async () => {
-      await controller.withdraw(requestId, reason)
-      setPendingWithdrawId(null)
-      if (selectedReviewId === requestId) setSelectedReviewId(null)
+    setWithdrawReason('')
+    setWithdrawDialogId(requestId)
+  }
+
+  const confirmWithdrawReview = async () => {
+    if (!withdrawDialogId || withdrawReason.trim().length < 2) return
+    const requestId = withdrawDialogId
+    const ok = await mutate(async () => {
+      await controller.withdraw(requestId, withdrawReason.trim())
     }, '검토요청을 회수 보관함으로 옮겼습니다.')
+    if (!ok) return
+    setWithdrawDialogId(null)
+    setWithdrawReason('')
+    setPendingWithdrawId(null)
+    if (selectedReviewId === requestId) setSelectedReviewId(null)
   }
 
   const rejectReview = async (requestId: string, comment: string): Promise<boolean> =>
@@ -253,21 +299,22 @@ export function ReviewsPanel({
           onSubmit={() => void createReview()}
         />
       )}
-      {profile.role === 'leader' && (
-        <div className="workspace-header">
-          <h2>검토 워크스페이스</h2>
-          <button
-            className={statusFilter === 'withdrawn' ? 'selected' : 'ghost'}
-            onClick={() => {
-              const opening = statusFilter !== 'withdrawn'
-              setStatusFilter(opening ? 'withdrawn' : 'all')
-              setReviewView('list')
-              if (opening && archivePage < 0) void loadArchivePage(0)
-            }}
-            type="button"
-          >
-            회수 보관함 ({statusCounts.withdrawn ?? 0})
-          </button>
+      <div className="workspace-header">
+        <h2>{profile.role === 'leader' ? '검토 워크스페이스' : '내 검토 기록'}</h2>
+        <button
+          aria-pressed={statusFilter === 'withdrawn'}
+          className={statusFilter === 'withdrawn' ? 'ghost archive-toggle selected' : 'ghost archive-toggle'}
+          onClick={() => {
+            const opening = statusFilter !== 'withdrawn'
+            if (opening) openArchive()
+            else setStatusFilter('all')
+          }}
+          type="button"
+        >
+          회수 보관함
+          {archivePage >= 0 && ` (${statusCounts.withdrawn}${archiveHasMore ? '+' : ''})`}
+        </button>
+        {profile.role === 'leader' && (
           <div className="workspace-view-toggle" role="group" aria-label="검토요청 보기 방식">
             <button
               aria-pressed={reviewView === 'list'}
@@ -288,8 +335,8 @@ export function ReviewsPanel({
               칸반
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
       {reviewView === 'kanban' && profile.role === 'leader' ? (
         <section className="review-workspace kanban-mode">
           <ReviewKanban
@@ -321,6 +368,7 @@ export function ReviewsPanel({
       ) : (
         <section className="review-workspace">
           <ReviewList
+            loading={statusFilter === 'withdrawn' && archiveLoading && archivePage < 0}
             onSelectReview={selectReview}
             onStatusFilterChange={setStatusFilter}
             profile={profile}
@@ -360,6 +408,21 @@ export function ReviewsPanel({
           )}
         </div>
       )}
+      <ReasonPromptModal
+        description="요청은 삭제되지 않고 회수 보관함에 보존됩니다."
+        maxLength={500}
+        minLength={2}
+        onClose={() => {
+          setWithdrawDialogId(null)
+          setWithdrawReason('')
+        }}
+        onSubmit={() => void confirmWithdrawReview()}
+        open={Boolean(withdrawDialogId)}
+        reason={withdrawReason}
+        setReason={setWithdrawReason}
+        submitLabel="회수하기"
+        title="검토요청을 회수할까요?"
+      />
     </div>
   )
 }

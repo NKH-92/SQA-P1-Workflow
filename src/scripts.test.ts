@@ -114,14 +114,21 @@ describe('migration scripts', () => {
     expect(script).toContain('must use HTTPS')
   })
 
-  it('makes the dedicated RLS command fail closed and seeds deterministic Auth fixtures', () => {
+  it('makes the dedicated RLS command fail closed and keeps fixture credentials ephemeral', () => {
     const runner = readScript('run-rls-tests.mjs')
     const fixtures = readScript('setup-rls-fixtures.mjs')
     expect(runner).toContain("RLS_REQUIRED: '1'")
     expect(fixtures).toContain('admin.auth.admin.createUser')
+    expect(fixtures).toContain("randomBytes(24).toString('base64url')")
+    expect(fixtures).toContain('RLS_FIXTURE_OUTPUT_FILE')
+    expect(fixtures).toContain("flag: 'wx'")
+    expect(fixtures).toContain('SQA_RLS_FIXTURES_READY')
+    expect(fixtures).not.toMatch(/const password = ['"]/)
+    expect(fixtures).not.toMatch(/console\.log\(`\$\{key\}=\$\{value\}`\)/)
     expect(fixtures).toContain('must_change_password: user.mustChangePassword ?? false')
     expect(fixtures).toContain('RLS_MEMBER_A_PENDING_REVIEW_REQUEST_ID')
     expect(fixtures).toContain('RLS_TEST_PROJECT_UPDATED_AT')
+    expect(fixtures).toContain("due_date: '2099-01-10'")
     expect(fixtures).toContain("RLS_ALLOW_REMOTE_DISPOSABLE === '1'")
     expect(fixtures).toContain("RLS_CONFIRM_DISPOSABLE_TARGET === 'true'")
     expect(fixtures).toContain('targetHostname === `${targetProjectRef}.supabase.co`')
@@ -134,6 +141,18 @@ describe('migration scripts', () => {
     expect(remoteSmoke).toContain('RLS_REMOTE_TARGET_REF: targetProjectRef')
     expect(remoteSmoke).toContain('RLS_PRODUCTION_PROJECT_REF: productionProjectRef')
     expect(remoteSmoke).toContain('RLS_ALLOWED_TARGET_REFS: allowedTargetRefs')
+    expect(remoteSmoke).toContain('RLS_FIXTURE_OUTPUT_FILE: fixtureOutput')
+    expect(remoteSmoke).toContain('rmSync(fixtureOutput, { force: true })')
+
+    const localGate = readScript('run-local-rls-gate.mjs')
+    expect(localGate).toContain('RLS_FIXTURE_OUTPUT_FILE: fixtureOutput')
+    expect(localGate).not.toContain('fixtureResult.stdout.split')
+
+    const remoteE2e = readScript('run-remote-e2e.mjs')
+    expect(remoteE2e).toContain("randomBytes(24).toString('base64url')")
+    expect(remoteE2e).toContain('RLS_FIXTURE_OUTPUT_FILE: fixtureOutput')
+    expect(remoteE2e).not.toMatch(/const uninvitedPassword = ['"]/)
+    expect(remoteE2e).not.toMatch(/REMOTE_E2E_PENDING_PASSWORD_NEXT: ['"]/)
   })
 
   it.each(['setup-rls-fixtures.mjs', 'seed-review-scale-fixture.mjs'])(

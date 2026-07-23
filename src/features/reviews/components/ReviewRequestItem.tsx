@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Badge, CopyLinkButton } from '../../../components/ui'
+import { Badge, CopyLinkButton, Modal, ReasonPromptModal } from '../../../components/ui'
 import type { Profile, ReviewRequest, ReviewStatus } from '../../../types'
 import { ageInDays, dueDateLabel, dueDateShortLabel } from '../../../lib/dates'
 import { formatDate, reviewStatusLabels } from '../../../lib/format'
@@ -63,6 +63,15 @@ export function ReviewRequestItem({
   const [editingFeedbackText, setEditingFeedbackText] = useState('')
   const [feedbackDraft, setFeedbackDraft] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [confirmAction, setConfirmAction] = useState<
+    | { kind: 'approve' }
+    | { kind: 'reject'; comment: string }
+    | { kind: 'reopen' }
+    | { kind: 'resubmit'; comment: string }
+    | null
+  >(null)
+  const [voidFeedbackId, setVoidFeedbackId] = useState<string | null>(null)
+  const [voidReason, setVoidReason] = useState('')
   const feedbackInputRef = useRef<HTMLTextAreaElement>(null)
   const {
     timelineSteps,
@@ -86,24 +95,17 @@ export function ReviewRequestItem({
     }
   }
 
-  const handleStatusTransition = async (status: ReviewStatus) => {
+  const performStatusTransition = async (status: ReviewStatus, comment?: string) => {
     if (status === request.status || isSubmitting) return
     if (status === 'rejected') {
-      if (!feedbackDraft.trim()) {
-        setRejectNotice(true)
-        feedbackInputRef.current?.focus()
-        return
-      }
-      if (!window.confirm('이 검토요청을 반려 처리하시겠습니까?')) return
       setRejectNotice(false)
-      const ok = await withSubmitting(() => rejectReview(request.id, feedbackDraft))
+      const ok = await withSubmitting(() => rejectReview(request.id, comment ?? feedbackDraft))
       if (!ok) return
-      setFeedbackDraft('')
+      setFeedbackDraft((current) => (current === comment ? '' : current))
       setTransitionNotice({ text: '반려 상태로 전환했습니다.', tone: status })
       window.setTimeout(() => setTransitionNotice(null), 2600)
       return
     }
-    if (!window.confirm('이 검토요청을 완료 처리하시겠습니까?')) return
     const ok = await withSubmitting(() => updateStatus(request.id, status))
     if (!ok) return
     setTransitionNotice({ text: `${reviewStatusLabels[status]} 상태로 전환했습니다.`, tone: status })
@@ -114,33 +116,61 @@ export function ReviewRequestItem({
     window.setTimeout(() => setTransitionNotice(null), 2600)
   }
 
-  const handleReopen = async () => {
+  const handleStatusTransition = (status: ReviewStatus) => {
+    if (status === request.status || isSubmitting) return
+    if (status === 'rejected') {
+      const comment = feedbackDraft.trim()
+      if (!comment) {
+        setRejectNotice(true)
+        feedbackInputRef.current?.focus()
+        return
+      }
+      setConfirmAction({ kind: 'reject', comment })
+      return
+    }
+    setConfirmAction({ kind: 'approve' })
+  }
+
+  const performReopen = async () => {
     if (isSubmitting) return
-    if (!window.confirm('종결된 검토요청을 다시 대기 상태로 되돌리시겠습니까?')) return
     await withSubmitting(() => reopenReview(request.id))
   }
 
   const submitFeedback = async () => {
     if (isSubmitting || !feedbackDraft.trim()) return
     const submittedComment = feedbackDraft
-    if (isMemberResubmission && !window.confirm('피드백을 남기고 같은 검토요청으로 재검토를 요청하시겠습니까?')) {
+    if (isMemberResubmission) {
+      setConfirmAction({ kind: 'resubmit', comment: submittedComment })
       return
     }
     setIsSubmitting(true)
     try {
-      const ok = isMemberResubmission
-        ? await resubmitReview(request.id, submittedComment)
-        : await addFeedback(request.id, submittedComment)
+      const ok = await addFeedback(request.id, submittedComment)
       if (ok) {
         setFeedbackDraft((current) => (current === submittedComment ? '' : current))
-        if (isMemberResubmission) {
-          setTransitionNotice({ text: '같은 검토요청으로 재검토를 요청했습니다.', tone: 'pending' })
-          window.setTimeout(() => setTransitionNotice(null), 2600)
-        }
       }
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  const performResubmit = async (comment: string) => {
+    if (isSubmitting) return
+    const ok = await withSubmitting(() => resubmitReview(request.id, comment))
+    if (!ok) return
+    setFeedbackDraft((current) => (current === comment ? '' : current))
+    setTransitionNotice({ text: '같은 검토요청으로 재검토를 요청했습니다.', tone: 'pending' })
+    window.setTimeout(() => setTransitionNotice(null), 2600)
+  }
+
+  const confirmPendingAction = async () => {
+    const action = confirmAction
+    if (!action) return
+    setConfirmAction(null)
+    if (action.kind === 'approve') await performStatusTransition('approved')
+    if (action.kind === 'reject') await performStatusTransition('rejected', action.comment)
+    if (action.kind === 'reopen') await performReopen()
+    if (action.kind === 'resubmit') await performResubmit(action.comment)
   }
 
   const startFeedbackEdit = (feedbackId: string, comment: string) => {
@@ -157,10 +187,17 @@ export function ReviewRequestItem({
     }
   }
 
-  const removeFeedback = async (feedbackId: string) => {
-    const reason = window.prompt('피드백 무효화 사유를 입력해 주세요.')?.trim() ?? ''
-    if (reason.length < 2) return
-    await withSubmitting(() => voidFeedback(feedbackId, reason))
+  const removeFeedback = (feedbackId: string) => {
+    setVoidFeedbackId(feedbackId)
+    setVoidReason('')
+  }
+
+  const confirmVoidFeedback = async () => {
+    if (!voidFeedbackId || voidReason.trim().length < 2) return
+    const ok = await withSubmitting(() => voidFeedback(voidFeedbackId, voidReason.trim()))
+    if (!ok) return
+    setVoidFeedbackId(null)
+    setVoidReason('')
   }
 
   return (
@@ -238,7 +275,7 @@ export function ReviewRequestItem({
         )}
         {profile.role === 'leader' && (request.status === 'approved' || request.status === 'rejected') && (
           <div className="request-actions">
-            <button className="ghost compact" disabled={isSubmitting} onClick={() => void handleReopen()} type="button">
+            <button className="ghost compact" disabled={isSubmitting} onClick={() => setConfirmAction({ kind: 'reopen' })} type="button">
               다시 열기
             </button>
             <CopyLinkButton tab="reviews" entityId={request.id} />
@@ -336,7 +373,7 @@ export function ReviewRequestItem({
                         <button className="ghost compact" onClick={() => startFeedbackEdit(item.id, item.comment)} type="button">
                           수정
                         </button>
-                        <button className="ghost compact" disabled={isSubmitting} onClick={() => void removeFeedback(item.id)} type="button">
+                        <button className="ghost compact" disabled={isSubmitting} onClick={() => removeFeedback(item.id)} type="button">
                           무효화
                         </button>
                       </div>
@@ -399,6 +436,56 @@ export function ReviewRequestItem({
           {transitionNotice.text}
         </div>
       )}
+      <Modal
+        className="review-action-modal"
+        description={confirmAction?.kind === 'resubmit'
+          ? '작성한 피드백과 함께 같은 요청을 다시 대기 상태로 전달합니다.'
+          : confirmAction?.kind === 'reopen'
+            ? '종결 이력은 유지되고 요청이 다시 대기 상태가 됩니다.'
+            : '현재 화면에 표시된 검토요청에 상태 변경을 적용합니다.'}
+        onClose={() => setConfirmAction(null)}
+        open={Boolean(confirmAction)}
+        title={confirmAction?.kind === 'reject'
+          ? '검토요청을 반려할까요?'
+          : confirmAction?.kind === 'reopen'
+            ? '검토요청을 다시 열까요?'
+            : confirmAction?.kind === 'resubmit'
+              ? '재검토를 요청할까요?'
+              : '검토요청을 완료 처리할까요?'}
+      >
+        <footer className="modal-footer">
+          <button className="ghost" onClick={() => setConfirmAction(null)} type="button">취소</button>
+          <button
+            className={confirmAction?.kind === 'reject' ? 'danger' : 'primary'}
+            disabled={isSubmitting}
+            onClick={() => void confirmPendingAction()}
+            type="button"
+          >
+            {confirmAction?.kind === 'reject'
+              ? '반려하기'
+              : confirmAction?.kind === 'reopen'
+                ? '다시 열기'
+                : confirmAction?.kind === 'resubmit'
+                  ? '재검토 요청'
+                  : '완료 처리'}
+          </button>
+        </footer>
+      </Modal>
+      <ReasonPromptModal
+        description="원문은 감사 이력에 보존되고 화면에는 무효화 상태와 사유가 표시됩니다."
+        maxLength={500}
+        minLength={2}
+        onClose={() => {
+          setVoidFeedbackId(null)
+          setVoidReason('')
+        }}
+        onSubmit={() => void confirmVoidFeedback()}
+        open={Boolean(voidFeedbackId)}
+        reason={voidReason}
+        setReason={setVoidReason}
+        submitLabel="무효화"
+        title="피드백을 무효화할까요?"
+      />
     </article>
   )
 }

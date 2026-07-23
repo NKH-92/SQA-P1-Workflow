@@ -117,14 +117,14 @@ describe('auth route guards', () => {
     expect(screen.queryByText(/안녕하세요,/)).not.toBeInTheDocument()
   })
 
-  it('shows preview leader dashboard in preview mode without Supabase env', () => {
+  it('shows preview leader dashboard in preview mode without Supabase env', async () => {
     supabaseFlags.isPreviewMode = true
     supabaseFlags.isProductionMode = false
     authState.profile = previewLeader
 
     render(<App />)
 
-    expect(screen.getByText(`안녕하세요, ${previewLeader.name}님.`)).toBeInTheDocument()
+    expect(await screen.findByText(`안녕하세요, ${previewLeader.name}님.`)).toBeInTheDocument()
     expect(screen.queryByText('로그인 설정 오류')).not.toBeInTheDocument()
   })
 
@@ -164,6 +164,7 @@ describe('auth route guards', () => {
         expect.any(AbortSignal),
       )
     })
+    expect(await screen.findByRole('heading', { name: '공지 게시판' })).toBeInTheDocument()
   })
 
   it('sanitizes member deep links away from leader-only tabs', () => {
@@ -173,7 +174,7 @@ describe('auth route guards', () => {
     expect(sanitizeTabForRole('work', true)).toBe('dashboard')
   })
 
-  it('renders member dashboard instead of leader tabs for #/products deep link', () => {
+  it('renders member dashboard instead of leader tabs for #/products deep link', async () => {
     supabaseFlags.isPreviewMode = true
     supabaseFlags.isProductionMode = false
     authState.profile = previewMember
@@ -182,6 +183,6 @@ describe('auth route guards', () => {
     render(<App />)
 
     expect(screen.queryByText('먼저 확인할 것들')).not.toBeInTheDocument()
-    expect(screen.getByText(`${previewMember.name}님의 오늘 업무`)).toBeInTheDocument()
+    expect(await screen.findByText(`${previewMember.name}님의 오늘 업무`)).toBeInTheDocument()
   })
 })

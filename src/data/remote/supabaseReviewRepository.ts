@@ -8,6 +8,7 @@ import {
   assertCanReopen,
   assertCanResubmit,
   assertFeedbackComment,
+  normalizeReviewRequestPayload,
   assertReviewStatusTransition,
 } from '../validation/reviews'
 import { translateReviewOccError } from './reviewOccError'
@@ -24,21 +25,23 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
       if (editingReviewId) {
         const previous = data.reviewRequests.find((item) => item.id === editingReviewId)
         if (!previous) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
+        const normalized = normalizeReviewRequestPayload(payload, { existingDueDate: previous.due_date })
         const { error } = await supabase!.rpc('update_review_request', {
           p_review_request_id: editingReviewId,
           p_expected_updated_at: previous.updated_at,
-          p_title: payload.title,
-          p_description: payload.description,
-          p_due_date: payload.due_date,
+          p_title: normalized.title,
+          p_description: normalized.description,
+          p_due_date: normalized.due_date,
         })
         if (error) throwReviewError(error)
         return { reviewId: editingReviewId, isUpdate: true }
       }
 
+      const normalized = normalizeReviewRequestPayload(payload)
       const { data: createdId, error } = await supabase!.rpc('create_review_request', {
-        p_title: payload.title,
-        p_description: payload.description,
-        p_due_date: payload.due_date,
+        p_title: normalized.title,
+        p_description: normalized.description,
+        p_due_date: normalized.due_date,
       })
       if (error) throwReviewError(error)
       return { reviewId: typeof createdId === 'string' ? createdId : '', isUpdate: false }

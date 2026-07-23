@@ -1,7 +1,11 @@
+import { randomBytes } from 'node:crypto'
+import { writeFileSync } from 'node:fs'
+import { isAbsolute } from 'node:path'
 import { createClient } from '@supabase/supabase-js'
 
 const url = process.env.SUPABASE_URL
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const outputFile = process.env.RLS_FIXTURE_OUTPUT_FILE
 if (!url || !serviceRoleKey) {
   throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required')
 }
@@ -33,12 +37,15 @@ if (!isLocalTarget) {
 
   if (!remoteDisposableConfirmed) throw new Error('SQA_FIXTURE_NON_LOCAL_TARGET')
 }
+if (!outputFile || !isAbsolute(outputFile)) {
+  throw new Error('SQA_FIXTURE_OUTPUT_FILE_REQUIRED')
+}
 
 const admin = createClient(url, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 })
 
-const password = 'Rls-Test-Password-2026!'
+const password = `${randomBytes(24).toString('base64url')}aA1!`
 const users = [
   { key: 'leader', email: 'rls-leader@example.test', name: 'RLS Leader', role: 'leader', active: true },
   { key: 'memberA', email: 'rls-member-a@example.test', name: 'RLS Member A', role: 'member', active: true },
@@ -105,7 +112,14 @@ if (projectError || !project) throw projectError ?? new Error('Failed to create 
 const { data: reviews, error: reviewsError } = await admin
   .from('review_requests')
   .insert([
-    { requester_id: created.memberA.id, title: 'Member A pending', description: 'RLS fixture', status: 'pending', rejection_count: 0 },
+    {
+      requester_id: created.memberA.id,
+      title: 'Member A pending',
+      description: 'RLS fixture',
+      due_date: '2099-01-10',
+      status: 'pending',
+      rejection_count: 0,
+    },
     { requester_id: created.memberB.id, title: 'Member B pending', description: 'RLS fixture', status: 'pending', rejection_count: 0 },
     { requester_id: created.memberA.id, title: 'Hardened OCC approval fixture', description: 'RLS fixture', status: 'pending', rejection_count: 0 },
     { requester_id: created.memberA.id, title: 'Hardened withdrawal fixture', description: 'RLS fixture', status: 'pending', rejection_count: 0 },
@@ -236,4 +250,9 @@ const output = {
   RLS_OWNED_CHANGE_TASK_ID: ownedTask.id,
 }
 
-for (const [key, value] of Object.entries(output)) console.log(`${key}=${value}`)
+writeFileSync(outputFile, `${JSON.stringify(output)}\n`, {
+  encoding: 'utf8',
+  mode: 0o600,
+  flag: 'wx',
+})
+console.log('SQA_RLS_FIXTURES_READY')

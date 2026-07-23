@@ -182,6 +182,20 @@ describe('reportError', () => {
   })
 })
 
+describe('error operation taxonomy', () => {
+  it('keeps render errors distinct while reducing arbitrary mutation labels', () => {
+    const base = {
+      error: new Error('boom'),
+      route: 'reviews',
+      role: 'unknown' as const,
+      now: () => new Date('2026-07-20T09:00:00.000Z'),
+    }
+    expect(buildErrorReport({ ...base, operation: 'render' }).operation).toBe('render')
+    expect(buildErrorReport({ ...base, operation: 'activity-log-write' }).operation).toBe('activity-log-write')
+    expect(buildErrorReport({ ...base, operation: '검토요청을 저장했습니다.' }).operation).toBe('mutation')
+  })
+})
+
 describe('loadBuildShaFromVersionFile', () => {
   it('adopts a valid SHA from /version.json', async () => {
     const fetchImpl = vi.fn(async () => ({

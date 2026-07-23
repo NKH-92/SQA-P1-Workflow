@@ -80,7 +80,7 @@ jobs:
             --auth-identity-included false \
             --storage-object-count "$storage_object_count"
 
-      # 이 저장소는 public일 수 있고, public repo의 아티팩트는 누구나 내려받을 수 있다.
+      # 저장소는 Private이지만 권한 오설정·계정 침해·Artifact 오배포 위험은 남는다.
       # 팀원 이름·이메일이 담긴 덤프는 반드시 암호화된 상태로만 업로드한다.
       - name: Encrypt and revalidate DR package
         env:

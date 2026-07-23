@@ -1,6 +1,9 @@
-# 직접 수행 작업 계획서 (Manual Tasks Plan)
+# 초기 배포 작업 계획서 (보관)
 
-> **대상**: 파트장 또는 지정 운영자  
+> **상태**: 최초 운영 환경 구축 당시의 이력 문서입니다. 반복 배포에는
+> [RELEASE_CHECKLIST.md](../RELEASE_CHECKLIST.md)를 사용합니다.
+>
+> **대상**: 파트장 또는 지정 운영자
 > **목적**: 코드·CI 작업 완료 후, **운영 환경에 반영하고 검증**하기 위해 사람이 직접 해야 하는 작업을 순서대로 정리한다.  
 > **전제**: 브랜치 `main`, 최신 HEAD 기준 — 로컬에서 `npm test`, `npm run build`, `npm run lint`, `npm run typecheck` 통과 상태를 확인한다.
 
@@ -46,7 +49,7 @@
    supabase login            # npx 사용 시: npx supabase login
    ```
 
-> **개인정보 공지:** 이 프로젝트에는 팀원 이름·이메일이 저장된다. 서울 리전(외부 클라우드)에 저장된다는 사실을 **사용 시작 전 팀에 1회 공지**한다. 상세: [OPERATIONS.md](./OPERATIONS.md) 개인정보 처리 절.
+> **개인정보 공지:** 이 프로젝트에는 팀원 이름·이메일이 저장된다. 서울 리전(외부 클라우드)에 저장된다는 사실을 **사용 시작 전 팀에 1회 공지**한다. 상세: [OPERATIONS.md](../OPERATIONS.md) 개인정보 처리 절.
 
 ### 완료 기준
 - [ ] Supabase 프로젝트 **서울 리전(ap-northeast-2)** 으로 생성, `<PROJECT_REF>` 기록
@@ -86,7 +89,7 @@
 
 > ⚠️ **운영 배포는 자동화하지 않는다.** `main` push는 CI만 실행한다. DB Migrate에는 동일 SHA의 `ci_run_id`와 `backup_run_id`, Deploy Worker에는 동일 SHA의 `ci_run_id`와 `db_migrate_run_id` 및 `deploy_confirm=true`가 필요하다.
 > - 운영 배포는 작업 B·C·D를 완료한 뒤 **작업 E에서만** 수행한다.
-> - CI 테스트만 확인하려면 CI workflow를 사용한다. 자세한 승격 조건은 [DEPLOYMENT.md](./DEPLOYMENT.md) "배포 성공 vs 스킵 구분"을 참고한다.
+> - CI 테스트만 확인하려면 CI workflow를 사용한다. 자세한 승격 조건은 [DEPLOYMENT.md](../DEPLOYMENT.md) "배포 성공 vs 스킵 구분"을 참고한다.
 
 ### 완료 기준
 - [ ] 원격 `main`(또는 merge된 PR)에 최신 커밋 반영
@@ -137,7 +140,7 @@ GitHub 저장소 → **Settings → Secrets and variables → Actions**
 
 ### 적용 범위
 
-`supabase/migrations/`의 migration을 순서대로 적용한다. 파일 수·순서·설명은 자동 생성되는 [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md)를 확인하고, 적용 직전 동일 `main` SHA의 CI와 암호화 백업을 검증한다. 기존 migration은 수정·삭제·rename하지 않는다.
+`supabase/migrations/`의 migration을 순서대로 적용한다. 파일 수·순서·설명은 자동 생성되는 [SUPABASE_MIGRATIONS.md](../SUPABASE_MIGRATIONS.md)를 확인하고, 적용 직전 동일 `main` SHA의 CI와 암호화 백업을 검증한다. 기존 migration은 수정·삭제·rename하지 않는다.
 
 ### 방법 1 — GitHub Actions (권장)
 
@@ -160,7 +163,7 @@ npx supabase db push
 
 ### 방법 3 — SQL Editor (복구 전용)
 
-Dashboard → **SQL Editor**에서 [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) 목록 순서대로 실행.
+Dashboard → **SQL Editor**에서 [SUPABASE_MIGRATIONS.md](../SUPABASE_MIGRATIONS.md) 목록 순서대로 실행.
 
 > SQL Editor 수동 적용은 복구·break-glass 검증용으로만 사용한다. 운영 DB의 정규 반영은 반드시 `DB Migrate`/CLI 경로를 사용해야 하며, SQL Editor 실행만으로는 `schema_migrations` 이력이 만들어지지 않아 Deploy Worker의 readiness gate를 통과하지 못한다. 수동 적용 후 운영 반영이 필요하면 먼저 백업·객체 검증을 완료하고 별도 승인된 migration-history repair 절차를 따른다.
 
@@ -175,7 +178,7 @@ Dashboard → **SQL Editor**에서 [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATION
 - [ ] migration history exact set과 canonical readiness 통과
 - [ ] 로컬 `npm test -- src/migrations.test.ts` 통과
 
-상세: [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md)
+상세: [SUPABASE_MIGRATIONS.md](../SUPABASE_MIGRATIONS.md)
 
 ---
 
@@ -211,7 +214,7 @@ RLS·권한 검증(작업 F)에는 파트장 외에 member 계정 2개가 필요
    set name = excluded.name, role = excluded.role;
    ```
 2. Dashboard > Authentication > Users > **Add user** 로 위 2개 이메일 계정을 각각 생성한다. 각 계정에 서로 다른 16자 이상의 무작위 임시 비밀번호를 사용한다.
-3. 각 계정은 승인된 1:1 채널로 임시 비밀번호를 전달받고 **본인이 즉시 로그인**해 `must_change_password` 화면에서 8자 이상으로 변경한다. 한 명씩 즉시 온보딩한다([OPERATIONS.md](./OPERATIONS.md) 임시 비밀번호 절 참고).
+3. 각 계정은 승인된 1:1 채널로 임시 비밀번호를 전달받고 **본인이 즉시 로그인**해 `must_change_password` 화면에서 8자 이상으로 변경한다. 한 명씩 즉시 온보딩한다([OPERATIONS.md](../OPERATIONS.md) 임시 비밀번호 절 참고).
 
 ### 6.3 Auth 설정 확인
 
@@ -229,7 +232,7 @@ Supabase → **Authentication → Providers → Email**
 | Enable email signup (Allow new users to sign up) | **OFF** |
 | Confirm email | **ON** (`mailer_autoconfirm=false`; 이메일 소유 확인 유지) |
 
-> public sign-up이 ON이면 앱 외 경로로 가입이 가능하다. 운영 프로젝트에는 이미 `disable_signup: true`가 적용되어 있으므로([OPERATIONS.md](./OPERATIONS.md) Auth 절), 여기서는 설정이 유지되고 있는지 재확인한다.
+> public sign-up이 ON이면 앱 외 경로로 가입이 가능하다. 운영 프로젝트에는 이미 `disable_signup: true`가 적용되어 있으므로([OPERATIONS.md](../OPERATIONS.md) Auth 절), 여기서는 설정이 유지되고 있는지 재확인한다.
 
 ### 6.4 첫 로그인
 
@@ -301,7 +304,7 @@ Deploy Worker 워크플로는 CI/DB provenance → RLS → `typecheck` → `lint
 
 ## 9. 작업 G — 백업 및 복구 리허설
 
-백업은 GitHub Actions(`backup.yml`)가 **매일 05:00 KST**에 자동 수행한다(암호화 아티팩트, 보존 90일). 이 작업에서는 첫 실행과 복구를 검증한다. 상세: [OPERATIONS.md](./OPERATIONS.md)
+백업은 GitHub Actions(`backup.yml`)가 **매일 05:00 KST**에 자동 수행한다(암호화 아티팩트, 보존 90일). 이 작업에서는 첫 실행과 복구를 검증한다. 상세: [OPERATIONS.md](../OPERATIONS.md)
 
 1. 작업 B의 `SUPABASE_DB_URL`·`BACKUP_PASSPHRASE` Secrets 등록 확인
 2. Actions → **Backup DB** → Run workflow(수동 1회) → run green + Job Summary에 `Backup OK` 확인
@@ -346,7 +349,7 @@ Deploy Worker 워크플로는 CI/DB provenance → RLS → `typecheck` → `lint
 
 | 문서 | 용도 |
 |------|------|
-| [DEPLOYMENT.md](./DEPLOYMENT.md) | GitHub, Workers, Supabase 초기 설정 |
-| [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) | 마이그레이션 적용·확인 SQL |
-| [OPERATIONS.md](./OPERATIONS.md) | 백업·장애·사용자 제거 런북 |
-| [TEST_PLAN.md](./TEST_PLAN.md) | 기능·RLS 검증 시나리오 전체 |
+| [DEPLOYMENT.md](../DEPLOYMENT.md) | GitHub, Workers, Supabase 초기 설정 |
+| [SUPABASE_MIGRATIONS.md](../SUPABASE_MIGRATIONS.md) | 마이그레이션 적용·확인 SQL |
+| [OPERATIONS.md](../OPERATIONS.md) | 백업·장애·사용자 제거 런북 |
+| [TEST_PLAN.md](../TEST_PLAN.md) | 기능·RLS 검증 시나리오 전체 |

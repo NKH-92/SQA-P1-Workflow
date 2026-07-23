@@ -1,15 +1,17 @@
 # 운영 런북
 
-SQA P1 Workflow의 일상 운영·백업·장애 대응 절차입니다.
+SQA P1 Workflow의 일상 운영·백업·장애 대응 절차입니다. 저장소는 Private으로
+유지하며 저장소 밖의 운영 값은 승인된 내부 기록에서 관리합니다.
 
-## 교정 리팩토링 검증과 release 차단 조건
+## 릴리스 차단 조건
 
 - local RLS는 `npm run test:rls:full`만 canonical 진입점으로 사용한다. runner는 pinned Supabase CLI `2.109.1`로 start -> migration -> DB lint(error) -> fixture -> RLS -> readiness SQL을 실행하고 성공/실패와 관계없이 stop 및 임시 migration 복원을 수행한다.
 - Docker daemon에 연결할 수 없거나 RLS test가 하나라도 skip/fail이면 DB 관련 작업과 전체 리팩토링을 완료로 표시하지 않는다.
 - readiness SQL과 migration version은 `scripts/sql/verify/manifest.json`만 사용한다. workflow에서 glob이나 별도 목록을 만들지 않는다.
 - PowerShell의 Supabase native 호출은 각 호출 직후 `$LASTEXITCODE`를 검사한다. link/push/query 오류 뒤에 다음 단계로 진행하지 않는다.
 - production 순서는 **Backup DB -> DB Migrate -> Deploy Worker**다. 부분 polling이나 Worker build 성공만으로 DB 준비 완료를 주장하지 않는다.
-- 이 리팩토링의 기본 범위는 로컬 구현/검증이다. push, PR, remote migration, Worker deploy는 별도 승인 전 수행하지 않는다.
+- push, PR, remote migration, Worker deploy는 각 단계의 승인·증거가 없으면 수행하지
+  않는다. 반복 배포는 [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md)를 따른다.
 
 운영 URL·Supabase project ref는 팀 위키 또는 이 문서 하단에 `<WORKER_URL>`, `<PROJECT_REF>` 형태로만 기록하고, 저장소에는 커밋하지 않습니다.
 
@@ -74,7 +76,7 @@ Backup job이 실패하면 `[Backup] Daily DB backup failed` issue를 새로 만
 | 항목 | 내용 |
 |---|---|
 | 필요 Secrets | `SUPABASE_DB_URL` (Dashboard > Connect의 Session pooler URI), `BACKUP_PASSPHRASE` (암호화 암구호) |
-| 암호화 이유 | 이 저장소가 public인 동안 아티팩트는 누구나 다운로드 가능 — 팀원 이름·이메일이 담긴 덤프는 평문 업로드 금지 |
+| 암호화 이유 | 저장소가 Private이어도 권한 오설정·계정 침해·Artifact 오배포 위험이 있으므로 팀원 이름·이메일이 담긴 dump는 평문 업로드 금지 |
 | 암구호 보관 | **분실 시 백업 복원 불가.** 비밀번호 관리자 등 통제된 곳에 보관 |
 | 확인 | 매일 Actions run이 green인지, Job Summary에 `L2 application DB package`와 Auth identity 미포함 문구가 있는지 |
 
@@ -115,13 +117,16 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 
 `DATABASE_URL`은 Supabase Dashboard > Project Settings > Database > Connection string (URI)에서 확인합니다. **명령행 인자로 URL을 넘기지 마세요** — shell history에 비밀번호가 남을 수 있습니다.
 
-### 리뷰 첨부 Storage 폐기
+### 리뷰 첨부 Storage 폐기 (완료 이력)
 
 앱은 리뷰 첨부를 업로드·조회하지 않는다. 기존 `review-attachments` 버킷은 운영자 purge와 0건 확인 뒤 같은 운영 도구가 Storage API로 제거한다. Stage B `DB Migrate` 사전검사는 버킷 부재를 강제하고, 마이그레이션은 객체 race를 재확인한 뒤 정책·호환 스키마를 정리한다. 최종 스키마에는 버킷·정책·`attachment_url`이 모두 없어야 한다.
 
 > **`scripts/backup-db.ps1`은 DB(스키마·데이터)만 덤프하며 Storage 객체를 포함하지 않습니다.** 리뷰 첨부는 백업 대상이 아니므로 실제 purge 전 운영자가 이를 재확인하고 승인자를 기록해야 합니다.
 
-삭제 자동화는 [REMOVE_REVIEW_ATTACHMENTS.md](./REMOVE_REVIEW_ATTACHMENTS.md)의 장벽을 따른다. 먼저 파일명을 노출하지 않는 dry-run의 객체 수·digest를 기록하고, 승인된 운영자만 명시적 confirm으로 객체와 빈 bucket을 Storage API로 삭제한다. `verifiedRemainingObjectCount=0`, `verifiedBucketAbsent=true`, `bucketExistsAfter=false`, 재 dry-run `bucketExists=false`와 `objectCount=0`이 모두 확인되기 전에는 Stage B를 적용하지 않는다. `bucketAlreadyAbsent=true` 또는 `bucketDeleteAttempted=false`는 별도 변경 기록 대조와 승인이 필요하다. SQL로 `storage.objects`나 `storage.buckets`를 삭제하지 않는다.
+완료 당시 장벽과 증거는
+[archive/REMOVE_REVIEW_ATTACHMENTS.md](./archive/REMOVE_REVIEW_ATTACHMENTS.md)에
+보관한다. 같은 Storage surface를 다시 만들지 않으며, 유사한 폐기 작업에서도 SQL로
+`storage.objects`나 `storage.buckets`를 삭제하지 않는다.
 
 ## Auth 계정 생성·정리
 
@@ -261,7 +266,8 @@ Auth UUID/FK/login 증거가 있을 때만 완료로 판정한다.
 | 3 | (선택) `allowed_users`에서도 제거 | 앱 > 마스터 > 초대 관리 |
 | 4 | (복귀 시) 재활성화 후 로그인 | 정상 홈 진입 |
 
-상세 RLS·Storage 검증은 [MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md) 작업 F를 참고합니다.
+상세 RLS 검증은 [TEST_PLAN.md](./TEST_PLAN.md)와
+[RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md)를 참고합니다.
 
 > 마지막 active leader는 비활성화·강등이 DB에서 거부됩니다(202607070005). leader를 내보낼 때는 먼저 **다른 사람을 leader로 지정(이관)한 뒤** 대상 leader를 비활성화하세요.
 
@@ -317,12 +323,17 @@ Auth UUID/FK/login 증거가 있을 때만 완료로 판정한다.
 
 > **사용 시작 전 팀 공지 1회가 필요합니다.** 팀원 이름·이메일이 외부 클라우드(Supabase, 서울 리전)에 저장된다는 사실을 사용 시작 전에 팀에 1회 공지하고, 공지 일자를 이 문서 하단 또는 팀 위키에 기록합니다.
 
-> **저장소 public 전환 금지.** 현재 HEAD는 실값을 제거했지만, **git 이력에는 과거 커밋의 팀원 실명·사내 이메일·운영 프로필 UUID·운영 URL이 남아 있습니다.** 이력 재작성(`git filter-repo` 등)과 노출 값 전수 점검 없이는 이 저장소를 절대 public으로 전환하지 않습니다. fork·이관·외부 공유도 동일하게 취급합니다.
+> **저장소는 Private으로 유지합니다.** 현재 HEAD는 실값을 제거했지만, **Git
+> 이력에는 과거 커밋의 팀원 실명·사내 이메일·운영 프로필 UUID·운영 URL이 남아
+> 있습니다.** 이 저장소의 public 전환, 공개 fork, 외부 미러링을 금지합니다. 공개
+> 배포용 소스가 필요하면 이력 재작성보다 실값을 전수 정제한 별도 신규 저장소를
+> 우선 검토합니다.
 
 ## 배포
 
 자세한 CI/CD 설정은 [DEPLOYMENT.md](./DEPLOYMENT.md)를 참고하세요.  
-**직접 수행 작업 전체 계획**은 [MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md)를 참고하세요.
+**반복 배포 승인·증거**는 [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md)를
+참고하세요.
 
 새 운영 마이그레이션의 정규 경로는 보호된 **Actions → DB Migrate**(workflow_dispatch)입니다. 로컬 `npx supabase db push`는 Actions를 사용할 수 없는 장애 대응용 break-glass 경로이며, 동일한 백업·대상 프로젝트 확인·검증 증거와 승인 기록 없이는 사용하지 않습니다. 절차와 확인 SQL은 [SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md) 참고.
 

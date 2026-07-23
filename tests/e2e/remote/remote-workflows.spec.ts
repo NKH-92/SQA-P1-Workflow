@@ -124,7 +124,7 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
     const resubmitDialog = page.getByRole('dialog', { name: '재검토를 요청할까요?' })
     await expect(resubmitDialog).toBeVisible()
     await resubmitDialog.getByRole('button', { name: '재검토 요청', exact: true }).click()
-    await expect(page.getByText('같은 검토요청으로 재검토를 요청했습니다.', { exact: true })).toBeVisible({
+    await expect(page.getByText('같은 검토요청으로 재검토를 요청했습니다.', { exact: true }).first()).toBeVisible({
       timeout: 30_000,
     })
 

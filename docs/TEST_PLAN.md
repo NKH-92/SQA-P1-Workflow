@@ -17,7 +17,7 @@ git diff --check
 
 DB/repository/운영 변경은 Docker와 pinned Supabase CLI `2.109.1`이 준비된 환경에서 `npm run test:rls:full`까지 성공해야 한다. 일반 unit run에 환경형 RLS test가 skip으로 보이는 것은 개발 피드백일 뿐 완료 증거가 아니다. full runner의 skip 또는 실패는 전체 완료를 차단한다.
 
-Playwright **preview** project(`npm run test:e2e`)는 local adapter 회귀용으로 다음 시나리오를 독립적으로 차단한다: leader/member navigation, command palette, review lifecycle, project CRUD, product transfer, change task lifecycle, deep-link, density persistence, mobile sidebar, notification/read navigation, review stats filter, modal focus return.
+Playwright **preview** project(`npm run test:e2e`)는 local adapter 회귀용 17개 시나리오로 다음 계약을 독립적으로 차단한다: leader/member navigation, command palette, review lifecycle, project CRUD, product transfer, change task lifecycle, deep-link, density persistence, mobile sidebar, notification/read navigation, review stats filter, modal focus return.
 
 Playwright **remote** project(`npm run test:e2e:remote`)는 local Supabase + production build 정적 자산으로 UI→Auth→RPC→RLS 종단 12개 시나리오(R-E2E-01~12)를 차단한다. setup만 service role을 사용하고 브라우저에는 anon key와 시험 사용자 credential만 전달한다. production secret 사용을 금지한다. Docker/local Supabase가 없으면 이 게이트는 실행하지 않으며, `REMOTE_E2E_REQUIRED=1`일 때 미구성은 fail-closed다.
 

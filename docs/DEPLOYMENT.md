@@ -2,10 +2,19 @@
 
 ## GitHub 저장소
 
-원격 저장소는 GitHub `origin/main`이며, `main` push는 CI만 실행한다. 운영 DB와 Worker는 수동 승인을 거친 workflow_dispatch로만 변경한다.
+저장소는 **Private / 내부 운영용**으로 유지한다. Git 과거 이력에 팀원 개인정보와
+운영 식별자가 있으므로 public 전환, 공개 fork, 외부 미러링을 금지한다.
+
+기본 브랜치는 `main`이다. 저장소 설정은 squash merge만 허용하고 병합된 작업
+브랜치를 자동 삭제한다. 현재 GitHub 요금제는 Private 저장소 ruleset을 지원하지
+않으므로 `main` 직접 push·force push·삭제를 운영상 금지하고 PR의 전체 `build`
+성공과 review thread 해결을 사람이 확인한다. GitHub Pro 이상으로 전환하면
+PR·필수 check·linear history ruleset을 다시 활성화한다. `main` push는 CI만
+실행하며 운영 DB와 Worker는 수동 승인을 거친 `workflow_dispatch`로만 변경한다.
 
 - `.env.local`, `node_modules`, `dist`, 백업·시드 로컬 파일은 `.gitignore`로 커밋에서 제외된다.
-- 운영 URL·Supabase project ref·키는 저장소에 커밋하지 않는다 (GitHub Variables/Secrets로만 관리).
+- 운영 URL·Supabase project ref·계정 ID·키·사용자 실값은 저장소에 커밋하지 않는다
+  (GitHub Variables/Secrets 또는 승인된 내부 운영 기록으로만 관리).
 
 ## Supabase
 
@@ -136,7 +145,10 @@ Pages URL을 Supabase Auth의 Site URL 및 Redirect URLs에 추가한다.
 ## 운영 전 보호
 
 - 앱 내부 권한은 Supabase Auth와 RLS가 담당한다. public sign-up은 **비활성화 상태를 유지**하고(적용 완료 — [OPERATIONS.md](./OPERATIONS.md) Auth 절), 계정은 Dashboard에서만 생성한다.
-- 운영 URL·Supabase project ref는 저장소에 커밋하지 않는다. `WORKER_URL`은 배포 후 자동 헬스체크용 GitHub Actions Variable로 등록하고, 실제 값은 GitHub Variables/Secrets와 [MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md) 체크리스트 하단에 `<WORKER_URL>`, `<PROJECT_REF>` 플레이스홀더로 기록한다.
+- 운영 URL·Supabase project ref는 저장소에 커밋하지 않는다. `WORKER_URL`은 배포 후
+  자동 헬스체크용 GitHub Actions Variable로 등록하고, 릴리스 증거에는
+  [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md)의 플레이스홀더만 사용한다. 실제 값은
+  승인된 내부 운영 기록에 남긴다.
 - 백업·복구·장애 대응은 [OPERATIONS.md](./OPERATIONS.md)를 참고한다.
 - Supabase Pro 전환 기준:
   - 실제 업무에서 매일 사용하기 시작함
@@ -145,4 +157,7 @@ Pages URL을 Supabase Auth의 Site URL 및 Redirect URLs에 추가한다.
 
 ## 운영자 직접 수행 계획
 
-배포·마이그레이션·RLS·백업 등 **사람이 직접 해야 하는 작업**의 순서와 체크리스트는 [MANUAL_TASKS_PLAN.md](./MANUAL_TASKS_PLAN.md)를 참고한다.
+배포·마이그레이션·RLS·백업 등 **사람이 직접 확인해야 하는 반복 작업**의 순서와
+증거는 [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md)를 참고한다. 최초 구축 당시
+계획은 [archive/INITIAL_DEPLOYMENT_PLAN.md](./archive/INITIAL_DEPLOYMENT_PLAN.md)에
+이력으로 보관한다.

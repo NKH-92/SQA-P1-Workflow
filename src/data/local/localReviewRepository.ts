@@ -14,6 +14,7 @@ import {
   assertCanReopen,
   assertCanResubmit,
   assertFeedbackComment,
+  normalizeReviewRequestPayload,
   assertReviewStatusTransition,
 } from '../validation/reviews'
 import {
@@ -34,7 +35,6 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
 
   return {
     async saveReviewRequest({ editingReviewId, payload }) {
-      const { title, due_date: dueDate } = payload
       if (editingReviewId) {
         // Parity with remote RLS: a requester may correct a pending or rejected request.
         const target = data.reviewRequests.find((item) => item.id === editingReviewId)
@@ -47,27 +47,29 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
         if (target.requester_id !== profile.id) {
           throw new UserFacingError('본인의 요청만 수정할 수 있습니다.')
         }
-        setData((current) => updateReviewRequest(current, editingReviewId, payload))
+        const normalized = normalizeReviewRequestPayload(payload, { existingDueDate: target.due_date })
+        setData((current) => updateReviewRequest(current, editingReviewId, normalized))
         await recordActivityLog(activityLogs, {
           actor: profile,
           entityType: 'review_request',
           entityId: editingReviewId,
           action: 'updated',
-        summary: `${profile.name}님이 ${title} 검토요청을 수정했습니다.`,
-          metadata: { due_date: dueDate },
+          summary: `${profile.name}님이 ${normalized.title} 검토요청을 수정했습니다.`,
+          metadata: { due_date: normalized.due_date },
         })
         return { reviewId: editingReviewId, isUpdate: true }
       }
 
+      const normalized = normalizeReviewRequestPayload(payload)
       const reviewId = newId('review')
-      setData((current) => createReviewRequest(current, profile, reviewId, payload))
+      setData((current) => createReviewRequest(current, profile, reviewId, normalized))
       await recordActivityLog(activityLogs, {
         actor: profile,
         entityType: 'review_request',
         entityId: reviewId,
         action: 'created',
-        summary: `${profile.name}님이 ${title} 검토를 요청했습니다.`,
-        metadata: { due_date: dueDate },
+        summary: `${profile.name}님이 ${normalized.title} 검토를 요청했습니다.`,
+        metadata: { due_date: normalized.due_date },
       })
       return { reviewId, isUpdate: false }
     },

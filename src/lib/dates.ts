@@ -1,18 +1,27 @@
 import { formatDate } from './format'
+import { businessDateKey } from './businessTime'
 
 const DAY_MS = 86400000
 
 export function dateOnlyTime(value?: string | null) {
   if (!value) return null
-  const time = Date.parse(`${value.slice(0, 10)}T00:00:00`)
-  return Number.isNaN(time) ? null : time
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value)
+  if (!match) return null
+  const time = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  const date = new Date(time)
+  return date.getUTCFullYear() === Number(match[1])
+    && date.getUTCMonth() === Number(match[2]) - 1
+    && date.getUTCDate() === Number(match[3])
+    ? time
+    : null
 }
 
 export function daysUntil(value?: string | null, now = new Date()) {
   const dueTime = dateOnlyTime(value)
   if (dueTime == null) return null
-  const todayTime = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  return Math.ceil((dueTime - todayTime) / DAY_MS)
+  const todayTime = dateOnlyTime(businessDateKey(now))
+  if (todayTime == null) return null
+  return Math.round((dueTime - todayTime) / DAY_MS)
 }
 
 export function ageInDays(value?: string | null, now = Date.now()) {
@@ -29,12 +38,10 @@ export function relativeDaysAgo(value?: string | null, now = Date.now()): number
   if (!value) return null
   const time = Date.parse(value)
   if (Number.isNaN(time)) return null
-  const startOfDay = (input: number) => {
-    const date = new Date(input)
-    return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
-  }
-  // round: DST 등으로 하루가 정확히 24h가 아니어도 달력 일수가 흔들리지 않게 한다.
-  return Math.max(0, Math.round((startOfDay(now) - startOfDay(time)) / DAY_MS))
+  const valueDay = dateOnlyTime(businessDateKey(new Date(time)))
+  const today = dateOnlyTime(businessDateKey(new Date(now)))
+  if (valueDay == null || today == null) return null
+  return Math.max(0, Math.round((today - valueDay) / DAY_MS))
 }
 
 export function relativeDateLabel(value?: string | null, now = Date.now()): string {

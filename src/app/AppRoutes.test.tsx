@@ -4,22 +4,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AppData, Profile } from '../types'
 import { AppRoutes } from './AppRoutes'
 
-vi.mock('../screens', () => ({
-  ActivityPanel: () => null,
+vi.mock('../screens/AnnouncementsPanel', () => ({
   AnnouncementsPanel: ({ initialSelectedId }: { initialSelectedId?: string | null }) => (
     <div data-testid="announcements-screen">{initialSelectedId ?? 'announcement-list'}</div>
   ),
+}))
+vi.mock('../screens/ChangeApplicationsPanel', () => ({
   ChangeApplicationsPanel: ({ initialSelectedId }: { initialSelectedId?: string | null }) => (
     <div data-testid="change-applications-screen">{initialSelectedId ?? 'change-list'}</div>
   ),
-  Dashboard: () => null,
-  LeaderDashboard: () => null,
-  MasterPanel: () => null,
-  MyWorkPanel: () => null,
-  ProjectsPanel: () => null,
+}))
+vi.mock('../screens/ReviewStatsPanel', () => ({
   ReviewStatsPanel: () => <div data-testid="review-stats-screen">검토 통계 화면</div>,
-  ReviewsPanel: () => null,
-  TeamPanel: () => null,
 }))
 
 function emptyData(): AppData {
@@ -67,9 +63,9 @@ function renderRoute(
 describe('AppRoutes review statistics guard', () => {
   afterEach(cleanup)
 
-  it('renders review statistics for an active leader', () => {
+  it('renders review statistics for an active leader', async () => {
     renderRoute({ id: 'leader', email: 'leader@example.com', name: '파트장', role: 'leader', is_active: true })
-    expect(screen.getByTestId('review-stats-screen')).toBeInTheDocument()
+    expect(await screen.findByTestId('review-stats-screen')).toBeInTheDocument()
   })
 
   it('does not render review statistics for a member', () => {
@@ -89,14 +85,14 @@ describe('AppRoutes announcements route', () => {
   it.each([
     { id: 'leader', role: 'leader' as const },
     { id: 'member', role: 'member' as const },
-  ])('renders announcements for an active $role', ({ id, role }) => {
+  ])('renders announcements for an active $role', async ({ id, role }) => {
     renderRoute(
       { id, email: `${id}@example.com`, name: id, role, is_active: true },
       'announcements',
       'notice-1',
     )
 
-    expect(screen.getByTestId('announcements-screen')).toHaveTextContent('notice-1')
+    expect(await screen.findByTestId('announcements-screen')).toHaveTextContent('notice-1')
   })
 })
 
@@ -106,13 +102,13 @@ describe('AppRoutes change applications route', () => {
   it.each([
     { id: 'leader', role: 'leader' as const },
     { id: 'member', role: 'member' as const },
-  ])('renders change applications for an active $role', ({ id, role }) => {
+  ])('renders change applications for an active $role', async ({ id, role }) => {
     renderRoute(
       { id, email: `${id}@example.com`, name: id, role, is_active: true },
       'change-applications',
       'change-1',
     )
 
-    expect(screen.getByTestId('change-applications-screen')).toHaveTextContent('change-1')
+    expect(await screen.findByTestId('change-applications-screen')).toHaveTextContent('change-1')
   })
 })

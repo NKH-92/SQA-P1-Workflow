@@ -8,7 +8,16 @@
  * Browser env receives only anon key + test user credentials. Service role never
  * reaches VITE_* browser variables.
  */
-import { existsSync, mkdtempSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { validateReadinessManifest } from './validate-readiness-manifest.mjs'
@@ -67,13 +76,23 @@ function parseEnvironment(output) {
   return values
 }
 
-function parseFixtureEnvironment(stdout) {
-  return Object.fromEntries(
-    stdout.split(/\r?\n/)
-      .map((line) => line.match(/^([A-Z0-9_]+)=(.*)$/))
-      .filter(Boolean)
-      .map((match) => [match[1], match[2]]),
-  )
+function readFixtureEnvironment(file) {
+  let values
+  try {
+    values = JSON.parse(readFileSync(file, 'utf8'))
+  } catch {
+    throw new Error('SQA_REMOTE_E2E_FIXTURE_OUTPUT_INVALID')
+  }
+  const entries = values && typeof values === 'object' && !Array.isArray(values)
+    ? Object.entries(values)
+    : []
+  if (
+    entries.length < 20
+    || entries.some(([key, value]) => !/^RLS_[A-Z0-9_]+$/.test(key) || typeof value !== 'string' || !value)
+  ) {
+    throw new Error('SQA_REMOTE_E2E_FIXTURE_OUTPUT_INVALID')
+  }
+  return values
 }
 
 function assertLocalUrl(url) {
@@ -129,45 +148,50 @@ try {
   runSupabase(['migration', 'up', '--local', '--include-all'])
   status = parseEnvironment(runSupabase(['status', '-o', 'env'], { capture: true }).stdout)
 
+  const fixtureOutput = resolve(temporaryDirectory, 'rls-fixtures.json')
   const fixtureResult = run(process.execPath, ['scripts/setup-rls-fixtures.mjs'], {
     capture: true,
     env: {
       SUPABASE_URL: status.API_URL,
       SUPABASE_ANON_KEY: status.ANON_KEY,
       SUPABASE_SERVICE_ROLE_KEY: status.SERVICE_ROLE_KEY,
+      RLS_FIXTURE_OUTPUT_FILE: fixtureOutput,
     },
   })
   process.stdout.write(fixtureResult.stdout)
-  const fixtures = parseFixtureEnvironment(fixtureResult.stdout)
+  const fixtures = readFixtureEnvironment(fixtureOutput)
+  rmSync(fixtureOutput, { force: true })
 
-  const uninvitedEmail = 'rls-uninvited@example.test'
-  const uninvitedPassword = 'Rls-Test-Password-2026!'
+  const uninvitedEmail = `rls-uninvited-${randomBytes(6).toString('hex')}@example.test`
+  const uninvitedPassword = `${randomBytes(24).toString('base64url')}aA1!`
+  const pendingPasswordNext = `${randomBytes(24).toString('base64url')}aA1!`
   const uninvitedScript = resolve(temporaryDirectory, 'create-uninvited.mjs')
   writeFileSync(uninvitedScript, `
 import { createClient } from '@supabase/supabase-js'
 const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 })
-const email = ${JSON.stringify(uninvitedEmail)}
-const password = ${JSON.stringify(uninvitedPassword)}
+const email = process.env.REMOTE_E2E_UNINVITED_EMAIL
+const password = process.env.REMOTE_E2E_UNINVITED_PASSWORD
+if (!email || !password) throw new Error('SQA_REMOTE_E2E_UNINVITED_CREDENTIALS_REQUIRED')
 const listed = await admin.auth.admin.listUsers({ page: 1, perPage: 200 })
 const existing = listed.data?.users?.find((user) => user.email === email)
 if (!existing) {
   const { error } = await admin.auth.admin.createUser({ email, password, email_confirm: true })
   if (error) throw error
 }
-console.log('REMOTE_E2E_UNINVITED_EMAIL=' + email)
-console.log('REMOTE_E2E_UNINVITED_PASSWORD=' + password)
+console.log('SQA_REMOTE_E2E_UNINVITED_READY')
 `)
   const uninvitedResult = run(process.execPath, [uninvitedScript], {
     capture: true,
     env: {
       SUPABASE_URL: status.API_URL,
       SUPABASE_SERVICE_ROLE_KEY: status.SERVICE_ROLE_KEY,
+      REMOTE_E2E_UNINVITED_EMAIL: uninvitedEmail,
+      REMOTE_E2E_UNINVITED_PASSWORD: uninvitedPassword,
     },
   })
   process.stdout.write(uninvitedResult.stdout)
-  const uninvited = parseFixtureEnvironment(uninvitedResult.stdout)
 
   run(npm, ['run', 'build'], {
     env: {
@@ -207,9 +231,9 @@ console.log('REMOTE_E2E_UNINVITED_PASSWORD=' + password)
     REMOTE_E2E_DEACTIVATE_MEMBER_USER_ID: fixtures.RLS_MEMBER_B_USER_ID,
     REMOTE_E2E_PENDING_PASSWORD_EMAIL: fixtures.RLS_PENDING_PASSWORD_EMAIL,
     REMOTE_E2E_PENDING_PASSWORD_PASSWORD: fixtures.RLS_PENDING_PASSWORD,
-    REMOTE_E2E_PENDING_PASSWORD_NEXT: 'Rls-Test-Password-Changed-2026!',
-    REMOTE_E2E_UNINVITED_EMAIL: uninvited.REMOTE_E2E_UNINVITED_EMAIL,
-    REMOTE_E2E_UNINVITED_PASSWORD: uninvited.REMOTE_E2E_UNINVITED_PASSWORD,
+    REMOTE_E2E_PENDING_PASSWORD_NEXT: pendingPasswordNext,
+    REMOTE_E2E_UNINVITED_EMAIL: uninvitedEmail,
+    REMOTE_E2E_UNINVITED_PASSWORD: uninvitedPassword,
     REMOTE_E2E_MEMBER_B_REVIEW_TITLE: 'Member B pending',
     REMOTE_E2E_HARDENED_OCC_REVIEW_REQUEST_ID: fixtures.RLS_HARDENED_OCC_REVIEW_REQUEST_ID,
     REMOTE_E2E_TEST_PRODUCT_ID: fixtures.RLS_TEST_PRODUCT_ID,

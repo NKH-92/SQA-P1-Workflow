@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { fetchReviewEventsPage } from '../../../data'
+import { toUserMessage } from '../../../lib/errors'
 import { hasSupabaseConfig } from '../../../lib/supabase'
-import { formatDate } from '../../../lib/format'
+import { formatDateTime } from '../../../lib/format'
 import type { ReviewEvent } from '../../../types'
 import { compareDecimalIds } from '../../../lib/decimalId'
+import { reviewEventLabel } from '../reviewEventPresentation'
 
 type ReviewEventHistoryProps = {
   reviewRequestId: string
@@ -40,7 +42,7 @@ export function ReviewEventHistory({ reviewRequestId, localEvents = [] }: Review
       setBeforeId(lastId == null ? null : String(lastId))
       if (page.length < 50) setExhausted(true)
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : '이벤트 이력을 불러오지 못했습니다.')
+      setError(toUserMessage(loadError))
     } finally {
       setLoading(false)
     }
@@ -60,14 +62,15 @@ export function ReviewEventHistory({ reviewRequestId, localEvents = [] }: Review
   return (
     <section className="review-event-history" aria-label="검토 이벤트 이력">
       <h4>이벤트 이력</h4>
+      {loading && events.length === 0 && <p className="muted" role="status">이벤트 이력을 불러오는 중입니다.</p>}
       {events.length === 0 && !loading ? (
         <p className="muted">표시할 이벤트가 없습니다.</p>
       ) : (
         <ol className="review-event-history-list">
           {events.map((event) => (
             <li key={String(event.id)}>
-              <strong>{event.event_type}</strong>
-              <span>{formatDate(event.occurred_at)}</span>
+              <strong>{reviewEventLabel(event.event_type)}</strong>
+              <time dateTime={event.occurred_at}>{formatDateTime(event.occurred_at)}</time>
               {event.actor_name_snapshot ? <span>{event.actor_name_snapshot}</span> : null}
             </li>
           ))}

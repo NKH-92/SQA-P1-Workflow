@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import type { Profile, ReviewRequest } from '../../types'
 import { buildReviewRequestItemModel } from './reviewRequestItemModel'
 
@@ -24,15 +24,10 @@ function request(overrides: Partial<ReviewRequest> = {}): ReviewRequest {
 }
 
 describe('review request item model', () => {
-  beforeEach(() => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-07-17T09:00:00+09:00'))
-  })
-
-  afterEach(() => vi.useRealTimers())
+  const referenceNow = new Date('2026-07-17T09:00:00+09:00')
 
   it('preserves pending owner actions and timeline states', () => {
-    const model = buildReviewRequestItemModel(request(), member)
+    const model = buildReviewRequestItemModel(request(), member, referenceNow)
 
     expect(model.canEditOwn).toBe(true)
     expect(model.canWithdrawOwn).toBe(true)
@@ -43,7 +38,7 @@ describe('review request item model', () => {
   })
 
   it('derives the historical rejected defaults and member resubmission state', () => {
-    const model = buildReviewRequestItemModel(request({ status: 'rejected' }), member)
+    const model = buildReviewRequestItemModel(request({ status: 'rejected' }), member, referenceNow)
 
     expect(model.rejectionCount).toBe(1)
     expect(model.canEditOwn).toBe(true)
@@ -56,14 +51,14 @@ describe('review request item model', () => {
   })
 
   it('labels a later pending round as a re-review request', () => {
-    const model = buildReviewRequestItemModel(request({ review_round: 2 }), member)
+    const model = buildReviewRequestItemModel(request({ review_round: 2 }), member, referenceNow)
 
     expect(model.reviewRound).toBe(2)
     expect(model.statusLabel).toBe('재검토 요청')
   })
 
   it('marks both approved timeline steps complete', () => {
-    const model = buildReviewRequestItemModel(request({ status: 'approved' }), member)
+    const model = buildReviewRequestItemModel(request({ status: 'approved' }), member, referenceNow)
 
     expect(model.canEditOwn).toBe(false)
     expect(model.timelineSteps.map((step) => step.state)).toEqual(['complete', 'complete'])

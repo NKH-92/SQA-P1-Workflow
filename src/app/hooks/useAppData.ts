@@ -21,6 +21,7 @@ export function useAppData(reportWarnings?: (warnings: string[]) => void) {
   const [data, setData] = useState<AppData>(() => (isPreviewMode ? createPreviewData() : emptyData))
   const [refreshing, setRefreshing] = useState(false)
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null)
+  const [dataWarnings, setDataWarnings] = useState<string[]>([])
   const { syncHealth, recordSyncSuccess, recordSyncFailure, resetSyncHealth } = useSyncHealth()
   const generationRef = useRef(0)
   const dataRef = useRef(data)
@@ -43,6 +44,7 @@ export function useAppData(reportWarnings?: (warnings: string[]) => void) {
       if (optionalWarnings.length > 0) {
         reportWarningsRef.current?.(optionalWarnings)
       }
+      setDataWarnings(optionalWarnings)
       setData(appData)
       // Prefer the server snapshot_at (evidence the data is actually known-good
       // as of that instant) over the client wall clock; fall back only when no
@@ -94,6 +96,7 @@ export function useAppData(reportWarnings?: (warnings: string[]) => void) {
     generationRef.current += 1
     setRefreshing(false)
     setLastSyncedAt(null)
+    setDataWarnings([])
     resetSyncHealth()
   }, [resetSyncHealth])
 
@@ -102,6 +105,7 @@ export function useAppData(reportWarnings?: (warnings: string[]) => void) {
     setData,
     refreshing,
     lastSyncedAt,
+    dataWarnings,
     syncHealth,
     refreshData,
     loadReviewRequest,

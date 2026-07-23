@@ -101,6 +101,37 @@ function parseEnvironment(output) {
   return values
 }
 
+function readFixtureEnvironment(file) {
+  let values
+  try {
+    values = JSON.parse(readFileSync(file, 'utf8'))
+  } catch {
+    throw new Error('SQA_RLS_FIXTURE_OUTPUT_INVALID')
+  }
+  const entries = values && typeof values === 'object' && !Array.isArray(values)
+    ? Object.entries(values)
+    : []
+  if (
+    entries.length < 20
+    || entries.some(([key, value]) => !/^RLS_[A-Z0-9_]+$/.test(key) || typeof value !== 'string' || !value)
+  ) {
+    throw new Error('SQA_RLS_FIXTURE_OUTPUT_INVALID')
+  }
+  return values
+}
+
+function assertLocalApiUrl(value) {
+  let hostname
+  try {
+    hostname = new URL(value).hostname
+  } catch {
+    throw new Error('SQA_RLS_GATE_LOCAL_API_URL_INVALID')
+  }
+  if (!['localhost', '127.0.0.1', '::1'].includes(hostname)) {
+    throw new Error(`SQA_RLS_GATE_NON_LOCAL_API_URL: ${hostname}`)
+  }
+}
+
 function holdMigrations(directory) {
   // The first held migration purges a Storage bucket and therefore cannot run
   // during `supabase start` before the Storage API is available. Hold it and
@@ -142,6 +173,7 @@ try {
   restoreMigrations(heldMigrations)
 
   let status = parseEnvironment(runSupabase(['status', '-o', 'env'], { capture: true }).stdout)
+  assertLocalApiUrl(status.API_URL)
   run(process.execPath, [
     'scripts/purge-review-attachments.mjs',
     '--execute',
@@ -157,21 +189,99 @@ try {
   runSupabase(['db', 'lint', '--local', '--level', 'error', '--fail-on', 'error'])
   status = parseEnvironment(runSupabase(['status', '-o', 'env'], { capture: true }).stdout)
 
+  const fixtureOutput = resolve(temporaryDirectory, 'rls-fixtures.json')
   const fixtureResult = run(process.execPath, ['scripts/setup-rls-fixtures.mjs'], {
     capture: true,
     env: {
       SUPABASE_URL: status.API_URL,
       SUPABASE_ANON_KEY: status.ANON_KEY,
       SUPABASE_SERVICE_ROLE_KEY: status.SERVICE_ROLE_KEY,
+      RLS_FIXTURE_OUTPUT_FILE: fixtureOutput,
     },
   })
   process.stdout.write(fixtureResult.stdout)
-  const fixtureEnvironment = Object.fromEntries(
-    fixtureResult.stdout.split(/\r?\n/)
-      .map((line) => line.match(/^([A-Z0-9_]+)=(.*)$/))
-      .filter(Boolean)
-      .map((match) => [match[1], match[2]]),
-  )
+  const fixtureEnvironment = readFixtureEnvironment(fixtureOutput)
+  rmSync(fixtureOutput, { force: true })
+
+  const legacyRequesterId = fixtureEnvironment.RLS_MEMBER_A_USER_ID
+  if (!legacyRequesterId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(legacyRequesterId)) {
+    throw new Error('SQA_RLS_LEGACY_REVIEW_REQUESTER_INVALID')
+  }
+  const expectedLegacyRollback = 'SQA_RLS_EXPECTED_LEGACY_REVIEW_INPUT_ROLLBACK'
+  const legacyReviewSql = resolve(temporaryDirectory, 'legacy-review-input.sql')
+  writeFileSync(legacyReviewSql, `
+do $verify$
+declare
+  legacy_request_id uuid := gen_random_uuid();
+  affected_rows bigint;
+  rejected_detail text;
+  rollback_message text;
+begin
+  begin
+    execute 'alter table public.review_requests disable trigger review_request_input_v2_guard';
+    insert into public.review_requests (
+      id, requester_id, title, description, status
+    ) values (
+      legacy_request_id,
+      '${legacyRequesterId}'::uuid,
+      'x',
+      'y',
+      'pending'
+    );
+    execute 'alter table public.review_requests enable trigger review_request_input_v2_guard';
+
+    update public.review_requests
+       set status = 'approved'
+     where id = legacy_request_id;
+    get diagnostics affected_rows = row_count;
+    if affected_rows <> 1 then
+      raise exception 'SQA_RLS_LEGACY_STATUS_UPDATE_BLOCKED';
+    end if;
+
+    begin
+      update public.review_requests
+         set title = 'z'
+       where id = legacy_request_id;
+      raise exception using
+        errcode = 'P0002',
+        message = 'SQA_RLS_CHANGED_INVALID_TITLE_ACCEPTED';
+    exception
+      when sqlstate 'P0001' then
+        get stacked diagnostics rejected_detail = pg_exception_detail;
+        if rejected_detail is distinct from 'SQA_REVIEW_TITLE_INVALID' then
+          raise exception 'SQA_RLS_CHANGED_INVALID_TITLE_WRONG_ERROR: %', rejected_detail;
+        end if;
+    end;
+
+    raise exception using
+      errcode = 'P0002',
+      message = '${expectedLegacyRollback}';
+  exception
+    when sqlstate 'P0002' then
+      get stacked diagnostics rollback_message = message_text;
+      if rollback_message is distinct from '${expectedLegacyRollback}' then
+        raise exception 'SQA_RLS_LEGACY_PROBE_WRONG_ROLLBACK: %', rollback_message;
+      end if;
+  end;
+
+  if exists (
+    select 1 from public.review_requests where id = legacy_request_id
+  ) then
+    raise exception 'SQA_RLS_LEGACY_PROBE_ROW_NOT_ROLLED_BACK';
+  end if;
+  if not exists (
+    select 1
+      from pg_trigger
+     where tgrelid = 'public.review_requests'::regclass
+       and tgname = 'review_request_input_v2_guard'
+       and tgenabled in ('O', 'A')
+  ) then
+    raise exception 'SQA_RLS_LEGACY_PROBE_TRIGGER_NOT_RESTORED';
+  end if;
+end
+$verify$;
+`)
+  runSupabase(['db', 'query', '--local', '--file', toRootRelativePath(legacyReviewSql)])
 
   // Seed the scale fixture before the RLS suite so the EXPLAIN/bounded gate
   // is activated (RLS_SCALE_ENABLED=1) rather than permanently skipped.

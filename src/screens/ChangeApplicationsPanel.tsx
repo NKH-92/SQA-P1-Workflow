@@ -307,6 +307,12 @@ export function ChangeApplicationsPanel({
         `${dialog.application.change_number} 변경건을 활성 목록으로 복원했습니다.`,
       )
     }
+    if (dialog.kind === 'restore_scope') {
+      return mutate(
+        () => controller.restoreScope(dialog.task.id, result.reason),
+        `${dialog.task.product_name} 제품을 변경 적용범위에 복원했습니다.`,
+      )
+    }
     return mutate(
       () => controller.cancelApplication(dialog.application.id, result.reason),
       `${dialog.application.change_number} 변경건을 취소했습니다.`,
@@ -331,11 +337,16 @@ export function ChangeApplicationsPanel({
       && (leaderMode || application.created_by === profile.id)
     const days = daysUntil(actionItem.due_date)
     const overdue = task.status === 'pending' && days != null && days < 0
+    const assigneeInactive = Boolean(
+      task.assignee_id
+      && data.profiles.find((item) => item.id === task.assignee_id)?.is_active === false,
+    )
     return (
       <article className="change-task-row" data-status={task.status} key={task.id}>
         <div className="change-task-product">
           <strong>{task.product_name}</strong>
           <span>{changeActionLabel(actionItem)} · {task.assignee_name ?? '담당 미지정'}</span>
+          {assigneeInactive && <Badge status="withdrawn">담당자 비활성 · 재배정 필요</Badge>}
         </div>
         <div className="change-task-source">
           <strong>{application.change_number}</strong>
@@ -370,14 +381,7 @@ export function ChangeApplicationsPanel({
           {canRestoreScope && (
             <button
               className="ghost compact"
-              onClick={() => {
-                const reason = window.prompt('제품을 변경 적용범위에 복원하는 사유를 입력하세요.')?.trim()
-                if (!reason) return
-                void mutate(
-                  () => controller.restoreScope(task.id, reason),
-                  `${task.product_name} 제품을 변경 적용범위에 복원했습니다.`,
-                )
-              }}
+              onClick={() => setDialog({ kind: 'restore_scope', task })}
               type="button"
             >
               <RefreshCw size={14} />범위 복원

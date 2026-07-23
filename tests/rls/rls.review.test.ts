@@ -54,6 +54,31 @@ describeRls(`RLS review requests (${RLS_SKIP_NOTE})`, () => {
     expect(Array.isArray(data)).toBe(true)
   })
 
+  it('rejects whitespace-only review content through the authenticated RPC', async () => {
+    const memberAEmail = process.env.RLS_MEMBER_A_EMAIL
+    const memberAPassword = process.env.RLS_MEMBER_A_PASSWORD
+    if (!memberAEmail || !memberAPassword) {
+      expect.fail('Set RLS_MEMBER_A_EMAIL and RLS_MEMBER_A_PASSWORD')
+    }
+
+    const client = createClient(url, anonKey, { auth: { persistSession: false } })
+    await client.auth.signInWithPassword({ email: memberAEmail, password: memberAPassword })
+
+    const invalidTitle = await client.rpc('create_review_request', {
+      p_title: '\t\t',
+      p_description: '유효한 설명',
+      p_due_date: null,
+    })
+    expect(invalidTitle.error?.details).toContain('SQA_REVIEW_TITLE_INVALID')
+
+    const invalidDescription = await client.rpc('create_review_request', {
+      p_title: '유효한 제목',
+      p_description: '\n\n',
+      p_due_date: null,
+    })
+    expect(invalidDescription.error?.details).toContain('SQA_REVIEW_DESCRIPTION_INVALID')
+  })
+
   it('denies direct member updates and allows the OCC review RPC', async () => {
     const memberAEmail = process.env.RLS_MEMBER_A_EMAIL
     const memberAPassword = process.env.RLS_MEMBER_A_PASSWORD

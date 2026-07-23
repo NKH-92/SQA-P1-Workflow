@@ -23,6 +23,7 @@ describe('buildReviewMonthlyStats', () => {
         review({ id: '3', status: 'pending', created_at: '2026-06-15T00:00:00.000Z' }),
       ],
       2,
+      new Date('2026-07-15T03:00:00.000Z'),
     )
 
     expect(stats).toHaveLength(2)

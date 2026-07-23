@@ -181,6 +181,8 @@ export type ErrorReportInput = {
   now?: () => Date
 }
 
+const ERROR_OPERATION_CATEGORIES = new Set(['render', 'sync', 'activity-log', 'activity-log-write'])
+
 export function buildErrorReport({ error, route, role, operation, context, now = () => new Date() }: ErrorReportInput): ErrorReport {
   const canonicalRoute = (route.split('?')[0] || '#/unknown').slice(0, 64)
   return assertAllowedErrorReport({
@@ -188,7 +190,9 @@ export function buildErrorReport({ error, route, role, operation, context, now =
     buildSha: getBuildSha(),
     route: canonicalRoute,
     role,
-    operation: operation === null ? null : 'mutation',
+    operation: operation === null
+      ? null
+      : ERROR_OPERATION_CATEGORIES.has(operation) ? operation : 'mutation',
     occurredAt: now().toISOString(),
   })
 }

@@ -4,9 +4,9 @@ import type { AppData, Profile } from '../types'
 import type { AppNotification } from '../lib/notifications'
 import { buildShellModel } from './shellModel'
 
-const leader: Profile = { id: 'leader', email: 'leader@example.com', name: '파트장', role: 'leader' }
-const member: Profile = { id: 'member', email: 'member@example.com', name: '파트원', role: 'member' }
-const otherMember: Profile = { id: 'other', email: 'other@example.com', name: '다른 파트원', role: 'member' }
+const leader: Profile = { id: 'leader', email: 'leader@example.com', name: '파트장', role: 'leader', is_active: true }
+const member: Profile = { id: 'member', email: 'member@example.com', name: '파트원', role: 'member', is_active: true }
+const otherMember: Profile = { id: 'other', email: 'other@example.com', name: '다른 파트원', role: 'member', is_active: true }
 
 const notifications = [
   { id: 'unread-1', unread: true },
@@ -52,7 +52,7 @@ function modelData(): AppData {
 }
 
 describe('buildShellModel', () => {
-  it('uses unread review count before pending count and includes all leader pending change tasks', () => {
+  it('keeps pending and unread review counts separate and includes all leader pending change tasks', () => {
     const model = buildShellModel({
       data: modelData(),
       profile: leader,
@@ -66,7 +66,7 @@ describe('buildShellModel', () => {
     expect(model.unreadNotifications).toBe(2)
     expect(model.tabs).toMatchObject({
       announcements: { count: 2 },
-      reviews: { count: 3, unread: true },
+      reviews: { count: 7, unreadCount: 3 },
       'change-applications': { count: 2 },
       projects: { count: 3 },
       team: { count: 2 },
@@ -88,10 +88,29 @@ describe('buildShellModel', () => {
     })
 
     expect(model.tabs).toMatchObject({
-      reviews: { count: 2, unread: false },
+      reviews: { count: 0, unreadCount: 0 },
       'change-applications': { count: 1 },
       projects: { count: 2 },
       work: { count: 3 },
     })
+  })
+
+  it('excludes inactive users from the current member count', () => {
+    const data = modelData()
+    data.profiles = data.profiles.map((item) => (
+      item.id === otherMember.id ? { ...item, is_active: false } : item
+    ))
+
+    const model = buildShellModel({
+      data,
+      profile: leader,
+      leaderMode: true,
+      pendingCount: 0,
+      unreadReviewsCount: 0,
+      notifications: [],
+    })
+
+    expect(model.memberCount).toBe(1)
+    expect(model.tabs.team).toEqual({ count: 1 })
   })
 })

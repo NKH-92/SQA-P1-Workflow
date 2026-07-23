@@ -21,15 +21,13 @@ import { countUnreadReviews } from './lib/readState'
 import { hasSupabaseConfig, isPreviewMode } from './lib/supabase'
 import type { Profile } from './types'
 import type { TabId } from './app/types'
-import {
-  AuthPanel,
-  BlockedProfile,
-  ConfigErrorScreen,
-  LoadingScreen,
-  PasswordChangePanel,
-  ProfileLoadErrorScreen,
-  Shell,
-} from './screens'
+import { AuthPanel } from './screens/AuthPanel'
+import { BlockedProfile } from './screens/BlockedProfile'
+import { ConfigErrorScreen } from './screens/ConfigErrorScreen'
+import { LoadingScreen } from './screens/LoadingScreen'
+import { PasswordChangePanel } from './screens/PasswordChangePanel'
+import { ProfileLoadErrorScreen } from './screens/ProfileLoadErrorScreen'
+import { Shell } from './screens/Shell'
 
 function App() {
   const reportWarningsRef = useRef<(warnings: string[]) => void>(() => {})
@@ -38,6 +36,7 @@ function App() {
     setData,
     refreshing,
     lastSyncedAt,
+    dataWarnings,
     syncHealth,
     refreshData,
     loadReviewRequest,
@@ -218,6 +217,7 @@ function App() {
         saving={saving}
         refreshing={refreshing}
         lastSyncedAt={lastSyncedAt}
+        dataWarnings={dataWarnings}
         syncHealth={syncHealth}
         pendingCount={pendingCount}
         unreadReviewsCount={unreadReviewsCount}

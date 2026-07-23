@@ -67,17 +67,18 @@ function millisecondsUntilNextBusinessDay(now: Date) {
   return Math.max(1000, cursor - now.getTime())
 }
 
-export function ReviewStatsPanel({ data }: { data: AppData }) {
-  const [referenceNow, setReferenceNow] = useState(() => new Date())
+export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
+  const [referenceNow, setReferenceNow] = useState(() => now ?? new Date())
 
   // 날짜 경계는 필터 조작 중 흔들리지 않되, 화면을 밤새 열어 둔 경우 다음 로컬 날짜에 갱신한다.
   useEffect(() => {
+    if (now) return
     const timer = window.setTimeout(
       () => setReferenceNow(new Date()),
       millisecondsUntilNextBusinessDay(referenceNow),
     )
     return () => window.clearTimeout(timer)
-  }, [referenceNow])
+  }, [now, referenceNow])
   const [filters, setFilters] = useState<ReviewStatsFilters>(() => {
     const availableRange = getReviewStatsAvailableRange(referenceNow)
     return {

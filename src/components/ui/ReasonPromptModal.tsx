@@ -19,6 +19,7 @@ export function ReasonPromptModal({
   setReason,
   onSubmit,
   submitLabel = '저장',
+  minLength = 1,
   maxLength = 500,
 }: {
   open: boolean
@@ -29,6 +30,7 @@ export function ReasonPromptModal({
   setReason: (value: string) => void
   onSubmit: () => void
   submitLabel?: string
+  minLength?: number
   maxLength?: number
 }) {
   const fieldId = useId()
@@ -49,6 +51,7 @@ export function ReasonPromptModal({
             변경 사유
             <textarea
               id={fieldId}
+              minLength={minLength}
               maxLength={maxLength}
               placeholder="예: 담당자 협의에 따라 정보를 수정합니다."
               value={reason}
@@ -58,7 +61,7 @@ export function ReasonPromptModal({
           </label>
         }
         onSubmit={onSubmit}
-        disabled={!reason.trim()}
+        disabled={reason.trim().length < minLength}
         submitLabel={submitLabel}
       />
     </Modal>

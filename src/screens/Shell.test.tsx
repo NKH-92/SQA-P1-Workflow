@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { TabId } from '../app/types'
 import type { AppData, Profile } from '../types'
@@ -48,12 +48,20 @@ function emptyData(): AppData {
 function renderShell(
   profile: Profile,
   leaderMode: boolean,
-  options: { activeTab?: TabId; data?: AppData; syncHealth?: SyncHealth } = {},
+  options: {
+    activeTab?: TabId
+    data?: AppData
+    syncHealth?: SyncHealth
+    dataWarnings?: string[]
+    pendingCount?: number
+    unreadReviewsCount?: number
+  } = {},
 ) {
   return render(
     <Shell
       activeTab={options.activeTab ?? 'dashboard'}
       data={options.data ?? emptyData()}
+      dataWarnings={options.dataWarnings ?? []}
       lastSyncedAt={null}
       leaderMode={leaderMode}
       message={null}
@@ -62,13 +70,13 @@ function renderShell(
       onOpenCommandPalette={vi.fn()}
       onRefresh={vi.fn()}
       onSignOut={vi.fn()}
-      pendingCount={0}
+      pendingCount={options.pendingCount ?? 0}
       profile={profile}
       refreshing={false}
       saving={false}
       setActiveTab={vi.fn()}
       syncHealth={options.syncHealth ?? initialSyncHealth}
-      unreadReviewsCount={0}
+      unreadReviewsCount={options.unreadReviewsCount ?? 0}
     >
       <div>화면</div>
     </Shell>,
@@ -94,6 +102,107 @@ describe('Shell review statistics navigation', () => {
   it('does not show review statistics in member navigation', () => {
     renderShell(member, false)
     expect(screen.queryByRole('button', { name: '검토 통계' })).not.toBeInTheDocument()
+  })
+})
+
+describe('Shell review count semantics', () => {
+  afterEach(cleanup)
+
+  it('exposes pending and unread counts independently', () => {
+    renderShell(leader, true, { pendingCount: 18, unreadReviewsCount: 2 })
+
+    const reviews = screen.getByRole('button', { name: '검토요청, 대기 18건, 새 알림 2건' })
+    expect(within(reviews).getByText('18')).toHaveClass('nav-badge')
+    expect(within(reviews).getByText('2')).toHaveClass('nav-unread-badge')
+  })
+})
+
+describe('Shell mobile navigation', () => {
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  it('makes a closed drawer inert and restores focus after Escape', async () => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({
+      matches: true,
+      media: '(max-width: 1080px)',
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })))
+
+    renderShell(leader, true)
+    const menuButton = screen.getByRole('button', { name: '메뉴 열기' })
+    const sidebar = screen.getByLabelText('주 메뉴')
+    await waitFor(() => expect(sidebar).toHaveAttribute('inert'))
+
+    fireEvent.click(menuButton)
+    expect(menuButton).toHaveAttribute('aria-expanded', 'true')
+    expect(sidebar).not.toHaveAttribute('inert')
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => {
+      expect(menuButton).toHaveAttribute('aria-expanded', 'false')
+      expect(sidebar).toHaveAttribute('inert')
+      expect(menuButton).toHaveFocus()
+    })
+  })
+
+  it('moves focus out of the drawer before a mobile navigation selection becomes inert', async () => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({
+      matches: true,
+      media: '(max-width: 1080px)',
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })))
+
+    renderShell(leader, true)
+    const menuButton = screen.getByRole('button', { name: '메뉴 열기' })
+    const sidebar = screen.getByLabelText('주 메뉴')
+    await waitFor(() => expect(sidebar).toHaveAttribute('inert'))
+
+    fireEvent.click(menuButton)
+    fireEvent.click(within(sidebar).getByRole('button', { name: '공지0' }))
+
+    await waitFor(() => {
+      expect(sidebar).toHaveAttribute('inert')
+      expect(sidebar).toHaveAttribute('aria-hidden', 'true')
+      expect(sidebar.contains(document.activeElement)).toBe(false)
+      expect(menuButton).toHaveFocus()
+    })
+  })
+})
+
+describe('Shell notification disclosure', () => {
+  afterEach(cleanup)
+
+  it('owns expanded state on the bell and restores focus there after Escape', async () => {
+    renderShell(leader, true)
+    const densityButton = screen.getByRole('button', { name: '간격 압축해서 보기' })
+    const notificationButton = screen.getByRole('button', { name: '알림' })
+
+    expect(densityButton).not.toHaveAttribute('aria-expanded')
+    expect(densityButton).not.toHaveAttribute('aria-haspopup')
+    expect(notificationButton).toHaveAttribute('aria-expanded', 'false')
+    expect(notificationButton).toHaveAttribute('aria-haspopup', 'dialog')
+
+    fireEvent.click(notificationButton)
+    expect(notificationButton).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('dialog', { name: '알림' })).toBeInTheDocument()
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => {
+      expect(notificationButton).toHaveAttribute('aria-expanded', 'false')
+      expect(notificationButton).toHaveFocus()
+    })
   })
 })
 
@@ -206,5 +315,15 @@ describe('Shell sync health warning', () => {
     }
     renderShell(leader, true, { syncHealth: oneFailure })
     expect(screen.queryByText('동기화 지연')).not.toBeInTheDocument()
+  })
+
+  it('keeps optional-data warnings visible with an explicit retry action', () => {
+    renderShell(leader, true, {
+      dataWarnings: ['공지 조회에 실패해 마지막 정상 데이터를 유지합니다.'],
+    })
+
+    expect(screen.getByText('일부 데이터가 최신이 아닙니다.')).toBeInTheDocument()
+    expect(screen.getByText(/공지 조회에 실패/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
   })
 })

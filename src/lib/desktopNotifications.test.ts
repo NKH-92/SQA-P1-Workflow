@@ -246,7 +246,7 @@ describe('desktop notification settings storage', () => {
       schemaVersion: DESKTOP_NOTIFICATION_SETTINGS_SCHEMA_VERSION,
       enabled: false,
       notifiedUpToIso: null,
-      hideRequesterName: false,
+      hideRequesterName: true,
       revealReviewTitle: false,
     })
   })
@@ -258,7 +258,7 @@ describe('desktop notification settings storage', () => {
       schemaVersion: DESKTOP_NOTIFICATION_SETTINGS_SCHEMA_VERSION,
       enabled: false,
       notifiedUpToIso: null,
-      hideRequesterName: false,
+      hideRequesterName: true,
       revealReviewTitle: false,
     })
   })
@@ -273,7 +273,7 @@ describe('desktop notification settings storage', () => {
       schemaVersion: DESKTOP_NOTIFICATION_SETTINGS_SCHEMA_VERSION,
       enabled: true,
       notifiedUpToIso: '2026-07-09T09:00:00.000Z',
-      hideRequesterName: false,
+      hideRequesterName: true,
       revealReviewTitle: false,
     })
   })
@@ -294,7 +294,7 @@ describe('desktop notification settings storage', () => {
       schemaVersion: DESKTOP_NOTIFICATION_SETTINGS_SCHEMA_VERSION,
       enabled: false,
       notifiedUpToIso: null,
-      hideRequesterName: false,
+      hideRequesterName: true,
       revealReviewTitle: false,
     })
   })

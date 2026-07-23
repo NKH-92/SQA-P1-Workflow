@@ -1,5 +1,6 @@
+import { randomBytes } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -57,18 +58,22 @@ async function fetchJson(url, options, code) {
   }
 }
 
-function parseFixtureEnvironment(stdout) {
-  const values = {}
-  for (const line of stdout.replace(/\r\n?/g, '\n').split('\n')) {
-    if (!line) continue
-    const separator = line.indexOf('=')
-    if (separator <= 0) fail('SQA_DR_FIXTURE_OUTPUT_INVALID')
-    const key = line.slice(0, separator)
-    const value = line.slice(separator + 1)
-    if (!/^RLS_[A-Z0-9_]+$/.test(key) || !value) fail('SQA_DR_FIXTURE_OUTPUT_INVALID')
-    values[key] = value
+function readFixtureEnvironment(file) {
+  let values
+  try {
+    values = JSON.parse(readFileSync(file, 'utf8'))
+  } catch {
+    fail('SQA_DR_FIXTURE_OUTPUT_INVALID')
   }
-  if (Object.keys(values).length < 20) fail('SQA_DR_FIXTURE_OUTPUT_INCOMPLETE')
+  const entries = values && typeof values === 'object' && !Array.isArray(values)
+    ? Object.entries(values)
+    : []
+  if (
+    entries.length < 20
+    || entries.some(([key, value]) => !/^RLS_[A-Z0-9_]+$/.test(key) || typeof value !== 'string' || !value)
+  ) {
+    fail('SQA_DR_FIXTURE_OUTPUT_INVALID')
+  }
   return values
 }
 
@@ -175,22 +180,32 @@ async function run() {
   if (!preservedUserIdMatches) fail('SQA_DR_PRESERVED_USER_ID_MISMATCH')
 
   const sensitiveValues = [anonKey, serviceRoleKey, preservedEmail, preservedPassword, preservedUserId]
-  const fixtureStdout = runCommand(
-    process.execPath,
-    ['scripts/setup-rls-fixtures.mjs'],
-    {
-      ...process.env,
-      SUPABASE_URL: targetUrl,
-      SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey,
-      RLS_ALLOW_REMOTE_DISPOSABLE: '1',
-      RLS_CONFIRM_DISPOSABLE_TARGET: confirmDisposableTarget,
-      RLS_REMOTE_TARGET_REF: targetProjectRef,
-      RLS_PRODUCTION_PROJECT_REF: productionProjectRef,
-      RLS_ALLOWED_TARGET_REFS: allowedTargetRefs,
-    },
-    [],
+  const fixtureOutput = resolve(
+    `${options['rls-output']}.${randomBytes(8).toString('hex')}.fixtures.json`,
   )
-  const fixtureEnvironment = parseFixtureEnvironment(fixtureStdout)
+  let fixtureEnvironment
+  try {
+    runCommand(
+      process.execPath,
+      ['scripts/setup-rls-fixtures.mjs'],
+      {
+        ...process.env,
+        SUPABASE_URL: targetUrl,
+        SUPABASE_ANON_KEY: anonKey,
+        SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey,
+        RLS_FIXTURE_OUTPUT_FILE: fixtureOutput,
+        RLS_ALLOW_REMOTE_DISPOSABLE: '1',
+        RLS_CONFIRM_DISPOSABLE_TARGET: confirmDisposableTarget,
+        RLS_REMOTE_TARGET_REF: targetProjectRef,
+        RLS_PRODUCTION_PROJECT_REF: productionProjectRef,
+        RLS_ALLOWED_TARGET_REFS: allowedTargetRefs,
+      },
+      sensitiveValues,
+    )
+    fixtureEnvironment = readFixtureEnvironment(fixtureOutput)
+  } finally {
+    rmSync(fixtureOutput, { force: true })
+  }
   const rlsOutput = resolve(options['rls-output'])
   runCommand(
     process.execPath,

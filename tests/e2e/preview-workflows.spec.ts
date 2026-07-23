@@ -26,11 +26,13 @@ test('02 command palette preserves keyboard navigation and hash routing', async 
 })
 
 test('03 review lifecycle updates the request after explicit confirmation', async ({ page }) => {
-  page.on('dialog', (dialog) => dialog.accept())
   await page.goto('/#/reviews')
   const detail = page.getByRole('article').first()
   await expect(detail.getByRole('button', { name: '완료 처리' })).toBeVisible()
   await detail.getByRole('button', { name: '완료 처리' }).click()
+  const dialog = page.getByRole('dialog', { name: '검토요청을 완료 처리할까요?' })
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: '완료 처리' }).click()
   await expect(page.getByText('완료 상태로 전환했습니다.')).toBeVisible()
   await expect(detail.getByRole('button', { name: '다시 열기' })).toBeVisible()
 })
@@ -105,7 +107,11 @@ test('09 mobile sidebar opens navigates and closes', async ({ page }) => {
   await expect(page.locator('aside.sidebar')).toHaveClass(/open/)
   await page.getByRole('button', { name: /^공지/ }).click()
   await expect(page).toHaveURL(/#\/announcements/)
-  await expect(page.locator('aside.sidebar')).not.toHaveClass(/open/)
+  const sidebar = page.locator('aside.sidebar')
+  await expect(sidebar).not.toHaveClass(/open/)
+  await expect(sidebar).toHaveAttribute('aria-hidden', 'true')
+  await expect(sidebar).toHaveAttribute('inert', '')
+  await expect(page.locator('.hamburger')).toBeFocused()
 })
 
 test('10 notification panel supports read acknowledgement and navigation', async ({ page }) => {
@@ -185,4 +191,133 @@ test('13 leader sees a durable completed-change signal only after every product 
   await expect(page.getByRole('combobox', { name: '보관 상태' })).toHaveValue('all')
   await expect(page.getByText('모든 제품 담당자의 적용 완료 처리가 끝났습니다.')).toBeVisible()
   await expect(page.getByText('보관 사유: 모든 제품 적용이 완료되어 자동 보관됨')).toBeVisible()
+})
+
+test('14 visual invariants keep active counts distinct and native controls usable', async ({ page }) => {
+  await page.goto('/#/reviews')
+  const reviewNav = page.getByRole('button', { name: /^검토요청, 대기/ })
+  await expect(reviewNav).toHaveClass(/active/)
+  await expect(reviewNav.locator('.nav-badge')).toBeVisible()
+  await expect(reviewNav.locator('.nav-unread-badge')).toBeVisible()
+
+  const badgeStyles = await reviewNav.evaluate((element) => {
+    const count = element.querySelector<HTMLElement>('.nav-badge')
+    const unread = element.querySelector<HTMLElement>('.nav-unread-badge')
+    if (!count || !unread) throw new Error('검토요청 배지를 찾을 수 없습니다.')
+    const countStyle = getComputedStyle(count)
+    const unreadStyle = getComputedStyle(unread)
+    return {
+      countColor: countStyle.color,
+      unreadBackground: unreadStyle.backgroundColor,
+      unreadColor: unreadStyle.color,
+    }
+  })
+  expect(badgeStyles.unreadBackground).not.toBe('rgba(0, 0, 0, 0)')
+  expect(badgeStyles.countColor).not.toBe(badgeStyles.unreadColor)
+
+  await page.goto('/#/announcements')
+  await page.getByRole('button', { name: '새 공지' }).click()
+  const pin = page.getByRole('checkbox', { name: /상단에 고정/ })
+  await expect(pin).toBeVisible()
+  await expect.poll(async () =>
+    pin.evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      return { width: rect.width, height: rect.height }
+    }),
+  ).toEqual({ width: 16, height: 16 })
+})
+
+test('15 filtered team results never leave a hidden member detail selected', async ({ page }) => {
+  await page.goto('/#/team')
+  await expect(page.locator('.team-member-detail')).toBeVisible()
+  await page.getByPlaceholder('이름, 제품, 업무, 프로젝트 검색').fill('존재하지-않는-파트원')
+  await expect(page.locator('.v2-team-card')).toHaveCount(0)
+  await expect(page.locator('.team-member-detail')).toHaveCount(0)
+})
+
+test('16 withdrawn archive has one entry point and explicit selected state', async ({ page }) => {
+  await page.goto('/#/reviews')
+  const leaderArchive = page.getByRole('button', { name: /^회수 보관함/ })
+  await expect(leaderArchive).toHaveCount(1)
+  await leaderArchive.click()
+  await expect(leaderArchive).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: /^회수 보관함/ })).toHaveCount(1)
+
+  await page.getByRole('button', { name: '파트원', exact: true }).click()
+  await page.getByRole('button', { name: /^내 검토요청/ }).click()
+  const memberArchive = page.getByRole('button', { name: /^회수 보관함/ })
+  await expect(memberArchive).toHaveCount(1)
+  await memberArchive.click()
+  await expect(memberArchive).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('17 responsive boundary widths keep production-like topbar actions inside the viewport', async ({ page }) => {
+  for (const width of [1081, 390]) {
+    await page.setViewportSize({ width, height: 844 })
+    await page.goto('/#/change-applications')
+    await expect(page.getByRole('heading', { name: '변경 적용', exact: true })).toBeVisible()
+    await page.evaluate(() => {
+      const actions = document.querySelector<HTMLElement>('.topbar-actions')
+      if (!actions) throw new Error('topbar actions not found')
+
+      const syncLabel = document.createElement('span')
+      syncLabel.className = 'sync-label'
+      syncLabel.dataset.e2eSynthetic = 'sync'
+      syncLabel.textContent = '마지막 동기화 오후 10:45'
+
+      const operationStatus = document.createElement('span')
+      operationStatus.className = 'saving'
+      operationStatus.dataset.e2eSynthetic = 'operation'
+      operationStatus.setAttribute('role', 'status')
+      operationStatus.setAttribute('aria-label', '저장 및 동기화 중')
+      operationStatus.innerHTML = '<svg aria-hidden="true" width="14" height="14"></svg><span class="operation-status-label">저장 및 동기화 중</span>'
+
+      actions.prepend(operationStatus)
+      actions.prepend(syncLabel)
+    })
+
+    const layout = await page.evaluate(() => {
+      const topbar = document.querySelector<HTMLElement>('.topbar')
+      const actions = document.querySelector<HTMLElement>('.topbar-actions')
+      const title = document.querySelector<HTMLElement>('.topbar h1')
+      if (!topbar || !actions || !title) throw new Error('topbar layout nodes not found')
+      const topbarRect = topbar.getBoundingClientRect()
+      const actionsRect = actions.getBoundingClientRect()
+      const titleRect = title.getBoundingClientRect()
+      const visibleActionRects = [...actions.children]
+        .map((element) => {
+          const node = element as HTMLElement
+          const style = getComputedStyle(node)
+          const rect = node.getBoundingClientRect()
+          return { display: style.display, height: rect.height, left: rect.left, right: rect.right, width: rect.width }
+        })
+        .filter((rect) => rect.display !== 'none' && rect.width > 1 && rect.height > 1)
+
+      return {
+        actionsInside:
+          actionsRect.left >= topbarRect.left - 0.5
+          && actionsRect.right <= Math.min(topbarRect.right, window.innerWidth) + 0.5
+          && visibleActionRects.every(
+            (rect) => rect.left >= topbarRect.left - 0.5
+              && rect.right <= Math.min(topbarRect.right, window.innerWidth) + 0.5,
+          ),
+        rootInside: document.documentElement.scrollWidth <= window.innerWidth,
+        titleBeforeActions: titleRect.right <= actionsRect.left + 0.5,
+      }
+    })
+
+    expect(layout).toEqual({
+      actionsInside: true,
+      rootInside: true,
+      titleBeforeActions: true,
+    })
+  }
+
+  await page.locator('.hamburger').click()
+  const sidebar = page.locator('aside.sidebar')
+  await expect(sidebar).toHaveClass(/open/)
+  await page.keyboard.press('Escape')
+  await expect(sidebar).not.toHaveClass(/open/)
+  await expect(sidebar).toHaveAttribute('aria-hidden', 'true')
+  await expect(page.locator('.hamburger')).toBeFocused()
 })

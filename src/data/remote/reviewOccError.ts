@@ -8,8 +8,20 @@ export const REVIEW_STALE_MESSAGE =
  * Translate stable review RPC conflict text into the same Korean stale message
  * used by master OCC, so R-E2E-06 / mutation toasts stay user-facing.
  */
-export function translateReviewOccError<T extends { message?: string }>(error: T): T | UserFacingError {
+export function translateReviewOccError<
+  T extends { message?: string; details?: string; detail?: string },
+>(error: T): T | UserFacingError {
   const message = error.message ?? ''
+  const marker = `${message} ${error.details ?? ''} ${error.detail ?? ''}`
+  if (marker.includes('SQA_REVIEW_TITLE_INVALID')) {
+    return new UserFacingError('검토요청 제목은 2~200자로 입력해 주세요.')
+  }
+  if (marker.includes('SQA_REVIEW_DESCRIPTION_INVALID')) {
+    return new UserFacingError('검토요청 설명은 2~20,000자로 입력해 주세요.')
+  }
+  if (marker.includes('SQA_REVIEW_DUE_DATE_PAST')) {
+    return new UserFacingError('검토 기한은 오늘 또는 이후 날짜로 선택해 주세요.')
+  }
   if (message.includes('review changed since it was opened')) {
     return new UserFacingError(REVIEW_STALE_MESSAGE)
   }

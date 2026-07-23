@@ -14,7 +14,7 @@
     "test:e2e": "playwright test --project=preview",
     "test:e2e:remote": "node scripts/run-remote-e2e.mjs",
     "typecheck": "tsc -b --pretty false",
-    "lint": "eslint . && node scripts/check-dependency-boundaries.mjs && node scripts/generate-migration-doc.mjs --check",
+    "lint": "eslint . && node scripts/check-dependency-boundaries.mjs && node scripts/check-css-variables.mjs && node scripts/generate-migration-doc.mjs --check",
     "lint:fix": "eslint . --fix",
     "docs:migrations": "node scripts/generate-migration-doc.mjs",
     "docs:migrations:check": "node scripts/generate-migration-doc.mjs --check",

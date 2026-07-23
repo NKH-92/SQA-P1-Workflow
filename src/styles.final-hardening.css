@@ -1,0 +1,180 @@
+/* Final review hardening overrides.
+   Kept separate from the legacy stylesheet so focused release changes remain
+   reviewable and can be loaded after the established visual system. */
+
+:root {
+  --paper-line: var(--paper-border);
+  --paper-muted: var(--paper-dim);
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  min-height: 16px;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+}
+
+.nav-unread-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--paper-urgent);
+  color: var(--paper-on-accent);
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.route-loading {
+  min-height: 180px;
+  margin: 32px;
+  padding: 28px;
+  border: 1px solid var(--paper-border);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--paper-panel) 65%, transparent), transparent)
+      -220px 0 / 220px 100% no-repeat,
+    var(--paper-shimmer);
+  color: var(--paper-dim);
+  animation: route-loading-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes route-loading-sweep {
+  to {
+    background-position: calc(100% + 220px) 0, 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-loading {
+    animation: none;
+  }
+}
+
+.topbar-left {
+  flex: 1 1 auto;
+}
+
+.topbar-left > div {
+  overflow: hidden;
+  flex: 1 1 auto;
+}
+
+.topbar h1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar-cmd {
+  flex: 0 1 360px;
+}
+
+.topbar-actions {
+  flex: 0 0 auto;
+}
+
+.data-stale-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  border-bottom: 1px solid color-mix(in srgb, var(--paper-pending) 28%, var(--paper-border));
+  background: var(--paper-pending-bg);
+  color: var(--paper-pending-deep);
+}
+
+.data-stale-banner > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.data-stale-banner strong,
+.data-stale-banner small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-stale-banner small {
+  color: var(--paper-pending-deep);
+}
+
+.data-stale-banner button {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.audit-event-details summary {
+  color: var(--paper-dim);
+}
+
+.audit-field {
+  border-color: var(--paper-border);
+}
+
+.notif-panel {
+  max-height: calc(100dvh - var(--topbar-h) - 20px);
+}
+
+.notif-list {
+  max-height: min(420px, calc(100dvh - var(--topbar-h) - 240px));
+}
+
+.brand-shell .nav-badge {
+  color: var(--brand-sidebar-muted);
+}
+
+.brand-shell .nav-item.active .nav-badge:not(.unread) {
+  color: var(--brand-on-yellow);
+}
+
+.brand-shell .nav-item.active .nav-badge.unread {
+  color: var(--brand-on-dark);
+}
+
+.brand-shell .nav-unread-badge,
+.brand-shell .nav-item.active .nav-unread-badge {
+  background: var(--brand-on-yellow);
+  color: var(--brand-on-dark);
+}
+
+@media (max-width: 640px) {
+  /* Keep the timestamp available to assistive technology while protecting the
+     primary actions from clipping on narrow production layouts. */
+  .sync-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    padding: 0;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .topbar-actions .saving,
+  .topbar-actions .sync-warning {
+    width: 34px;
+    height: 34px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .operation-status-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}

@@ -88,13 +88,13 @@ describe('ReviewRequestItem member resubmission', () => {
   it('submits member feedback through the same-request resubmission handler', async () => {
     const user = userEvent.setup()
     const resubmitReview = renderItem()
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     await user.type(
       screen.getByPlaceholderText('수정한 내용과 확인받을 사항을 파트장에게 알려주세요.'),
       '요청하신 내용을 모두 수정했습니다.',
     )
     await user.click(screen.getByRole('button', { name: '피드백 작성 후 재검토 요청' }))
+    await user.click(screen.getByRole('button', { name: '재검토 요청' }))
 
     await waitFor(() => {
       expect(resubmitReview).toHaveBeenCalledWith(request.id, '요청하신 내용을 모두 수정했습니다.')

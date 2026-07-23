@@ -4,7 +4,7 @@ import type { AppNotification } from '../lib/notifications'
 
 export type ShellTabState = {
   count?: number
-  unread?: boolean
+  unreadCount?: number
 }
 
 export type ShellModel = {
@@ -44,26 +44,24 @@ export function buildShellModel({
   unreadReviewsCount: number
   notifications: AppNotification[]
 }): ShellModel {
-  const memberCount = data.profiles.filter((item) => item.role === 'member').length
-  const memberReviewCount = data.reviewRequests.filter((request) => request.requester_id === profile.id).length
+  const memberCount = data.profiles.filter((item) => item.role === 'member' && item.is_active !== false).length
+  const memberPendingReviewCount = data.reviewRequests.filter(
+    (request) => request.requester_id === profile.id && request.status === 'pending',
+  ).length
   const memberProjectCount = data.projectAssignments.filter((assignment) => assignment.user_id === profile.id).length
   const memberProductCount = data.productAssignments.filter((assignment) => assignment.user_id === profile.id).length
   const memberDutyCount = data.dutyAssignments.filter((assignment) => assignment.user_id === profile.id).length
   const pendingChangeTaskCount = data.productChangeTasks.filter(
     (task) => task.status === 'pending' && (leaderMode || task.assignee_id === profile.id),
   ).length
-  const hasUnreadReviews = unreadReviewsCount > 0
-
   return {
     memberCount,
     unreadNotifications: notifications.filter((item) => item.unread).length,
     tabs: {
       announcements: { count: data.announcements.length },
       reviews: {
-        count: hasUnreadReviews
-          ? unreadReviewsCount
-          : leaderMode ? pendingCount : memberReviewCount,
-        unread: hasUnreadReviews,
+        count: leaderMode ? pendingCount : memberPendingReviewCount,
+        unreadCount: unreadReviewsCount,
       },
       'change-applications': { count: pendingChangeTaskCount },
       projects: {

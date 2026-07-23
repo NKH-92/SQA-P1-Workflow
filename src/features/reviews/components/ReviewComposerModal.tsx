@@ -3,24 +3,22 @@ import { Send, X } from 'lucide-react'
 import { Badge } from '../../../components/ui'
 import { useModalDismiss } from '../../../hooks/useModalDismiss'
 import { formatDate } from '../../../lib/format'
+import { businessDateKey, businessDateParts } from '../../../lib/businessTime'
+import { REVIEW_REQUEST_LIMITS } from '../../../data/validation/reviews'
 import type { ReviewFormState } from '../useReviewDraft'
 
 const deadlineQuickOptions = [
   { label: '오늘', days: 0 },
   { label: '내일', days: 1 },
-  { label: '이번 주', days: 3 },
-  { label: '다음 주', days: 7 },
+  { label: '3일 후', days: 3 },
+  { label: '7일 후', days: 7 },
 ]
 
 // Compute the date at click/render time (not at mount) so a composer left open past
 // midnight does not stamp yesterday's date onto "오늘".
 function quickDeadlineDate(days: number) {
-  const date = new Date()
-  date.setDate(date.getDate() + days)
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+  const { year, month, day } = businessDateParts(new Date())
+  return businessDateKey(new Date(Date.UTC(year, month - 1, day + days, 12)))
 }
 
 type ReviewComposerModalProps = {
@@ -58,6 +56,8 @@ export function ReviewComposerModal({
 
   const applyQuickDeadline = (days: number) =>
     setForm((current) => ({ ...current, deadlineMode: 'date', due_date: quickDeadlineDate(days) }))
+  const today = quickDeadlineDate(0)
+  const dueDateMin = editingReviewId && form.due_date < today ? undefined : today
 
   return (
     <div className="modal-backdrop" onMouseDown={() => onClose()} role="presentation">
@@ -116,12 +116,18 @@ export function ReviewComposerModal({
               </label>
               <div>
                 <input
+                  aria-describedby="review-title-count-v2"
                   autoFocus
                   id="review-title-v2"
+                  maxLength={REVIEW_REQUEST_LIMITS.titleMax}
+                  minLength={REVIEW_REQUEST_LIMITS.titleMin}
                   placeholder="예: 파트너 API 전환 검토"
                   value={form.title}
                   onChange={(event) => setForm({ ...form, title: event.target.value })}
                 />
+                <small id="review-title-count-v2">
+                  {form.title.trim().length}/{REVIEW_REQUEST_LIMITS.titleMax}자
+                </small>
               </div>
             </div>
             <div className="modal-field-row">
@@ -131,12 +137,18 @@ export function ReviewComposerModal({
               </label>
               <div>
                 <textarea
+                  aria-describedby="review-description-help-v2 review-description-count-v2"
                   id="review-description-v2"
+                  maxLength={REVIEW_REQUEST_LIMITS.descriptionMax}
+                  minLength={REVIEW_REQUEST_LIMITS.descriptionMin}
                   placeholder="검토 사유, 배경, 확인해야 할 포인트를 적어주세요."
                   value={form.description}
                   onChange={(event) => setForm({ ...form, description: event.target.value })}
                 />
-                <p>무엇을 검토받고 싶은지 파트장이 빠르게 읽을 수 있게 배경과 요청 포인트를 분리해 주세요.</p>
+                <p id="review-description-help-v2">무엇을 검토받고 싶은지 파트장이 빠르게 읽을 수 있게 배경과 요청 포인트를 분리해 주세요.</p>
+                <small id="review-description-count-v2">
+                  {form.description.trim().length.toLocaleString('ko-KR')}/{REVIEW_REQUEST_LIMITS.descriptionMax.toLocaleString('ko-KR')}자
+                </small>
               </div>
             </div>
             <div className="modal-field-row">
@@ -186,6 +198,7 @@ export function ReviewComposerModal({
                   <input
                     aria-label="검토 기한 날짜"
                     id="review-deadline-v2"
+                    min={dueDateMin}
                     type="date"
                     value={form.due_date}
                     onChange={(event) => setForm({ ...form, due_date: event.target.value })}

@@ -24,11 +24,11 @@ function timelineSteps(status: ReviewStatus) {
   ].map((step, index) => ({ ...step, state: timelineStepState(index, status) }))
 }
 
-export function buildReviewRequestItemModel(request: ReviewRequest, profile: Profile) {
+export function buildReviewRequestItemModel(request: ReviewRequest, profile: Profile, now = new Date()) {
   const ownsRequest = profile.id === request.requester_id
   const reviewRound = request.review_round ?? 1
   const rejectionCount = request.rejection_count ?? (request.status === 'rejected' ? 1 : 0)
-  const urgency = dueUrgency(request.due_date)
+  const urgency = dueUrgency(request.due_date, now)
 
   return {
     timelineSteps: timelineSteps(request.status),

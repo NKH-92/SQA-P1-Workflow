@@ -93,7 +93,6 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
   })
 
   test('R-E2E-05 leader reject → member resubmit → leader approve', async ({ page }) => {
-    page.on('dialog', (dialog) => dialog.accept())
     const reviewTitle = 'Member A pending'
 
     await signIn(page, fixtureEnv('REMOTE_E2E_LEADER_EMAIL'), fixtureEnv('REMOTE_E2E_LEADER_PASSWORD'))
@@ -107,7 +106,10 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
       'reject reason',
     )).fill('remote e2e reject reason')
     await (await requireVisible(detail.getByRole('button', { name: /반려/ }), 'reject')).click()
-    await expect(page.getByText(/반려/i).first()).toBeVisible({ timeout: 30_000 })
+    const rejectDialog = page.getByRole('dialog', { name: '검토요청을 반려할까요?' })
+    await expect(rejectDialog).toBeVisible()
+    await rejectDialog.getByRole('button', { name: '반려하기', exact: true }).click()
+    await expect(page.getByText('검토요청을 반려했습니다.', { exact: true })).toBeVisible({ timeout: 30_000 })
 
     await signIn(page, fixtureEnv('REMOTE_E2E_MEMBER_A_EMAIL'), fixtureEnv('REMOTE_E2E_MEMBER_A_PASSWORD'))
     await page.getByRole('button', { name: /^내 검토요청/ }).click()
@@ -119,7 +121,12 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
       'resubmit feedback',
     )).fill('remote e2e resubmit feedback')
     await (await requireVisible(memberDetail.getByRole('button', { name: /재검토|재제출|재요청/ }), 'resubmit')).click()
-    await expect(page.getByText(/재검토|재제출|접수|대기/i).first()).toBeVisible({ timeout: 30_000 })
+    const resubmitDialog = page.getByRole('dialog', { name: '재검토를 요청할까요?' })
+    await expect(resubmitDialog).toBeVisible()
+    await resubmitDialog.getByRole('button', { name: '재검토 요청', exact: true }).click()
+    await expect(page.getByText('같은 검토요청으로 재검토를 요청했습니다.', { exact: true }).first()).toBeVisible({
+      timeout: 30_000,
+    })
 
     await signIn(page, fixtureEnv('REMOTE_E2E_LEADER_EMAIL'), fixtureEnv('REMOTE_E2E_LEADER_PASSWORD'))
     await page.goto('/#/reviews')
@@ -127,11 +134,15 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
     await page.getByText(reviewTitle, { exact: true }).first().click()
     const leaderDetail = page.getByRole('article').filter({ hasText: reviewTitle }).first()
     await (await requireVisible(leaderDetail.getByRole('button', { name: /완료 처리|승인/ }), 'approve')).click()
-    await expect(page.getByText(/완료|승인/i).first()).toBeVisible({ timeout: 30_000 })
+    const approveDialog = page.getByRole('dialog', { name: '검토요청을 완료 처리할까요?' })
+    await expect(approveDialog).toBeVisible()
+    await approveDialog.getByRole('button', { name: '완료 처리', exact: true }).click()
+    await expect(page.getByText('검토요청 상태를 변경했습니다.', { exact: true })).toBeVisible({
+      timeout: 30_000,
+    })
   })
 
   test('R-E2E-06 stale review OCC surfaces a user message', async ({ page }) => {
-    page.on('dialog', (dialog) => dialog.accept())
     const reviewId = fixtureEnv('REMOTE_E2E_HARDENED_OCC_REVIEW_REQUEST_ID')
     const reviewTitle = 'Hardened OCC approval fixture'
 
@@ -181,6 +192,9 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
     })
 
     await detail.getByRole('button', { name: /완료 처리|승인/ }).click()
+    const approveDialog = page.getByRole('dialog', { name: '검토요청을 완료 처리할까요?' })
+    await expect(approveDialog).toBeVisible()
+    await approveDialog.getByRole('button', { name: '완료 처리', exact: true }).click()
     await expect.poll(
       () => concurrentEditCompleted,
       { message: 'approval RPC must pass through the OCC race gate', timeout: 15_000 },

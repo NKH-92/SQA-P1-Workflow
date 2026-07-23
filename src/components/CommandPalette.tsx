@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Search } from 'lucide-react'
 import type { Profile } from '../types'
 import type { TabId } from '../app/types'
+import { useModalDismiss } from '../hooks/useModalDismiss'
 import {
   buildCommandItems,
   filterCommandItems,
@@ -28,6 +29,8 @@ export function CommandPalette({
   const [cursor, setCursor] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useModalDismiss(open, onClose, dialogRef)
 
   const items = useMemo(() => {
     // 닫혀 있는 동안에는 목록을 만들지 않는다 — App이 리렌더될 때마다 헛일하지 않도록.
@@ -69,11 +72,6 @@ export function CommandPalette({
     // 조합 확정 Enter가 항목 선택으로 실행되면 검색어를 입력하는 도중 화면이 이동해 버린다.
     // (Safari는 isComposing 대신 keyCode 229로만 구분된다)
     if (event.nativeEvent.isComposing || event.keyCode === 229) return
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      onClose()
-      return
-    }
     if (event.key === 'ArrowDown') {
       event.preventDefault()
       setCursor((value) => (filtered.length === 0 ? 0 : (value + 1) % filtered.length))
@@ -96,6 +94,7 @@ export function CommandPalette({
   return (
     <div className="cmd-backdrop" onMouseDown={onClose} role="presentation">
       <div
+        ref={dialogRef}
         aria-label="빠른 이동"
         aria-modal="true"
         className="cmd-card"

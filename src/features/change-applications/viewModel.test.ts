@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import type { ProductChangeTaskContext } from './selectors'
 import {
   calculateChangeApplicationKpis,
@@ -88,12 +88,7 @@ function context({
 }
 
 describe('change application view model', () => {
-  beforeEach(() => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-07-17T09:00:00+09:00'))
-  })
-
-  afterEach(() => vi.useRealTimers())
+  const referenceNow = new Date('2026-07-17T09:00:00+09:00')
 
   it('merges cached task history without changing order and respects refresh precedence', () => {
     const first = context({ id: '1', productName: '가' }).task
@@ -117,7 +112,7 @@ describe('change application view model', () => {
       actionKind: 'all',
       attention: 'due_soon',
       query: '',
-    })
+    }, referenceNow)
 
     expect(result.map(({ task }) => task.id)).toEqual(['task-today', 'task-three'])
   })

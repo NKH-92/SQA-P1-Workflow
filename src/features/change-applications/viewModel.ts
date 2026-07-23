@@ -60,6 +60,7 @@ export function applicationCreatorName(data: AppData, application: ChangeApplica
 export function filterChangeTaskContexts(
   contexts: ProductChangeTaskContext[],
   filters: ChangeApplicationFilters,
+  now = new Date(),
 ) {
   const normalized = filters.query.trim().toLowerCase()
   return contexts.filter(({ task, actionItem, application }) => {
@@ -69,7 +70,7 @@ export function filterChangeTaskContexts(
     if (filters.application !== 'all' && application.status !== filters.application) return false
     if (filters.actionKind !== 'all' && actionItem.kind !== filters.actionKind) return false
     if (filters.attention !== 'all') {
-      const days = daysUntil(actionItem.due_date)
+      const days = daysUntil(actionItem.due_date, now)
       if (application.status !== 'published') return false
       if (task.status !== 'pending') return false
       if (filters.attention === 'overdue' && (days == null || days >= 0)) return false
@@ -110,6 +111,7 @@ export function calculateChangeApplicationKpis(
   contexts: ProductChangeTaskContext[],
   leaderMode: boolean,
   profileId: string,
+  now = new Date(),
 ) {
   const publishedOwnContexts = contexts.filter(
     ({ task, application }) =>
@@ -118,9 +120,9 @@ export function calculateChangeApplicationKpis(
       && (leaderMode || task.assignee_id === profileId),
   )
   const pendingContexts = publishedOwnContexts.filter(({ task }) => task.status === 'pending')
-  const overdueCount = pendingContexts.filter(({ actionItem }) => (daysUntil(actionItem.due_date) ?? 0) < 0).length
+  const overdueCount = pendingContexts.filter(({ actionItem }) => (daysUntil(actionItem.due_date, now) ?? 0) < 0).length
   const dueSoonCount = pendingContexts.filter(({ actionItem }) => {
-    const days = daysUntil(actionItem.due_date)
+    const days = daysUntil(actionItem.due_date, now)
     return days != null && days >= 0 && days <= 3
   }).length
   const unassignedCount = leaderMode

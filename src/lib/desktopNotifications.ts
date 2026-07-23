@@ -2,7 +2,7 @@ import type { AppData } from '../types'
 import { eventTime } from './dates'
 
 /** 현재 localStorage settings shape 버전. 필드를 추가/변경하면 올리고 마이그레이션을 손본다. */
-export const DESKTOP_NOTIFICATION_SETTINGS_SCHEMA_VERSION = 2
+export const DESKTOP_NOTIFICATION_SETTINGS_SCHEMA_VERSION = 3
 
 /** 파트장 데스크톱 알림 설정. readState와 같은 계정별 localStorage 패턴. */
 export type DesktopNotificationSettings = {
@@ -10,7 +10,7 @@ export type DesktopNotificationSettings = {
   enabled: boolean
   /** 이 시각(포함)까지의 요청은 이미 알렸거나 알리지 않기로 한 기준선 ISO. */
   notifiedUpToIso: string | null
-  /** true면 알림 title에서 requester 이름을 숨기고 종류만 표시한다. 기본값 false(기존 동작 유지). */
+  /** true면 알림 title에서 requester 이름을 숨기고 종류만 표시한다. 잠금화면 안전 기본값은 true. */
   hideRequesterName: boolean
   /** true면 알림 body에 검토 제목을 노출한다. 기본값 false — 잠금화면에 검토 내용이 그대로 보이지 않게 한다. */
   revealReviewTitle: boolean
@@ -23,7 +23,7 @@ const defaultSettings: DesktopNotificationSettings = {
   schemaVersion: DESKTOP_NOTIFICATION_SETTINGS_SCHEMA_VERSION,
   enabled: false,
   notifiedUpToIso: null,
-  hideRequesterName: false,
+  hideRequesterName: true,
   revealReviewTitle: false,
 }
 
@@ -52,7 +52,7 @@ export function loadDesktopNotificationSettings(userId: string): DesktopNotifica
       schemaVersion: DESKTOP_NOTIFICATION_SETTINGS_SCHEMA_VERSION,
       enabled: parsed.enabled === true,
       notifiedUpToIso: parsed.notifiedUpToIso ?? null,
-      hideRequesterName: parsed.hideRequesterName === true,
+      hideRequesterName: typeof parsed.hideRequesterName === 'boolean' ? parsed.hideRequesterName : true,
       revealReviewTitle: parsed.revealReviewTitle === true,
     }
   } catch {

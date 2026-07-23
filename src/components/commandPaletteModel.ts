@@ -51,7 +51,7 @@ export function buildCommandItems({
 
   if (leaderMode) {
     data.profiles
-      .filter((item) => item.role === 'member')
+      .filter((item) => item.role === 'member' && item.is_active !== false)
       .forEach((member) => {
         result.push({
           id: `member-${member.id}`,

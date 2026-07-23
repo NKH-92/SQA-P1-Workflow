@@ -1,8 +1,29 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { useCallback, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPreviewData, previewLeader, previewMember } from '../demoData'
 import { CommandPalette } from './CommandPalette'
+
+function CommandPaletteHarness() {
+  const [open, setOpen] = useState(false)
+  const close = useCallback(() => setOpen(false), [])
+
+  return (
+    <>
+      <button onClick={() => setOpen(true)} type="button">빠른 이동 열기</button>
+      <CommandPalette
+        data={createPreviewData()}
+        leaderMode
+        onClose={close}
+        open={open}
+        profile={previewLeader}
+        setActiveTab={vi.fn()}
+      />
+    </>
+  )
+}
 
 describe('CommandPalette review statistics navigation', () => {
   beforeEach(() => {
@@ -119,5 +140,53 @@ describe('CommandPalette review statistics navigation', () => {
       '내 프로젝트',
       '내 담당',
     ])
+  })
+
+  it('traps focus, locks body scrolling, and returns focus to its trigger on Escape', async () => {
+    const user = userEvent.setup()
+    render(<CommandPaletteHarness />)
+    const trigger = screen.getByRole('button', { name: '빠른 이동 열기' })
+
+    await user.click(trigger)
+
+    const dialog = screen.getByRole('dialog', { name: '빠른 이동' })
+    const searchInput = within(dialog).getByRole('textbox', { name: '화면, 검토요청, 파트원 검색' })
+    const commandButtons = within(dialog).getAllByRole('button')
+    expect(document.body.style.overflow).toBe('hidden')
+    await waitFor(() => expect(searchInput).toHaveFocus())
+
+    await user.tab({ shift: true })
+    expect(commandButtons[commandButtons.length - 1]).toHaveFocus()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: '빠른 이동' })).not.toBeInTheDocument()
+    expect(document.body.style.overflow).toBe('')
+    expect(trigger).toHaveFocus()
+  })
+
+  it('ignores Escape while a later modal owns the topmost dialog position', () => {
+    const onClose = vi.fn()
+    render(
+      <>
+        <CommandPalette
+          data={createPreviewData()}
+          leaderMode
+          onClose={onClose}
+          open
+          profile={previewLeader}
+          setActiveTab={vi.fn()}
+        />
+        <section aria-label="상위 확인" aria-modal="true" role="dialog">
+          상위 모달
+        </section>
+      </>,
+    )
+
+    const input = screen.getByRole('textbox', { name: '화면, 검토요청, 파트원 검색' })
+    fireEvent.keyDown(input, { key: 'Escape' })
+
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog', { name: '빠른 이동' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: '상위 확인' })).toBeInTheDocument()
   })
 })

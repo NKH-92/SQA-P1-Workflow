@@ -44,7 +44,7 @@ describe('ErrorBoundary', () => {
     expect(reporter.report).toHaveBeenCalledTimes(1)
     const report = reporter.report.mock.calls[0][0]
     expect(() => assertAllowedErrorReport(report)).not.toThrow()
-    expect(report).toMatchObject({ role: 'unknown', operation: 'mutation' })
+    expect(report).toMatchObject({ role: 'unknown', operation: 'render' })
     expect(JSON.stringify(report)).not.toContain('boom: something exploded')
   })
 

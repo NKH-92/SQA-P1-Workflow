@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { businessDateKey } from '../../lib/businessTime'
 import { toUserMessage } from '../../lib/errors'
 import type { AppData, ReviewStatisticsV2Envelope } from '../../types'
-import { useReviewStatisticsV2 } from '../reviews/useReviewStatisticsV2'
+import {
+  reviewStatisticsV2ContentRevision,
+  useReviewStatisticsV2,
+} from '../reviews/useReviewStatisticsV2'
 import { leaderReviewRange } from './dashboardModels'
 
 export type LeaderReviewOverviewState =
@@ -12,6 +15,12 @@ export type LeaderReviewOverviewState =
 
 export function useLeaderReviewOverview(data: AppData): LeaderReviewOverviewState {
   const fetchStatistics = useReviewStatisticsV2(data)
+  const reviewRequests = data.reviewRequests
+  const reviewEvents = data.reviewEvents
+  const contentRevision = useMemo(
+    () => reviewStatisticsV2ContentRevision({ reviewRequests, reviewEvents }),
+    [reviewEvents, reviewRequests],
+  )
   const [referenceDate] = useState(() => new Date())
   const range = useMemo(() => leaderReviewRange(businessDateKey(referenceDate)), [referenceDate])
   const [state, setState] = useState<LeaderReviewOverviewState>({ status: 'loading' })
@@ -30,7 +39,7 @@ export function useLeaderReviewOverview(data: AppData): LeaderReviewOverviewStat
     return () => {
       cancelled = true
     }
-  }, [fetchStatistics, range])
+  }, [contentRevision, fetchStatistics, range])
 
   return state
 }

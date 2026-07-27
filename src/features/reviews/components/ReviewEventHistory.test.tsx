@@ -1,9 +1,11 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ReviewEvent } from '../../../types'
 import { reviewEventLabel } from '../reviewEventPresentation'
 import { ReviewEventHistory } from './ReviewEventHistory'
+
+vi.mock('../../../lib/supabase', () => ({ hasSupabaseConfig: false }))
 
 afterEach(cleanup)
 

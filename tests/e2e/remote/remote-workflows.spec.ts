@@ -409,4 +409,63 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
     await expect(page.getByRole('button', { name: '검토 통계', exact: true })).toHaveCount(0)
     await expect(page.getByRole('button', { name: '홈', exact: true })).toHaveCount(0)
   })
+
+  test('R-E2E-13 review statistics refetch after a review event refresh', async ({ page }) => {
+    const admin = serviceRoleClient()
+    const reviewRequestId = fixtureEnv('REMOTE_E2E_STATS_REVIEW_REQUEST_ID')
+    let insertedEventId: string | number | null = null
+
+    await signIn(page, fixtureEnv('REMOTE_E2E_LEADER_EMAIL'), fixtureEnv('REMOTE_E2E_LEADER_PASSWORD'))
+    await expectAppShell(page)
+
+    let statisticsCalls = 0
+    await page.route('**/rest/v1/rpc/get_review_statistics_v2', async (route) => {
+      statisticsCalls += 1
+      await route.continue()
+    })
+
+    try {
+      await page.goto('/#/review-stats')
+      const requestKpi = page.getByRole('article', { name: /^요청 건수 [\d,]+건$/ }).first()
+      await expect(requestKpi).toBeVisible({ timeout: 45_000 })
+      const readRequestCount = async () => {
+        const label = await requestKpi.getAttribute('aria-label')
+        const match = label?.match(/([\d,]+)건/)
+        if (!match) throw new Error(`Unexpected request KPI label: ${label}`)
+        return Number(match[1].replaceAll(',', ''))
+      }
+      const beforeCount = await readRequestCount()
+      const beforeCalls = statisticsCalls
+
+      const inserted = await admin
+        .from('review_events')
+        .insert({
+          review_request_id: reviewRequestId,
+          actor_id: null,
+          actor_name_snapshot: 'Remote E2E',
+          event_type: 'submitted',
+          from_status: null,
+          to_status: 'pending',
+          occurred_at: new Date().toISOString(),
+          metadata: { remote_e2e: true },
+        })
+        .select('id')
+        .single()
+      expect(inserted.error).toBeNull()
+      insertedEventId = inserted.data?.id ?? null
+      expect(insertedEventId).not.toBeNull()
+
+      await page.getByTitle('새로고침').click()
+      await expect.poll(() => statisticsCalls, {
+        message: 'review statistics RPC must refetch after refreshed review-event content changes',
+        timeout: 30_000,
+      }).toBeGreaterThan(beforeCalls)
+      await expect.poll(readRequestCount, { timeout: 30_000 }).toBe(beforeCount + 1)
+    } finally {
+      if (insertedEventId !== null) {
+        const cleanup = await admin.from('review_events').delete().eq('id', insertedEventId)
+        expect(cleanup.error).toBeNull()
+      }
+    }
+  })
 })

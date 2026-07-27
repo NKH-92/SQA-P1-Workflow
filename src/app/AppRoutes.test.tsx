@@ -3,6 +3,11 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AppData, Profile } from '../types'
 import { AppRoutes } from './AppRoutes'
+import type { TabId } from './types'
+
+vi.mock('../screens/ActivityPanel', () => ({
+  ActivityPanel: () => <div data-testid="activity-screen">activity</div>,
+}))
 
 vi.mock('../screens/AnnouncementsPanel', () => ({
   AnnouncementsPanel: ({ initialSelectedId }: { initialSelectedId?: string | null }) => (
@@ -16,6 +21,14 @@ vi.mock('../screens/ChangeApplicationsPanel', () => ({
 }))
 vi.mock('../screens/ReviewStatsPanel', () => ({
   ReviewStatsPanel: () => <div data-testid="review-stats-screen">검토 통계 화면</div>,
+}))
+vi.mock('../screens/MasterPanel', () => ({
+  MasterPanel: ({ masterView }: { masterView: string }) => (
+    <div data-testid="master-screen">{masterView}</div>
+  ),
+}))
+vi.mock('../screens/TeamPanel', () => ({
+  TeamPanel: () => <div data-testid="team-screen">team</div>,
 }))
 
 function emptyData(): AppData {
@@ -43,7 +56,7 @@ function emptyData(): AppData {
 
 function renderRoute(
   profile: Profile,
-  activeTab: 'review-stats' | 'announcements' | 'change-applications' = 'review-stats',
+  activeTab: TabId = 'review-stats',
   navEntityId: string | null = null,
 ) {
   render(
@@ -65,6 +78,8 @@ describe('AppRoutes review statistics guard', () => {
 
   it('renders review statistics for an active leader', async () => {
     renderRoute({ id: 'leader', email: 'leader@example.com', name: '파트장', role: 'leader', is_active: true })
+
+    expect(screen.getByRole('status')).toHaveClass('route-loading')
     expect(await screen.findByTestId('review-stats-screen')).toBeInTheDocument()
   })
 
@@ -76,6 +91,56 @@ describe('AppRoutes review statistics guard', () => {
   it('does not render review statistics for an inactive leader', () => {
     renderRoute({ id: 'inactive', email: 'inactive@example.com', name: '비활성 파트장', role: 'leader', is_active: false })
     expect(screen.queryByTestId('review-stats-screen')).not.toBeInTheDocument()
+  })
+})
+
+describe('AppRoutes leader-only lazy routes', () => {
+  afterEach(cleanup)
+
+  const leaderOnlyRoutes = [
+    { activeTab: 'review-stats', testId: 'review-stats-screen', content: '검토 통계 화면' },
+    { activeTab: 'team', testId: 'team-screen', content: 'team' },
+    { activeTab: 'products', testId: 'master-screen', content: 'products' },
+    { activeTab: 'duties', testId: 'master-screen', content: 'duties' },
+    { activeTab: 'invites', testId: 'master-screen', content: 'invites' },
+    { activeTab: 'activity', testId: 'activity-screen', content: 'activity' },
+  ] as const satisfies ReadonlyArray<{
+    activeTab: TabId
+    testId: string
+    content: string
+  }>
+
+  it.each(leaderOnlyRoutes)('renders $activeTab for an active leader', async ({ activeTab, testId, content }) => {
+    renderRoute(
+      { id: 'leader', email: 'leader@example.com', name: '파트장', role: 'leader', is_active: true },
+      activeTab,
+    )
+
+    expect(await screen.findByTestId(testId)).toHaveTextContent(content)
+  })
+
+  it.each([
+    { label: 'member', profile: { id: 'member', email: 'member@example.com', name: '파트원', role: 'member', is_active: true } },
+    { label: 'inactive leader', profile: { id: 'inactive', email: 'inactive@example.com', name: '비활성 파트장', role: 'leader', is_active: false } },
+  ] as const)('gates every leader-only lazy route for an unauthorized $label', ({ profile }) => {
+    for (const { activeTab, testId } of leaderOnlyRoutes) {
+      const { unmount } = render(
+        <AppRoutes
+          activeTab={activeTab}
+          data={emptyData()}
+          mutate={vi.fn(async () => true)}
+          navEntityId={null}
+          profile={profile}
+          setActiveTab={vi.fn()}
+          setData={vi.fn()}
+          setNavEntityId={vi.fn()}
+        />,
+      )
+
+      expect(screen.queryByTestId(testId)).not.toBeInTheDocument()
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+      unmount()
+    }
   })
 })
 

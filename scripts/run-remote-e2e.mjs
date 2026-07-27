@@ -235,6 +235,7 @@ console.log('SQA_REMOTE_E2E_UNINVITED_READY')
     REMOTE_E2E_UNINVITED_EMAIL: uninvitedEmail,
     REMOTE_E2E_UNINVITED_PASSWORD: uninvitedPassword,
     REMOTE_E2E_MEMBER_B_REVIEW_TITLE: 'Member B pending',
+    REMOTE_E2E_STATS_REVIEW_REQUEST_ID: fixtures.RLS_MEMBER_A_PENDING_REVIEW_REQUEST_ID,
     REMOTE_E2E_HARDENED_OCC_REVIEW_REQUEST_ID: fixtures.RLS_HARDENED_OCC_REVIEW_REQUEST_ID,
     REMOTE_E2E_TEST_PRODUCT_ID: fixtures.RLS_TEST_PRODUCT_ID,
     REMOTE_E2E_OWNED_CHANGE_TASK_ID: fixtures.RLS_OWNED_CHANGE_TASK_ID,
@@ -249,12 +250,12 @@ console.log('SQA_REMOTE_E2E_UNINVITED_READY')
     `${JSON.stringify({
       supabaseUrlHost: new URL(status.API_URL).hostname,
       hasServiceRoleInBrowserEnv: false,
-      scenarios: 12,
+      scenarios: 13,
     }, null, 2)}\n`,
   )
 
   run(npx, ['playwright', 'test', '--project=remote'], { env: remoteEnv })
-  console.log('SQA_REMOTE_E2E_OK: 12 remote browser scenarios')
+  console.log('SQA_REMOTE_E2E_OK: 13 remote browser scenarios')
 } finally {
   restoreMigrations(heldMigrations)
   if (startedStack) {

@@ -62,7 +62,7 @@ npm run test:e2e:remote
 | production build·bundle budget | [ ] PASS |
 | Preview Playwright 17개 | [ ] PASS |
 | Full RLS(skip 0, 해당 변경 시 필수) | [ ] PASS / [ ] 해당 없음 |
-| Remote E2E 12개(해당 변경 시 필수) | [ ] PASS / [ ] 해당 없음 |
+| Remote E2E 13개(해당 변경 시 필수) | [ ] PASS / [ ] 해당 없음 |
 | `git diff --check` | [ ] PASS |
 
 ## 3. PR과 CI

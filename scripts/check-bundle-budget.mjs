@@ -10,6 +10,19 @@ const MAX_CHUNK_BYTES = 560 * 1024
 // both dimensions: initial navigation and the total code surface.
 const MAX_INITIAL_GZIP_BYTES = 142 * 1024
 const MAX_TOTAL_GZIP_BYTES = 208 * 1024
+const EXPECTED_ROUTE_DYNAMIC_IMPORTS = new Set([
+  'src/screens/ActivityPanel.tsx',
+  'src/screens/AnnouncementsPanel.tsx',
+  'src/screens/ChangeApplicationsPanel.tsx',
+  'src/screens/Dashboard.tsx',
+  'src/screens/LeaderDashboard.tsx',
+  'src/screens/MasterPanel.tsx',
+  'src/screens/MyWorkPanel.tsx',
+  'src/screens/ProjectsPanel.tsx',
+  'src/screens/ReviewStatsPanel.tsx',
+  'src/screens/ReviewsPanel.tsx',
+  'src/screens/TeamPanel.tsx',
+])
 
 const names = (await readdir(assetsDir)).filter((name) => name.endsWith('.js'))
 if (names.length === 0) throw new Error('Bundle budget check found no JavaScript assets')
@@ -26,6 +39,19 @@ for (const name of names) {
 }
 
 const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+const entryModules = Object.values(manifest).filter((entry) => entry.isEntry)
+if (entryModules.length !== 1) {
+  throw new Error(`Bundle manifest must contain exactly one entry module, found ${entryModules.length}`)
+}
+const routeDynamicImports = new Set(entryModules[0].dynamicImports ?? [])
+const missingRouteImports = [...EXPECTED_ROUTE_DYNAMIC_IMPORTS].filter((key) => !routeDynamicImports.has(key))
+const unexpectedRouteImports = [...routeDynamicImports].filter((key) => !EXPECTED_ROUTE_DYNAMIC_IMPORTS.has(key))
+if (missingRouteImports.length > 0 || unexpectedRouteImports.length > 0) {
+  throw new Error(
+    `Route code-splitting contract failed:\nmissing: ${missingRouteImports.join(', ') || 'none'}\n`
+      + `unexpected: ${unexpectedRouteImports.join(', ') || 'none'}`,
+  )
+}
 const initialKeys = new Set()
 const visitInitialImport = (key) => {
   if (initialKeys.has(key)) return

@@ -102,7 +102,7 @@ type BootstrapEnvelope<T> = {
 
 - 정적: typecheck, ESLint, dependency boundary checker
 - 도메인/데이터/UI: Vitest
-- 브라우저 계약: Playwright preview 17개 + 실제 local Supabase remote 12개 시나리오
+- 브라우저 계약: Playwright preview 17개 + 실제 local Supabase remote 13개 시나리오
 - DB 권한: pinned Supabase CLI + Docker의 full RLS gate
 - 산출물: production build + bundle budget + security header render
 

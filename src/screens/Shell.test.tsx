@@ -286,23 +286,55 @@ describe('Shell sync health warning', () => {
     }
     renderShell(leader, true, { syncHealth: staleHealth })
 
-    const warning = screen.getByText('동기화 지연')
+    const warning = screen.getByText('연결 지연')
     expect(warning.closest('[role="status"]')).toHaveAttribute('aria-live', 'polite')
   })
 
-  it('never renders raw error detail text, only the safe error code, inside the warning title', () => {
+  it.each([
+    {
+      code: 'network',
+      label: '연결 지연',
+      guidance: '네트워크를 확인하고 다시 시도해 주세요.',
+    },
+    {
+      code: 'SQA_BOOTSTRAP_SCHEMA_MISMATCH',
+      label: '업데이트 필요',
+      guidance: '앱과 데이터 버전이 맞지 않습니다.',
+    },
+    {
+      code: '42501',
+      label: '권한 확인 필요',
+      guidance: '데이터 접근 권한을 확인하지 못했습니다.',
+    },
+    {
+      code: 'PGRST301',
+      label: '권한 확인 필요',
+      guidance: '데이터 접근 권한을 확인하지 못했습니다.',
+    },
+    {
+      code: 'unexpected-private-code',
+      label: '동기화 지연',
+      guidance: '최신 데이터를 불러오지 못했습니다.',
+    },
+    {
+      code: null,
+      label: '동기화 지연',
+      guidance: '최신 데이터를 불러오지 못했습니다.',
+    },
+  ])('shows safe $label guidance for $code without exposing the code', ({ code, label, guidance }) => {
     const staleHealth: SyncHealth = {
       consecutiveFailures: 3,
       lastSuccessAt: null,
       lastFailureAt: new Date('2026-07-20T00:10:00.000Z'),
       stale: true,
-      lastErrorCode: 'network',
+      lastErrorCode: code,
     }
     renderShell(leader, true, { syncHealth: staleHealth })
 
-    const warning = screen.getByText('동기화 지연').closest('[role="status"]')
-    expect(warning).toHaveAttribute('title', expect.stringContaining('network'))
-    expect(warning?.getAttribute('title')).not.toMatch(/@|review|body/i)
+    const warning = screen.getByText(label).closest('[role="status"]')
+    expect(warning).toHaveAttribute('title', expect.stringContaining(guidance))
+    expect(warning).toHaveAttribute('title', expect.stringContaining('연속 실패 3회'))
+    if (code) expect(warning?.getAttribute('title')).not.toContain(code)
   })
 
   it('does not show the warning for a single background failure that is not yet stale', () => {

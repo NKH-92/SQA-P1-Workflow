@@ -1,6 +1,9 @@
-import { act, renderHook } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
-import type { AppData } from '../../types'
+import '@testing-library/jest-dom/vitest'
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { BootstrapSchemaVersionError } from '../../data/fetch/bootstrapEnvelope'
+import { Shell } from '../../screens/Shell'
+import type { AppData, Profile } from '../../types'
 
 const emptyResult: AppData & { optionalWarnings: string[]; snapshotAt: string | null } = {
     announcements: [],
@@ -45,6 +48,56 @@ vi.mock('../../data/fetchAppData', () => ({
 }))
 
 import { useAppData } from './useAppData'
+
+afterEach(() => {
+  cleanup()
+  fetchAppDataMock.mockReset()
+  fetchReviewRequestByIdMock.mockReset()
+  fetchAnnouncementByIdMock.mockReset()
+})
+
+const syncHealthLeader: Profile = {
+  id: 'sync-health-leader',
+  email: 'leader@example.com',
+  name: 'Sync Health Leader',
+  role: 'leader',
+  is_active: true,
+}
+
+function SyncHealthShellHarness() {
+  const { data, dataWarnings, lastSyncedAt, refreshData, refreshing, syncHealth } = useAppData()
+  return (
+    <Shell
+      activeTab="dashboard"
+      data={data}
+      dataWarnings={dataWarnings}
+      lastSyncedAt={lastSyncedAt}
+      leaderMode
+      message={null}
+      notifications={[]}
+      onMarkAllRead={vi.fn()}
+      onOpenCommandPalette={vi.fn()}
+      onRefresh={() => void refreshData().catch(() => {})}
+      onSignOut={vi.fn()}
+      pendingCount={0}
+      profile={syncHealthLeader}
+      refreshing={refreshing}
+      saving={false}
+      setActiveTab={vi.fn()}
+      syncHealth={syncHealth}
+      unreadReviewsCount={0}
+    >
+      <button
+        data-failures={syncHealth.consecutiveFailures}
+        data-testid="sync-health-refresh"
+        onClick={() => void refreshData().catch(() => {})}
+        type="button"
+      >
+        refresh probe
+      </button>
+    </Shell>
+  )
+}
 
 describe('useAppData session reset', () => {
   it('clears the previous session sync marker before a new login', async () => {
@@ -183,6 +236,52 @@ describe('useAppData sync health', () => {
     expect(result.current.syncHealth.consecutiveFailures).toBe(1)
     expect(result.current.syncHealth.lastErrorCode).toBe('network')
     expect(result.current.syncHealth.stale).toBe(false)
+  })
+
+  it('preserves a bootstrap schema mismatch classification through the sync-health boundary', async () => {
+    fetchAppDataMock.mockRejectedValueOnce(
+      new BootstrapSchemaVersionError('get_core_bootstrap_v2', 2, 3),
+    )
+    const { result } = renderHook(() => useAppData())
+
+    await refreshAndCatch(result.current.refreshData)
+
+    expect(result.current.syncHealth.lastErrorCode).toBe('SQA_BOOTSTRAP_SCHEMA_MISMATCH')
+    expect(result.current.syncHealth.consecutiveFailures).toBe(1)
+  })
+
+  it('preserves a PostgREST permission code through the sync-health boundary', async () => {
+    fetchAppDataMock.mockRejectedValueOnce({ code: '42501', message: 'permission denied' })
+    const { result } = renderHook(() => useAppData())
+
+    await refreshAndCatch(result.current.refreshData)
+
+    expect(result.current.syncHealth.lastErrorCode).toBe('42501')
+    expect(result.current.syncHealth.consecutiveFailures).toBe(1)
+  })
+
+  it.each([
+    {
+      label: '업데이트 필요',
+      createError: () => new BootstrapSchemaVersionError('get_core_bootstrap_v2', 2, 3),
+    },
+    {
+      label: '권한 확인 필요',
+      createError: () => ({ code: '42501', message: 'permission denied' }),
+    },
+  ])('shows the classified $label warning after two consecutive refresh failures', async ({ label, createError }) => {
+    const initialFetchCount = fetchAppDataMock.mock.calls.length
+    fetchAppDataMock.mockRejectedValueOnce(createError()).mockRejectedValueOnce(createError())
+    render(<SyncHealthShellHarness />)
+
+    const refreshProbe = screen.getByTestId('sync-health-refresh')
+    fireEvent.click(refreshProbe)
+    await waitFor(() => expect(refreshProbe).toHaveAttribute('data-failures', '1'))
+    expect(fetchAppDataMock).toHaveBeenCalledTimes(initialFetchCount + 1)
+    expect(screen.queryByText(label)).not.toBeInTheDocument()
+
+    fireEvent.click(refreshProbe)
+    expect(await screen.findByText(label)).toBeInTheDocument()
   })
 
   it('resets syncHealth to healthy after a subsequent success', async () => {

@@ -19,7 +19,7 @@ DB/repository/운영 변경은 Docker와 pinned Supabase CLI `2.109.1`이 준비
 
 Playwright **preview** project(`npm run test:e2e`)는 local adapter 회귀용 17개 시나리오로 다음 계약을 독립적으로 차단한다: leader/member navigation, command palette, review lifecycle, project CRUD, product transfer, change task lifecycle, deep-link, density persistence, mobile sidebar, notification/read navigation, review stats filter, modal focus return.
 
-Playwright **remote** project(`npm run test:e2e:remote`)는 local Supabase + production build 정적 자산으로 UI→Auth→RPC→RLS 종단 12개 시나리오(R-E2E-01~12)를 차단한다. setup만 service role을 사용하고 브라우저에는 anon key와 시험 사용자 credential만 전달한다. production secret 사용을 금지한다. Docker/local Supabase가 없으면 이 게이트는 실행하지 않으며, `REMOTE_E2E_REQUIRED=1`일 때 미구성은 fail-closed다.
+Playwright **remote** project(`npm run test:e2e:remote`)는 local Supabase + production build 정적 자산으로 UI→Auth→RPC→RLS 종단 13개 시나리오(R-E2E-01~13)를 차단한다. setup만 service role을 사용하고 브라우저에는 anon key와 시험 사용자 credential만 전달한다. production secret 사용을 금지한다. Docker/local Supabase가 없으면 이 게이트는 실행하지 않으며, `REMOTE_E2E_REQUIRED=1`일 때 미구성은 fail-closed다.
 
 권장 CI 순서:
 

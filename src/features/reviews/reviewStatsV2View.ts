@@ -87,7 +87,7 @@ export async function loadReviewStatsV2View({
 }: {
   fetchStatistics: ReviewStatsV2FetchFn
   range: { startDate: string; endDate: string }
-  filters: ReviewStatsFilters
+  filters: Pick<ReviewStatsFilters, 'requesterId' | 'status'>
   requesterOptions: readonly ReviewStatsRequesterOption[]
 }): Promise<ReviewStatsV2View> {
   const status = statusParam(filters.status)

@@ -103,6 +103,8 @@ describe('migration scripts', () => {
     const script = readScript('check-bundle-budget.mjs')
     expect(script).toContain('MAX_CHUNK_BYTES')
     expect(script).toContain('MAX_TOTAL_GZIP_BYTES')
+    expect(script).toContain('EXPECTED_ROUTE_DYNAMIC_IMPORTS')
+    expect(script).toContain('Route code-splitting contract failed')
     expect(script).toContain("gzipSync")
   })
 

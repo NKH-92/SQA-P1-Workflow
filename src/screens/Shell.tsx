@@ -30,6 +30,36 @@ import {
   X,
 } from 'lucide-react'
 
+function buildSyncWarning(syncHealth: SyncHealth): { label: string; title: string } {
+  const failureSuffix = syncHealth.consecutiveFailures > 0
+    ? ` 연속 실패 ${syncHealth.consecutiveFailures}회.`
+    : ''
+
+  switch (syncHealth.lastErrorCode) {
+    case 'network':
+      return {
+        label: '연결 지연',
+        title: `서버 연결이 불안정합니다. 네트워크를 확인하고 다시 시도해 주세요.${failureSuffix}`,
+      }
+    case 'SQA_BOOTSTRAP_SCHEMA_MISMATCH':
+      return {
+        label: '업데이트 필요',
+        title: `앱과 데이터 버전이 맞지 않습니다. 화면을 새로고침한 뒤 계속되면 관리자에게 알려 주세요.${failureSuffix}`,
+      }
+    case '42501':
+    case 'PGRST301':
+      return {
+        label: '권한 확인 필요',
+        title: `데이터 접근 권한을 확인하지 못했습니다. 다시 로그인한 뒤 계속되면 관리자에게 알려 주세요.${failureSuffix}`,
+      }
+    default:
+      return {
+        label: '동기화 지연',
+        title: `최신 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.${failureSuffix}`,
+      }
+  }
+}
+
 export function Shell({
   activeTab,
   setActiveTab,
@@ -144,19 +174,13 @@ export function Shell({
   const syncLabel = lastSyncedAt
     ? `마지막 동기화 ${lastSyncedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`
     : null
-  // stale은 최근 성공 여부와 무관하게 백그라운드 동기화가 신뢰할 수 없다는 뜻이므로,
-  // syncLabel(마지막 성공 시각)과 별개로 항상 노출한다. 업무 body/PII는 담지 않는다.
-  const syncWarningTitle = syncHealth.stale
-    ? `동기화가 지연되고 있습니다. 연속 실패 ${syncHealth.consecutiveFailures}회${
-        syncHealth.lastErrorCode ? ` (오류 코드: ${syncHealth.lastErrorCode})` : ''
-      }`
-    : undefined
+  const syncWarning = buildSyncWarning(syncHealth)
   const operationStatus = saving
     ? { label: '저장 및 동기화 중', tone: 'saving' as const }
     : refreshing
       ? { label: '갱신 중', tone: 'saving' as const }
       : syncHealth.stale
-        ? { label: '동기화 지연', tone: 'warning' as const }
+        ? { label: syncWarning.label, tone: 'warning' as const }
         : null
 
   const closeSidebar = useCallback((restoreFocus = true) => {
@@ -347,7 +371,7 @@ export function Shell({
                 className={operationStatus.tone === 'warning' ? 'sync-warning' : 'saving'}
                 role="status"
                 aria-live="polite"
-                title={operationStatus.tone === 'warning' ? syncWarningTitle : undefined}
+                title={operationStatus.tone === 'warning' ? syncWarning.title : undefined}
               >
                 {operationStatus.tone === 'warning'
                   ? <AlertTriangle aria-hidden="true" size={14} />

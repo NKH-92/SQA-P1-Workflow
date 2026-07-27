@@ -146,7 +146,7 @@ Supabase Dashboard에서 생성합니다. 임시 비밀번호 사용자는 최�
 | `npm test -- --run` | Vitest 단위·통합 테스트 |
 | `npm run test:e2e` | Preview Playwright 17개 시나리오 |
 | `npm run test:rls:full` | local Supabase 전체 RLS gate |
-| `npm run test:e2e:remote` | local Supabase 기반 remote E2E 12개 시나리오 |
+| `npm run test:e2e:remote` | local Supabase 기반 remote E2E 13개 시나리오 |
 | `npm run check:bundle` | 초기·전체·개별 chunk 번들 예산 |
 | `npm run docs:migrations:check` | migration 문서와 파일 목록 일치 확인 |
 

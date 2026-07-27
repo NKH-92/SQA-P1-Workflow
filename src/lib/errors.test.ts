@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assertAffectedRows, assertRecordExists, toUserMessage, UserFacingError } from './errors'
+import { assertAffectedRows, assertRecordExists, toErrorCode, toUserMessage, UserFacingError } from './errors'
 
 describe('toUserMessage', () => {
   it('maps duplicate key code 23505', () => {
@@ -61,5 +61,19 @@ describe('mutation result guards', () => {
   it('accepts an existing record or at least one affected row', () => {
     expect(() => assertRecordExists({ id: '1' })).not.toThrow()
     expect(() => assertAffectedRows([{ id: '1' }])).not.toThrow()
+  })
+})
+
+describe('toErrorCode', () => {
+  it('preserves the allowlisted bootstrap schema mismatch code', () => {
+    expect(toErrorCode(Object.assign(new Error('schema mismatch'), {
+      detail: 'SQA_BOOTSTRAP_SCHEMA_MISMATCH',
+    }))).toBe('SQA_BOOTSTRAP_SCHEMA_MISMATCH')
+  })
+
+  it('does not expose arbitrary error detail text', () => {
+    expect(toErrorCode(Object.assign(new Error('private failure'), {
+      detail: 'user@example.com review body',
+    }))).toBe('unknown')
   })
 })

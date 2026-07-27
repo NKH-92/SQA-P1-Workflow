@@ -108,6 +108,26 @@ function withReviewEvents(data: AppData): AppData {
   return { ...data, reviewEvents }
 }
 
+function remoteEnvelope() {
+  return {
+    schema_version: 2 as const,
+    timezone: 'Asia/Seoul' as const,
+    generated_at: '2026-07-15T03:00:00.000Z',
+    from: '2026-01-16',
+    to: '2026-07-15',
+    requester_id: null,
+    status: null,
+    new_requests: 0,
+    resubmissions: 0,
+    approvals: 0,
+    rejections: 0,
+    pending_count: 0,
+    requester_breakdown: [],
+    month_end_backlog: [],
+    monthly_breakdown: [],
+  }
+}
+
 describe('ReviewStatsPanel', () => {
   beforeEach(() => {
     mocks.hasSupabaseConfig = false
@@ -317,5 +337,138 @@ describe('ReviewStatsPanel', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('권한이 없습니다.')
     expect(screen.queryByRole('article', { name: /요청 건수/ })).not.toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('집계 실패')
+  })
+
+  it('does not refetch remote statistics for an equivalent refreshed AppData snapshot', async () => {
+    mocks.hasSupabaseConfig = true
+    mocks.fetchReviewStatisticsV2.mockResolvedValue(remoteEnvelope())
+    const data = emptyData()
+    data.profiles = [{ id: 'member-1', email: 'one@example.com', name: '한 요청자', role: 'member' }]
+    data.reviewRequests = [
+      request({ id: 'review-1', requester_id: 'member-1', status: 'pending' }),
+      request({ id: 'review-2', requester_id: 'member-1', status: 'approved' }),
+    ]
+    data.reviewEvents = withReviewEvents(data).reviewEvents
+    const now = new Date('2026-07-15T03:00:00.000Z')
+    const { rerender } = render(<ReviewStatsPanel data={data} now={now} />)
+    await flushReviewStatsV2()
+
+    expect(mocks.fetchReviewStatisticsV2).toHaveBeenCalledTimes(1)
+
+    rerender(
+      <ReviewStatsPanel
+        data={{
+          ...data,
+          profiles: data.profiles.map((profile) => ({ ...profile })),
+          reviewRequests: data.reviewRequests.map((review) => ({ ...review })).reverse(),
+          reviewEvents: [...(data.reviewEvents ?? [])].reverse(),
+        }}
+        now={now}
+      />,
+    )
+    await flushReviewStatsV2()
+
+    expect(mocks.fetchReviewStatisticsV2).toHaveBeenCalledTimes(1)
+  })
+
+  it('refetches remote statistics when a review request status changes', async () => {
+    mocks.hasSupabaseConfig = true
+    mocks.fetchReviewStatisticsV2.mockResolvedValue(remoteEnvelope())
+    const data = emptyData()
+    data.profiles = [{ id: 'member-1', email: 'one@example.com', name: '한 요청자', role: 'member' }]
+    data.reviewRequests = [request({ id: 'review-1', requester_id: 'member-1', status: 'pending' })]
+    const now = new Date('2026-07-15T03:00:00.000Z')
+    const { rerender } = render(<ReviewStatsPanel data={data} now={now} />)
+    await flushReviewStatsV2()
+
+    rerender(
+      <ReviewStatsPanel
+        data={{
+          ...data,
+          reviewRequests: data.reviewRequests.map((review) => ({ ...review, status: 'approved' })),
+        }}
+        now={now}
+      />,
+    )
+    await flushReviewStatsV2()
+
+    expect(mocks.fetchReviewStatisticsV2).toHaveBeenCalledTimes(2)
+  })
+
+  it('refetches remote statistics when a review event is added', async () => {
+    mocks.hasSupabaseConfig = true
+    mocks.fetchReviewStatisticsV2.mockResolvedValue(remoteEnvelope())
+    const data = emptyData()
+    data.profiles = [{ id: 'member-1', email: 'one@example.com', name: '한 요청자', role: 'member' }]
+    data.reviewRequests = [request({ id: 'review-1', requester_id: 'member-1', status: 'pending' })]
+    data.reviewEvents = []
+    const now = new Date('2026-07-15T03:00:00.000Z')
+    const { rerender } = render(<ReviewStatsPanel data={data} now={now} />)
+    await flushReviewStatsV2()
+
+    rerender(
+      <ReviewStatsPanel
+        data={{
+          ...data,
+          reviewEvents: [{
+            id: 1,
+            review_request_id: 'review-1',
+            actor_id: 'member-1',
+            actor_name_snapshot: '한 요청자',
+            event_type: 'submitted',
+            from_status: null,
+            to_status: 'pending',
+            occurred_at: '2026-07-15T03:00:00.000Z',
+            metadata: {},
+            transaction_id: 1,
+          }],
+        }}
+        now={now}
+      />,
+    )
+    await flushReviewStatsV2()
+
+    expect(mocks.fetchReviewStatisticsV2).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not refetch remote statistics when unrelated AppData changes', async () => {
+    mocks.hasSupabaseConfig = true
+    mocks.fetchReviewStatisticsV2.mockResolvedValue(remoteEnvelope())
+    const data = emptyData()
+    data.profiles = [{ id: 'member-1', email: 'one@example.com', name: '한 요청자', role: 'member' }]
+    data.reviewRequests = [request({ id: 'review-1', requester_id: 'member-1', status: 'pending' })]
+    const now = new Date('2026-07-15T03:00:00.000Z')
+    const { rerender } = render(<ReviewStatsPanel data={data} now={now} />)
+    await flushReviewStatsV2()
+
+    rerender(
+      <ReviewStatsPanel
+        data={{
+          ...data,
+          announcements: [{
+            id: 'announcement-1',
+            title: '공지',
+            body: '통계와 무관한 변경',
+            is_pinned: false,
+            pinned_at: null,
+            created_by: 'leader-1',
+            created_at: '2026-07-15T03:00:00.000Z',
+            updated_at: '2026-07-15T03:00:00.000Z',
+          }],
+          projects: [{
+            id: 'project-1',
+            name: '프로젝트',
+            description: '통계와 무관한 변경',
+            deadline: null,
+            status: 'in_progress',
+            created_by: 'leader-1',
+          }],
+        }}
+        now={now}
+      />,
+    )
+    await flushReviewStatsV2()
+
+    expect(mocks.fetchReviewStatisticsV2).toHaveBeenCalledTimes(1)
   })
 })

@@ -56,6 +56,35 @@ function requesterLabel(name: string, inactive: boolean) {
   return inactive ? `${name} (비활성)` : name
 }
 
+function reviewStatsContentRevision(data: Pick<AppData, 'reviewRequests' | 'reviewEvents'>) {
+  const requests = data.reviewRequests
+    .map((request) =>
+      JSON.stringify([
+        request.id,
+        request.requester_id,
+        request.status,
+        request.review_round ?? null,
+        request.created_at ?? null,
+        request.updated_at ?? null,
+      ]),
+    )
+    .sort()
+  const events = (data.reviewEvents ?? [])
+    .map((event) =>
+      JSON.stringify([
+        event.id,
+        event.review_request_id,
+        event.event_type,
+        event.from_status,
+        event.to_status,
+        event.occurred_at,
+      ]),
+    )
+    .sort()
+
+  return JSON.stringify([requests, events])
+}
+
 function millisecondsUntilNextBusinessDay(now: Date) {
   // Asia/Seoul day boundary: advance until businessDateKey changes.
   const currentKey = businessDateKey(now)
@@ -99,9 +128,21 @@ export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
 
   const fetchStatistics = useReviewStatisticsV2(data)
   const [view, setView] = useState<ReviewStatsV2LoadState>({ status: 'loading' })
+  const requesterOptionsJson = JSON.stringify(stats.requesterOptions)
+  const rangeValid = stats.range.valid
+  const rangeStartDate = stats.range.startDate
+  const rangeEndDate = stats.range.endDate
+  const requesterId = filters.requesterId
+  const status = filters.status
+  const reviewRequests = data.reviewRequests
+  const reviewEvents = data.reviewEvents
+  const contentRevision = useMemo(
+    () => reviewStatsContentRevision({ reviewRequests, reviewEvents }),
+    [reviewEvents, reviewRequests],
+  )
 
   useEffect(() => {
-    if (!stats.range.valid) {
+    if (!rangeValid) {
       setView({ status: 'ready', kpis: ZERO_REVIEW_STATS_V2_KPIS, requesterRows: [], monthlyRows: [] })
       return
     }
@@ -109,9 +150,9 @@ export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
     setView({ status: 'loading' })
     loadReviewStatsV2View({
       fetchStatistics,
-      range: stats.range,
-      filters,
-      requesterOptions: stats.requesterOptions,
+      range: { startDate: rangeStartDate, endDate: rangeEndDate },
+      filters: { requesterId, status },
+      requesterOptions: JSON.parse(requesterOptionsJson),
     }).then(
       (result) => {
         if (!cancelled) setView({ status: 'ready', ...result })
@@ -123,7 +164,16 @@ export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
     return () => {
       cancelled = true
     }
-  }, [fetchStatistics, stats.range, filters, stats.requesterOptions])
+  }, [
+    contentRevision,
+    fetchStatistics,
+    rangeEndDate,
+    rangeStartDate,
+    rangeValid,
+    requesterId,
+    requesterOptionsJson,
+    status,
+  ])
 
   const kpis = view.status === 'ready' ? view.kpis : ZERO_REVIEW_STATS_V2_KPIS
   const requesterRows = view.status === 'ready' ? view.requesterRows : []

@@ -3,6 +3,10 @@ type PostgrestErrorLike = {
   message?: string
 }
 
+type SafeDetailErrorLike = {
+  detail?: unknown
+}
+
 export class UserFacingError extends Error {
   constructor(message: string) {
     super(message)
@@ -45,6 +49,16 @@ const codeMessages: Record<string, string> = {
   PGRST301: '권한이 없습니다.',
 }
 
+const safeDetailCodes = new Set([
+  'SQA_BOOTSTRAP_SCHEMA_MISMATCH',
+])
+
+function safeDetailCode(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null) return null
+  const detail = (error as SafeDetailErrorLike).detail
+  return typeof detail === 'string' && safeDetailCodes.has(detail) ? detail : null
+}
+
 /**
  * 관측성용 안전 오류 코드. 사용자 입력이나 서버 오류 message 원문(업무 body, 이메일 등
  * PII를 포함할 수 있음)은 절대 반환하지 않고, 분류된 코드만 반환한다.
@@ -52,6 +66,8 @@ const codeMessages: Record<string, string> = {
 export function toErrorCode(error: unknown): string {
   if (error instanceof UserFacingError) return 'stale-write'
   if (isNetworkError(error)) return 'network'
+  const detailCode = safeDetailCode(error)
+  if (detailCode) return detailCode
   if (isPostgrestError(error) && error.code) return error.code
   if (error instanceof Error && error.name === 'AbortError') return 'aborted'
   return 'unknown'

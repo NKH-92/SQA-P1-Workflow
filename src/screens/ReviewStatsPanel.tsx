@@ -26,7 +26,10 @@ import {
   formatReviewStatsCount as formatCount,
   REVIEW_STATS_STATUS_OPTIONS as STATUS_OPTIONS,
 } from '../features/reviews/reviewStatsVisualFormat'
-import { useReviewStatisticsV2 } from '../features/reviews/useReviewStatisticsV2'
+import {
+  reviewStatisticsV2ContentRevision,
+  useReviewStatisticsV2,
+} from '../features/reviews/useReviewStatisticsV2'
 import { ZERO_REVIEW_STATS_V2_KPIS, loadReviewStatsV2View, type ReviewStatsV2View } from '../features/reviews/reviewStatsV2View'
 import { businessDateKey } from '../lib/businessTime'
 import { toUserMessage } from '../lib/errors'
@@ -54,35 +57,6 @@ function formatDateKey(value: string) {
 
 function requesterLabel(name: string, inactive: boolean) {
   return inactive ? `${name} (비활성)` : name
-}
-
-function reviewStatsContentRevision(data: Pick<AppData, 'reviewRequests' | 'reviewEvents'>) {
-  const requests = data.reviewRequests
-    .map((request) =>
-      JSON.stringify([
-        request.id,
-        request.requester_id,
-        request.status,
-        request.review_round ?? null,
-        request.created_at ?? null,
-        request.updated_at ?? null,
-      ]),
-    )
-    .sort()
-  const events = (data.reviewEvents ?? [])
-    .map((event) =>
-      JSON.stringify([
-        event.id,
-        event.review_request_id,
-        event.event_type,
-        event.from_status,
-        event.to_status,
-        event.occurred_at,
-      ]),
-    )
-    .sort()
-
-  return JSON.stringify([requests, events])
 }
 
 function millisecondsUntilNextBusinessDay(now: Date) {
@@ -137,7 +111,7 @@ export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
   const reviewRequests = data.reviewRequests
   const reviewEvents = data.reviewEvents
   const contentRevision = useMemo(
-    () => reviewStatsContentRevision({ reviewRequests, reviewEvents }),
+    () => reviewStatisticsV2ContentRevision({ reviewRequests, reviewEvents }),
     [reviewEvents, reviewRequests],
   )
 

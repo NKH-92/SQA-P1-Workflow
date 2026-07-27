@@ -7,6 +7,37 @@ import { buildReviewStatisticsV2 } from './reviewStatisticsV2'
 const EMPTY_REVIEW_EVENTS: NonNullable<AppData['reviewEvents']> = []
 const EMPTY_PROFILES: AppData['profiles'] = []
 
+export function reviewStatisticsV2ContentRevision(
+  data: Pick<AppData, 'reviewRequests' | 'reviewEvents'>,
+) {
+  const requests = data.reviewRequests
+    .map((request) =>
+      JSON.stringify([
+        request.id,
+        request.requester_id,
+        request.status,
+        request.review_round ?? null,
+        request.created_at ?? null,
+        request.updated_at ?? null,
+      ]),
+    )
+    .sort()
+  const events = (data.reviewEvents ?? [])
+    .map((event) =>
+      JSON.stringify([
+        event.id,
+        event.review_request_id,
+        event.event_type,
+        event.from_status,
+        event.to_status,
+        event.occurred_at,
+      ]),
+    )
+    .sort()
+
+  return JSON.stringify([requests, events])
+}
+
 /**
  * Leader-only server-aggregated review statistics, unified across
  * runtime modes. Against a real Supabase project this calls

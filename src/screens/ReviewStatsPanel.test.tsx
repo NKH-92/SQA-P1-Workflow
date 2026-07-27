@@ -431,6 +431,42 @@ describe('ReviewStatsPanel', () => {
     expect(mocks.fetchReviewStatisticsV2).toHaveBeenCalledTimes(2)
   })
 
+  it('ignores an older response after a review change starts a new request', async () => {
+    mocks.hasSupabaseConfig = true
+    let resolveFirst: ((value: ReturnType<typeof remoteEnvelope>) => void) | undefined
+    let resolveSecond: ((value: ReturnType<typeof remoteEnvelope>) => void) | undefined
+    mocks.fetchReviewStatisticsV2
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSecond = resolve }))
+    const data = emptyData()
+    data.profiles = [{ id: 'member-1', email: 'one@example.com', name: '한 요청자', role: 'member' }]
+    data.reviewRequests = [request({ id: 'review-1', requester_id: 'member-1', status: 'pending' })]
+    const now = new Date('2026-07-15T03:00:00.000Z')
+    const { rerender } = render(<ReviewStatsPanel data={data} now={now} />)
+    await flushReviewStatsV2()
+
+    rerender(
+      <ReviewStatsPanel
+        data={{
+          ...data,
+          reviewRequests: data.reviewRequests.map((review) => ({ ...review, status: 'approved' })),
+        }}
+        now={now}
+      />,
+    )
+    await flushReviewStatsV2()
+    expect(mocks.fetchReviewStatisticsV2).toHaveBeenCalledTimes(2)
+
+    const newest = { ...remoteEnvelope(), new_requests: 2 }
+    await act(async () => resolveSecond?.(newest))
+    await flushReviewStatsV2()
+    expect(screen.getByRole('article', { name: '요청 건수 2건' })).toBeInTheDocument()
+
+    await act(async () => resolveFirst?.({ ...remoteEnvelope(), new_requests: 1 }))
+    await flushReviewStatsV2()
+    expect(screen.getByRole('article', { name: '요청 건수 2건' })).toBeInTheDocument()
+  })
+
   it('does not refetch remote statistics when unrelated AppData changes', async () => {
     mocks.hasSupabaseConfig = true
     mocks.fetchReviewStatisticsV2.mockResolvedValue(remoteEnvelope())

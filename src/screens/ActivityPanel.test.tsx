@@ -99,6 +99,13 @@ function renderPanel() {
 describe('ActivityPanel authoritative audit details', () => {
   afterEach(cleanup)
 
+  it('presents the recent-100 activity limit as inline guidance', () => {
+    renderPanel()
+
+    expect(screen.getByText(/최대 최근 100건만 표시합니다/)).toHaveAttribute('role', 'note')
+    expect(screen.getByText(/Supabase Dashboard 또는 백업/)).toBeInTheDocument()
+  })
+
   it('renders insert/delete snapshots and update before/after values as text', async () => {
     const user = userEvent.setup()
     renderPanel()

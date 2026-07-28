@@ -119,7 +119,14 @@ export function assembleAppData(
   const announcements = optionalCappedRowsOrWarning(optionalResults.announcements, '공지', optionalWarnings, previous.announcements, 200)
   const allowedUsers = optionalCappedRowsOrWarning(optionalResults.allowedUsers, '초대 목록', optionalWarnings, previous.allowedUsers, 1000)
   const profileNotes = optionalCappedRowsOrWarning(optionalResults.profileNotes, '프로필 메모', optionalWarnings, previous.profileNotes, 1000)
-  const activityLogs = optionalCappedRowsOrWarning(optionalResults.activityLogs, '활동 로그', optionalWarnings, previous.activityLogs, 100)
+  // Activity history is intentionally a recent-100 view. Its persistent cap is
+  // explained in ActivityPanel and must not be reported as a retryable outage.
+  const activityLogs = optionalDataOrWarning(
+    optionalResults.activityLogs,
+    '활동 로그',
+    optionalWarnings,
+    previous.activityLogs,
+  ).slice(0, 100)
 
   return {
     announcements,

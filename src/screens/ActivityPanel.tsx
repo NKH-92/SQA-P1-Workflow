@@ -99,7 +99,10 @@ export function ActivityPanel({ data }: { data: AppData }) {
       </label>
       {mode === 'activity' ? (
         <Section title={`최근 활동 ${data.activityLogs.length}건`} icon={<MessageSquare size={18} />}>
-          <p className="empty-copy" role="note">사용자 안내용 기록이며, 권한·감사 증거의 원본은 감사 이력 탭입니다.</p>
+          <p className="empty-copy" role="note">
+            사용자 안내용 기록으로 최대 최근 100건만 표시합니다. 더 오래된 기록은 Supabase Dashboard 또는 백업에서 확인하고,
+            권한·감사 증거의 원본은 감사 이력 탭에서 확인하세요.
+          </p>
           <div className="activity-list">
             {visibleLogs.length === 0 ? <p className="empty-copy">표시할 활동이 없습니다.</p> : visibleLogs.map((log) => (
               <article className="activity-row" key={log.id}>

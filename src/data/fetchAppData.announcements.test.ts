@@ -472,6 +472,23 @@ describe('fetchAppData orchestration and optional data', () => {
     expect(result.optionalWarnings).toContain('공지: 최신 200건만 표시합니다.')
   })
 
+  it('keeps the recent-100 activity cap informational instead of reporting stale data', async () => {
+    mocks.results.activity_logs = {
+      data: Array.from({ length: 101 }, (_, index) => ({
+        id: `activity-${index}`,
+        created_at: `2026-07-28T00:${String(index % 60).padStart(2, '0')}:00.000Z`,
+      })),
+      error: null,
+    }
+
+    const result = await fetchAppData()
+
+    expect(mocks.queries.activity_logs?.limit).toHaveBeenCalledWith(101)
+    expect(result.activityLogs).toHaveLength(100)
+    expect(result.optionalWarnings).not.toContain('활동 로그: 최신 100건만 표시합니다.')
+    expect(result.optionalWarnings).toEqual([])
+  })
+
   it('treats announcement query failure as an optional warning', async () => {
     mocks.results.announcements = { data: null, error: { message: 'announcements unavailable' } }
 

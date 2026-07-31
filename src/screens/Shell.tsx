@@ -252,7 +252,14 @@ export function Shell({
 
   return (
     <div className="app-shell brand-shell" data-visual-theme="brand-shell">
-      <a className="skip-link" href="#main-content">본문으로 건너뛰기</a>
+      <a
+        className="skip-link"
+        href="#main-content"
+        onClick={(event) => {
+          event.preventDefault()
+          document.getElementById('main-content')?.focus()
+        }}
+      >본문으로 건너뛰기</a>
       <div
         aria-hidden="true"
         className={`overlay${sidebarOpen ? ' visible' : ''}`}

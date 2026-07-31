@@ -140,6 +140,33 @@ export interface ReviewRequest {
   review_feedback?: ReviewFeedback[]
 }
 
+export type ReviewTerminalStatus = Exclude<ReviewStatus, 'pending'>
+
+export type ReviewHistoryFilters = {
+  status: ReviewTerminalStatus | null
+  query: string
+  from: string | null
+  to: string | null
+}
+
+export type ReviewHistoryCursor = {
+  terminal_at: string
+  id: string
+}
+
+export interface ReviewHistoryRow extends ReviewRequest {
+  status: ReviewTerminalStatus
+  terminal_at: string
+}
+
+export type ReviewHistoryPage = {
+  schema_version: 1
+  snapshot_at: string
+  rows: ReviewHistoryRow[]
+  has_more: boolean
+  next_cursor: ReviewHistoryCursor | null
+}
+
 export interface ReviewEvent {
   id: string | number
   review_request_id: string

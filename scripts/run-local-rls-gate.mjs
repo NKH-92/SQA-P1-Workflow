@@ -311,6 +311,180 @@ $verify$;
   }
   run(npm, ['run', 'test:rls'], { env: testEnvironment })
 
+  const retentionRequesterId = fixtureEnvironment.RLS_MEMBER_A_USER_ID
+  const retentionLeaderId = fixtureEnvironment.RLS_LEADER_USER_ID
+  for (const [label, value] of [
+    ['REQUESTER', retentionRequesterId],
+    ['LEADER', retentionLeaderId],
+  ]) {
+    if (!value || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+      throw new Error(`SQA_RLS_RETENTION_${label}_INVALID`)
+    }
+  }
+
+  // This destructive contract probe is local-only and runs in a PL/pgSQL
+  // subtransaction that deliberately rolls back every fixture row. Canonical
+  // production readiness below remains static and never creates or deletes data.
+  const expectedRetentionRollback = 'SQA_RLS_EXPECTED_RETENTION_PROBE_ROLLBACK'
+  const retentionProbeSql = resolve(temporaryDirectory, 'review-retention-probe.sql')
+  writeFileSync(retentionProbeSql, `
+do $verify$
+declare
+  probe_now timestamptz := clock_timestamp();
+  expired_closed_id uuid := gen_random_uuid();
+  expired_withdrawn_id uuid := gen_random_uuid();
+  boundary_id uuid := gen_random_uuid();
+  recent_id uuid := gen_random_uuid();
+  old_pending_id uuid := gen_random_uuid();
+  expired_closed_feedback_id uuid := gen_random_uuid();
+  expired_withdrawn_feedback_id uuid := gen_random_uuid();
+  purge_result jsonb;
+  second_result jsonb;
+  rollback_message text;
+begin
+  begin
+    insert into public.review_requests (
+      id, requester_id, title, description, status, rejection_count, status_changed_at,
+      closed_at, withdrawn_at, withdrawn_by, withdrawal_reason,
+      created_at, updated_at
+    ) values
+      (
+        expired_closed_id, '${retentionRequesterId}'::uuid,
+        'Retention expired closed', 'Local rollback probe', 'approved', 0,
+        probe_now - interval '365 days 1 second',
+        probe_now - interval '365 days 1 second', null, null, null,
+        probe_now - interval '400 days', probe_now - interval '365 days 1 second'
+      ),
+      (
+        expired_withdrawn_id, '${retentionRequesterId}'::uuid,
+        'Retention expired withdrawn', 'Local rollback probe', 'withdrawn', 0,
+        probe_now - interval '366 days', probe_now - interval '366 days',
+        probe_now - interval '366 days', '${retentionRequesterId}'::uuid,
+        'Retention probe withdrawal',
+        probe_now - interval '400 days', probe_now - interval '366 days'
+      ),
+      (
+        boundary_id, '${retentionRequesterId}'::uuid,
+        'Retention exact boundary', 'Local rollback probe', 'rejected', 1,
+        probe_now - interval '365 days', probe_now - interval '365 days',
+        null, null, null,
+        probe_now - interval '400 days', probe_now - interval '365 days'
+      ),
+      (
+        recent_id, '${retentionRequesterId}'::uuid,
+        'Retention recent terminal', 'Local rollback probe', 'approved', 0,
+        probe_now - interval '364 days', probe_now - interval '364 days',
+        null, null, null,
+        probe_now - interval '400 days', probe_now - interval '364 days'
+      ),
+      (
+        old_pending_id, '${retentionRequesterId}'::uuid,
+        'Retention old pending', 'Local rollback probe', 'pending', 0,
+        probe_now - interval '500 days', null, null, null, null,
+        probe_now - interval '500 days', probe_now - interval '500 days'
+      );
+
+    insert into public.review_feedback (
+      id, review_request_id, leader_id, author_role, comment, created_at, updated_at
+    ) values
+      (
+        expired_closed_feedback_id, expired_closed_id, '${retentionLeaderId}'::uuid,
+        'leader', 'Expired closed feedback', probe_now - interval '366 days', probe_now - interval '366 days'
+      ),
+      (
+        expired_withdrawn_feedback_id, expired_withdrawn_id, '${retentionLeaderId}'::uuid,
+        'leader', 'Expired withdrawn feedback', probe_now - interval '366 days', probe_now - interval '366 days'
+      );
+
+    insert into public.review_read_receipts (
+      user_id, review_request_id, last_seen_event_id, read_at
+    )
+    select '${retentionLeaderId}'::uuid, request.id, max(event.id), probe_now
+      from public.review_requests request
+      join public.review_events event on event.review_request_id = request.id
+     where request.id in (expired_closed_id, expired_withdrawn_id)
+     group by request.id;
+
+    insert into public.activity_logs (
+      actor_id, target_user_id, entity_type, entity_id, action, summary, metadata, created_at
+    ) values
+      ('${retentionLeaderId}'::uuid, '${retentionRequesterId}'::uuid, 'review_request', expired_closed_id,
+       'status_changed', 'Retention request activity', '{}'::jsonb, probe_now - interval '366 days'),
+      ('${retentionLeaderId}'::uuid, '${retentionRequesterId}'::uuid, 'review_feedback', expired_closed_feedback_id,
+       'created', 'Retention feedback activity', '{}'::jsonb, probe_now - interval '366 days'),
+      ('${retentionLeaderId}'::uuid, '${retentionRequesterId}'::uuid, 'review_request', expired_withdrawn_id,
+       'withdrawn', 'Retention withdrawn activity', '{}'::jsonb, probe_now - interval '366 days'),
+      ('${retentionLeaderId}'::uuid, '${retentionRequesterId}'::uuid, 'review_feedback', expired_withdrawn_feedback_id,
+       'created', 'Retention withdrawn feedback activity', '{}'::jsonb, probe_now - interval '366 days');
+
+    insert into private.review_status_events (
+      review_request_id, actor_id, actor_name, from_status, to_status, transaction_id, changed_at
+    ) values
+      (expired_closed_id, '${retentionLeaderId}'::uuid, 'Retention probe', 'pending', 'approved', txid_current(), probe_now - interval '366 days'),
+      (expired_withdrawn_id, '${retentionLeaderId}'::uuid, 'Retention probe', 'pending', 'withdrawn', txid_current(), probe_now - interval '366 days');
+
+    purge_result := private.purge_expired_review_requests(probe_now);
+    if purge_result ->> 'review_requests' is distinct from '2'
+       or purge_result ->> 'review_feedback' is distinct from '2'
+       or purge_result ->> 'activity_logs' is distinct from '4'
+       or purge_result ->> 'review_status_events' is distinct from '2'
+       or coalesce((purge_result ->> 'audit_events')::integer, 0) < 4 then
+      raise exception 'SQA_RLS_RETENTION_PURGE_COUNTS: %', purge_result;
+    end if;
+
+    if exists (select 1 from public.review_requests where id in (expired_closed_id, expired_withdrawn_id))
+       or exists (select 1 from public.review_feedback where id in (expired_closed_feedback_id, expired_withdrawn_feedback_id))
+       or exists (select 1 from public.review_events where review_request_id in (expired_closed_id, expired_withdrawn_id))
+       or exists (select 1 from public.review_read_receipts where review_request_id in (expired_closed_id, expired_withdrawn_id))
+       or exists (select 1 from public.activity_logs where entity_id in (
+         expired_closed_id, expired_withdrawn_id, expired_closed_feedback_id, expired_withdrawn_feedback_id
+       ))
+       or exists (select 1 from private.review_status_events where review_request_id in (expired_closed_id, expired_withdrawn_id))
+       or exists (select 1 from private.audit_events where entity_id in (
+         expired_closed_id, expired_withdrawn_id, expired_closed_feedback_id, expired_withdrawn_feedback_id
+       )) then
+      raise exception 'SQA_RLS_RETENTION_RELATED_ROW_RETAINED';
+    end if;
+
+    if not exists (select 1 from public.review_requests where id = boundary_id and status = 'rejected')
+       or not exists (select 1 from public.review_requests where id = recent_id and status = 'approved')
+       or not exists (select 1 from public.review_requests where id = old_pending_id and status = 'pending') then
+      raise exception 'SQA_RLS_RETENTION_CONTROL_ROW_DELETED';
+    end if;
+
+    second_result := private.purge_expired_review_requests(probe_now);
+    if second_result is distinct from jsonb_build_object(
+      'review_requests', 0,
+      'review_feedback', 0,
+      'activity_logs', 0,
+      'review_status_events', 0,
+      'audit_events', 0
+    ) then
+      raise exception 'SQA_RLS_RETENTION_NOT_IDEMPOTENT: %', second_result;
+    end if;
+
+    raise exception using
+      errcode = 'P0002',
+      message = '${expectedRetentionRollback}';
+  exception
+    when sqlstate 'P0002' then
+      get stacked diagnostics rollback_message = message_text;
+      if rollback_message is distinct from '${expectedRetentionRollback}' then
+        raise exception 'SQA_RLS_RETENTION_WRONG_ROLLBACK: %', rollback_message;
+      end if;
+  end;
+
+  if exists (
+    select 1 from public.review_requests
+     where id in (expired_closed_id, expired_withdrawn_id, boundary_id, recent_id, old_pending_id)
+  ) then
+    raise exception 'SQA_RLS_RETENTION_PROBE_NOT_ROLLED_BACK';
+  end if;
+end
+$verify$;
+`)
+  runSupabase(['db', 'query', '--local', '--file', toRootRelativePath(retentionProbeSql)])
+
   const evidenceSql = resolve(temporaryDirectory, 'private-evidence.sql')
   writeFileSync(evidenceSql, `
 do $verify$

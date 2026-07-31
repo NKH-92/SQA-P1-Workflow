@@ -17,6 +17,7 @@ export { fetchAnnouncementById } from './fetch/optionalQueries'
 export {
   REVIEW_HISTORY_MONTHS,
   REVIEW_REQUEST_SELECT,
+  fetchReviewHistoryPage,
   fetchReviewEventsPage,
   fetchReviewRequestById,
   fetchReviewStatisticsV2,

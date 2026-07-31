@@ -131,22 +131,22 @@ export function rejectReviewRequest(
   requestId: string,
   profile: Profile,
   comment: string,
-  feedbackId: string,
+  feedbackId: string | null,
 ): AppData {
   const now = new Date().toISOString()
-  const item: ReviewFeedback = {
-    id: feedbackId,
-    review_request_id: requestId,
-    leader_id: profile.id,
-    author_role: 'leader',
-    comment,
-    created_at: now,
-    updated_at: now,
-    voided_at: null,
-    voided_by: null,
-    void_reason: null,
-    profiles: { name: profile.name },
-  }
+  const item: ReviewFeedback | null = feedbackId ? {
+      id: feedbackId,
+      review_request_id: requestId,
+      leader_id: profile.id,
+      author_role: 'leader',
+      comment,
+      created_at: now,
+      updated_at: now,
+      voided_at: null,
+      voided_by: null,
+      void_reason: null,
+      profiles: { name: profile.name },
+    } : null
   const next = {
     ...data,
     reviewRequests: data.reviewRequests.map((row) =>
@@ -158,16 +158,19 @@ export function rejectReviewRequest(
             closed_at: now,
             rejection_count: (row.rejection_count ?? 0) + 1,
             updated_at: now,
-            review_feedback: [...(row.review_feedback ?? []), item],
+            review_feedback: item ? [...(row.review_feedback ?? []), item] : row.review_feedback ?? [],
           }
         : row,
     ),
   }
-  const withFeedback = appendEvent(next, requestId, profile, 'feedback_added', null, null, now, {
-    feedback_id: feedbackId,
-    estimated: false,
-  })
+  const withFeedback = item
+    ? appendEvent(next, requestId, profile, 'feedback_added', null, null, now, {
+        feedback_id: feedbackId,
+        estimated: false,
+      })
+    : next
   return appendEvent(withFeedback, requestId, profile, 'rejected', 'pending', 'rejected', now, {
+    comment_provided: Boolean(item),
     estimated: false,
   })
 }

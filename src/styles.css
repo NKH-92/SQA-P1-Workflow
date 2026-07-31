@@ -5214,6 +5214,17 @@ button.review-preview-row:hover {
   font-weight: 600;
 }
 
+.workspace-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.review-workspace-search {
+  flex: 1 1 280px;
+  max-width: 460px;
+}
+
 .workspace-header p {
   color: var(--paper-faint);
   font-family: var(--font-mono);
@@ -5267,7 +5278,7 @@ button.review-preview-row:hover {
 
 .kanban {
   display: grid;
-  grid-template-columns: repeat(3, minmax(240px, 1fr));
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
   gap: 14px;
   overflow-x: auto;
   padding-bottom: 4px;
@@ -5321,6 +5332,10 @@ button.review-preview-row:hover {
 
 .kanban-col[data-status='rejected'] .kanban-col-head strong::before {
   background: var(--paper-reject);
+}
+
+.kanban-col[data-status='withdrawn'] .kanban-col-head strong::before {
+  background: var(--paper-faint);
 }
 
 .kanban-col-head .count {
@@ -5491,6 +5506,176 @@ button.review-preview-row:hover {
   background: var(--paper-panel);
 }
 
+/* 검토 이력은 목록 탐색과 상세 읽기가 동시에 가능한 작업용 모달이다. */
+.review-history-modal {
+  width: min(1180px, 100%);
+  height: min(820px, calc(100dvh - 48px));
+}
+
+.review-history-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto auto auto auto;
+  align-items: end;
+  gap: 10px;
+  flex: 0 0 auto;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--paper-border);
+  background: var(--paper-bg-alt);
+}
+
+.review-history-search {
+  align-self: end;
+}
+
+.review-history-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 38px;
+}
+
+.review-history-date {
+  display: grid;
+  gap: 4px;
+  color: var(--paper-faint);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.review-history-date input {
+  min-width: 138px;
+  min-height: 38px;
+  padding-block: 7px;
+}
+
+.review-history-workspace {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.review-history-list {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--paper-border);
+  background: var(--paper-bg);
+}
+
+.review-history-list > header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--paper-border);
+  background: var(--paper-bg);
+}
+
+.review-history-list > header strong {
+  color: var(--paper-text);
+  font-size: 13px;
+}
+
+.review-history-list > header span {
+  color: var(--paper-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.review-history-row {
+  display: grid;
+  gap: 7px;
+  width: 100%;
+  min-height: 72px;
+  padding: 13px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--paper-border);
+  border-left: 3px solid transparent;
+  background: transparent;
+  text-align: left;
+}
+
+.review-history-row:hover {
+  background: var(--paper-panel);
+}
+
+.review-history-row.selected {
+  border-left-color: var(--paper-accent);
+  background: var(--paper-accent-bg);
+}
+
+.review-history-row-title {
+  overflow: hidden;
+  color: var(--paper-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-history-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--paper-faint);
+  font-size: 11px;
+}
+
+.review-history-row-meta > span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-history-row-meta time {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-family: var(--font-mono);
+}
+
+.review-history-row-meta [data-status='approved'] {
+  color: var(--paper-done);
+}
+
+.review-history-row-meta [data-status='rejected'] {
+  color: var(--paper-reject);
+}
+
+.review-history-more {
+  width: calc(100% - 24px);
+  margin: 12px;
+}
+
+.review-history-detail {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--paper-panel);
+}
+
+.review-history-detail > .review-detail-pane {
+  height: 100%;
+}
+
+@media (max-width: 980px) {
+  .review-history-toolbar {
+    grid-template-columns: minmax(220px, 1fr) auto auto;
+  }
+
+  .review-history-status {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
 @media (max-width: 860px) {
   .kanban {
     grid-template-columns: 1fr;
@@ -5498,6 +5683,58 @@ button.review-preview-row:hover {
 
   .kanban-col {
     min-height: 0;
+  }
+
+  .review-history-modal {
+    height: calc(100dvh - 24px);
+  }
+
+  .review-history-workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(180px, 32dvh) minmax(0, 1fr);
+  }
+
+  .review-history-list {
+    border-right: 0;
+    border-bottom: 1px solid var(--paper-border);
+  }
+}
+
+@media (max-width: 640px) {
+  .workspace-header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .review-workspace-search {
+    order: 3;
+    flex-basis: 100%;
+    max-width: none;
+  }
+
+  .review-history-toolbar {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .review-history-search,
+  .review-history-status {
+    grid-column: 1 / -1;
+  }
+
+  .review-history-status {
+    grid-row: auto;
+    flex-wrap: wrap;
+  }
+
+  .review-history-date input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .review-history-workspace {
+    grid-template-rows: minmax(160px, 28dvh) minmax(0, 1fr);
   }
 }
 

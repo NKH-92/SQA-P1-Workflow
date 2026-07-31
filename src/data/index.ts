@@ -7,6 +7,7 @@ export {
 export {
   fetchAuditEvents,
   fetchProductChangeTaskHistory,
+  fetchReviewHistoryPage,
   fetchReviewEventsPage,
   fetchReviewStatisticsV2,
   fetchWithdrawnReviewRequestsPage,

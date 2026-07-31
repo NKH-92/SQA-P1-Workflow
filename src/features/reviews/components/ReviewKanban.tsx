@@ -6,6 +6,7 @@ const COLUMNS: Array<{ status: ReviewStatus; label: string }> = [
   { status: 'pending', label: '대기중' },
   { status: 'approved', label: '완료' },
   { status: 'rejected', label: '반려' },
+  { status: 'withdrawn', label: '회수' },
 ]
 
 const COLLAPSED_ITEM_COUNT = 3
@@ -17,7 +18,7 @@ function cardUrgency(request: ReviewRequest): 'urgent' | 'warning' | 'normal' {
 }
 
 /**
- * 검토요청 상태별 칸반 보드. 파트장이 대기/완료/반려 흐름을 한눈에 본다.
+ * 검토요청 상태별 칸반 보드. 파트장이 대기/완료/반려/회수 흐름을 한눈에 본다.
  * 카드 클릭은 목록과 동일하게 상세를 선택한다(상태 변경은 상세에서 수행).
  */
 export const ReviewKanban = memo(function ReviewKanban({

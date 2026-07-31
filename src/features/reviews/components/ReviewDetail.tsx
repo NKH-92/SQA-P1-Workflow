@@ -11,6 +11,7 @@ type ReviewDetailProps = {
   selectedReview: ReviewRequest | null
   pendingWithdrawId: string | null
   localEvents?: ReviewEvent[]
+  readOnly?: boolean
   onEdit: (request: ReviewRequest) => void
   onWithdraw: (id: string | null) => void
   withdrawReview: (requestId: string) => void
@@ -29,6 +30,7 @@ export function ReviewDetail({
   selectedReview,
   pendingWithdrawId,
   localEvents = [],
+  readOnly = false,
   onEdit,
   onWithdraw,
   withdrawReview,
@@ -62,6 +64,7 @@ export function ReviewDetail({
             updateFeedback={updateFeedback}
             voidFeedback={voidFeedback}
             request={selectedReview}
+            readOnly={readOnly}
             updateStatus={updateStatus}
             withdrawReview={withdrawReview}
           />

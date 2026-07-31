@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { Badge, CopyLinkButton, Modal, ReasonPromptModal } from '../../../components/ui'
 import type { Profile, ReviewRequest, ReviewStatus } from '../../../types'
 import { ageInDays, dueDateLabel, dueDateShortLabel } from '../../../lib/dates'
@@ -39,6 +39,7 @@ export function ReviewRequestItem({
   updateFeedback,
   voidFeedback,
   request,
+  readOnly = false,
   updateStatus,
   withdrawReview,
 }: {
@@ -53,11 +54,11 @@ export function ReviewRequestItem({
   updateFeedback: (feedbackId: string, comment: string) => Promise<boolean>
   voidFeedback: (feedbackId: string, reason: string) => Promise<boolean>
   request: ReviewRequest
+  readOnly?: boolean
   updateStatus: (id: string, status: ReviewStatus) => Promise<boolean>
   withdrawReview: (requestId: string) => void
 }) {
   const [transitionNotice, setTransitionNotice] = useState<{ text: string; tone: ReviewStatus } | null>(null)
-  const [rejectNotice, setRejectNotice] = useState(false)
   const [celebrate, setCelebrate] = useState(false)
   const [editingFeedbackId, setEditingFeedbackId] = useState<string | null>(null)
   const [editingFeedbackText, setEditingFeedbackText] = useState('')
@@ -72,7 +73,6 @@ export function ReviewRequestItem({
   >(null)
   const [voidFeedbackId, setVoidFeedbackId] = useState<string | null>(null)
   const [voidReason, setVoidReason] = useState('')
-  const feedbackInputRef = useRef<HTMLTextAreaElement>(null)
   const {
     timelineSteps,
     requestFeedback,
@@ -98,7 +98,6 @@ export function ReviewRequestItem({
   const performStatusTransition = async (status: ReviewStatus, comment?: string) => {
     if (status === request.status || isSubmitting) return
     if (status === 'rejected') {
-      setRejectNotice(false)
       const ok = await withSubmitting(() => rejectReview(request.id, comment ?? feedbackDraft))
       if (!ok) return
       setFeedbackDraft((current) => (current === comment ? '' : current))
@@ -120,11 +119,6 @@ export function ReviewRequestItem({
     if (status === request.status || isSubmitting) return
     if (status === 'rejected') {
       const comment = feedbackDraft.trim()
-      if (!comment) {
-        setRejectNotice(true)
-        feedbackInputRef.current?.focus()
-        return
-      }
       setConfirmAction({ kind: 'reject', comment })
       return
     }
@@ -365,7 +359,7 @@ export function ReviewRequestItem({
                   <>
                     <p>{item.voided_at ? '무효화된 피드백' : item.comment}</p>
                     {item.voided_at && <small>사유: {item.void_reason}</small>}
-                    {profile.role === 'leader' &&
+                    {!readOnly && profile.role === 'leader' &&
                       (item.author_role ?? 'leader') === 'leader' &&
                       item.leader_id === profile.id &&
                       !item.voided_at && (
@@ -384,7 +378,7 @@ export function ReviewRequestItem({
             ))}
           </div>
         )}
-        {(profile.role === 'leader' || isMemberResubmission) && (
+        {!readOnly && (profile.role === 'leader' || isMemberResubmission) && (
           <div className="feedback-composer">
             <div className="feedback-composer-head">
               <label htmlFor={`review-feedback-${request.id}`}>
@@ -402,15 +396,11 @@ export function ReviewRequestItem({
               id={`review-feedback-${request.id}`}
               maxLength={2000}
               disabled={isSubmitting}
-              ref={feedbackInputRef}
               placeholder={isMemberResubmission
                 ? '수정한 내용과 확인받을 사항을 파트장에게 알려주세요.'
                 : '이 검토요청에 대해 어떻게 생각하시나요?'}
               value={feedbackDraft}
-              onChange={(event) => {
-                setFeedbackDraft(event.target.value)
-                if (rejectNotice) setRejectNotice(false)
-              }}
+              onChange={(event) => setFeedbackDraft(event.target.value)}
               onKeyDown={(event) => {
                 if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
                   event.preventDefault()
@@ -436,7 +426,6 @@ export function ReviewRequestItem({
             </div>
           </div>
         )}
-        {rejectNotice && <p className="notice error">반려하려면 피드백에 사유를 먼저 입력해 주세요.</p>}
       </div>
 
       {transitionNotice && (
@@ -451,6 +440,10 @@ export function ReviewRequestItem({
           ? '작성한 피드백과 함께 같은 요청을 다시 대기 상태로 전달합니다.'
           : confirmAction?.kind === 'reopen'
             ? '종결 이력은 유지되고 요청이 다시 대기 상태가 됩니다.'
+            : confirmAction?.kind === 'reject'
+              ? confirmAction.comment
+                ? '작성한 피드백과 함께 검토요청을 반려합니다.'
+                : '댓글 없이 검토요청을 반려합니다.'
             : '현재 화면에 표시된 검토요청에 상태 변경을 적용합니다.'}
         onClose={() => setConfirmAction(null)}
         open={Boolean(confirmAction)}

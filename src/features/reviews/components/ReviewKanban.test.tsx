@@ -20,6 +20,14 @@ function requests(count: number): ReviewRequest[] {
 afterEach(cleanup)
 
 describe('ReviewKanban', () => {
+  it('shows all four workflow states, including recent withdrawals', () => {
+    const withdrawn = { ...requests(1)[0]!, id: 'withdrawn-1', title: '최근 회수', status: 'withdrawn' as const }
+    render(<ReviewKanban requests={[withdrawn]} selectedReviewId={null} onSelectReview={vi.fn()} />)
+
+    expect(screen.getByText('회수')).toBeInTheDocument()
+    expect(screen.getByText('최근 회수')).toBeInTheDocument()
+  })
+
   it('shows three cards per column by default and lets the leader expand and collapse', async () => {
     const user = userEvent.setup()
     render(<ReviewKanban requests={requests(5)} selectedReviewId={null} onSelectReview={vi.fn()} />)

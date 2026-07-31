@@ -99,12 +99,13 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
 
     async rejectReviewRequest(requestId, comment) {
       assertActiveLeader(profile)
-      assertFeedbackComment(comment)
       const request = data.reviewRequests.find((item) => item.id === requestId)
       if (!request) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
       assertCanReject(request.status)
-      const feedbackId = newId('feedback')
-      setData((current) => rejectReviewRequestReducer(current, requestId, profile, comment.trim(), feedbackId))
+      const trimmedComment = comment.trim()
+      if (trimmedComment.length > 2000) throw new UserFacingError('피드백은 2000자 이내로 입력해 주세요.')
+      const feedbackId = trimmedComment ? newId('feedback') : null
+      setData((current) => rejectReviewRequestReducer(current, requestId, profile, trimmedComment, feedbackId))
       await recordActivityLog(activityLogs, {
         actor: profile,
         targetUserId: request?.requester_id ?? null,
@@ -112,7 +113,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
         entityId: requestId,
         action: 'status_changed',
         summary: `${request?.title ?? '검토요청'}을 반려했습니다.`,
-        metadata: { status: 'rejected' },
+        metadata: { status: 'rejected', comment_provided: Boolean(trimmedComment) },
       })
     },
 

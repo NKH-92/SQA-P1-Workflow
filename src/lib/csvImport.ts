@@ -73,20 +73,18 @@ export function parseProductImportRows(rows: string[][]) {
     if (rows.some((cells) => cells.slice(1).some((value) => value.trim().length > 0))) {
       throw new UserFacingError('헤더 없는 제품 CSV는 제품명 한 열만 사용할 수 있습니다.')
     }
-    return rows.map((cells) => ({ name: cells[0]?.trim() ?? '' })).filter((item) => item.name)
+    return rows.map((cells) => ({ name: cells[0]?.trim() ?? '' }))
   }
   if (header.length === 1 && rows.length > 1) {
     throw new UserFacingError(
       '1열 제품 CSV의 첫 값이 헤더 예약어라서 헤더와 데이터인지 구분할 수 없습니다. 제품명 열을 포함한 다열 헤더 CSV를 사용해 주세요.',
     )
   }
-  return body
-    .map((cells) => ({
-      name: cells[indexes.name]?.trim() ?? '',
-      category: indexes.category >= 0 ? cells[indexes.category]?.trim() ?? '' : undefined,
-      companyName: indexes.companyName >= 0 ? cells[indexes.companyName]?.trim() ?? '' : undefined,
-    }))
-    .filter((item) => item.name)
+  return body.map((cells) => ({
+    name: cells[indexes.name]?.trim() ?? '',
+    category: indexes.category >= 0 ? cells[indexes.category]?.trim() ?? '' : undefined,
+    companyName: indexes.companyName >= 0 ? cells[indexes.companyName]?.trim() ?? '' : undefined,
+  }))
 }
 
 export function parseInviteImportRows(rows: string[][]) {
@@ -97,23 +95,25 @@ export function parseInviteImportRows(rows: string[][]) {
     name: header.findIndex((value) => ['name', '이름'].includes(normalizeHeader(value))),
     role: header.findIndex((value) => ['role', '역할'].includes(normalizeHeader(value))),
   }
-  const parseRole = (value: string): Role => (value.trim().toLowerCase() === 'leader' || value.trim() === '파트장' ? 'leader' : 'member')
-
-  if (indexes.email < 0) {
-    return rows
-      .map((cells) => ({
-        email: cells[0]?.trim().toLowerCase() ?? '',
-        name: cells[1]?.trim() ?? '',
-        role: parseRole(cells[2] ?? 'member'),
-      }))
-      .filter((item) => item.email && item.name)
+  const parseRole = (value: string): { role: Role; invalidRole?: string } => {
+    const trimmed = value.trim()
+    const normalized = trimmed.toLowerCase()
+    if (normalized === 'leader' || trimmed === '파트장') return { role: 'leader' }
+    if (!trimmed || normalized === 'member' || trimmed === '파트원') return { role: 'member' }
+    return { role: 'member', invalidRole: trimmed }
   }
 
-  return body
-    .map((cells) => ({
-      email: cells[indexes.email]?.trim().toLowerCase() ?? '',
-      name: cells[indexes.name >= 0 ? indexes.name : 1]?.trim() ?? '',
-      role: parseRole(indexes.role >= 0 ? cells[indexes.role] ?? 'member' : 'member'),
+  if (indexes.email < 0) {
+    return rows.map((cells) => ({
+      email: cells[0]?.trim().toLowerCase() ?? '',
+      name: cells[1]?.trim() ?? '',
+      ...parseRole(cells[2] ?? 'member'),
     }))
-    .filter((item) => item.email && item.name)
+  }
+
+  return body.map((cells) => ({
+    email: cells[indexes.email]?.trim().toLowerCase() ?? '',
+    name: cells[indexes.name >= 0 ? indexes.name : 1]?.trim() ?? '',
+    ...parseRole(indexes.role >= 0 ? cells[indexes.role] ?? 'member' : 'member'),
+  }))
 }

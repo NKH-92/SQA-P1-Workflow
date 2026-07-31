@@ -119,8 +119,9 @@ export function TeamPanel({
       </div>
       <div className="section-toolbar">
         <label className="search-field">
-          <Search size={16} />
+          <Search aria-hidden="true" size={16} />
           <input
+            aria-label="파트원 검색"
             placeholder="이름, 제품, 업무, 프로젝트 검색"
             value={memberSearch}
             onChange={(event) => setMemberSearch(event.target.value)}
@@ -201,8 +202,8 @@ export function TeamPanel({
             </div>
             <div className="detail-header-actions">
               <label className="sort-select">
-                <SlidersHorizontal size={14} />
-                <select value={productSortKey} onChange={(event) => setProductSortKey(event.target.value as ProductSortKey)}>
+                <SlidersHorizontal aria-hidden="true" size={14} />
+                <select aria-label="담당 제품 정렬" value={productSortKey} onChange={(event) => setProductSortKey(event.target.value as ProductSortKey)}>
                   <option value="source">원본순</option>
                   <option value="name">제품명순</option>
                   <option value="company">위탁사명순</option>

@@ -63,6 +63,7 @@ export const ReviewKanban = memo(function ReviewKanban({
               const dueClass = urgency === 'normal' ? '' : urgency
               return (
                 <button
+                  aria-pressed={selectedReviewId === request.id}
                   className={selectedReviewId === request.id ? 'kanban-card selected' : 'kanban-card'}
                   data-urgency={urgency}
                   key={request.id}

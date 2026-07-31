@@ -47,6 +47,7 @@ export function DutyTable({
       return (
         <div className="table-inline-form">
           <input
+            aria-label={`${category.name} 대분류 이름`}
             value={majorEdit.name}
             onChange={(event) =>
               setMajorCategoryEdits({
@@ -57,12 +58,13 @@ export function DutyTable({
           />
           <div className="inline-actions">
             <button
+              aria-label={`${category.name} 대분류 저장`}
               className="primary compact"
               disabled={!majorEdit.name.trim()}
               onClick={() => onSaveMajorCategory(category.id)}
               type="button"
             >
-              <Save size={16} />
+              <Save aria-hidden="true" size={16} />
             </button>
             <button
               className="ghost compact"
@@ -87,6 +89,7 @@ export function DutyTable({
         <strong>{category.name}</strong>
         <div className="group-actions">
           <button
+            aria-label={`${category.name} 대분류 수정`}
             className="ghost compact"
             onClick={() =>
               setMajorCategoryEdits({
@@ -97,7 +100,7 @@ export function DutyTable({
             title="대분류 수정"
             type="button"
           >
-            <Pencil size={16} />
+            <Pencil aria-hidden="true" size={16} />
           </button>
           {categoryDutyCount === 0 && (
             <DeleteConfirmAction
@@ -158,6 +161,7 @@ export function DutyTable({
                     {edit ? (
                       <div className="table-inline-form">
                         <select
+                          aria-label={`${duty.name} 업무 대분류`}
                           value={edit.major_category_id}
                           onChange={(event) =>
                             setDutyEdits({ ...dutyEdits, [duty.id]: { ...edit, major_category_id: event.target.value } })
@@ -170,17 +174,19 @@ export function DutyTable({
                           ))}
                         </select>
                         <input
+                          aria-label={`${duty.name} 업무 이름`}
                           value={edit.name}
                           onChange={(event) => setDutyEdits({ ...dutyEdits, [duty.id]: { ...edit, name: event.target.value } })}
                         />
                         <div className="inline-actions">
                           <button
+                            aria-label={`${duty.name} 업무 저장`}
                             className="primary compact"
                             disabled={!edit.name.trim()}
                             onClick={() => onSaveDuty(duty.id)}
                             type="button"
                           >
-                            <Save size={16} />
+                            <Save aria-hidden="true" size={16} />
                           </button>
                           <button
                             className="ghost compact"
@@ -228,6 +234,7 @@ export function DutyTable({
                     {!edit && (
                       <div className="group-actions">
                         <button
+                          aria-label={`${duty.name} 업무 수정`}
                           className="ghost compact"
                           onClick={() =>
                             setDutyEdits({
@@ -242,7 +249,7 @@ export function DutyTable({
                           title="업무 수정"
                           type="button"
                         >
-                          <Pencil size={16} />
+                          <Pencil aria-hidden="true" size={16} />
                         </button>
                         <DeleteConfirmAction
                           table="duties"

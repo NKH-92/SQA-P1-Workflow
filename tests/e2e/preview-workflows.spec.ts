@@ -321,3 +321,41 @@ test('17 responsive boundary widths keep production-like topbar actions inside t
   await expect(sidebar).toHaveAttribute('aria-hidden', 'true')
   await expect(page.locator('.hamburger')).toBeFocused()
 })
+
+test('18 compact mobile screens reveal a selected review detail immediately', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 640 })
+  await page.goto('/#/reviews')
+
+  const target = page.locator('.review-list-item').nth(1)
+  await target.click()
+
+  const title = page.locator('.review-detail-pane .request-title')
+  await expect(title).toBeFocused()
+  await expect.poll(async () => {
+    const box = await title.boundingBox()
+    return box ? box.y >= 0 && box.y + box.height <= 640 : false
+  }).toBe(true)
+})
+
+test('19 mobile operations surfaces prioritize work and keep topbar targets usable', async ({ page }) => {
+  for (const viewport of [{ width: 390, height: 844 }, { width: 320, height: 568 }]) {
+    await page.setViewportSize(viewport)
+    await page.goto('/')
+
+    const firstPriority = page.locator('.priority-row').first()
+    await expect(firstPriority).toBeVisible()
+    await expect.poll(async () => {
+      const box = await firstPriority.boundingBox()
+      return box ? box.y < viewport.height : false
+    }).toBe(true)
+
+    const targetSizes = await page.locator('.topbar-actions .icon-button').evaluateAll((buttons) =>
+      buttons.map((button) => {
+        const rect = button.getBoundingClientRect()
+        return { width: rect.width, height: rect.height }
+      }),
+    )
+    expect(targetSizes.length).toBeGreaterThan(0)
+    expect(targetSizes.every(({ width, height }) => width >= 40 && height >= 40)).toBe(true)
+  }
+})

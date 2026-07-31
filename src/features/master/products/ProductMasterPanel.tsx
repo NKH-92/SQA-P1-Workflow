@@ -16,6 +16,7 @@ import {
   validateProductUpdate,
 } from '../master.validators'
 import type { MasterSubPanelProps } from '../shared/types'
+import { ImportDiagnostics, type CsvImportIssue } from '../shared/ImportDiagnostics'
 import {
   ProductAssignModal,
   UNASSIGNED_PRODUCT_USER_ID,
@@ -44,6 +45,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
     { kind: 'update'; productId: string } | { kind: 'unassign' } | null
   >(null)
   const [productReason, setProductReason] = useState('')
+  const [productImportIssues, setProductImportIssues] = useState<CsvImportIssue[]>([])
 
   const memberOptions = data.profiles.filter(canReceiveAssignment)
   const query = adminSearch.trim()
@@ -54,6 +56,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
   }, [adminSearch])
 
   const importProductsCsv = async (file: File) => {
+    setProductImportIssues([])
     let rows: ReturnType<typeof parseProductImportRows>
     try {
       rows = parseProductImportRows(parseCsvRows(await file.text()))
@@ -66,15 +69,28 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
     }
     const existingNames = new Set(data.products.map((item) => item.name.trim().toLowerCase()))
     const seen = new Set<string>()
+    const issues: CsvImportIssue[] = []
     const incoming = rows
-      .filter((row) => {
+      .filter((row, index) => {
         const extra = row as { category?: string }
-        // 구분값이 있는데 자사/위탁이 아니면 형식 오류로 제외한다 — '위탁품' 같은 값을
-        // 경고 없이 '자사'로 바꿔 등록하면 마스터 데이터가 조용히 오염된다.
-        if (extra.category && extra.category !== '자사' && extra.category !== '위탁') return false
+        if (!row.name.trim()) {
+          issues.push({ value: `데이터 행 ${index + 1}`, reason: '제품명이 비어 있습니다.' })
+          return false
+        }
+        // 구분값이 있는데 자사/위탁이 아니면 해당 값과 사유를 결과 패널에 남긴다.
+        if (extra.category && extra.category !== '자사' && extra.category !== '위탁') {
+          issues.push({ value: row.name, reason: `구분 '${extra.category}'은 자사 또는 위탁이어야 합니다.` })
+          return false
+        }
         const key = row.name.trim().toLowerCase()
-        // Drop rows already registered AND duplicate rows within the file (remote name is unique).
-        if (existingNames.has(key) || seen.has(key)) return false
+        if (existingNames.has(key)) {
+          issues.push({ value: row.name, reason: '이미 등록된 제품명입니다.' })
+          return false
+        }
+        if (seen.has(key)) {
+          issues.push({ value: row.name, reason: 'CSV 파일 안에서 제품명이 중복되었습니다.' })
+          return false
+        }
         seen.add(key)
         return true
       })
@@ -87,14 +103,14 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
           category: extra.category === '위탁' ? '위탁' : '자사',
         }
       })
-    const skipped = rows.length - incoming.length
+    setProductImportIssues(issues)
     await mutate(
       async () => {
         validateProductImport(data, rows.length, incoming.length)
         await controller.importRows(incoming)
       },
-      skipped > 0
-        ? `제품 ${incoming.length}건을 가져왔습니다. 중복·형식 오류 ${skipped}건은 제외했습니다.`
+      issues.length > 0
+        ? `제품 ${incoming.length}건을 가져왔습니다. 제외 ${issues.length}건은 화면의 가져오기 결과에서 확인해 주세요.`
         : `제품 ${incoming.length}건을 가져왔습니다.`,
     )
   }
@@ -231,8 +247,9 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
           </button>
         </div>
         <label className="search-field">
-          <Search size={16} />
+          <Search aria-hidden="true" size={16} />
           <input
+            aria-label="제품 검색"
             placeholder="이름, 제품, 업무 검색"
             value={adminSearch}
             onChange={(event) => setAdminSearch(event.target.value)}
@@ -258,6 +275,13 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
           />
         </label>
       </div>
+
+      <ImportDiagnostics
+        id="product-import-result-title"
+        subject="제품"
+        issues={productImportIssues}
+        onClose={() => setProductImportIssues([])}
+      />
 
       <div className="master-product-split">
         <section className="master-product-column">

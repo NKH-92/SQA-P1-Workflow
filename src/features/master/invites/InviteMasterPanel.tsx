@@ -11,6 +11,7 @@ import { canReceiveAssignment } from '../../../domain/permissions'
 import { selectFilteredAllowedUsers } from '../master.selectors'
 import { validateInviteCreate, validateInviteImport, validateInviteUpdate, validateProfileToggle } from '../master.validators'
 import type { MasterSubPanelProps } from '../shared/types'
+import { ImportDiagnostics, type CsvImportIssue } from '../shared/ImportDiagnostics'
 import { InviteCard, type InviteEdit } from './InviteCard'
 import { InviteRegisterModal } from './InviteRegisterModal'
 import { useInviteAdminController } from './useInviteAdminController'
@@ -29,6 +30,7 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
   // Reason-required update: Save opens this prompt instead of writing directly.
   const [inviteReasonPrompt, setInviteReasonPrompt] = useState<{ inviteId: string } | null>(null)
   const [inviteReason, setInviteReason] = useState('')
+  const [inviteImportIssues, setInviteImportIssues] = useState<CsvImportIssue[]>([])
 
   const memberOptions = data.profiles.filter(canReceiveAssignment)
   const query = adminSearch.trim()
@@ -62,6 +64,7 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
   }
 
   const importInvitesCsv = async (file: File) => {
+    setInviteImportIssues([])
     let rows: ReturnType<typeof parseInviteImportRows>
     try {
       rows = parseInviteImportRows(parseCsvRows(await file.text()))
@@ -75,22 +78,45 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
     }
     const existingEmails = new Set(data.allowedUsers.map((item) => item.email.toLowerCase()))
     const seen = new Set<string>()
-    const incoming = rows.filter((row) => {
-      if (!EMAIL_PATTERN.test(row.email)) return false
-      // Drop rows already registered AND duplicate rows within the file, so a repeated
-      // email cannot fail the whole batch on the remote unique constraint.
-      if (existingEmails.has(row.email) || seen.has(row.email)) return false
+    const issues: CsvImportIssue[] = []
+    const incoming = rows.filter((row, index) => {
+      const extra = row as { invalidRole?: string }
+      const value = row.email || row.name || `데이터 행 ${index + 1}`
+      if (!row.email) {
+        issues.push({ value, reason: '이메일이 비어 있습니다.' })
+        return false
+      }
+      if (!row.name) {
+        issues.push({ value, reason: '이름이 비어 있습니다.' })
+        return false
+      }
+      if (extra.invalidRole) {
+        issues.push({ value, reason: `역할 '${extra.invalidRole}'은 파트장 또는 파트원이어야 합니다.` })
+        return false
+      }
+      if (!EMAIL_PATTERN.test(row.email)) {
+        issues.push({ value, reason: '이메일 형식이 올바르지 않습니다.' })
+        return false
+      }
+      if (existingEmails.has(row.email)) {
+        issues.push({ value, reason: '이미 등록된 이메일입니다.' })
+        return false
+      }
+      if (seen.has(row.email)) {
+        issues.push({ value, reason: 'CSV 파일 안에서 이메일이 중복되었습니다.' })
+        return false
+      }
       seen.add(row.email)
       return true
     })
-    const skipped = rows.length - incoming.length
+    setInviteImportIssues(issues)
     await mutate(
       async () => {
         validateInviteImport(data, rows.length, incoming.length)
         await controller.importRows(incoming)
       },
-      skipped > 0
-        ? `초대 ${incoming.length}건을 가져왔습니다. 중복·형식 오류 ${skipped}건은 제외했습니다.`
+      issues.length > 0
+        ? `초대 ${incoming.length}건을 가져왔습니다. 제외 ${issues.length}건은 화면의 가져오기 결과에서 확인해 주세요.`
         : `초대 ${incoming.length}건을 가져왔습니다.`,
     )
   }
@@ -168,8 +194,9 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
           </button>
         </div>
         <label className="search-field">
-          <Search size={16} />
+          <Search aria-hidden="true" size={16} />
           <input
+            aria-label="초대 대상 검색"
             placeholder="이름, 제품, 업무 검색"
             value={adminSearch}
             onChange={(event) => setAdminSearch(event.target.value)}
@@ -195,6 +222,13 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
           />
         </label>
       </div>
+
+      <ImportDiagnostics
+        id="invite-import-result-title"
+        subject="초대"
+        issues={inviteImportIssues}
+        onClose={() => setInviteImportIssues([])}
+      />
 
       <div className="master-grid">
         {filteredAllowedUsers.map((item) => (

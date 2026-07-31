@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useId, type ReactNode } from 'react'
 
 export type DashboardMetric = {
   label: string
@@ -19,22 +19,28 @@ export function DashboardMetricStrip({
   metrics: readonly DashboardMetric[]
   className?: string
 }) {
+  const descriptionBaseId = useId()
+
   return (
     <div className={`kpi-strip dashboard-kpi-strip ${className}`} aria-label={label}>
-      {metrics.map((metric) => (
-        <button
-          aria-label={`${metric.label}${metric.value}${metric.unit}`}
-          className="kpi-stat"
-          data-tone={metric.tone}
-          key={metric.label}
-          onClick={metric.onOpen}
-          type="button"
-        >
-          <span className="kpi-stat-label">{metric.label}{metric.icon}</span>
-          <strong className="kpi-stat-value">{metric.value}<span className="unit">{metric.unit}</span></strong>
-          <small className="kpi-stat-note" aria-hidden="true">{metric.note}</small>
-        </button>
-      ))}
+      {metrics.map((metric, index) => {
+        const noteId = `${descriptionBaseId}-note-${index}`
+        return (
+          <button
+            aria-describedby={noteId}
+            aria-label={`${metric.label}${metric.value}${metric.unit}`}
+            className="kpi-stat"
+            data-tone={metric.tone}
+            key={metric.label}
+            onClick={metric.onOpen}
+            type="button"
+          >
+            <span className="kpi-stat-label">{metric.label}{metric.icon}</span>
+            <strong className="kpi-stat-value">{metric.value}<span className="unit">{metric.unit}</span></strong>
+            <small className="kpi-stat-note" id={noteId}>{metric.note}</small>
+          </button>
+        )
+      })}
     </div>
   )
 }

@@ -86,6 +86,7 @@ export const ReviewList = memo(function ReviewList({
           : request.created_at
         return (
           <button
+            aria-pressed={selectedReviewId === request.id}
             className={selectedReviewId === request.id ? 'review-list-item selected' : 'review-list-item'}
             data-status={request.status}
             key={request.id}

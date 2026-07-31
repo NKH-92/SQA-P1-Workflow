@@ -83,8 +83,9 @@ export function ActivityPanel({ data }: { data: AppData }) {
         <p>사용자 안내용 활동과 변경 필드 중심의 보안 감사 원본을 구분해 확인합니다.</p>
       </div>
       <div className="workspace-view-toggle" role="group" aria-label="이력 종류">
-        <button className={mode === 'activity' ? 'selected' : ''} onClick={() => setMode('activity')} type="button">활동 로그</button>
+        <button aria-pressed={mode === 'activity'} className={mode === 'activity' ? 'selected' : ''} onClick={() => setMode('activity')} type="button">활동 로그</button>
         <button
+          aria-pressed={mode === 'audit'}
           className={mode === 'audit' ? 'selected' : ''}
           onClick={() => {
             setMode('audit')
@@ -94,8 +95,8 @@ export function ActivityPanel({ data }: { data: AppData }) {
         >감사 이력</button>
       </div>
       <label className="search-field">
-        <Search size={16} />
-        <input placeholder="행위자, 사유, 유형, 변경 필드 검색" value={query} onChange={(event) => setQuery(event.target.value)} />
+        <Search aria-hidden="true" size={16} />
+        <input aria-label="활동 및 감사 이력 검색" placeholder="행위자, 사유, 유형, 변경 필드 검색" value={query} onChange={(event) => setQuery(event.target.value)} />
       </label>
       {mode === 'activity' ? (
         <Section title={`최근 활동 ${data.activityLogs.length}건`} icon={<MessageSquare size={18} />}>

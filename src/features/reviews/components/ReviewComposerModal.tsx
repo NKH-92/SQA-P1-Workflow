@@ -162,8 +162,9 @@ export function ReviewComposerModal({
             <div className="modal-field-row">
               <label htmlFor="review-deadline-v2">마감</label>
               <div>
-                <div className="deadline-toggle">
+                <div className="deadline-toggle" role="group" aria-label="검토 기한 방식">
                   <button
+                    aria-pressed={form.deadlineMode === 'none'}
                     className={form.deadlineMode === 'none' ? 'selected' : ''}
                     onClick={() => setForm({ ...form, deadlineMode: 'none', due_date: '' })}
                     type="button"
@@ -171,6 +172,7 @@ export function ReviewComposerModal({
                     기한없음
                   </button>
                   <button
+                    aria-pressed={form.deadlineMode === 'date'}
                     className={form.deadlineMode === 'date' ? 'selected' : ''}
                     onClick={() => setForm({ ...form, deadlineMode: 'date' })}
                     type="button"
@@ -183,6 +185,7 @@ export function ReviewComposerModal({
                     const optionValue = quickDeadlineDate(option.days)
                     return (
                       <button
+                        aria-pressed={form.deadlineMode === 'date' && form.due_date === optionValue}
                         className={form.deadlineMode === 'date' && form.due_date === optionValue ? 'selected' : ''}
                         key={option.label}
                         onClick={() => applyQuickDeadline(option.days)}

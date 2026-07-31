@@ -78,6 +78,7 @@ export function Shell({
   desktopNotifications,
   onMarkAllRead,
   onOpenCommandPalette,
+  onDismissMessage,
   onRefresh,
   onSignOut,
   onPreviewRoleChange,
@@ -102,6 +103,7 @@ export function Shell({
   desktopNotifications?: DesktopNotificationControls
   onMarkAllRead: () => void
   onOpenCommandPalette: () => void
+  onDismissMessage?: () => void
   onRefresh: () => void
   onSignOut: () => void
   onPreviewRoleChange?: (role: Role) => void
@@ -250,6 +252,7 @@ export function Shell({
 
   return (
     <div className="app-shell brand-shell" data-visual-theme="brand-shell">
+      <a className="skip-link" href="#main-content">본문으로 건너뛰기</a>
       <div
         aria-hidden="true"
         className={`overlay${sidebarOpen ? ' visible' : ''}`}
@@ -274,6 +277,17 @@ export function Shell({
             <X size={20} />
           </button>
         </div>
+        <button
+          className="sidebar-command"
+          onClick={() => {
+            closeSidebar(false)
+            onOpenCommandPalette()
+          }}
+          type="button"
+        >
+          <Search aria-hidden="true" size={16} />
+          <span>빠른 검색</span>
+        </button>
         <nav aria-label="주 메뉴 항목">
           {navSections.map((section) => (
             <div className="nav-group" key={section.label}>
@@ -320,8 +334,9 @@ export function Shell({
             </div>
           </div>
           {onPreviewRoleChange && (
-            <div className="segmented">
+            <div className="segmented" role="group" aria-label="미리보기 역할">
               <button
+                aria-pressed={profile.role === 'leader'}
                 className={profile.role === 'leader' ? 'selected' : ''}
                 onClick={() => onPreviewRoleChange('leader')}
                 type="button"
@@ -329,6 +344,7 @@ export function Shell({
                 파트장
               </button>
               <button
+                aria-pressed={profile.role === 'member'}
                 className={profile.role === 'member' ? 'selected' : ''}
                 onClick={() => onPreviewRoleChange('member')}
                 type="button"
@@ -339,7 +355,7 @@ export function Shell({
           )}
         </div>
       </aside>
-      <main className="content">
+      <main className="content" id="main-content" tabIndex={-1}>
         <header className="topbar">
           <div className="topbar-left">
             <button
@@ -443,12 +459,22 @@ export function Shell({
         )}
         {children}
       </main>
-      {/* 결과 토스트는 우하단 고정 — topbar는 진행 상태 표시만 담당한다. */}
+      {/* 성공은 잠시 후 사라지고, 경고·오류는 사용자가 확인해 닫을 때까지 유지한다. */}
       {message && (
         <div className="toast-viewport">
-          <span className="toast" data-tone={message.tone} role="status" aria-live="polite">
-            {message.text}
-          </span>
+          <div
+            aria-live={message.tone === 'error' ? 'assertive' : 'polite'}
+            className="toast"
+            data-tone={message.tone}
+            role={message.tone === 'error' ? 'alert' : 'status'}
+          >
+            <span>{message.text}</span>
+            {onDismissMessage && (
+              <button aria-label="상태 메시지 닫기" className="toast-close" onClick={onDismissMessage} type="button">
+                <X aria-hidden="true" size={14} />
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>

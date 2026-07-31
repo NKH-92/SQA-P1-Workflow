@@ -118,9 +118,10 @@ export function ProjectComposerModal({
               </div>
               <div className="modal-field-stack">
                 <label>상태</label>
-                <div className="status-segmented">
+                <div className="status-segmented" role="group" aria-label="프로젝트 상태">
                   {(Object.entries(projectStatusLabels) as Array<[ProjectStatus, string]>).map(([value, label]) => (
                     <button
+                      aria-pressed={form.status === value}
                       className={form.status === value ? 'selected' : ''}
                       key={value}
                       onClick={() => setForm({ ...form, status: value })}
@@ -151,6 +152,7 @@ export function ProjectComposerModal({
                   const currentLoad = projectLoad(member.id)
                   return (
                     <button
+                      aria-pressed={selected}
                       className={selected ? 'selected' : ''}
                       key={member.id}
                       onClick={() => onToggleMember(member.id)}

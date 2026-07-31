@@ -457,10 +457,10 @@ export function ChangeApplicationsPanel({
 
       <Section title="업무 목록" icon={<Filter size={18} />} aside={`${taskContexts.length}건`}>
         <div className="change-list-toolbar">
-          <div className="segmented change-view-tabs" aria-label="보기 방식">
-            <button className={viewMode === 'change' ? 'selected' : ''} onClick={() => { setViewMode('change'); if (!leaderMode) setStatusFilter('all') }} type="button">변경건별</button>
-            <button className={viewMode === 'product' ? 'selected' : ''} onClick={() => setViewMode('product')} type="button">제품별</button>
-            {leaderMode && <button className={viewMode === 'assignee' ? 'selected' : ''} onClick={() => setViewMode('assignee')} type="button">담당자별</button>}
+          <div className="segmented change-view-tabs" role="group" aria-label="보기 방식">
+            <button aria-pressed={viewMode === 'change'} className={viewMode === 'change' ? 'selected' : ''} onClick={() => { setViewMode('change'); if (!leaderMode) setStatusFilter('all') }} type="button">변경건별</button>
+            <button aria-pressed={viewMode === 'product'} className={viewMode === 'product' ? 'selected' : ''} onClick={() => setViewMode('product')} type="button">제품별</button>
+            {leaderMode && <button aria-pressed={viewMode === 'assignee'} className={viewMode === 'assignee' ? 'selected' : ''} onClick={() => setViewMode('assignee')} type="button">담당자별</button>}
           </div>
           <label className="change-search"><Search size={15} /><input aria-label="변경 적용 검색" placeholder="변경번호, 제목, 제품, 담당자 검색" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
           <select
@@ -526,7 +526,7 @@ export function ChangeApplicationsPanel({
                   && (leaderMode || application.created_by === profile.id)
                   && !isHistoryLoaded(application.id)
                 return (
-                  <button className={selected ? 'change-application-card selected' : 'change-application-card'} key={application.id} onClick={() => setSelectedApplicationId(application.id)} type="button">
+                  <button aria-pressed={selected} className={selected ? 'change-application-card selected' : 'change-application-card'} key={application.id} onClick={() => setSelectedApplicationId(application.id)} type="button">
                     <span className="change-application-card-top"><span><Badge status={application.status}>{applicationStatusLabel(application.status)}</Badge>{fullyApplied ? <Badge status="completed">변경 적용 완료</Badge> : application.archived_at && <Badge>보관</Badge>}</span><span>{application.change_number}</span></span>
                     <strong>{application.title}</strong>
                     <small>{applicationCreatorName(data, application)} · 시행 {formatDate(application.effective_date)}</small>

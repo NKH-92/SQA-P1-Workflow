@@ -9,7 +9,9 @@ const MAX_CHUNK_BYTES = 560 * 1024
 // ~140.3 KiB. Splitting gzip dictionaries raises the all-routes sum, so enforce
 // both dimensions: initial navigation and the total code surface.
 const MAX_INITIAL_GZIP_BYTES = 142 * 1024
-const MAX_TOTAL_GZIP_BYTES = 208 * 1024
+// Persistent import diagnostics and explicit accessibility state add a small,
+// intentional all-routes cost without changing the initial navigation budget.
+const MAX_TOTAL_GZIP_BYTES = 213 * 1024
 const EXPECTED_ROUTE_DYNAMIC_IMPORTS = new Set([
   'src/screens/ActivityPanel.tsx',
   'src/screens/AnnouncementsPanel.tsx',

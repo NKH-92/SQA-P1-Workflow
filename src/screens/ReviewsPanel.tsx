@@ -48,6 +48,8 @@ export function ReviewsPanel({
   const [archiveHasMore, setArchiveHasMore] = useState(true)
   const [archiveLoading, setArchiveLoading] = useState(false)
   const [archiveError, setArchiveError] = useState<string | null>(null)
+  const reviewDetailRef = useRef<HTMLDivElement>(null)
+  const mobileDetailFrameRef = useRef<number | null>(null)
 
   const loadArchivePage = useCallback(async (page: number) => {
     setArchiveLoading(true)
@@ -100,6 +102,42 @@ export function ReviewsPanel({
     if (archivePage < 0 && !archiveLoading) void loadArchivePage(0)
   }, [archiveLoading, archivePage, loadArchivePage])
 
+  const revealReviewDetailOnMobile = useCallback((reviewId: string) => {
+    if (
+      typeof window === 'undefined'
+      || typeof window.matchMedia !== 'function'
+      || !window.matchMedia('(max-width: 640px)').matches
+    ) return
+
+    if (mobileDetailFrameRef.current != null) {
+      window.cancelAnimationFrame(mobileDetailFrameRef.current)
+    }
+
+    let remainingFrames = 2
+    const reveal = () => {
+      const detail = reviewDetailRef.current
+      if (detail?.dataset.reviewId !== reviewId && remainingFrames > 0) {
+        remainingFrames -= 1
+        mobileDetailFrameRef.current = window.requestAnimationFrame(reveal)
+        return
+      }
+
+      mobileDetailFrameRef.current = null
+      const title = detail?.querySelector<HTMLElement>('.request-title')
+      if (!detail || !title) return
+      detail.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      title.focus({ preventScroll: true })
+    }
+
+    mobileDetailFrameRef.current = window.requestAnimationFrame(reveal)
+  }, [])
+
+  useEffect(() => () => {
+    if (mobileDetailFrameRef.current != null) {
+      window.cancelAnimationFrame(mobileDetailFrameRef.current)
+    }
+  }, [])
+
   // 칸반 카드·딥링크가 현재 필터 밖 요청을 가리키면 먼저 목록이 그 요청을
   // 포함하도록 전환한 뒤 선택한다. 상세는 visible collection에서만 파생된다.
   const selectReview = useCallback((id: string) => {
@@ -111,7 +149,8 @@ export function ReviewsPanel({
       setStatusFilter('all')
     }
     setSelectedReviewId(id)
-  }, [openArchive, scopedReviewRequests, setSelectedReviewId, statusFilter])
+    revealReviewDetailOnMobile(id)
+  }, [openArchive, revealReviewDetailOnMobile, scopedReviewRequests, setSelectedReviewId, statusFilter])
 
   useEffect(() => {
     if (!initialSelectedId) return
@@ -348,6 +387,7 @@ export function ReviewsPanel({
             <div className="kanban-detail">
               <ReviewDetail
                 addFeedback={addFeedback}
+                detailRef={reviewDetailRef}
                 localEvents={data.reviewEvents}
                 onEdit={openReviewEditor}
                 onWithdraw={(id) => setPendingWithdrawId(id)}
@@ -381,6 +421,7 @@ export function ReviewsPanel({
           />
           <ReviewDetail
             addFeedback={addFeedback}
+            detailRef={reviewDetailRef}
             localEvents={data.reviewEvents}
             onEdit={openReviewEditor}
             onWithdraw={(id) => setPendingWithdrawId(id)}

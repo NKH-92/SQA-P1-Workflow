@@ -225,6 +225,7 @@ function App() {
         desktopNotifications={leaderMode ? desktopNotifications : undefined}
         onMarkAllRead={markAllNotificationsRead}
         onOpenCommandPalette={commandPalette.show}
+        onDismissMessage={() => setMessage(null)}
         onRefresh={() => {
           refreshData().catch((error) => setMessage({ text: toUserMessage(error), tone: 'error' }))
         }}

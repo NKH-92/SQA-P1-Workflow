@@ -217,8 +217,9 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
           </button>
         </div>
         <label className="search-field">
-          <Search size={16} />
+          <Search aria-hidden="true" size={16} />
           <input
+            aria-label="업무 카테고리 검색"
             placeholder="이름, 제품, 업무 검색"
             value={adminSearch}
             onChange={(event) => setAdminSearch(event.target.value)}

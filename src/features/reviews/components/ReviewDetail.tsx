@@ -1,3 +1,4 @@
+import type { Ref } from 'react'
 import { MousePointerClick } from 'lucide-react'
 import { EmptyState } from '../../../components/ui'
 import type { Profile, ReviewEvent, ReviewRequest, ReviewStatus } from '../../../types'
@@ -5,6 +6,7 @@ import { ReviewEventHistory } from './ReviewEventHistory'
 import { ReviewRequestItem } from './ReviewRequestItem'
 
 type ReviewDetailProps = {
+  detailRef?: Ref<HTMLDivElement>
   profile: Profile
   selectedReview: ReviewRequest | null
   pendingWithdrawId: string | null
@@ -22,6 +24,7 @@ type ReviewDetailProps = {
 }
 
 export function ReviewDetail({
+  detailRef,
   profile,
   selectedReview,
   pendingWithdrawId,
@@ -38,7 +41,12 @@ export function ReviewDetail({
   addFeedback,
 }: ReviewDetailProps) {
   return (
-    <div className="review-detail-pane" aria-live="polite">
+    <div
+      aria-live="polite"
+      className="review-detail-pane"
+      data-review-id={selectedReview?.id}
+      ref={detailRef}
+    >
       {selectedReview ? (
         <>
           <ReviewRequestItem

@@ -102,7 +102,7 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
     await page.getByText(reviewTitle, { exact: true }).first().click()
     const detail = page.getByRole('article').filter({ hasText: reviewTitle }).first()
     await (await requireVisible(
-      detail.getByRole('textbox', { name: /어떻게 생각하시나요/i }),
+      detail.getByRole('textbox', { name: /검토 피드백/i }),
       'reject reason',
     )).fill('remote e2e reject reason')
     await (await requireVisible(detail.getByRole('button', { name: /반려/ }), 'reject')).click()
@@ -117,7 +117,7 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
     await page.getByText(reviewTitle, { exact: true }).first().click()
     const memberDetail = page.getByRole('article').filter({ hasText: reviewTitle }).first()
     await (await requireVisible(
-      memberDetail.getByRole('textbox'),
+      memberDetail.getByRole('textbox', { name: /재검토 요청 내용/i }),
       'resubmit feedback',
     )).fill('remote e2e resubmit feedback')
     await (await requireVisible(memberDetail.getByRole('button', { name: /재검토|재제출|재요청/ }), 'resubmit')).click()

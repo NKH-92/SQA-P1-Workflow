@@ -117,6 +117,23 @@ describe('Shell review count semantics', () => {
   })
 })
 
+describe('Shell skip navigation', () => {
+  afterEach(() => {
+    cleanup()
+    window.history.replaceState(null, '', '#/dashboard')
+  })
+
+  it('focuses main content without replacing the current hash route', () => {
+    window.history.replaceState(null, '', '#/reviews?id=review-1')
+    renderShell(leader, true, { activeTab: 'reviews' })
+
+    fireEvent.click(screen.getByRole('link', { name: '본문으로 건너뛰기' }))
+
+    expect(window.location.hash).toBe('#/reviews?id=review-1')
+    expect(document.getElementById('main-content')).toHaveFocus()
+  })
+})
+
 describe('Shell mobile navigation', () => {
   afterEach(() => {
     cleanup()

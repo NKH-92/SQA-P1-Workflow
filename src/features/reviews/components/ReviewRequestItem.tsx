@@ -290,7 +290,7 @@ export function ReviewRequestItem({
         )}
       </div>
 
-      <h1 className="request-title">{request.title}</h1>
+      <h1 className="request-title" tabIndex={-1}>{request.title}</h1>
 
       <div className="request-meta-grid">
         <div>
@@ -387,10 +387,19 @@ export function ReviewRequestItem({
         {(profile.role === 'leader' || isMemberResubmission) && (
           <div className="feedback-composer">
             <div className="feedback-composer-head">
-              <strong>{profile.name}</strong>
-              {isMemberResubmission && <span>반려 피드백을 반영한 내용을 남기면 이 요청이 다시 파트장에게 전달됩니다.</span>}
+              <label htmlFor={`review-feedback-${request.id}`}>
+                <strong>{isMemberResubmission ? '재검토 요청 내용' : '검토 피드백'}</strong>
+                <span>작성자 {profile.name}</span>
+              </label>
+              {isMemberResubmission && (
+                <span id={`review-feedback-help-${request.id}`}>
+                  반려 피드백을 반영한 내용을 남기면 이 요청이 다시 파트장에게 전달됩니다.
+                </span>
+              )}
             </div>
             <textarea
+              aria-describedby={isMemberResubmission ? `review-feedback-help-${request.id}` : undefined}
+              id={`review-feedback-${request.id}`}
               maxLength={2000}
               disabled={isSubmitting}
               ref={feedbackInputRef}

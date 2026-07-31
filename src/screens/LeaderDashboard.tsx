@@ -250,50 +250,70 @@ export function LeaderDashboard({
       <div className="leader-dashboard-grid dashboard-secondary-grid">
         <Section title="월간 검토 처리" icon={<CalendarClock size={18} />} aside="서버 집계 · 최근 6개월">
           <div>
-            {reviewOverview.status === 'error' && (
-              <div className="dashboard-inline-error" role="status">검토 통계를 불러오지 못했습니다. 새로고침 후 다시 확인해 주세요.</div>
+            {reviewOverview.status === 'loading' && (
+              <div className="dashboard-inline-loading" role="status">검토 통계를 집계하는 중입니다.</div>
             )}
-            <div className="stats-kpi-grid">
+            {reviewOverview.status === 'error' && (
+              <div className="dashboard-inline-error" role="alert" title={reviewOverview.message}>
+                검토 통계를 불러오지 못했습니다. 새로고침 후 다시 확인해 주세요.
+              </div>
+            )}
+            <div aria-busy={reviewOverview.status === 'loading'} className="stats-kpi-grid">
               {[
-                ['이번 달 제출', (currentMonthStats?.new_requests ?? 0) + (currentMonthStats?.resubmissions ?? 0)],
-                ['완료', currentMonthStats?.approvals ?? 0],
-                ['반려', currentMonthStats?.rejections ?? 0],
-                ['기간 내 현재 대기', reviewEnvelope?.pending_count ?? 0],
-              ].map(([label, value]) => (
+                {
+                  label: '이번 달 제출',
+                  value: reviewOverview.status === 'ready'
+                    ? (currentMonthStats?.new_requests ?? 0) + (currentMonthStats?.resubmissions ?? 0)
+                    : null,
+                },
+                { label: '완료', value: reviewOverview.status === 'ready' ? currentMonthStats?.approvals ?? 0 : null },
+                { label: '반려', value: reviewOverview.status === 'ready' ? currentMonthStats?.rejections ?? 0 : null },
+                { label: '기간 내 현재 대기', value: reviewOverview.status === 'ready' ? reviewEnvelope?.pending_count ?? 0 : null },
+              ].map(({ label, value }) => (
                 <article className="kpi" key={label}>
                   <div className="kpi-label">{label}</div>
-                  <div className="kpi-value">{value}<span className="unit">건</span></div>
+                  <div className="kpi-value">
+                    {value ?? '—'}
+                    {value !== null && <span className="unit">건</span>}
+                  </div>
                 </article>
               ))}
             </div>
 
-            <div className="sparkline-container">
-              <div className="sparkline-head">
-                <strong>월별 이벤트 추이</strong>
-                <div className="sparkline-legend">
-                  <span><i className="swatch" aria-hidden="true" />제출</span>
-                  <span><i className="swatch done" aria-hidden="true" />완료</span>
+            {reviewOverview.status === 'ready' && monthlyRows.length > 0 && (
+              <>
+                <div className="sparkline-container">
+                  <div className="sparkline-head">
+                    <strong>월별 이벤트 추이</strong>
+                    <div className="sparkline-legend">
+                      <span><i className="swatch" aria-hidden="true" />제출</span>
+                      <span><i className="swatch done" aria-hidden="true" />완료</span>
+                    </div>
+                  </div>
+                  <Sparkline
+                    submitted={monthlyRows.map((row) => row.new_requests + row.resubmissions)}
+                    approved={monthlyRows.map((row) => row.approvals)}
+                  />
                 </div>
-              </div>
-              <Sparkline
-                submitted={monthlyRows.map((row) => row.new_requests + row.resubmissions)}
-                approved={monthlyRows.map((row) => row.approvals)}
-              />
-            </div>
 
-            <div className="month-history" style={{ marginTop: 18 }}>
-              <div className="month-history-row dashboard-month-row head">
-                <span>월</span><span>제출</span><span>완료</span><span>반려</span>
-              </div>
-              {monthlyRows.map((row) => (
-                <div className="month-history-row dashboard-month-row" key={row.month}>
-                  <span className="m">{row.month}</span>
-                  <span>{row.new_requests + row.resubmissions}</span>
-                  <span>{row.approvals}</span>
-                  <span>{row.rejections}</span>
+                <div className="month-history" style={{ marginTop: 18 }}>
+                  <div className="month-history-row dashboard-month-row head">
+                    <span>월</span><span>제출</span><span>완료</span><span>반려</span>
+                  </div>
+                  {monthlyRows.map((row) => (
+                    <div className="month-history-row dashboard-month-row" key={row.month}>
+                      <span className="m">{row.month}</span>
+                      <span>{row.new_requests + row.resubmissions}</span>
+                      <span>{row.approvals}</span>
+                      <span>{row.rejections}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
+            {reviewOverview.status === 'ready' && monthlyRows.length === 0 && (
+              <p className="empty-copy">집계 기간에 표시할 검토 이벤트가 없습니다.</p>
+            )}
           </div>
         </Section>
 

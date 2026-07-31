@@ -40,7 +40,13 @@ export function AssignmentEditModal({
             data.dutyAssignments.filter((a) => a.user_id === member.id).length +
             data.projectAssignments.filter((a) => a.user_id === member.id).length
           return (
-            <button className={selected ? 'assignee-option selected' : 'assignee-option'} key={member.id} onClick={() => onToggle(member.id)} type="button">
+            <button
+              aria-pressed={selected}
+              className={selected ? 'assignee-option selected' : 'assignee-option'}
+              key={member.id}
+              onClick={() => onToggle(member.id)}
+              type="button"
+            >
               <span>
                 <strong>{member.name}{member.role === 'leader' ? ' (파트장 본인)' : ''}</strong>
                 <small>현재 배정 {load}건</small>

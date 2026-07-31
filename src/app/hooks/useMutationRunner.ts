@@ -37,7 +37,7 @@ export function useMutationRunner(
   })
 
   useEffect(() => {
-    if (!message) return
+    if (!message || message.tone !== 'success') return
     const timer = setTimeout(() => setMessage(null), 3500)
     return () => clearTimeout(timer)
   }, [message])

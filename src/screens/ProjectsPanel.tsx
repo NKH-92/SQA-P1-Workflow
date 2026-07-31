@@ -206,14 +206,15 @@ export function ProjectsPanel({
       </div>
       <div className="section-toolbar">
         <label className="search-field">
-          <Search size={16} />
+          <Search aria-hidden="true" size={16} />
           <input
+            aria-label="프로젝트 검색"
             placeholder="프로젝트, 담당자, 메모 검색"
             value={projectQuery}
             onChange={(event) => setProjectQuery(event.target.value)}
           />
         </label>
-        <select className="compact-select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'all' | ProjectStatus)}>
+        <select aria-label="프로젝트 상태 필터" className="compact-select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'all' | ProjectStatus)}>
           <option value="all">전체 상태</option>
           {Object.entries(projectStatusLabels).map(([value, label]) => (
             <option key={value} value={value}>
@@ -266,11 +267,11 @@ export function ProjectsPanel({
           <div className="section-toolbar">
             {/* Search / status / CSV live in the page toolbar above and drive both views via
                 shared state; this section only owns the project-vs-member view toggle. */}
-            <div className="view-switch">
-              <button className={viewMode === 'project' ? 'selected' : ''} onClick={() => setViewMode('project')} type="button">
+            <div className="view-switch" role="group" aria-label="프로젝트 배정 보기 방식">
+              <button aria-pressed={viewMode === 'project'} className={viewMode === 'project' ? 'selected' : ''} onClick={() => setViewMode('project')} type="button">
                 프로젝트별
               </button>
-              <button className={viewMode === 'member' ? 'selected' : ''} onClick={() => setViewMode('member')} type="button">
+              <button aria-pressed={viewMode === 'member'} className={viewMode === 'member' ? 'selected' : ''} onClick={() => setViewMode('member')} type="button">
                 사람별
               </button>
             </div>

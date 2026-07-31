@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import {
   addReviewFeedback,
   createRepositoryContext,
+  fetchReviewHistoryPage,
   fetchWithdrawnReviewRequestsPage,
   markReviewSeen,
   mergeReviewRequests,
@@ -14,7 +15,13 @@ import {
   voidReviewFeedback,
   withdrawReviewRequest,
 } from '../../data'
-import type { AppData, Profile, ReviewStatus } from '../../types'
+import type {
+  AppData,
+  Profile,
+  ReviewHistoryCursor,
+  ReviewHistoryFilters,
+  ReviewStatus,
+} from '../../types'
 import type { AppDataUpdater } from '../../data/repositories/appDataUpdater'
 import type { ReviewRequestPayload } from '../../data/contracts'
 
@@ -25,6 +32,14 @@ export function useReviewController(profile: Profile, data: AppData, setData: Ap
   )
 
   return {
+    async loadHistoryPage(filters: ReviewHistoryFilters, cursor: ReviewHistoryCursor | null) {
+      const page = await fetchReviewHistoryPage(filters, cursor, data.reviewRequests)
+      setData((current) => ({
+        ...current,
+        reviewRequests: mergeReviewRequests(current.reviewRequests, page.rows),
+      }))
+      return page
+    },
     async loadArchivePage(page: number) {
       const requests = await fetchWithdrawnReviewRequestsPage(page)
       setData((current) => ({

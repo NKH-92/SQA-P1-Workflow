@@ -62,6 +62,7 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
       const request = data.reviewRequests.find((item) => item.id === requestId)
       if (!request) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
       assertCanReject(request.status)
+      if (comment.trim().length > 2000) throw new UserFacingError('피드백은 2000자 이내로 입력해 주세요.')
       const { error } = await supabase!.rpc('reject_review_request', {
         p_review_request_id: requestId,
         p_expected_updated_at: request.updated_at,

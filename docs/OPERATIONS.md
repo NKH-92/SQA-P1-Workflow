@@ -80,6 +80,48 @@ Backup job이 실패하면 `[Backup] Daily DB backup failed` issue를 새로 만
 | 암구호 보관 | **분실 시 백업 복원 불가.** 비밀번호 관리자 등 통제된 곳에 보관 |
 | 확인 | 매일 Actions run이 green인지, Job Summary에 `L2 application DB package`와 Auth identity 미포함 문구가 있는지 |
 
+### 검토요청 1년 보존과 자동 삭제
+
+`20260731151100_review_history_retention.sql` 적용 후 Supabase Cron은 매일 **06:00 KST**(`0 21 * * *`, UTC)에 `private.purge_expired_review_requests()`를 실행합니다. 05:00 KST Backup DB 예약 시간보다 한 시간 뒤입니다. 두 스케줄은 서로 다른 시스템이므로 백업 실패가 보존 삭제를 자동 중단시키지는 않습니다. 매일 Backup DB 성공 여부와 아래 Cron 실행 결과를 함께 확인합니다.
+
+- `pending`은 생성 시각과 관계없이 자동 삭제하지 않습니다.
+- `approved`/`rejected`는 `closed_at`, `withdrawn`은 `withdrawn_at`부터 정확히 365일 보존합니다. `terminal_at < 실행 시각 - 365 days`인 행만 삭제하므로 정확히 경계에 있는 행은 다음 실행까지 남습니다.
+- 만료된 요청과 연결된 피드백, 검토 이벤트, 읽음 영수증, 활동 로그, private 상태 원장과 감사 원문을 같은 트랜잭션에서 삭제합니다. 프로필·계정·프로젝트·배정 데이터에는 영향을 주지 않습니다.
+- 함수는 advisory transaction lock과 고정 Cron 이름을 사용합니다. 동일 시각 기준으로 다시 실행하면 0건이어야 합니다.
+
+SQL Editor에서 스케줄을 점검합니다. 정상 기준은 정확히 1행, `active=true`, schedule과 command가 아래 값과 일치하는 것입니다.
+
+```sql
+select jobid, jobname, schedule, command, active
+from cron.job
+where jobname = 'sqa-review-retention-daily';
+```
+
+최근 실행 결과는 다음과 같이 확인합니다. 최신 행이 `succeeded`이고 06:00 KST 전후에 실행되어야 합니다.
+
+```sql
+select detail.status, detail.return_message, detail.start_time, detail.end_time
+from cron.job_run_details detail
+where detail.jobid = (
+  select jobid from cron.job where jobname = 'sqa-review-retention-daily'
+)
+order by detail.start_time desc
+limit 10;
+```
+
+실행 후 만료 대상이 남지 않았는지 읽기 전용으로 확인합니다.
+
+```sql
+select status, count(*) as expired_count
+from public.review_requests
+where status in ('approved', 'rejected', 'withdrawn')
+  and case when status = 'withdrawn' then withdrawn_at else closed_at end
+      < clock_timestamp() - interval '365 days'
+group by status;
+```
+
+Cron 실패 시 `return_message`를 먼저 기록하고 Backup DB 성공을 확인한 뒤 원인을 수정합니다. 수동 함수 실행은 실제 데이터를 영구 삭제하므로 정상 백업, 대상 건수, 승인자를 확인한 장애 복구 상황에서만 SQL Editor의 `postgres` 권한으로 수행합니다. `authenticated`, `anon`, `service_role`에는 이 함수 실행 권한이 없습니다.
+
 복원 시 복호화 — 신규 `.gpg` 기본 경로:
 
 ```bash

@@ -1,5 +1,6 @@
 import type { ReviewStatusFilter } from '../../app/types'
 import { compareReviewRequests } from '../../lib/priority'
+import { isLeaderDefaultReviewRequest, matchesReviewSearch } from '../../lib/reviewHistory'
 import type { AppData, Profile, ReviewRequest, ReviewStatus } from '../../types'
 
 export type ReviewFeatureData = Pick<AppData, 'reviewRequests'>
@@ -8,6 +9,17 @@ export function selectScopedReviewRequests(data: ReviewFeatureData, profile: Pro
   return profile.role === 'leader'
     ? data.reviewRequests
     : data.reviewRequests.filter((request) => request.requester_id === profile.id)
+}
+
+export function selectDefaultReviewRequests(
+  data: ReviewFeatureData,
+  profile: Profile,
+  now = new Date(),
+): ReviewRequest[] {
+  const scoped = selectScopedReviewRequests(data, profile)
+  return profile.role === 'leader'
+    ? scoped.filter((request) => isLeaderDefaultReviewRequest(request, now))
+    : scoped
 }
 
 export function selectReviewStatusCounts(requests: ReviewRequest[]) {
@@ -24,11 +36,15 @@ export function selectVisibleReviewRequests(
   data: ReviewFeatureData,
   profile: Profile,
   statusFilter: ReviewStatusFilter,
+  searchQuery = '',
+  now = new Date(),
 ): ReviewRequest[] {
-  const scoped = selectScopedReviewRequests(data, profile)
+  const scoped = selectDefaultReviewRequests(data, profile, now)
   const base = statusFilter === 'all'
-    ? scoped.filter((request) => request.status !== 'withdrawn')
+    ? profile.role === 'leader' ? scoped : scoped.filter((request) => request.status !== 'withdrawn')
     : scoped.filter((request) => request.status === statusFilter)
 
-  return [...base].sort((left, right) => compareReviewRequests(left, right, profile.role === 'member'))
+  return base
+    .filter((request) => matchesReviewSearch(request, searchQuery))
+    .sort((left, right) => compareReviewRequests(left, right, profile.role === 'member'))
 }

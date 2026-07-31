@@ -53,7 +53,7 @@ export function assertReviewStatusTransition(current: ReviewStatus, next: Review
   if (current === next) return
   if (current === 'pending' && next === 'approved') return
   if (next === 'rejected') {
-    throw new UserFacingError('반려는 피드백과 함께 처리해야 합니다.')
+    throw new UserFacingError('반려는 전용 동작을 사용해 주세요.')
   }
   throw new UserFacingError('이 상태에서는 더 이상 상태를 변경할 수 없습니다.')
 }

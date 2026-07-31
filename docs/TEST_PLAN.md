@@ -53,7 +53,9 @@ Workflow contract test는 RLS job 삭제, E2E job 삭제, build dependency 누�
 - 파트원 화면에서 본인 담당제품/담당업무/프로젝트만 보이는지 확인한다.
 - 파트원이 검토요청을 생성하면 상태가 `대기중`으로 표시된다.
 - 파트원이 검토요청을 생성할 때 검토 기한은 `기한없음` 또는 날짜 중 하나만 선택할 수 있고, 날짜 선택 시 목록과 우선처리 큐에 기한이 보인다.
-- 파트장/파트원 검토요청 목록에서 상태 필터(`전체`, `대기중`, `완료`, `반려`)가 목록을 정확히 좁히는지 확인한다.
+- 파트장 기본 검토 워크스페이스에는 모든 `pending`과 KST 오늘을 포함한 최근 7일의 `approved`/`rejected`/`withdrawn`만 보인다. 파트원의 기존 조회 범위와 최근 90일 회수 보관함은 유지된다.
+- 파트장 기본 검토 워크스페이스에서 제목·본문·요청자 이름 검색과 상태 필터(`전체`, `대기중`, `완료`, `반려`, `회수`)가 함께 목록을 정확히 좁히는지 확인한다.
+- 파트장 `검토 이력`은 최근 7일 이전의 종결 요청을 제목·본문·요청자 이름, 상태, KST 시작일·종료일로 검색하고 `(terminal_at, id)` cursor로 50건씩 중복 없이 불러온다. 이력 상세에서 완료·반려 요청을 다시 열면 기본 워크스페이스로 돌아온다.
 - 파트장 대시보드의 `우선처리 큐`는 기한이 임박했거나 오래 대기 중인 검토요청을 프로젝트 마감/기초데이터 누락보다 먼저 보여준다.
 - 파트장은 `pending` 상태의 검토요청에 피드백을 남길 수 있으며, 상태는 `pending`으로 유지된다. 최종 판단 시 `완료` 또는 `반려`로 전환한다.
 - 파트장이 피드백을 여러 개 남기면 파트원 화면에 이력으로 보인다.
@@ -68,7 +70,9 @@ Workflow contract test는 RLS job 삭제, E2E job 삭제, build dependency 누�
 - `rejected` 상태의 본인 검토요청은 파트원이 내용을 수정할 수 있지만 회수할 수는 없다. `approved` 상태는 수정·회수할 수 없다.
 - 파트원은 반려된 요청에 수정 내용을 피드백으로 남기고 `피드백 작성 후 재검토 요청`을 누를 수 있다. 새 요청이 생기지 않고 같은 ID가 `pending`으로 돌아오며 `재검토 요청`과 누적 `반려 이력 N회`가 표시된다.
 - 같은 요청을 두 번 이상 반려·재요청해도 `review_round`, `rejection_count`, 파트장·파트원 피드백 이력이 한 요청에 순서대로 누적된다.
-- 파트장이 검토요청을 `반려`할 때 피드백(사유) 없이는 상태 전환이 되지 않는다.
+- 파트장은 피드백을 입력하지 않아도 확인 후 검토요청을 `반려`할 수 있다. 빈 댓글 반려는 피드백 행을 만들지 않고 이벤트·활동 메타데이터에 `comment_provided=false`, 감사 사유에 `댓글 없이 반려`를 남긴다. 댓글을 입력한 경우에는 기존처럼 피드백 이력이 함께 생성된다.
+- `approved`/`rejected`/`withdrawn`은 각각 `closed_at`/`withdrawn_at`부터 정확히 365일 보존하고, 그보다 오래된 행만 매일 06:00 KST에 자동 삭제한다. 정확히 365일 경계, 최근 종결, 오래된 `pending`은 보존한다.
+- 보존기간 만료 삭제는 대상 요청의 피드백·compact 이벤트·읽음 영수증·활동 로그·private 상태 원장·감사 원문을 함께 삭제하며, 같은 시각으로 다시 실행하면 0건인 멱등 동작이어야 한다.
 - 파트장 홈 우선처리 큐에서 검토요청을 클릭하면 검토요청 탭 해당 항목 상세가 바로 선택된다.
 - URL 해시(`#/reviews?id=...`)로 새로고침해도 같은 탭·항목이 유지된다.
 - 6개월 이전 종결 검토요청의 URL 해시도 단건 on-demand 조회 후 상세가 열리고, 접근권한 밖/삭제된 ID만 안내 후 해시가 정리된다.
@@ -121,6 +125,9 @@ Supabase에 최소 3명(`leader`, `member A`, `member B`)을 등록한 뒤 각 �
 - 활성 파트장은 종결 검토요청을 재오픈할 수 있고, member·비활성 파트장·미인증 호출은 `reopen_review_request` RPC에서 거부되어야 한다.
 - 같은 종결 요청에 대한 동시 재오픈 호출은 하나만 성공하고, 최종 상태는 `pending`이며 status audit 이벤트는 한 건이어야 한다.
 - `withdraw_review_request`는 요청자 자신의 최신 `pending` 행만 필수 사유와 OCC 조건으로 철회하고, 행과 이벤트 이력을 유지해야 한다.
+- `list_review_history_v1`은 active leader만 호출할 수 있고 member·anon은 거부되어야 한다. 검색·상태·KST 기간·cursor와 최근 7일 경계가 서버에서 적용되어야 한다.
+- 빈 댓글 `reject_review_request`는 active leader에게만 허용되고, 피드백 미생성 및 `comment_provided=false` 이벤트·활동 메타데이터와 `댓글 없이 반려` 감사 사유를 원자적으로 기록해야 한다.
+- 로컬 전용 보존 probe는 365일 초과 종결 요청과 모든 연결 원문만 삭제하고, 정확한 365일 경계·최근 종결·오래된 `pending`을 보존하며 두 번째 실행이 0건인지 확인한 뒤 subtransaction 전체를 롤백해야 한다. 운영 readiness SQL은 데이터 생성·삭제 없이 함수·ACL·인덱스·Cron만 정적으로 검사한다.
 - 읽음 처리는 `review_read_receipts`와 DB 시각을 사용하며, 사용자는 자신의 영수증과 권한이 있는 요청의 이벤트만 조회할 수 있어야 한다.
 - `mark_password_changed()`의 모든 overload와 구형 review RPC signature는 제거 상태여야 하며, 실제 Auth 비밀번호 hash 변경만 `must_change_password=false`를 만들고 `profiles` 물리 삭제는 service role에도 차단되어야 한다.
 - anon은 `public` schema USAGE가 없고, authenticated/service role은 필요한 schema USAGE만 가지며 CREATE는 없어야 한다. 새 routine의 전역 default ACL에는 PUBLIC EXECUTE가 없어야 한다.

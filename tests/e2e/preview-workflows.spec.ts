@@ -235,16 +235,20 @@ test('15 filtered team results never leave a hidden member detail selected', asy
   await expect(page.locator('.team-member-detail')).toHaveCount(0)
 })
 
-test('16 withdrawn archive has one entry point and explicit selected state', async ({ page }) => {
+test('16 leader history and member withdrawal archive keep distinct entry points', async ({ page }) => {
   await page.goto('/#/reviews')
-  const leaderArchive = page.getByRole('button', { name: /^회수 보관함/ })
-  await expect(leaderArchive).toHaveCount(1)
-  await leaderArchive.click()
-  await expect(leaderArchive).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByRole('button', { name: /^회수 보관함/ })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: /^회수 보관함/ })).toHaveCount(0)
+  const leaderHistory = page.getByRole('button', { name: '검토 이력', exact: true })
+  await expect(leaderHistory).toHaveCount(1)
+  await leaderHistory.click()
+  const historyDialog = page.getByRole('dialog', { name: '검토 이력' })
+  await expect(historyDialog).toBeVisible()
+  await historyDialog.locator('.modal-close').click()
+  await expect(historyDialog).toHaveCount(0)
 
   await page.getByRole('button', { name: '파트원', exact: true }).click()
   await page.getByRole('button', { name: /^내 검토요청/ }).click()
+  await expect(page.getByRole('button', { name: '검토 이력', exact: true })).toHaveCount(0)
   const memberArchive = page.getByRole('button', { name: /^회수 보관함/ })
   await expect(memberArchive).toHaveCount(1)
   await memberArchive.click()

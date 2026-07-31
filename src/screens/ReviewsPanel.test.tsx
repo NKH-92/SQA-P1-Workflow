@@ -69,16 +69,13 @@ describe('ReviewsPanel', () => {
     }
   })
 
-  it.each([
-    { roleLabel: '파트장', profile: previewLeader },
-    { roleLabel: '파트원', profile: previewMember },
-  ])('gives the $roleLabel one dedicated archive entry and loads its first page exactly once', async ({ profile }) => {
+  it('keeps the member withdrawal archive as one dedicated entry and loads its first page once', async () => {
     const user = userEvent.setup()
     const archiveSpy = vi.spyOn(dataModule, 'fetchWithdrawnReviewRequestsPage').mockResolvedValue([])
 
     render(
       <ReviewsPanel
-        profile={profile}
+        profile={previewMember}
         data={createPreviewData()}
         mutate={vi.fn()}
         setData={vi.fn()}
@@ -96,6 +93,32 @@ describe('ReviewsPanel', () => {
     await user.click(archiveButton)
     expect(archiveSpy).toHaveBeenCalledTimes(1)
     archiveSpy.mockRestore()
+  })
+
+  it('replaces the leader withdrawal archive with one searchable review-history entry', async () => {
+    const user = userEvent.setup()
+    const historySpy = vi.spyOn(dataModule, 'fetchReviewHistoryPage').mockResolvedValue({
+      schema_version: 1,
+      snapshot_at: '2026-08-01T03:00:00.000Z',
+      rows: [],
+      has_more: false,
+      next_cursor: null,
+    })
+
+    render(
+      <ReviewsPanel
+        profile={previewLeader}
+        data={createPreviewData()}
+        mutate={vi.fn()}
+        setData={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByRole('button', { name: '회수 보관함' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '검토 이력' }))
+    expect(await screen.findByRole('dialog', { name: '검토 이력' })).toBeInTheDocument()
+    await waitFor(() => expect(historySpy).toHaveBeenCalledTimes(1))
+    historySpy.mockRestore()
   })
 
   it('resets form after edit so a new write starts empty', async () => {
@@ -180,7 +203,7 @@ describe('ReviewsPanel', () => {
     expect(raw).toContain('expires_at')
   })
 
-  it('shows reject feedback notice without calling rejectReviewRequest when feedback is empty', async () => {
+  it('allows rejection without feedback after explicit confirmation', async () => {
     const user = userEvent.setup()
     const data = createPreviewData()
     const rejectSpy = vi.spyOn(dataModule, 'rejectReviewRequest').mockResolvedValue(undefined as never)
@@ -196,8 +219,10 @@ describe('ReviewsPanel', () => {
     const detail = screen.getByRole('article')
     await user.click(within(detail).getByRole('button', { name: '반려' }))
 
-    expect(screen.getByText('반려하려면 피드백에 사유를 먼저 입력해 주세요.')).toBeInTheDocument()
-    expect(rejectSpy).not.toHaveBeenCalled()
+    const dialog = screen.getByRole('dialog', { name: '검토요청을 반려할까요?' })
+    expect(within(dialog).getByText('댓글 없이 검토요청을 반려합니다.')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: '반려하기' }))
+    expect(rejectSpy).toHaveBeenCalledWith(expect.anything(), expect.any(String), '')
     rejectSpy.mockRestore()
   })
 
@@ -273,7 +298,11 @@ describe('ReviewsPanel', () => {
   it('locks the reopen action while its mutation is in flight', async () => {
     const user = userEvent.setup()
     const source = createPreviewData()
-    const request = { ...source.reviewRequests[0]!, status: 'approved' as const }
+    const request = {
+      ...source.reviewRequests[0]!,
+      status: 'approved' as const,
+      closed_at: '2026-08-01T00:00:00.000Z',
+    }
     const data = { ...source, reviewRequests: [request] }
     let resolveReopen!: () => void
     const reopenSpy = vi.spyOn(dataModule, 'reopenReviewRequest').mockImplementation(

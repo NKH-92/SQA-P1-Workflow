@@ -1,6 +1,10 @@
 import { supabase } from '../../lib/supabase'
+import { buildLocalReviewHistoryPage, REVIEW_HISTORY_PAGE_SIZE } from '../../lib/reviewHistory'
 import type {
   ReviewEvent,
+  ReviewHistoryCursor,
+  ReviewHistoryFilters,
+  ReviewHistoryPage,
   ReviewReadReceipt,
   ReviewRequest,
   ReviewStatisticsV2Envelope,
@@ -19,6 +23,7 @@ type QueryResult<T> = { data: T | null; error: unknown }
 export const REVIEW_REQUEST_SELECT = 'id,requester_id,title,description,due_date,status,review_round,rejection_count,last_submitted_at,status_changed_at,closed_at,withdrawn_at,withdrawn_by,withdrawal_reason,created_at,updated_at,profiles!review_requests_requester_id_fkey(name,email),review_feedback(id,review_request_id,leader_id,author_role,comment,created_at,updated_at,voided_at,voided_by,void_reason,profiles!review_feedback_leader_id_fkey(name))'
 export const REVIEW_HISTORY_MONTHS = 6
 export const REVIEW_BOOTSTRAP_SCHEMA_VERSION = 2
+export const REVIEW_HISTORY_SCHEMA_VERSION = 1
 
 export type ReviewQueryResults = {
   reviewRequestsResult: QueryResult<ReviewRequest[]>
@@ -134,6 +139,44 @@ export async function fetchWithdrawnReviewRequestsPage(page = 0, pageSize = 50):
     .range(from, from + pageSize - 1)
   if (error) throw error
   return (data ?? []) as unknown as ReviewRequest[]
+}
+
+export async function fetchReviewHistoryPage(
+  filters: ReviewHistoryFilters,
+  cursor: ReviewHistoryCursor | null = null,
+  localRequests: ReviewRequest[] = [],
+  pageSize = REVIEW_HISTORY_PAGE_SIZE,
+): Promise<ReviewHistoryPage> {
+  if (!supabase) return buildLocalReviewHistoryPage(localRequests, filters, cursor, new Date(), pageSize)
+  const { data, error } = await supabase.rpc('list_review_history_v1', {
+    p_status: filters.status,
+    p_query: filters.query.trim() || null,
+    p_from: filters.from,
+    p_to: filters.to,
+    p_before_terminal_at: cursor?.terminal_at ?? null,
+    p_before_id: cursor?.id ?? null,
+    p_limit: Math.max(1, Math.min(pageSize, 100)),
+  })
+  if (error) throw error
+  if (!isValidReviewHistoryPage(data)) throw new Error('list_review_history_v1 invalid response')
+  return data
+}
+
+function isValidReviewHistoryPage(value: unknown): value is ReviewHistoryPage {
+  if (!isRecord(value) || value.schema_version !== REVIEW_HISTORY_SCHEMA_VERSION) return false
+  if (!isValidIsoTimestamp(value.snapshot_at) || !Array.isArray(value.rows)) return false
+  if (typeof value.has_more !== 'boolean') return false
+  if (value.next_cursor !== null) {
+    if (!isRecord(value.next_cursor)
+      || !isValidIsoTimestamp(value.next_cursor.terminal_at)
+      || typeof value.next_cursor.id !== 'string') return false
+  }
+  return value.rows.every((row) => isRecord(row)
+    && typeof row.id === 'string'
+    && typeof row.title === 'string'
+    && typeof row.description === 'string'
+    && ['approved', 'rejected', 'withdrawn'].includes(String(row.status))
+    && isValidIsoTimestamp(row.terminal_at))
 }
 
 /**

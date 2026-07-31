@@ -12,7 +12,8 @@
     "80_review_query_v2.sql",
     "90_consistent_bootstrap_v2.sql",
     "91_master_occ_contract.sql",
-    "92_full_code_review_hardening.sql"
+    "92_full_code_review_hardening.sql",
+    "93_review_history_retention.sql"
   ],
   "migrationVersions": [
     "202607020001",
@@ -88,6 +89,7 @@
     "20260720230000",
     "20260720231000",
     "20260722120452",
-    "20260723120000"
+    "20260723120000",
+    "20260731151100"
   ]
 }

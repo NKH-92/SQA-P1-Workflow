@@ -69,6 +69,33 @@ describe('ReviewsPanel', () => {
     }
   })
 
+  it('clears the list status filter when switching to kanban', async () => {
+    const user = userEvent.setup()
+    const source = createPreviewData()
+    const pending = source.reviewRequests.find((request) => request.status === 'pending')!
+    const approved = {
+      ...pending,
+      id: 'review-approved-recent',
+      title: '최근 완료 검토',
+      status: 'approved' as const,
+      closed_at: new Date().toISOString(),
+    }
+    const data = { ...source, reviewRequests: [pending, approved] }
+
+    render(
+      <ReviewsPanel profile={previewLeader} data={data} mutate={vi.fn()} setData={vi.fn()} />,
+    )
+
+    const filterGroup = screen.getByRole('group', { name: '검토요청 상태 필터' })
+    await user.click(within(filterGroup).getByRole('button', { name: /^완료/ }))
+    expect(screen.queryByText(pending.title)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '칸반' }))
+
+    expect(screen.getByText(pending.title)).toBeInTheDocument()
+    expect(screen.getAllByText(approved.title).length).toBeGreaterThan(0)
+  })
+
   it('keeps the member withdrawal archive as one dedicated entry and loads its first page once', async () => {
     const user = userEvent.setup()
     const archiveSpy = vi.spyOn(dataModule, 'fetchWithdrawnReviewRequestsPage').mockResolvedValue([])

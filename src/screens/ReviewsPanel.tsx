@@ -416,7 +416,10 @@ export function ReviewsPanel({
               <button
                 aria-pressed={reviewView === 'kanban'}
                 className={reviewView === 'kanban' ? 'selected' : ''}
-                onClick={() => setReviewView('kanban')}
+                onClick={() => {
+                  setStatusFilter('all')
+                  setReviewView('kanban')
+                }}
                 type="button"
               >
                 <LayoutGrid size={14} aria-hidden="true" />

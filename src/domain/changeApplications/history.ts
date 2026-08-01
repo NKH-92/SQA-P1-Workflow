@@ -5,9 +5,11 @@ import type {
   ChangeApplicationHistoryFilters,
   ChangeApplicationHistoryPage,
   ChangeApplicationHistoryResult,
+  Profile,
   ProductChangeTask,
 } from '../../types'
 import { buildChangeApplicationSummary } from './completion'
+import { changeTaskWasAssignedTo } from './assigneeHistory'
 
 export const CHANGE_APPLICATION_HISTORY_SCHEMA_VERSION = 1 as const
 
@@ -56,6 +58,7 @@ export function buildLocalChangeApplicationHistoryPage(
   cursor: ChangeApplicationHistoryCursor | null = null,
   now = new Date(),
   pageSize = 50,
+  viewer?: Pick<Profile, 'id' | 'role'>,
 ): ChangeApplicationHistoryPage {
   if (!data) {
     return {
@@ -70,6 +73,16 @@ export function buildLocalChangeApplicationHistoryPage(
   const from = filters.from ? localHistoryBoundary(filters.from, false) : null
   const toExclusive = filters.to ? localHistoryBoundary(filters.to, true) : null
   const hasDateOnlyEnd = Boolean(filters.to && isDateOnly(filters.to))
+  const restrictToViewer = viewer?.role === 'member'
+  if (restrictToViewer && filters.assignee_id && filters.assignee_id !== viewer.id) {
+    return {
+      schema_version: CHANGE_APPLICATION_HISTORY_SCHEMA_VERSION,
+      snapshot_at: now.toISOString(),
+      rows: [],
+      has_more: false,
+      next_cursor: null,
+    }
+  }
   const rows = data.changeApplications.flatMap((application) => {
     const result = normalizeChangeApplicationHistoryResult(application)
     const at = historyAt(application)
@@ -78,14 +91,20 @@ export function buildLocalChangeApplicationHistoryPage(
     if (toExclusive && (hasDateOnlyEnd ? at >= toExclusive : at > toExclusive)) return []
     if (!beforeCursor(at, application.id, cursor)) return []
     const tasks = applicationTasks(data, application.id)
-    if (filters.product_id && !tasks.some((task) => task.product_id === filters.product_id)) return []
-    if (filters.assignee_id && !tasks.some((task) => task.assignee_id === filters.assignee_id)) return []
+    const accessibleTasks = restrictToViewer
+      ? tasks.filter((task) => changeTaskWasAssignedTo(task, viewer.id))
+      : tasks
+    if (restrictToViewer && accessibleTasks.length === 0) return []
+    if (filters.product_id && !accessibleTasks.some((task) => task.product_id === filters.product_id)) return []
+    if (filters.assignee_id && !accessibleTasks.some(
+      (task) => changeTaskWasAssignedTo(task, filters.assignee_id!),
+    )) return []
     if (query) {
       const haystack = [
         application.change_number,
         application.title,
         application.summary,
-        ...tasks.flatMap((task) => [task.product_name, task.assignee_name ?? '']),
+        ...accessibleTasks.flatMap((task) => [task.product_name, task.assignee_name ?? '']),
       ].join('\n').toLocaleLowerCase('ko')
       if (!haystack.includes(query)) return []
     }
@@ -94,7 +113,7 @@ export function buildLocalChangeApplicationHistoryPage(
       history_result: result,
       history_at: at,
       application_summary: buildChangeApplicationSummary(application, tasks),
-      product_tasks: tasks,
+      product_tasks: accessibleTasks,
     }]
   }).sort((left, right) => right.history_at.localeCompare(left.history_at) || right.id.localeCompare(left.id))
   const limit = Math.max(1, Math.min(pageSize, 100))

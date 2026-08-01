@@ -168,10 +168,11 @@ export async function fetchChangeApplicationHistoryPage(
   cursor: ChangeApplicationHistoryCursor | null = null,
   localData?: Parameters<typeof buildLocalChangeApplicationHistoryPage>[0],
   pageSize = CHANGE_APPLICATION_HISTORY_PAGE_SIZE,
+  localViewer?: Parameters<typeof buildLocalChangeApplicationHistoryPage>[5],
 ): Promise<ChangeApplicationHistoryPage> {
   const limit = Math.max(1, Math.min(pageSize, 100))
   if (!supabase) {
-    return buildLocalChangeApplicationHistoryPage(localData, filters, cursor, new Date(), limit)
+    return buildLocalChangeApplicationHistoryPage(localData, filters, cursor, new Date(), limit, localViewer)
   }
   const { data, error } = await supabase.rpc('list_change_application_history_v1', {
     p_result: filters.result,

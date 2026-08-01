@@ -37,6 +37,8 @@ describe('change application pure transitions', () => {
       completed_at: now,
       updated_at: now,
     })
+    expect(result.data.productChangeTasks.find((item) => item.id === fixture.task.id)?.assignee_history_ids)
+      .toEqual(expect.arrayContaining([fixture.task.assignee_id, previewLeader.id]))
     expect(result.data.changeApplications.find((item) => item.id === fixture.application.id)).toMatchObject({
       archived_at: null,
       archive_origin: null,
@@ -63,6 +65,8 @@ describe('change application pure transitions', () => {
       assignee_name: 'Explicit Member',
       updated_at: '2026-07-19T04:05:06.000Z',
     })
+    expect(result.data.productChangeTasks.find((item) => item.id === fixture.task.id)?.assignee_history_ids)
+      .toEqual(expect.arrayContaining([fixture.task.assignee_id, 'member-explicit']))
     expect(result.logFacts[0]).toMatchObject({
       actor: previewLeader,
       targetUserId: 'member-explicit',

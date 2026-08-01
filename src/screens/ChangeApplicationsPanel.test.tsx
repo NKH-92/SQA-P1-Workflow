@@ -352,6 +352,27 @@ describe('ChangeApplicationsPanel', () => {
     })
   })
 
+  it('opens a completed deep link through server history search before clearing navigation', async () => {
+    const data = completedHistoryData()
+    const onApplied = vi.fn()
+
+    render(
+      <ChangeApplicationsPanel
+        profile={previewLeader}
+        data={data}
+        mutate={vi.fn(runMutation)}
+        setData={vi.fn()}
+        initialSelectedId="change-application-01"
+        onInitialSelectionApplied={onApplied}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByRole('tab', { name: '완료 이력' })).toHaveAttribute('aria-selected', 'true'))
+    await waitFor(() => expect(screen.getByLabelText('완료 이력 검색')).toHaveValue('CC-2026-014'))
+    await waitFor(() => expect(screen.getByRole('article', { name: '완료 이력 상세' })).toHaveTextContent('예외 사유 확인 후 최종 완료'))
+    expect(onApplied).toHaveBeenCalledOnce()
+  })
+
   it('scopes member history to the signed-in assignee and hides leader filters', async () => {
     const data = completedHistoryData()
     const historySpy = vi.spyOn(dataModule, 'fetchChangeApplicationHistoryPage')

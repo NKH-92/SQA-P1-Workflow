@@ -181,10 +181,17 @@ export function ChangeApplicationsPanel({
   useEffect(() => {
     if (!initialSelectedId) return
     const summary = summaryByApplication.get(initialSelectedId)
+    const historical = summary?.workflow_status === 'completed'
+      || summary?.workflow_status === 'cancelled'
+      || summary?.workflow_status === 'legacy_completed'
+    if (historical) {
+      if (leaderMode) setLeaderTab('history')
+      else setMemberTab('history')
+      setSelectedApplicationId(initialSelectedId)
+      return
+    }
     if (leaderMode) {
-      if (summary?.workflow_status === 'completed' || summary?.workflow_status === 'cancelled' || summary?.workflow_status === 'legacy_completed') {
-        setLeaderTab('history')
-      } else if (summary?.workflow_status === 'final_review_ready') {
+      if (summary?.workflow_status === 'final_review_ready') {
         setLeaderTab('final_review')
       } else {
         setLeaderTab('active')
@@ -382,7 +389,14 @@ export function ChangeApplicationsPanel({
             </>
           )}
           <Section title={leaderMode ? '완료 이력' : '최종 완료 이력'} icon={<History size={18} />}>
-            <ChangeApplicationHistory data={data} profile={profile} fetchPage={controller.fetchHistoryPage} onUndoCompletion={leaderMode ? openHistoryUndo : undefined} />
+            <ChangeApplicationHistory
+              data={data}
+              profile={profile}
+              fetchPage={controller.fetchHistoryPage}
+              onUndoCompletion={leaderMode ? openHistoryUndo : undefined}
+              initialSelectedId={initialSelectedId}
+              onInitialSelectionApplied={onInitialSelectionApplied}
+            />
           </Section>
         </>
       ) : (

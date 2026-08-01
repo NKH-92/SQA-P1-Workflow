@@ -291,4 +291,94 @@ describe('local change application history filtering and pagination', () => {
     expect(second.rows.map((row) => row.id)).toEqual(['same-a'])
     expect(second).toMatchObject({ has_more: false, next_cursor: null })
   })
+
+  it('returns only member-accessible task details while preserving full application counts', () => {
+    const completed = application('shared', {
+      final_completed_at: '2026-07-05T00:00:00.000Z',
+      archived_at: '2026-07-05T00:00:00.000Z',
+    })
+    const ownTask = task('shared', {
+      id: 'task-own',
+      product_id: 'product-own',
+      assignee_id: 'member-own',
+      completed_by: 'member-own',
+    })
+    const otherTask = task('shared', {
+      id: 'task-other',
+      product_id: 'product-other',
+      product_name: 'Other Member Product',
+      assignee_id: 'member-other',
+      completed_by: 'member-other',
+      completion_note: '다른 담당자 전용 메모',
+    })
+
+    const page = buildLocalChangeApplicationHistoryPage(
+      historyData([completed], [ownTask, otherTask]),
+      { ...DEFAULT_FILTERS, assignee_id: 'member-own' },
+      null,
+      NOW,
+      50,
+      { id: 'member-own', role: 'member' },
+    )
+
+    expect(page.rows[0]?.product_tasks.map((item) => item.id)).toEqual(['task-own'])
+    expect(page.rows[0]?.application_summary).toMatchObject({ total_count: 2, processed_count: 2 })
+    expect(JSON.stringify(page.rows[0])).not.toContain('다른 담당자 전용 메모')
+  })
+
+  it('keeps former assignee access after local reopen and reassignment history is recorded', () => {
+    const completed = application('reassigned', {
+      final_completed_at: '2026-07-05T00:00:00.000Z',
+      archived_at: '2026-07-05T00:00:00.000Z',
+    })
+    const reassignedTask = task('reassigned', {
+      assignee_id: 'member-new',
+      completed_by: null,
+      completed_by_name: null,
+      assignee_history_ids: ['member-former', 'member-new'],
+    })
+
+    const page = buildLocalChangeApplicationHistoryPage(
+      historyData([completed], [reassignedTask]),
+      { ...DEFAULT_FILTERS, assignee_id: 'member-former' },
+      null,
+      NOW,
+      50,
+      { id: 'member-former', role: 'member' },
+    )
+
+    expect(page.rows).toHaveLength(1)
+    expect(page.rows[0]?.product_tasks).toHaveLength(1)
+  })
+
+  it('keeps every product detail for a leader filtering by a former assignee', () => {
+    const completed = application('leader-filter', {
+      final_completed_at: '2026-07-05T00:00:00.000Z',
+      archived_at: '2026-07-05T00:00:00.000Z',
+    })
+    const formerTask = task('leader-filter', {
+      id: 'task-former',
+      assignee_id: 'member-new',
+      assignee_history_ids: ['member-former'],
+    })
+    const otherTask = task('leader-filter', {
+      id: 'task-leader-other',
+      product_id: 'product-leader-other',
+      assignee_id: 'member-other',
+    })
+
+    const page = buildLocalChangeApplicationHistoryPage(
+      historyData([completed], [formerTask, otherTask]),
+      { ...DEFAULT_FILTERS, assignee_id: 'member-former' },
+      null,
+      NOW,
+      50,
+      { id: 'leader-1', role: 'leader' },
+    )
+
+    expect(page.rows[0]?.product_tasks.map((item) => item.id)).toEqual([
+      'task-former',
+      'task-leader-other',
+    ])
+  })
 })

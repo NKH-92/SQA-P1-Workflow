@@ -4,6 +4,7 @@ import { makeId } from '../../lib/format'
 import type { ProductAdminRepository, RepositoryDeps } from '../repositories/types'
 import { selectProductChangeTaskContexts } from '../selectors/changeTaskContexts'
 import { normalizeMasterReason } from '../validation/masterOcc'
+import { changeTaskAssigneeHistory } from '../../domain/changeApplications/assigneeHistory'
 import {
   appendProductAssignment,
   removeProduct,
@@ -127,6 +128,7 @@ export function createLocalProductAdminRepository(deps: RepositoryDeps): Product
           ...withRevision,
           productChangeTasks: withRevision.productChangeTasks.map((task) => transferTaskIds.has(task.id) ? {
             ...task,
+            assignee_history_ids: changeTaskAssigneeHistory(task, userId),
             assignee_id: userId,
             assignee_name: member.name,
             updated_at: now,

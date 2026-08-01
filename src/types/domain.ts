@@ -425,6 +425,8 @@ export interface ProductChangeTask {
   product_name: string
   assignee_id: string | null
   assignee_name: string | null
+  /** Local preview parity for the server's private durable assignee ledger. */
+  assignee_history_ids?: string[]
   status: ProductChangeTaskStatus
   product_note: string | null
   completion_note: string | null

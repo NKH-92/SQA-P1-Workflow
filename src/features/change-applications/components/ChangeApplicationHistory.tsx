@@ -42,6 +42,13 @@ function toFilters(form: HistoryForm, profile: Profile): ChangeApplicationHistor
   }
 }
 
+function formForInitialSelection(data: AppData, initialSelectedId?: string | null): HistoryForm {
+  const application = initialSelectedId
+    ? data.changeApplications.find((item) => item.id === initialSelectedId)
+    : null
+  return application ? { ...emptyForm, query: application.change_number } : emptyForm
+}
+
 function taskStatusLabel(row: ChangeApplicationHistoryRow['product_tasks'][number]) {
   if (row.status === 'completed') return '적용 완료'
   if (row.status === 'not_applicable') return '해당 없음'
@@ -55,6 +62,8 @@ export function ChangeApplicationHistory({
   profile,
   fetchPage,
   onUndoCompletion,
+  initialSelectedId,
+  onInitialSelectionApplied,
 }: {
   data: AppData
   profile: Profile
@@ -63,9 +72,12 @@ export function ChangeApplicationHistory({
     cursor: ChangeApplicationHistoryCursor | null,
   ) => Promise<ChangeApplicationHistoryPage>
   onUndoCompletion?: (row: ChangeApplicationHistoryRow) => void
+  initialSelectedId?: string | null
+  onInitialSelectionApplied?: () => void
 }) {
-  const [draft, setDraft] = useState<HistoryForm>(emptyForm)
-  const [filters, setFilters] = useState<ChangeApplicationHistoryFilters>(() => toFilters(emptyForm, profile))
+  const initialForm = formForInitialSelection(data, initialSelectedId)
+  const [draft, setDraft] = useState<HistoryForm>(initialForm)
+  const [filters, setFilters] = useState<ChangeApplicationHistoryFilters>(() => toFilters(initialForm, profile))
   const [rows, setRows] = useState<ChangeApplicationHistoryRow[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [cursor, setCursor] = useState<ChangeApplicationHistoryCursor | null>(null)
@@ -73,6 +85,26 @@ export function ChangeApplicationHistory({
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const requestSequence = useRef(0)
+  const requestedInitialId = useRef(initialSelectedId ?? null)
+  const pendingInitialId = useRef(initialSelectedId ?? null)
+  const onInitialSelectionAppliedRef = useRef(onInitialSelectionApplied)
+
+  useEffect(() => {
+    onInitialSelectionAppliedRef.current = onInitialSelectionApplied
+  }, [onInitialSelectionApplied])
+
+  useEffect(() => {
+    if (!initialSelectedId) {
+      requestedInitialId.current = null
+      return
+    }
+    if (requestedInitialId.current === initialSelectedId) return
+    requestedInitialId.current = initialSelectedId
+    pendingInitialId.current = initialSelectedId
+    const nextForm = formForInitialSelection(data, initialSelectedId)
+    setDraft(nextForm)
+    setFilters(toFilters(nextForm, profile))
+  }, [data, initialSelectedId, profile])
 
   useEffect(() => {
     const sequence = ++requestSequence.current
@@ -81,9 +113,16 @@ export function ChangeApplicationHistory({
     void fetchPage(filters, null)
       .then((page) => {
         if (sequence !== requestSequence.current) return
+        const targetId = pendingInitialId.current
+        const target = targetId ? page.rows.find((row) => row.id === targetId) ?? null : null
         setRows(page.rows)
         setCursor(page.next_cursor)
-        setSelectedId((current) => page.rows.some((row) => row.id === current) ? current : page.rows[0]?.id ?? null)
+        setSelectedId((current) => target?.id
+          ?? (page.rows.some((row) => row.id === current) ? current : page.rows[0]?.id ?? null))
+        if (targetId) {
+          pendingInitialId.current = null
+          onInitialSelectionAppliedRef.current?.()
+        }
       })
       .catch(() => {
         if (sequence !== requestSequence.current) return

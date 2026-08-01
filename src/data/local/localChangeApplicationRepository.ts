@@ -24,6 +24,7 @@ import {
   type ChangeTransitionResult,
 } from '../../domain/changeApplications/transitions'
 import { buildChangeApplicationSummary } from '../../domain/changeApplications/completion'
+import { changeTaskAssigneeHistory } from '../../domain/changeApplications/assigneeHistory'
 
 function assertActive(profile: RepositoryDeps['profile']) {
   if (profile.is_active === false || profile.must_change_password === true) {
@@ -198,6 +199,7 @@ function saveLocalData(
     const product = productSnapshot(data, task.product_id)
     return {
       ...task,
+      assignee_history_ids: changeTaskAssigneeHistory(task, draft.assignee_id),
       product_name: product.name,
       assignee_id: draft.assignee_id,
       assignee_name: assigneeName(data, draft.assignee_id),
@@ -223,6 +225,7 @@ function saveLocalData(
       product_name: product.name,
       assignee_id: draft.assignee_id,
       assignee_name: assigneeName(data, draft.assignee_id),
+      assignee_history_ids: draft.assignee_id ? [draft.assignee_id] : [],
       status: 'pending',
       product_note: draft.product_note ?? null,
       completion_note: null,
@@ -585,6 +588,7 @@ export function createLocalChangeApplicationRepository(
             const assignee = data.profiles.find((item) => item.id === assigneeId)!
             return {
               ...task,
+              assignee_history_ids: changeTaskAssigneeHistory(task, assigneeId),
               status: 'pending',
               assignee_id: assigneeId,
               assignee_name: assignee.name,

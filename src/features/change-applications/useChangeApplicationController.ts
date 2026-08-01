@@ -28,8 +28,8 @@ export function useChangeApplicationController(
   )
   const fetchHistoryPage = useCallback(
     (filters: Parameters<typeof fetchChangeApplicationHistoryPage>[0], cursor: Parameters<typeof fetchChangeApplicationHistoryPage>[1]) =>
-      fetchChangeApplicationHistoryPage(filters, cursor, data),
-    [data],
+      fetchChangeApplicationHistoryPage(filters, cursor, data, undefined, profile),
+    [data, profile],
   )
 
   return {

@@ -5,6 +5,7 @@ import type {
   ProductChangeTask,
   Profile,
 } from '../../types'
+import { changeTaskAssigneeHistory } from './assigneeHistory'
 export type ChangeTransitionResult = {
   data: AppData
   logFacts: ActivityLogInput[]
@@ -56,6 +57,7 @@ export function resolveProductTaskTransition(
     })),
     productChangeTasks: updateTask(data, task.id, (item) => ({
       ...item,
+      assignee_history_ids: changeTaskAssigneeHistory(item, actor.id),
       status: input.status,
       completion_note: input.completionNote,
       resolution_reason: input.resolutionReason,
@@ -105,6 +107,7 @@ export function reopenProductTaskTransition(
     })),
     productChangeTasks: updateTask(data, task.id, (item) => ({
       ...item,
+      assignee_history_ids: changeTaskAssigneeHistory(item),
       status: 'pending',
       completion_note: null,
       resolution_reason: null,
@@ -156,6 +159,7 @@ export function reassignProductTasksTransition(input: {
       ...input.data,
       productChangeTasks: input.data.productChangeTasks.map((item) => taskIds.has(item.id) ? {
         ...item,
+        assignee_history_ids: changeTaskAssigneeHistory(item, input.assigneeId),
         assignee_id: input.assigneeId,
         assignee_name: input.assigneeName,
         updated_at: input.now,

@@ -14,6 +14,14 @@ export type ProjectStatus = 'planned' | 'in_progress' | 'done'
 export type ProductCategory = '자사' | '위탁'
 export type ChangeApplicationSource = 'official' | 'internal' | 'other'
 export type ChangeApplicationStatus = 'draft' | 'published' | 'cancelled'
+export type ChangeApplicationWorkflowStatus =
+  | 'draft'
+  | 'in_progress'
+  | 'final_review_ready'
+  | 'completed'
+  | 'cancelled'
+  | 'legacy_completed'
+export type ChangeApplicationHistoryResult = 'completed' | 'cancelled' | 'legacy_auto' | 'legacy_manual'
 export type ChangeActionKind = 'product_standard' | 'other'
 export type ProductChangeTaskStatus = 'pending' | 'completed' | 'not_applicable' | 'cancelled'
 export type ActivityEntityType =
@@ -279,6 +287,57 @@ export type ChangeBootstrapV2Data = {
 
 export type ChangeBootstrapV2Envelope = BootstrapEnvelope<ChangeBootstrapV2Data>
 
+export type ChangeApplicationSummary = {
+  change_application_id: string
+  workflow_status: ChangeApplicationWorkflowStatus
+  total_count: number
+  pending_count: number
+  completed_count: number
+  not_applicable_count: number
+  scope_removed_count: number
+  unresolved_cancelled_count: number
+  unassigned_count: number
+  processed_count: number
+  percent: number
+  can_finalize: boolean
+}
+
+/** public.get_change_bootstrap_v3 payload. */
+export type ChangeBootstrapV3Data = ChangeBootstrapV2Data & {
+  application_summaries: ChangeApplicationSummary[]
+}
+
+export type ChangeBootstrapV3Envelope = BootstrapEnvelope<ChangeBootstrapV3Data>
+
+export type ChangeApplicationHistoryFilters = {
+  result: ChangeApplicationHistoryResult | null
+  query: string
+  from: string | null
+  to: string | null
+  product_id: string | null
+  assignee_id: string | null
+}
+
+export type ChangeApplicationHistoryCursor = {
+  history_at: string
+  id: string
+}
+
+export interface ChangeApplicationHistoryRow extends ChangeApplication {
+  history_result: ChangeApplicationHistoryResult
+  history_at: string
+  application_summary: ChangeApplicationSummary
+  product_tasks: ProductChangeTask[]
+}
+
+export type ChangeApplicationHistoryPage = {
+  schema_version: 1
+  snapshot_at: string
+  rows: ChangeApplicationHistoryRow[]
+  has_more: boolean
+  next_cursor: ChangeApplicationHistoryCursor | null
+}
+
 export interface Project {
   id: string
   name: string
@@ -334,6 +393,10 @@ export interface ChangeApplication {
   archived_by?: string | null
   archive_reason?: string | null
   archive_origin?: 'manual' | 'automatic' | 'migration' | 'legacy_system' | null
+  final_completed_at?: string | null
+  final_completed_by?: string | null
+  final_completed_by_name?: string | null
+  final_completion_note?: string | null
   created_by: string
   published_at: string | null
   cancelled_at: string | null
@@ -362,6 +425,8 @@ export interface ProductChangeTask {
   product_name: string
   assignee_id: string | null
   assignee_name: string | null
+  /** Local preview parity for the server's private durable assignee ledger. */
+  assignee_history_ids?: string[]
   status: ProductChangeTaskStatus
   product_note: string | null
   completion_note: string | null

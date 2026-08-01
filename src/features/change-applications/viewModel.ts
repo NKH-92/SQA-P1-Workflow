@@ -3,12 +3,17 @@ import type {
   AppData,
   ChangeActionKind,
   ChangeApplication,
+  ChangeApplicationHistoryResult,
+  ChangeApplicationSummary,
+  ChangeApplicationWorkflowStatus,
   ProductChangeTask,
   ProductChangeTaskStatus,
 } from '../../types'
 import type { ProductChangeTaskContext } from './selectors'
 
 export type ChangeApplicationViewMode = 'change' | 'product' | 'assignee'
+export type LeaderChangeApplicationTab = 'active' | 'final_review' | 'history'
+export type MemberChangeApplicationTab = 'pending' | 'history'
 export type ChangeTaskStatusFilter = 'all' | ProductChangeTaskStatus
 export type ChangeApplicationStatusFilter = 'all' | 'draft' | 'published' | 'cancelled'
 export type ChangeApplicationArchiveFilter = 'active' | 'archived' | 'all'
@@ -22,6 +27,34 @@ export type ChangeApplicationFilters = {
   actionKind: ChangeActionKindFilter
   attention: ChangeAttentionFilter
   query: string
+}
+
+export function changeApplicationWorkflowLabel(status: ChangeApplicationWorkflowStatus) {
+  if (status === 'draft') return '초안'
+  if (status === 'in_progress') return '진행 중'
+  if (status === 'final_review_ready') return '최종 확인 대기'
+  if (status === 'completed') return '변경 완료'
+  if (status === 'cancelled') return '취소'
+  return '기존 완료'
+}
+
+export function changeApplicationHistoryResultLabel(result: ChangeApplicationHistoryResult) {
+  if (result === 'completed') return '변경 완료'
+  if (result === 'cancelled') return '취소'
+  if (result === 'legacy_auto') return '기존 자동 완료'
+  return '기존 보관'
+}
+
+export function filterApplicationsByLeaderTab(
+  applications: ChangeApplication[],
+  summaries: ReadonlyMap<string, ChangeApplicationSummary>,
+  tab: Exclude<LeaderChangeApplicationTab, 'history'>,
+) {
+  return applications.filter((application) => {
+    const workflow = summaries.get(application.id)?.workflow_status
+    if (tab === 'final_review') return workflow === 'final_review_ready'
+    return workflow === 'draft' || workflow === 'in_progress'
+  })
 }
 
 export function changeApplicationActionItemKey(data: AppData, applicationId: string) {

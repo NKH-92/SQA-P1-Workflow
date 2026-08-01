@@ -8,9 +8,11 @@ import type {
 export type ChangeApplicationFeatureData = Pick<
   AppData,
   | 'changeApplications'
+  | 'changeApplicationSummaries'
   | 'changeActionItems'
   | 'productChangeTasks'
   | 'changeProductScope'
+  | 'changeAssigneeOptions'
   | 'products'
   | 'productAssignments'
   | 'profiles'

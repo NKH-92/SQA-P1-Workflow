@@ -18,8 +18,10 @@ import {
 } from '../features/dashboard/dashboardModels'
 import { useLeaderReviewOverview } from '../features/dashboard/useLeaderReviewOverview'
 import { useTeamSummaries } from '../hooks/useTeamSummaries'
-import { selectProductChangeTaskContexts } from '../features/change-applications/selectors'
-import { hasFullyAppliedArchiveSignal } from '../domain/changeApplications/completion'
+import {
+  selectChangeApplicationSummary,
+  selectProductChangeTaskContexts,
+} from '../features/change-applications/selectors'
 import {
   CalendarClock,
   CheckCircle2,
@@ -54,14 +56,17 @@ export function LeaderDashboard({
   const teamAllocations = buildTeamAllocations(data, teamMembers)
   const reviewOverview = useLeaderReviewOverview(data)
   const pendingChangeContexts = selectProductChangeTaskContexts(data).filter(
-    ({ task, application }) => application.status === 'published' && task.status === 'pending',
+    ({ task, application }) => application.status === 'published'
+      && !application.final_completed_at
+      && !application.archived_at
+      && task.status === 'pending',
   )
   const riskyChangeCount = pendingChangeContexts.filter(
     ({ task, actionItem }) => !task.assignee_id || (daysUntil(actionItem.due_date) ?? 0) < 0,
   ).length
-  const fullyAppliedChangeCount = data.changeApplications.filter(
-    (application) => application.status === 'published' && hasFullyAppliedArchiveSignal(application),
-  ).length
+  const finalReviewApplications = data.changeApplications.filter(
+    (application) => selectChangeApplicationSummary(data, application.id)?.workflow_status === 'final_review_ready',
+  )
 
   const visibleQueue = showAllPriorities ? priorityQueue : priorityQueue.slice(0, PRIORITY_PREVIEW_COUNT)
   const hiddenPriorityCount = priorityQueue.length - visibleQueue.length
@@ -147,7 +152,7 @@ export function LeaderDashboard({
           { label: '마감 임박 프로젝트', value: dueSoonProjectCount, unit: '건', note: '7일 이내 마감', icon: <CalendarClock size={16} aria-hidden="true" />, tone: dueSoonProjectCount > 0 ? 'warning' : undefined, onOpen: () => setActiveTab('projects') },
           { label: '미배정 제품', value: unassignedProducts.length, unit: '개', note: '담당자 지정 필요', icon: <Package size={16} aria-hidden="true" />, tone: unassignedProducts.length > 0 ? 'warning' : undefined, onOpen: () => setActiveTab('products') },
           { label: '미적용 변경업무', value: pendingChangeContexts.length, unit: '건', note: `미지정·기한 초과 ${riskyChangeCount}건`, icon: <ClipboardPenLine size={16} aria-hidden="true" />, tone: riskyChangeCount > 0 ? 'warning' : undefined, onOpen: () => setActiveTab('change-applications') },
-          { label: '완료된 변경', value: fullyAppliedChangeCount, unit: '건', note: '모든 제품 적용 완료', icon: <CheckCircle2 size={16} aria-hidden="true" />, tone: fullyAppliedChangeCount > 0 ? 'success' : undefined, onOpen: () => setActiveTab('change-applications') },
+          { label: '최종 확인 대기', value: finalReviewApplications.length, unit: '건', note: '제품 처리 완료 · 파트장 확인 필요', icon: <CheckCircle2 size={16} aria-hidden="true" />, tone: finalReviewApplications.length > 0 ? 'success' : undefined, onOpen: () => setActiveTab('change-applications', finalReviewApplications[0]?.id) },
         ]}
       />
 

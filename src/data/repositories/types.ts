@@ -13,7 +13,9 @@ import type {
   AnnouncementPayload,
   AuditedDeleteInput,
   ChangeApplicationInput,
+  FinalizeChangeApplicationInput,
   ProjectInput,
+  UndoFinalizeChangeApplicationInput,
   ReviewRequestPayload,
 } from '../contracts'
 import type { AppDataUpdater } from './appDataUpdater'
@@ -199,11 +201,16 @@ export type ChangeApplicationRepository = {
   completeProductTask(taskId: string, completionNote: string, proxyReason: string): Promise<void>
   markProductTaskNotApplicable(taskId: string, reason: string, proxyReason: string): Promise<void>
   reopenProductTask(taskId: string, reason: string): Promise<void>
-  reassignProductTasks(taskIds: string[], assigneeId: string | null, reason: string): Promise<void>
+  reassignProductTasks(taskIds: string[], assigneeId: string, reason: string): Promise<void>
+  removeProductChangeScope(taskId: string, reason: string): Promise<void>
   cancelProductTask(taskId: string, reason: string): Promise<void>
   restoreProductChangeScope(taskId: string, reason: string): Promise<void>
   cancelChangeApplication(changeApplicationId: string, reason: string): Promise<void>
+  finalizeChangeApplication(input: FinalizeChangeApplicationInput): Promise<void>
+  undoFinalizeChangeApplication(input: UndoFinalizeChangeApplicationInput): Promise<void>
+  /** @deprecated Compatibility path until all UI callers use finalizeChangeApplication. */
   archiveChangeApplication(changeApplicationId: string, reason: string): Promise<void>
+  /** @deprecated Compatibility path for legacy archived records only. */
   restoreChangeApplication(changeApplicationId: string, reason: string): Promise<void>
 }
 

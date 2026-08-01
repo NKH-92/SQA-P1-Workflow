@@ -4,6 +4,7 @@ begin
   if not ((exists (select 1 from supabase_migrations.schema_migrations where version = '202607170001')
               and exists (select 1 from supabase_migrations.schema_migrations where version = '20260717123840')
               and exists (select 1 from supabase_migrations.schema_migrations where version = '20260722120452')
+              and exists (select 1 from supabase_migrations.schema_migrations where version = '20260731230646')
               and to_regclass('public.change_applications') is not null
               and to_regclass('public.change_action_items') is not null
               and to_regclass('public.product_change_tasks') is not null
@@ -67,20 +68,14 @@ begin
               and coalesce(pg_get_functiondef(to_regprocedure('private.persist_change_application(uuid,timestamp with time zone,text,public.change_application_source,text,text,text,date,public.change_action_kind,text,text,date,jsonb,boolean)')) like '%p_expected_updated_at is null%', false)
               and coalesce(pg_get_functiondef(to_regprocedure('private.persist_change_application(uuid,timestamp with time zone,text,public.change_application_source,text,text,text,date,public.change_action_kind,text,text,date,jsonb,boolean)')) like '%v_application.updated_at is distinct from p_expected_updated_at%', false)
               and coalesce(pg_get_functiondef(to_regprocedure('private.persist_change_application(uuid,timestamp with time zone,text,public.change_application_source,text,text,text,date,public.change_action_kind,text,text,date,jsonb,boolean)')) like '%change application was modified by another user%', false)
-              and to_regprocedure('private.sync_change_application_archive()') is not null
-              and coalesce((select prosecdef from pg_proc where oid = to_regprocedure('private.sync_change_application_archive()')), false)
-              and coalesce((select exists (select 1 from unnest(proconfig) cfg where cfg in ('search_path=' || chr(34) || chr(34), 'search_path=')) from pg_proc where oid = to_regprocedure('private.sync_change_application_archive()')), false)
-              and not coalesce(has_function_privilege('authenticated', to_regprocedure('private.sync_change_application_archive()'), 'EXECUTE'), true)
-              and not coalesce(has_function_privilege('anon', to_regprocedure('private.sync_change_application_archive()'), 'EXECUTE'), true)
-              and coalesce(pg_get_functiondef(to_regprocedure('private.sync_change_application_archive()')) like '%new.status in (''completed'', ''not_applicable'')%', false)
-              and coalesce(pg_get_functiondef(to_regprocedure('private.sync_change_application_archive()')) like '%new.status = ''pending''%', false)
-              and coalesce(pg_get_functiondef(to_regprocedure('private.sync_change_application_archive()')) like '%모든 제품 적용이 완료되어 자동 보관됨%', false)
-              and coalesce(pg_get_functiondef(to_regprocedure('private.sync_change_application_archive()')) like '%completion_kind%', false)
-              and coalesce(pg_get_functiondef(to_regprocedure('private.enforce_archive_origin()')) like '%모든 제품 적용이 완료되어 자동 보관됨%', false)
+              and to_regprocedure('private.sync_change_application_archive()') is null
+              and coalesce(pg_get_functiondef(to_regprocedure('private.enforce_archive_origin()')) like '%new.final_completed_at is not null%', false)
+              and coalesce(pg_get_functiondef(to_regprocedure('public.complete_change_application(uuid,timestamp with time zone,text)')) like '%final completion note is required for exceptions%', false)
+              and coalesce(pg_get_functiondef(to_regprocedure('public.undo_change_application_completion(uuid,timestamp with time zone,text,jsonb)')) like '%reopen tasks are required%', false)
               and exists (select 1 from pg_trigger where tgrelid = to_regclass('public.change_applications') and tgname = 'change_applications_private_audit' and tgfoid = to_regprocedure('private.record_mutation_audit()') and tgenabled in ('O', 'A'))
               and exists (select 1 from pg_trigger where tgrelid = to_regclass('public.change_action_items') and tgname = 'change_action_items_private_audit' and tgfoid = to_regprocedure('private.record_mutation_audit()') and tgenabled in ('O', 'A'))
               and exists (select 1 from pg_trigger where tgrelid = to_regclass('public.product_change_tasks') and tgname = 'product_change_tasks_private_audit' and tgfoid = to_regprocedure('private.record_mutation_audit()') and tgenabled in ('O', 'A'))
-              and exists (select 1 from pg_trigger where tgrelid = to_regclass('public.product_change_tasks') and tgname = 'product_change_tasks_sync_application_archive' and tgfoid = to_regprocedure('private.sync_change_application_archive()') and tgenabled in ('O', 'A'))) = true) then
+              and not exists (select 1 from pg_trigger where tgrelid = to_regclass('public.product_change_tasks') and tgname = 'product_change_tasks_sync_application_archive' and not tgisinternal and tgenabled in ('O', 'A'))) = true) then
     raise exception 'SQA_DB_READY_CHANGE_APPLICATIONS_GATE';
   end if;
 end

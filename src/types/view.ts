@@ -4,6 +4,7 @@ import type {
   Announcement,
   ChangeActionItem,
   ChangeApplication,
+  ChangeApplicationSummary,
   ChangeAssigneeOption,
   ChangeProductScopeRow,
   Duty,
@@ -25,6 +26,7 @@ import type {
 export interface AppData {
   announcements: Announcement[]
   changeApplications: ChangeApplication[]
+  changeApplicationSummaries?: ChangeApplicationSummary[]
   changeActionItems: ChangeActionItem[]
   productChangeTasks: ProductChangeTask[]
   changeProductScope: ChangeProductScopeRow[]

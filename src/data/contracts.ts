@@ -50,3 +50,21 @@ export type ChangeApplicationInput = {
   due_date: string
   tasks: ChangeTaskDraft[]
 }
+
+export type ReopenFinalizedTaskInput = {
+  task_id: string
+  assignee_id: string
+}
+
+export type FinalizeChangeApplicationInput = {
+  changeApplicationId: string
+  expected_updated_at: string
+  note: string
+}
+
+export type UndoFinalizeChangeApplicationInput = {
+  changeApplicationId: string
+  expected_updated_at: string
+  reason: string
+  reopen_tasks: ReopenFinalizedTaskInput[]
+}

@@ -1,42 +1,38 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from 'react'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { canManageTeamData } from '../domain/permissions'
 import type { AppData, Profile } from '../types'
 import type { MutateFn, TabId } from './types'
 
-const ActivityPanel = lazy(() =>
-  import('../screens/ActivityPanel').then((module) => ({ default: module.ActivityPanel })),
-)
-const AnnouncementsPanel = lazy(() =>
-  import('../screens/AnnouncementsPanel').then((module) => ({ default: module.AnnouncementsPanel })),
-)
-const ChangeApplicationsPanel = lazy(() =>
-  import('../screens/ChangeApplicationsPanel').then((module) => ({ default: module.ChangeApplicationsPanel })),
-)
-const Dashboard = lazy(() =>
-  import('../screens/Dashboard').then((module) => ({ default: module.Dashboard })),
-)
-const LeaderDashboard = lazy(() =>
-  import('../screens/LeaderDashboard').then((module) => ({ default: module.LeaderDashboard })),
-)
-const MasterPanel = lazy(() =>
-  import('../screens/MasterPanel').then((module) => ({ default: module.MasterPanel })),
-)
-const MyWorkPanel = lazy(() =>
-  import('../screens/MyWorkPanel').then((module) => ({ default: module.MyWorkPanel })),
-)
-const ProjectsPanel = lazy(() =>
-  import('../screens/ProjectsPanel').then((module) => ({ default: module.ProjectsPanel })),
-)
-const ReviewStatsPanel = lazy(() =>
-  import('../screens/ReviewStatsPanel').then((module) => ({ default: module.ReviewStatsPanel })),
-)
-const ReviewsPanel = lazy(() =>
-  import('../screens/ReviewsPanel').then((module) => ({ default: module.ReviewsPanel })),
-)
-const TeamPanel = lazy(() =>
-  import('../screens/TeamPanel').then((module) => ({ default: module.TeamPanel })),
-)
+const loadLeaderAdminPanels = () => import('../screens/LeaderAdminPanels')
+const loadReviewPanels = () => import('../screens/ReviewPanels')
+const loadDashboardPanels = () => import('../screens/DashboardPanels')
+
+type NamedComponent<TModule, TName extends keyof TModule> = TModule[TName] extends ComponentType<infer TProps>
+  ? ComponentType<TProps>
+  : never
+
+function lazyNamed<TModule, TName extends keyof TModule>(
+  load: () => Promise<TModule>,
+  name: TName,
+) {
+  const component = lazy(() => load().then((module) => ({
+    default: module[name] as unknown as ComponentType<unknown>,
+  })))
+  return component as unknown as LazyExoticComponent<NamedComponent<TModule, TName>>
+}
+
+const ActivityPanel = lazyNamed(loadLeaderAdminPanels, 'ActivityPanel')
+const AnnouncementsPanel = lazyNamed(() => import('../screens/AnnouncementsPanel'), 'AnnouncementsPanel')
+const ChangeApplicationsPanel = lazyNamed(() => import('../screens/ChangeApplicationsPanel'), 'ChangeApplicationsPanel')
+const Dashboard = lazyNamed(loadDashboardPanels, 'Dashboard')
+const LeaderDashboard = lazyNamed(loadDashboardPanels, 'LeaderDashboard')
+const MasterPanel = lazyNamed(loadLeaderAdminPanels, 'MasterPanel')
+const MyWorkPanel = lazyNamed(() => import('../screens/MyWorkPanel'), 'MyWorkPanel')
+const ProjectsPanel = lazyNamed(() => import('../screens/ProjectsPanel'), 'ProjectsPanel')
+const ReviewStatsPanel = lazyNamed(loadReviewPanels, 'ReviewStatsPanel')
+const ReviewsPanel = lazyNamed(loadReviewPanels, 'ReviewsPanel')
+const TeamPanel = lazyNamed(loadLeaderAdminPanels, 'TeamPanel')
 
 type AppRoutesProps = {
   activeTab: TabId

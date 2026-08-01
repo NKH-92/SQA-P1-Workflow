@@ -82,7 +82,9 @@ test('06 member can complete an assigned change task', async ({ page }) => {
   const dialog = page.getByRole('dialog', { name: '실제로 적용을 완료했습니까?' })
   await dialog.getByPlaceholder('예: 제품표준서 Rev.12 반영').fill('E2E 완료 증빙')
   await dialog.getByRole('button', { name: '완료 확인' }).click()
-  await expect(page.getByText(/적용업무를 완료했습니다/)).toBeVisible()
+  await expect(page.getByText('자사제품 B 적용을 완료했습니다.')).toBeVisible()
+  await expect(page.getByRole('tab', { name: '처리 이력' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByText('E2E 완료 증빙')).toBeVisible()
 })
 
 test('07 deep links select the intended major workspaces', async ({ page }) => {
@@ -149,6 +151,8 @@ test('11 review stats requester filter keeps KPIs and the exact table aligned', 
 
 test('12 a11y: closing a conditionally-unmounted modal returns focus to its trigger', async ({ page }) => {
   await page.goto('/#/change-applications')
+  await page.getByRole('button', { name: '파트원', exact: true }).click()
+  await page.getByRole('button', { name: /^변경 적용/ }).click()
   const trigger = page.getByRole('button', { name: '적용 완료' }).first()
   await trigger.focus()
   await trigger.click()
@@ -167,30 +171,42 @@ test('12 a11y: closing a conditionally-unmounted modal returns focus to its trig
   await expect(trigger).toBeFocused()
 })
 
-test('13 leader sees a durable completed-change signal only after every product is applied', async ({ page }) => {
+test('13 leader finalizes a common change only after every assignee has processed their products', async ({ page }) => {
   await page.goto('/#/change-applications')
 
-  const exceptionRow = page.locator('.change-task-row').filter({ hasText: '자사제품 C' })
-  await exceptionRow.getByRole('button', { name: '재개' }).click()
-  let dialog = page.getByRole('dialog', { name: '완료 처리를 다시 열까요?' })
-  await dialog.getByPlaceholder('처리 사유를 입력해 주세요.').fill('전 제품 실제 적용 완료 E2E')
-  await dialog.getByRole('button', { name: '다시 열기' }).click()
-
-  for (let index = 0; index < 4; index += 1) {
-    await page.getByRole('button', { name: '적용 완료', exact: true }).first().click()
-    dialog = page.getByRole('dialog', { name: '실제로 적용을 완료했습니까?' })
-    await dialog.getByPlaceholder('예: 제품표준서 Rev.12 반영').fill(`E2E 제품 반영 ${index + 1}`)
-    const proxyReason = dialog.getByPlaceholder('파트장이 담당자 대신 처리하는 사유')
-    if (await proxyReason.count()) await proxyReason.fill('전 제품 완료 신호 E2E')
-    await dialog.getByRole('button', { name: '완료 확인' }).click()
+  for (const productName of ['위탁제품 D', '위탁제품 E']) {
+    await page.getByRole('button', { name: `${productName} 담당자 변경` }).click()
+    const reassignDialog = page.getByRole('dialog', { name: '적용 책임자를 변경합니다' })
+    await reassignDialog.getByRole('combobox', { name: '새 적용 책임자' }).selectOption({ label: '파트원 A' })
+    await reassignDialog.getByLabel('재배정 사유').fill('공통변경 완료 점검 E2E')
+    await reassignDialog.getByRole('button', { name: '담당자 변경' }).click()
+    await expect(page.getByText(`${productName} 책임자를 변경했습니다.`)).toBeVisible()
   }
 
-  await expect(page.getByRole('button', { name: '완료된 변경 1건' })).toBeVisible()
-  await expect(page.getByText('1건의 변경이 모든 제품에서 적용 완료되었습니다.')).toBeVisible()
-  await page.getByRole('button', { name: '완료 변경 보기' }).click()
-  await expect(page.getByRole('combobox', { name: '보관 상태' })).toHaveValue('all')
-  await expect(page.getByText('모든 제품 담당자의 적용 완료 처리가 끝났습니다.')).toBeVisible()
-  await expect(page.getByText('보관 사유: 모든 제품 적용이 완료되어 자동 보관됨')).toBeVisible()
+  await page.getByRole('button', { name: '파트원', exact: true }).click()
+  await page.getByRole('button', { name: /^변경 적용/ }).click()
+  for (const productName of ['자사제품 B', '위탁제품 D', '위탁제품 E']) {
+    await page.getByRole('tab', { name: /^내 미적용/ }).click()
+    const task = page.locator('.change-task-row').filter({ hasText: productName })
+    await task.getByRole('button', { name: '적용 완료' }).click()
+    const completeDialog = page.getByRole('dialog', { name: '실제로 적용을 완료했습니까?' })
+    await completeDialog.getByPlaceholder('예: 제품표준서 Rev.12 반영').fill(`${productName} E2E 반영`)
+    await completeDialog.getByRole('button', { name: '완료 확인' }).click()
+    await expect(page.getByText(`${productName} 적용을 완료했습니다.`)).toBeVisible()
+  }
+
+  await page.getByRole('button', { name: '파트장', exact: true }).click()
+  await page.getByRole('button', { name: /^변경 적용/ }).click()
+  await page.getByRole('tab', { name: /^최종 확인 대기/ }).click()
+  await expect(page.getByText('모든 제품 처리가 끝났습니다. 예외 사유를 확인하고 변경을 완료하세요.')).toBeVisible()
+  await page.getByRole('button', { name: '변경 완료', exact: true }).click()
+  const finalizationDialog = page.getByRole('dialog', { name: '공통변경을 최종 완료할까요?' })
+  await finalizationDialog.getByLabel('최종 확인 메모').fill('해당 없음 사유와 전 제품 처리 결과 확인')
+  await finalizationDialog.getByRole('button', { name: '변경 완료' }).click()
+
+  await expect(page.getByText('CC-2026-014 공통변경을 완료했습니다.')).toBeVisible()
+  await expect(page.getByRole('tab', { name: '완료 이력' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByText('해당 없음 사유와 전 제품 처리 결과 확인')).toBeVisible()
 })
 
 test('14 visual invariants keep active counts distinct and native controls usable', async ({ page }) => {

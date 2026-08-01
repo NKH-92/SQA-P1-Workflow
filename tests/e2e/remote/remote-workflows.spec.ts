@@ -251,7 +251,7 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
       p_proxy_reason: null,
     })
     expect(denied.error).not.toBeNull()
-    expect(denied.error!.message).toContain('permission denied')
+    expect(denied.error!.message).toContain('designated active assignee required')
     const afterDeniedAttempt = await admin
       .from('product_change_tasks')
       .select('status, updated_at')
@@ -301,7 +301,10 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
     const originalName = snapshot.data!.name
 
     // Open edit first so the UI captures the stale expectedUpdatedAt, then advance revision.
-    await (await requireVisible(page.getByTitle('제품 수정').first(), 'product edit')).click()
+    const productCard = page.locator('article.master-card').filter({
+      has: page.getByRole('heading', { name: originalName, exact: true }),
+    })
+    await (await requireVisible(productCard.getByTitle('제품 수정'), 'product edit')).click()
     const nameInput = page.getByRole('textbox', { name: '제품명', exact: true })
     await expect(nameInput).toHaveValue(originalName)
     await nameInput.fill(`${originalName}-stale-ui`)

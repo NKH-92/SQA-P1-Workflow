@@ -13,17 +13,13 @@ const MAX_INITIAL_GZIP_BYTES = 142 * 1024
 // intentional all-routes cost without changing the initial navigation budget.
 const MAX_TOTAL_GZIP_BYTES = 213 * 1024
 const EXPECTED_ROUTE_DYNAMIC_IMPORTS = new Set([
-  'src/screens/ActivityPanel.tsx',
   'src/screens/AnnouncementsPanel.tsx',
   'src/screens/ChangeApplicationsPanel.tsx',
-  'src/screens/Dashboard.tsx',
-  'src/screens/LeaderDashboard.tsx',
-  'src/screens/MasterPanel.tsx',
+  'src/screens/DashboardPanels.ts',
   'src/screens/MyWorkPanel.tsx',
   'src/screens/ProjectsPanel.tsx',
-  'src/screens/ReviewStatsPanel.tsx',
-  'src/screens/ReviewsPanel.tsx',
-  'src/screens/TeamPanel.tsx',
+  'src/screens/LeaderAdminPanels.ts',
+  'src/screens/ReviewPanels.ts',
 ])
 
 const names = (await readdir(assetsDir)).filter((name) => name.endsWith('.js'))

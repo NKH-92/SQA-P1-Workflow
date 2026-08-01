@@ -5,7 +5,7 @@ import type { AppData } from '../../types'
 import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
 
 const mocks = vi.hoisted(() => ({
-  rpc: vi.fn(async (): Promise<{ data: unknown; error: { message: string } | null }> => ({
+  rpc: vi.fn(async (): Promise<{ data: unknown; error: { message: string; details?: string } | null }> => ({
     data: 'change-application-new',
     error: null,
   })),
@@ -16,7 +16,15 @@ vi.mock('../../lib/supabase', () => ({
   supabase: { rpc: mocks.rpc },
 }))
 
-import { archiveChangeApplication, restoreChangeApplication, saveChangeApplication } from './changeApplications'
+import {
+  archiveChangeApplication,
+  finalizeChangeApplication,
+  removeProductChangeScope,
+  restoreChangeApplication,
+  saveChangeApplication,
+  undoFinalizeChangeApplication,
+} from './changeApplications'
+import { CHANGE_APPLICATION_STALE_MESSAGE } from '../validation/changeApplications'
 
 function remoteContext(data = createPreviewData()): RepositoryContext {
   return createRepositoryContextFromDeps('remote', {    profile: previewLeader,
@@ -126,5 +134,84 @@ describe('change application mutation contracts (remote)', () => {
       p_change_application_id: 'application-1',
       p_reason: '추가 반영 필요',
     })
+  })
+
+  it('uses the dedicated scope-removal RPC instead of task cancellation', async () => {
+    const ctx = remoteContext()
+
+    await removeProductChangeScope(ctx, 'task-1', '  제품이 적용 대상에서 제외됨  ')
+
+    expect(mocks.rpc).toHaveBeenCalledTimes(1)
+    expect(mocks.rpc).toHaveBeenCalledWith('remove_product_from_change_scope', {
+      p_task_id: 'task-1',
+      p_reason: '제품이 적용 대상에서 제외됨',
+    })
+  })
+
+  it('passes the exact final-completion RPC arguments including the OCC revision', async () => {
+    const ctx = remoteContext()
+
+    await finalizeChangeApplication(ctx, {
+      changeApplicationId: 'application-1',
+      expected_updated_at: '2026-08-01T01:02:03.000Z',
+      note: '  exception evidence reviewed  ',
+    })
+
+    expect(mocks.rpc).toHaveBeenCalledTimes(1)
+    expect(mocks.rpc).toHaveBeenCalledWith('complete_change_application', {
+      p_change_application_id: 'application-1',
+      p_expected_updated_at: '2026-08-01T01:02:03.000Z',
+      p_note: 'exception evidence reviewed',
+    })
+  })
+
+  it('passes the exact completion-undo RPC arguments including selected assignees', async () => {
+    const ctx = remoteContext()
+
+    await undoFinalizeChangeApplication(ctx, {
+      changeApplicationId: 'application-1',
+      expected_updated_at: '2026-08-02T01:02:03.000Z',
+      reason: '  additional application required  ',
+      reopen_tasks: [
+        { task_id: 'task-1', assignee_id: 'member-1' },
+        { task_id: 'task-2', assignee_id: 'member-2' },
+      ],
+    })
+
+    expect(mocks.rpc).toHaveBeenCalledTimes(1)
+    expect(mocks.rpc).toHaveBeenCalledWith('undo_change_application_completion', {
+      p_change_application_id: 'application-1',
+      p_expected_updated_at: '2026-08-02T01:02:03.000Z',
+      p_reason: 'additional application required',
+      p_reopen_tasks: [
+        { task_id: 'task-1', assignee_id: 'member-1' },
+        { task_id: 'task-2', assignee_id: 'member-2' },
+      ],
+    })
+  })
+
+  it('maps final-completion and undo OCC failures to the shared conflict message', async () => {
+    const ctx = remoteContext()
+    mocks.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'request rejected', details: 'SQA_CHANGE_APPLICATION_CONFLICT' },
+    })
+
+    await expect(finalizeChangeApplication(ctx, {
+      changeApplicationId: 'application-1',
+      expected_updated_at: '2026-08-01T01:02:03.000Z',
+      note: '',
+    })).rejects.toThrow(CHANGE_APPLICATION_STALE_MESSAGE)
+
+    mocks.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'request rejected', details: 'SQA_CHANGE_APPLICATION_CONFLICT' },
+    })
+    await expect(undoFinalizeChangeApplication(ctx, {
+      changeApplicationId: 'application-1',
+      expected_updated_at: '2026-08-02T01:02:03.000Z',
+      reason: 'additional application required',
+      reopen_tasks: [{ task_id: 'task-1', assignee_id: 'member-1' }],
+    })).rejects.toThrow(CHANGE_APPLICATION_STALE_MESSAGE)
   })
 })

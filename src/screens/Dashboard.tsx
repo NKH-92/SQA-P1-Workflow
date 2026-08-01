@@ -9,6 +9,7 @@ import { selectMyProductChangeTaskContexts } from '../features/change-applicatio
 import {
   CalendarClock,
   Check,
+  ChevronRight,
   ClipboardList,
   ClipboardPenLine,
   FolderKanban,
@@ -44,6 +45,12 @@ export function Dashboard({
   const openReviews = ownReviews.filter((request) => request.status === 'pending')
   const ownChangeContexts = selectMyProductChangeTaskContexts(data, profile)
   const pendingChangeContexts = ownChangeContexts.filter(({ task }) => task.status === 'pending')
+  const pendingChangesByProduct = new Map<string, typeof pendingChangeContexts>()
+  for (const context of pendingChangeContexts) {
+    const current = pendingChangesByProduct.get(context.task.product_id) ?? []
+    current.push(context)
+    pendingChangesByProduct.set(context.task.product_id, current)
+  }
   const overdueChangeCount = pendingChangeContexts.filter(
     ({ actionItem }) => (daysUntil(actionItem.due_date) ?? 0) < 0,
   ).length
@@ -240,14 +247,36 @@ export function Dashboard({
             {ownProducts.slice(0, HOME_PREVIEW_COUNT).map((assignment) => {
               // 배지가 이미 자사/위탁을 말하므로, 부제는 의미 있는 회사명일 때만 남긴다.
               const meta = productCompanyName(assignment)
-              return (
-                <div className="project-preview-row" key={assignment.id}>
+              const pendingContexts = pendingChangesByProduct.get(assignment.product_id) ?? []
+              const pendingApplications = new Set(
+                pendingContexts.map(({ application }) => application.id),
+              )
+              const firstPendingApplication = pendingContexts[0]?.application
+              const content = (
+                <>
                   <div className="project-preview-head">
                     <strong>{productName(assignment)}</strong>
+                    {pendingApplications.size > 0 && (
+                      <Badge status="pending">미적용 {pendingApplications.size}건</Badge>
+                    )}
                     <Badge>{productCategory(assignment)}</Badge>
+                    {firstPendingApplication && <ChevronRight aria-hidden="true" size={15} />}
                   </div>
                   {meta && <small>{meta}</small>}
-                </div>
+                </>
+              )
+              return firstPendingApplication ? (
+                <button
+                  aria-label={`${productName(assignment)} 미적용 공통변경 ${pendingApplications.size}건 열기`}
+                  className="project-preview-row"
+                  key={assignment.id}
+                  onClick={() => setActiveTab('change-applications', firstPendingApplication.id)}
+                  type="button"
+                >
+                  {content}
+                </button>
+              ) : (
+                <div className="project-preview-row" key={assignment.id}>{content}</div>
               )
             })}
             {ownProducts.length > HOME_PREVIEW_COUNT && (

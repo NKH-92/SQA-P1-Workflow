@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { AlertTriangle, Check, ClipboardPlus, Search } from 'lucide-react'
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, ClipboardPlus, Search } from 'lucide-react'
 import { Badge, Modal } from '../../../components/ui'
 import { selectApplicationTaskContexts, selectChangeScopeProducts } from '../selectors'
 import {
@@ -66,6 +66,7 @@ export function ChangeApplicationComposer({
   const [category, setCategory] = useState('all')
   const [company, setCompany] = useState('all')
   const [assigneeFilter, setAssigneeFilter] = useState('all')
+  const [step, setStep] = useState<1 | 2 | 3>(1)
 
   const products = useMemo(() => selectChangeScopeProducts(data), [data])
   const companies = useMemo(
@@ -84,11 +85,12 @@ export function ChangeApplicationComposer({
   }, [assigneeFilter, category, company, products, query])
 
   const selectedProductIds = Object.keys(selected)
-  const unassignedCount = selectedProductIds.filter((productId) => !selected[productId]).length
-  const multipleOwnerCount = selectedProductIds.filter((productId) => {
-    const product = products.find((item) => item.id === productId)
-    return product && product.assignees.length > 1 && !selected[productId]
-  }).length
+  const activeAssigneeIds = new Set(
+    data.profiles.filter((item) => item.is_active !== false).map((item) => item.id),
+  )
+  const invalidResponsibilityCount = selectedProductIds.filter(
+    (productId) => !selected[productId] || !activeAssigneeIds.has(selected[productId]!),
+  ).length
   const duplicate = data.changeApplications.find(
     (item) =>
       item.id !== editingApplicationId
@@ -123,6 +125,7 @@ export function ChangeApplicationComposer({
   }
 
   const submit = async (publish: boolean) => {
+    if (publish && invalidResponsibilityCount > 0) return
     const ok = await onSave({
       ...form,
       source_url: form.source_url?.trim() || null,
@@ -135,16 +138,17 @@ export function ChangeApplicationComposer({
     if (ok) onClose()
   }
 
-  const canSubmit = Boolean(
+  const canContinueInformation = Boolean(
     form.title.trim()
     && form.summary.trim()
     && form.action_content.trim()
     && form.effective_date
     && form.due_date
-    && selectedProductIds.length > 0
     && (form.source !== 'official' || form.change_number.trim())
     && (form.action_kind !== 'other' || form.custom_kind_name?.trim()),
   ) && !duplicate
+  const canSaveDraft = canContinueInformation && selectedProductIds.length > 0
+  const canPublish = canSaveDraft && invalidResponsibilityCount === 0
 
   return (
     <Modal
@@ -161,12 +165,38 @@ export function ChangeApplicationComposer({
         className="change-compose-form"
         onSubmit={(event) => {
           event.preventDefault()
-          if (canSubmit) void submit(true)
+          if (step === 1 && canContinueInformation) {
+            setStep(2)
+            return
+          }
+          if (step === 2 && selectedProductIds.length > 0) {
+            setStep(3)
+            return
+          }
+          if (step === 3 && canPublish) void submit(true)
         }}
       >
-        <div className="change-compose-body">
+        <nav className="change-compose-steps" aria-label="공통변경 등록 단계">
+          {([
+            [1, '변경 정보'],
+            [2, '제품·책임자'],
+            [3, '최종 검토·배포'],
+          ] as const).map(([value, label]) => (
+            <button
+              aria-current={step === value ? 'step' : undefined}
+              className={step === value ? 'current' : step > value ? 'complete' : ''}
+              disabled={value > step}
+              key={value}
+              onClick={() => setStep(value)}
+              type="button"
+            >
+              <span>{step > value ? <Check size={13} /> : value}</span>{label}
+            </button>
+          ))}
+        </nav>
+        <div className="change-compose-body" data-step={step}>
           <div className="change-compose-main">
-            <section className="change-compose-section">
+            <section className="change-compose-section" hidden={step !== 1}>
               <header><span>1</span><div><strong>변경정보</strong><small>공식 변경관리 원본과 연결되는 공통 정보</small></div></header>
               <div className="form-grid two">
                 <label>
@@ -214,8 +244,8 @@ export function ChangeApplicationComposer({
               )}
             </section>
 
-            <section className="change-compose-section">
-              <header><span>2</span><div><strong>적용 항목</strong><small>제품 담당자가 실제로 수행할 한 가지 조치</small></div></header>
+            <section className="change-compose-section" hidden={step !== 1}>
+              <header><span>1</span><div><strong>적용 내용</strong><small>제품 담당자가 실제로 수행할 한 가지 조치</small></div></header>
               <div className="form-grid two">
                 <label>
                   적용 구분
@@ -240,8 +270,8 @@ export function ChangeApplicationComposer({
               </div>
             </section>
 
-            <section className="change-compose-section product-scope-section">
-              <header><span>3</span><div><strong>적용제품과 책임자</strong><small>검색 결과 전체 선택과 제품별 단일 책임자 확인</small></div><Badge>{selectedProductIds.length}개 선택</Badge></header>
+            <section className="change-compose-section product-scope-section" hidden={step !== 2}>
+              <header><span>2</span><div><strong>적용제품과 책임자</strong><small>제품마다 활성 책임자 한 명을 선택합니다.</small></div><Badge>{selectedProductIds.length}개 선택</Badge></header>
               <div className="scope-toolbar">
                 <label className="scope-search"><Search size={15} /><input aria-label="제품명 검색" placeholder="제품명 또는 회사 검색" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
                 <select aria-label="제품 구분" value={category} onChange={(event) => setCategory(event.target.value)}><option value="all">구분 전체</option><option value="자사">자사</option><option value="위탁">위탁</option></select>
@@ -272,7 +302,7 @@ export function ChangeApplicationComposer({
                       {isSelected && (
                         <select aria-label={`${product.name} 적용 책임자`} value={selected[product.id] ?? ''} onChange={(event) => setSelected((current) => ({ ...current, [product.id]: event.target.value || null }))}>
                           <option value="">담당 미지정</option>
-                          {responsibilityOptions.map((item) => <option key={item.id} value={item.id}>{item.name}{'role' in item && item.role === 'leader' ? ' (파트장)' : ''}</option>)}
+                          {responsibilityOptions.filter((item) => activeAssigneeIds.has(item.id)).map((item) => <option key={item.id} value={item.id}>{item.name}{'role' in item && item.role === 'leader' ? ' (파트장)' : ''}</option>)}
                         </select>
                       )}
                     </div>
@@ -281,31 +311,55 @@ export function ChangeApplicationComposer({
                 {visibleProducts.length === 0 && <p className="scope-empty">조건에 맞는 제품이 없습니다.</p>}
               </div>
             </section>
+
+            <section className="change-compose-section change-compose-review" hidden={step !== 3}>
+              <header><span>3</span><div><strong>최종 검토·배포</strong><small>선택 범위와 책임자 배정을 마지막으로 확인합니다.</small></div></header>
+              <div className="change-review-summary">
+                <article><span>변경번호</span><strong>{form.change_number.trim() || '자동 생성'}</strong><small>{form.title}</small></article>
+                <article><span>적용제품</span><strong>{selectedProductIds.length}개</strong><small>적용기한 {form.due_date}</small></article>
+                <article data-warning={invalidResponsibilityCount > 0}><span>책임자 확인 필요</span><strong>{invalidResponsibilityCount}개</strong><small>{invalidResponsibilityCount > 0 ? '배포 전에 책임자를 지정하세요.' : '모든 제품에 활성 책임자 지정 완료'}</small></article>
+              </div>
+              <div className="change-review-assignees">
+                <h4>책임자별 제품</h4>
+                {data.changeAssigneeOptions.filter((assignee) => selectedProductIds.some((productId) => selected[productId] === assignee.id)).map((assignee) => {
+                  const assignedProducts = selectedProductIds
+                    .filter((productId) => selected[productId] === assignee.id)
+                    .map((productId) => products.find((product) => product.id === productId)?.name)
+                    .filter(Boolean)
+                  return <div key={assignee.id}><strong>{assignee.name}</strong><span>{assignedProducts.join(', ')}</span><Badge>{assignedProducts.length}개</Badge></div>
+                })}
+                {invalidResponsibilityCount > 0 && <button className="duplicate-warning" onClick={() => setStep(2)} type="button"><AlertTriangle size={16} /><span><strong>책임자 확인이 필요한 제품 {invalidResponsibilityCount}개</strong><small>제품·책임자 단계로 돌아가 수정하세요.</small></span></button>}
+              </div>
+            </section>
           </div>
 
-          <aside className="change-compose-preview">
-            <span>등록 미리보기</span>
+          <aside className="change-compose-preview" hidden={step !== 3}>
+            <span>배포 점검</span>
             <h3>{form.change_number.trim() || (form.source === 'official' ? '변경번호 미입력' : '번호 자동 생성')}</h3>
             <p>{form.title.trim() || '변경 제목을 입력하세요.'}</p>
             <dl>
               <div><dt>적용 항목</dt><dd>{changeActionKindLabels[form.action_kind]}{form.action_kind === 'other' && form.custom_kind_name ? ` · ${form.custom_kind_name}` : ''}</dd></div>
               <div><dt>적용제품</dt><dd>{selectedProductIds.length}개</dd></div>
-              <div><dt>자동·지정 완료</dt><dd>{selectedProductIds.length - unassignedCount}개</dd></div>
-              <div data-warning={unassignedCount > 0}><dt>담당 미지정</dt><dd>{unassignedCount}개</dd></div>
-              <div data-warning={multipleOwnerCount > 0}><dt>복수 담당 확인</dt><dd>{multipleOwnerCount}개</dd></div>
+              <div><dt>책임자 지정 완료</dt><dd>{selectedProductIds.length - invalidResponsibilityCount}개</dd></div>
+              <div data-warning={invalidResponsibilityCount > 0}><dt>책임자 확인 필요</dt><dd>{invalidResponsibilityCount}개</dd></div>
               <div><dt>적용기한</dt><dd>{form.due_date || '-'}</dd></div>
             </dl>
-            {unassignedCount > 0 && <p className="preview-warning"><AlertTriangle size={15} /> 담당 미지정 업무는 등록되며 파트장 큐에 즉시 표시됩니다.</p>}
-            <p className="preview-note">등록 당시 책임자를 별도로 저장하므로 이후 제품 담당자가 바뀌어도 이력이 조용히 변경되지 않습니다.</p>
+            {invalidResponsibilityCount > 0 && <p className="preview-warning"><AlertTriangle size={15} /> 담당 미지정 또는 비활성 책임자가 있으면 배포할 수 없습니다.</p>}
+            <p className="preview-note">초안은 미지정 상태로 저장할 수 있지만 배포 시 모든 제품에 활성 책임자 한 명이 필요합니다.</p>
           </aside>
         </div>
 
         <footer className="modal-footer change-compose-footer">
-          <span>한 번의 저장으로 변경건·적용 항목·제품별 업무를 함께 처리합니다.</span>
+          <span>{step === 1 ? '변경 내용과 담당자가 수행할 조치를 입력합니다.' : step === 2 ? `${selectedProductIds.length}개 제품 선택 · 책임자 확인 필요 ${invalidResponsibilityCount}개` : '배포 후 각 제품 책임자의 내 미적용 목록에 표시됩니다.'}</span>
           <div>
             <button className="ghost" onClick={onClose} type="button">닫기</button>
-            {!initial.published && <button className="ghost" disabled={!canSubmit} onClick={() => void submit(false)} type="button">초안 저장</button>}
-            <button className="primary" disabled={!canSubmit} type="submit">{initial.published ? '변경내용 저장' : `${selectedProductIds.length}개 적용업무 등록`}</button>
+            {!initial.published && <button className="ghost" disabled={!canSaveDraft} onClick={() => void submit(false)} type="button">초안 저장</button>}
+            {step > 1 && <button className="ghost" onClick={() => setStep(step === 3 ? 2 : 1)} type="button"><ChevronLeft size={15} />이전</button>}
+            {step < 3 ? (
+              <button className="primary" disabled={step === 1 ? !canContinueInformation : selectedProductIds.length === 0} type="submit">다음<ChevronRight size={15} /></button>
+            ) : (
+              <button className="primary" disabled={!canPublish} type="submit">{initial.published ? '변경내용 저장' : `${selectedProductIds.length}개 제품에 배포`}</button>
+            )}
           </div>
         </footer>
       </form>

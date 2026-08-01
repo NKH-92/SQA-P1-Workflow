@@ -40,6 +40,7 @@ function emptyChangeBootstrapData() {
     product_change_tasks: [],
     change_product_scope: [],
     change_assignee_options: [],
+    application_summaries: [],
   }
 }
 
@@ -50,9 +51,9 @@ function defaultRpcResult(name: string): { data: unknown; error: unknown } {
       error: null,
     }
   }
-  if (name === 'get_change_bootstrap_v2') {
+  if (name === 'get_change_bootstrap_v3') {
     return {
-      data: { schema_version: 1, snapshot_at: '2026-07-20T00:00:00.000Z', data: emptyChangeBootstrapData(), warnings: [] },
+      data: { schema_version: 3, snapshot_at: '2026-07-20T00:00:00.000Z', data: emptyChangeBootstrapData(), warnings: [] },
       error: null,
     }
   }
@@ -138,7 +139,7 @@ describe('fetchAppData orchestration and optional data', () => {
     Object.keys(mocks.results).forEach((key) => delete mocks.results[key])
     Object.keys(mocks.rpcResults).forEach((key) => delete mocks.rpcResults[key])
     Object.keys(mocks.queries).forEach((key) => delete mocks.queries[key])
-    for (const name of ['get_core_bootstrap_v2', 'get_change_bootstrap_v2', 'get_review_bootstrap_v2']) {
+    for (const name of ['get_core_bootstrap_v2', 'get_change_bootstrap_v3', 'get_review_bootstrap_v2']) {
       mocks.rpcResults[name] = defaultRpcResult(name)
     }
   })
@@ -152,7 +153,7 @@ describe('fetchAppData orchestration and optional data', () => {
     expect(mocks.trace).toEqual([
       'rpc:get_core_bootstrap_v2',
       'rpc:get_review_bootstrap_v2',
-      'rpc:get_change_bootstrap_v2',
+      'rpc:get_change_bootstrap_v3',
     ])
   })
 
@@ -162,7 +163,7 @@ describe('fetchAppData orchestration and optional data', () => {
     expect(mocks.trace).toEqual([
       'rpc:get_core_bootstrap_v2',
       'rpc:get_review_bootstrap_v2',
-      'rpc:get_change_bootstrap_v2',
+      'rpc:get_change_bootstrap_v3',
       'from:allowed_users',
       'from:profile_notes',
       'from:activity_logs',
@@ -179,8 +180,8 @@ describe('fetchAppData orchestration and optional data', () => {
       data: { schema_version: 2, snapshot_at: '2026-07-20T00:00:00.500Z', requests: [], events: [], read_receipts: [], unread_count: 0 },
       error: null,
     }
-    mocks.rpcResults.get_change_bootstrap_v2 = {
-      data: { schema_version: 1, snapshot_at: '2026-07-20T00:00:01.000Z', data: emptyChangeBootstrapData(), warnings: [] },
+    mocks.rpcResults.get_change_bootstrap_v3 = {
+      data: { schema_version: 3, snapshot_at: '2026-07-20T00:00:01.000Z', data: emptyChangeBootstrapData(), warnings: [] },
       error: null,
     }
 
@@ -191,9 +192,9 @@ describe('fetchAppData orchestration and optional data', () => {
 
   it('forwards server overflow warnings to the user-visible optional warning channel', async () => {
     const warning = '[SQA_CHANGE_APPLICATIONS_TRUNCATED] 최신 1,000건만 불러왔습니다.'
-    mocks.rpcResults.get_change_bootstrap_v2 = {
+    mocks.rpcResults.get_change_bootstrap_v3 = {
       data: {
-        schema_version: 1,
+        schema_version: 3,
         snapshot_at: '2026-07-20T00:00:00.000Z',
         data: emptyChangeBootstrapData(),
         warnings: [warning],
@@ -217,7 +218,7 @@ describe('fetchAppData orchestration and optional data', () => {
 
   it('fails closed on a null required envelope even when PostgREST reports no error', async () => {
     mocks.rpcResults.get_core_bootstrap_v2 = { data: null, error: null }
-    mocks.rpcResults.get_change_bootstrap_v2 = { data: null, error: null }
+    mocks.rpcResults.get_change_bootstrap_v3 = { data: null, error: null }
 
     await expect(fetchAppData()).rejects.toThrow('null envelope')
   })

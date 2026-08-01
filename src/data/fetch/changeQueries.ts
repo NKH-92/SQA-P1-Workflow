@@ -2,15 +2,22 @@ import { supabase } from '../../lib/supabase'
 import type {
   ChangeActionItem,
   ChangeApplication,
+  ChangeApplicationHistoryCursor,
+  ChangeApplicationHistoryFilters,
+  ChangeApplicationHistoryPage,
+  ChangeApplicationHistoryRow,
+  ChangeApplicationSummary,
   ChangeAssigneeOption,
-  ChangeBootstrapV2Envelope,
+  ChangeBootstrapV3Envelope,
   ChangeProductScopeRow,
   ProductChangeTask,
 } from '../../types'
+import { buildLocalChangeApplicationHistoryPage } from '../../domain/changeApplications/history'
 import {
   BootstrapEnvelopeInvalidError,
   checkBootstrapSchemaVersion,
   isStringArray,
+  isRecord,
   isValidIsoTimestamp,
   requireArrayFields,
 } from './bootstrapEnvelope'
@@ -19,7 +26,9 @@ import { fetchAllPages } from './pagination'
 type Client = NonNullable<typeof supabase>
 type QueryResult<T> = { data: T | null; error: unknown }
 
-export const CHANGE_BOOTSTRAP_SCHEMA_VERSION = 1
+export const CHANGE_BOOTSTRAP_SCHEMA_VERSION = 3
+export const CHANGE_APPLICATION_HISTORY_SCHEMA_VERSION = 1
+export const CHANGE_APPLICATION_HISTORY_PAGE_SIZE = 50
 export const CHANGE_TASK_HISTORY_MONTHS = 6
 
 export type ChangeQueryResults = {
@@ -28,6 +37,7 @@ export type ChangeQueryResults = {
   productChangeTasksResult: QueryResult<ProductChangeTask[]>
   changeProductScopeResult: QueryResult<ChangeProductScopeRow[]>
   changeAssigneeOptionsResult: QueryResult<ChangeAssigneeOption[]>
+  changeApplicationSummariesResult: QueryResult<ChangeApplicationSummary[]>
   /** Server clock_timestamp() when the whole envelope was read; null on error. */
   changeSnapshotAt: string | null
   changeWarnings: string[]
@@ -52,6 +62,7 @@ function failedChangeQueryResults(error: unknown): ChangeQueryResults {
     productChangeTasksResult: failed,
     changeProductScopeResult: failed,
     changeAssigneeOptionsResult: failed,
+    changeApplicationSummariesResult: failed,
     changeSnapshotAt: null,
     changeWarnings: [],
   }
@@ -66,28 +77,33 @@ function failedChangeQueryResults(error: unknown): ChangeQueryResults {
  * state with tasks from another.
  */
 export async function fetchChangeQueries(client: Client): Promise<ChangeQueryResults> {
-  const { data, error } = await client.rpc('get_change_bootstrap_v2')
+  const rpcName = 'get_change_bootstrap_v3'
+  const { data, error } = await client.rpc(rpcName)
   if (error) return failedChangeQueryResults(error)
 
-  const envelope = (data ?? null) as ChangeBootstrapV2Envelope | null
-  const versionError = checkBootstrapSchemaVersion('get_change_bootstrap_v2', CHANGE_BOOTSTRAP_SCHEMA_VERSION, envelope)
+  const envelope = (data ?? null) as ChangeBootstrapV3Envelope | null
+  const versionError = checkBootstrapSchemaVersion(rpcName, CHANGE_BOOTSTRAP_SCHEMA_VERSION, envelope)
   if (versionError) return failedChangeQueryResults(versionError)
-  if (!envelope) return failedChangeQueryResults(new BootstrapEnvelopeInvalidError('get_change_bootstrap_v2', 'envelope'))
+  if (!envelope) return failedChangeQueryResults(new BootstrapEnvelopeInvalidError(rpcName, 'envelope'))
 
   if (!isValidIsoTimestamp(envelope.snapshot_at)) {
-    return failedChangeQueryResults(new BootstrapEnvelopeInvalidError('get_change_bootstrap_v2', 'snapshot_at'))
+    return failedChangeQueryResults(new BootstrapEnvelopeInvalidError(rpcName, 'snapshot_at'))
   }
   if (!isStringArray(envelope.warnings)) {
-    return failedChangeQueryResults(new BootstrapEnvelopeInvalidError('get_change_bootstrap_v2', 'warnings'))
+    return failedChangeQueryResults(new BootstrapEnvelopeInvalidError(rpcName, 'warnings'))
   }
-  const shapeError = requireArrayFields('get_change_bootstrap_v2', envelope.data, [
+  const shapeError = requireArrayFields(rpcName, envelope.data, [
     'change_applications',
     'change_action_items',
     'product_change_tasks',
     'change_product_scope',
     'change_assignee_options',
+    'application_summaries',
   ])
   if (shapeError) return failedChangeQueryResults(shapeError)
+  if (!envelope.data.application_summaries.every(isValidChangeApplicationSummary)) {
+    return failedChangeQueryResults(new BootstrapEnvelopeInvalidError(rpcName, 'data.application_summaries[]'))
+  }
 
   const bootstrapData = envelope.data
   return {
@@ -96,9 +112,83 @@ export async function fetchChangeQueries(client: Client): Promise<ChangeQueryRes
     productChangeTasksResult: { data: bootstrapData.product_change_tasks, error: null },
     changeProductScopeResult: { data: bootstrapData.change_product_scope, error: null },
     changeAssigneeOptionsResult: { data: bootstrapData.change_assignee_options, error: null },
+    changeApplicationSummariesResult: { data: bootstrapData.application_summaries, error: null },
     changeSnapshotAt: envelope.snapshot_at,
     changeWarnings: envelope.warnings,
   }
+}
+
+const CHANGE_WORKFLOW_STATUSES = new Set([
+  'draft', 'in_progress', 'final_review_ready', 'completed', 'cancelled', 'legacy_completed',
+])
+const CHANGE_HISTORY_RESULTS = new Set(['completed', 'cancelled', 'legacy_auto', 'legacy_manual'])
+
+function isCount(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0
+}
+
+export function isValidChangeApplicationSummary(value: unknown): value is ChangeApplicationSummary {
+  if (!isRecord(value) || typeof value.change_application_id !== 'string') return false
+  if (typeof value.workflow_status !== 'string' || !CHANGE_WORKFLOW_STATUSES.has(value.workflow_status)) return false
+  if (![
+    'total_count', 'pending_count', 'completed_count', 'not_applicable_count',
+    'scope_removed_count', 'unresolved_cancelled_count', 'unassigned_count', 'processed_count',
+  ].every((field) => isCount(value[field]))) return false
+  return isCount(value.percent) && value.percent <= 100 && typeof value.can_finalize === 'boolean'
+}
+
+function isValidHistoryRow(value: unknown): value is ChangeApplicationHistoryRow {
+  if (!isRecord(value)) return false
+  if (typeof value.id !== 'string' || typeof value.change_number !== 'string' || typeof value.title !== 'string') return false
+  if (typeof value.history_result !== 'string' || !CHANGE_HISTORY_RESULTS.has(value.history_result)) return false
+  if (!isValidIsoTimestamp(value.history_at) || !isValidChangeApplicationSummary(value.application_summary)) return false
+  if (!Array.isArray(value.product_tasks)) return false
+  return value.product_tasks.every((task) => isRecord(task)
+    && typeof task.id === 'string'
+    && typeof task.action_item_id === 'string'
+    && typeof task.product_id === 'string'
+    && typeof task.product_name === 'string'
+    && ['pending', 'completed', 'not_applicable', 'cancelled'].includes(String(task.status)))
+}
+
+export function isValidChangeApplicationHistoryPage(value: unknown): value is ChangeApplicationHistoryPage {
+  if (!isRecord(value) || value.schema_version !== CHANGE_APPLICATION_HISTORY_SCHEMA_VERSION) return false
+  if (!isValidIsoTimestamp(value.snapshot_at) || !Array.isArray(value.rows) || !value.rows.every(isValidHistoryRow)) return false
+  if (typeof value.has_more !== 'boolean') return false
+  if (value.next_cursor !== null) {
+    if (!isRecord(value.next_cursor)
+      || !isValidIsoTimestamp(value.next_cursor.history_at)
+      || typeof value.next_cursor.id !== 'string') return false
+  }
+  return true
+}
+
+export async function fetchChangeApplicationHistoryPage(
+  filters: ChangeApplicationHistoryFilters,
+  cursor: ChangeApplicationHistoryCursor | null = null,
+  localData?: Parameters<typeof buildLocalChangeApplicationHistoryPage>[0],
+  pageSize = CHANGE_APPLICATION_HISTORY_PAGE_SIZE,
+): Promise<ChangeApplicationHistoryPage> {
+  const limit = Math.max(1, Math.min(pageSize, 100))
+  if (!supabase) {
+    return buildLocalChangeApplicationHistoryPage(localData, filters, cursor, new Date(), limit)
+  }
+  const { data, error } = await supabase.rpc('list_change_application_history_v1', {
+    p_result: filters.result,
+    p_query: filters.query.trim() || null,
+    p_from: filters.from,
+    p_to: filters.to,
+    p_product_id: filters.product_id,
+    p_assignee_id: filters.assignee_id,
+    p_before_history_at: cursor?.history_at ?? null,
+    p_before_id: cursor?.id ?? null,
+    p_limit: limit,
+  })
+  if (error) throw error
+  if (!isValidChangeApplicationHistoryPage(data)) {
+    throw new Error('list_change_application_history_v1 invalid response')
+  }
+  return data
 }
 
 export async function fetchProductChangeTaskHistory(

@@ -1,4 +1,5 @@
 import type { ChangeApplicationInput } from '../contracts'
+import type { FinalizeChangeApplicationInput, UndoFinalizeChangeApplicationInput } from '../contracts'
 import {
   normalizeChangeApplicationInput,
   normalizeOptionalTaskNote,
@@ -47,19 +48,26 @@ export function reopenProductChangeTask(ctx: RepositoryContext, taskId: string, 
 export function reassignProductChangeTasks(
   ctx: RepositoryContext,
   taskIds: string[],
-  assigneeId: string | null,
+  assigneeId: string,
   reason: string,
 ) {
   if (taskIds.length === 0) return Promise.resolve()
   return ctx.repositories.changeApplications.reassignProductTasks(
     [...new Set(taskIds)],
-    assigneeId || null,
+    assigneeId,
     normalizeTaskReason(reason, '재배정 사유'),
   )
 }
 
 export function cancelProductChangeTask(ctx: RepositoryContext, taskId: string, reason: string) {
   return ctx.repositories.changeApplications.cancelProductTask(taskId, normalizeTaskReason(reason, '취소 사유'))
+}
+
+export function removeProductChangeScope(ctx: RepositoryContext, taskId: string, reason: string) {
+  return ctx.repositories.changeApplications.removeProductChangeScope(
+    taskId,
+    normalizeTaskReason(reason, '범위 제외 사유'),
+  )
 }
 
 export function restoreProductChangeScope(ctx: RepositoryContext, taskId: string, reason: string) {
@@ -71,6 +79,27 @@ export function cancelChangeApplication(ctx: RepositoryContext, changeApplicatio
     changeApplicationId,
     normalizeTaskReason(reason, '취소 사유'),
   )
+}
+
+export function finalizeChangeApplication(
+  ctx: RepositoryContext,
+  input: FinalizeChangeApplicationInput,
+) {
+  return ctx.repositories.changeApplications.finalizeChangeApplication({
+    ...input,
+    note: normalizeOptionalTaskNote(input.note, '최종 확인 메모'),
+  })
+}
+
+export function undoFinalizeChangeApplication(
+  ctx: RepositoryContext,
+  input: UndoFinalizeChangeApplicationInput,
+) {
+  return ctx.repositories.changeApplications.undoFinalizeChangeApplication({
+    ...input,
+    reason: normalizeTaskReason(input.reason, '완료 취소 사유'),
+    reopen_tasks: [...new Map(input.reopen_tasks.map((task) => [task.task_id, task])).values()],
+  })
 }
 
 export function archiveChangeApplication(ctx: RepositoryContext, changeApplicationId: string, reason: string) {

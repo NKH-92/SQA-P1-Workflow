@@ -73,5 +73,6 @@
   "20260720231000_harden_leader_directory_view.sql": "기존 `public_leader_profiles(id,name)` API를 유지하면서 고정 search_path helper와 security-invoker/barrier view로 Supabase Security Advisor 오류 해소",
   "20260722120452_distinguish_fully_applied_change.sql": "전 제품 실제 적용 완료와 해당 없음 포함 전체 처리를 구분해 자동 보관 사유·감사 메타데이터에 영속화",
   "20260723120000_review_input_contract.sql": "신규·변경 검토 제목·설명 길이와 과거 기한을 강제하면서 기존 행의 상태 변경은 보존하는 공통 입력 계약",
-  "20260731151100_review_history_retention.sql": "파트장 최근 7일 검토 워크스페이스와 검색 가능한 종결 이력, 선택적 반려 댓글, 종결 후 365일 보존 및 매일 06:00 KST 자동 삭제"
+  "20260731151100_review_history_retention.sql": "파트장 최근 7일 검토 워크스페이스와 검색 가능한 종결 이력, 선택적 반려 댓글, 종결 후 365일 보존 및 매일 06:00 KST 자동 삭제",
+  "20260731230646_change_application_final_approval.sql": "공통변경 담당자별 적용 처리, 파트장 최종 완료·완료 취소, 서버 집계와 영구 검색 이력"
 }

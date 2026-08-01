@@ -10,7 +10,11 @@ vi.mock('../../lib/supabase', () => ({
   supabase: { rpc: mocks.rpc, from: mocks.from },
 }))
 
-import { CHANGE_BOOTSTRAP_SCHEMA_VERSION, fetchChangeQueries } from './changeQueries'
+import {
+  CHANGE_BOOTSTRAP_SCHEMA_VERSION,
+  fetchChangeQueries,
+  isValidChangeApplicationHistoryPage,
+} from './changeQueries'
 
 function emptyChangeData() {
   return {
@@ -19,6 +23,7 @@ function emptyChangeData() {
     product_change_tasks: [],
     change_product_scope: [],
     change_assignee_options: [],
+    application_summaries: [],
   }
 }
 
@@ -28,7 +33,7 @@ describe('fetchChangeQueries single-snapshot change bootstrap', () => {
     mocks.from.mockReset()
   })
 
-  it('calls get_change_bootstrap_v2 exactly once and fans the envelope out into the legacy per-table result shape', async () => {
+  it('calls get_change_bootstrap_v3 exactly once and fans the envelope out into the per-table result shape', async () => {
     const applications = [{ id: 'app1' }]
     const scope = [{ product_id: 'prod1' }]
     mocks.rpc.mockResolvedValue({
@@ -44,7 +49,7 @@ describe('fetchChangeQueries single-snapshot change bootstrap', () => {
     const result = await fetchChangeQueries(mocks as unknown as NonNullable<Parameters<typeof fetchChangeQueries>[0]>)
 
     expect(mocks.rpc).toHaveBeenCalledTimes(1)
-    expect(mocks.rpc).toHaveBeenCalledWith('get_change_bootstrap_v2')
+    expect(mocks.rpc).toHaveBeenCalledWith('get_change_bootstrap_v3')
     expect(result.changeApplicationsResult).toEqual({ data: applications, error: null })
     expect(result.changeProductScopeResult).toEqual({ data: scope, error: null })
     expect(result.changeActionItemsResult).toEqual({ data: [], error: null })
@@ -88,14 +93,56 @@ describe('fetchChangeQueries single-snapshot change bootstrap', () => {
   })
 
   it.each([
-    ['snapshot_at', { schema_version: 1, snapshot_at: 'not-a-date', data: emptyChangeData(), warnings: [] }],
-    ['warnings', { schema_version: 1, snapshot_at: '2026-07-20T00:00:00.000Z', data: emptyChangeData(), warnings: [1] }],
-    ['data.product_change_tasks', { schema_version: 1, snapshot_at: '2026-07-20T00:00:00.000Z', data: { ...emptyChangeData(), product_change_tasks: null }, warnings: [] }],
+    ['snapshot_at', { schema_version: CHANGE_BOOTSTRAP_SCHEMA_VERSION, snapshot_at: 'not-a-date', data: emptyChangeData(), warnings: [] }],
+    ['warnings', { schema_version: CHANGE_BOOTSTRAP_SCHEMA_VERSION, snapshot_at: '2026-07-20T00:00:00.000Z', data: emptyChangeData(), warnings: [1] }],
+    ['data.product_change_tasks', { schema_version: CHANGE_BOOTSTRAP_SCHEMA_VERSION, snapshot_at: '2026-07-20T00:00:00.000Z', data: { ...emptyChangeData(), product_change_tasks: null }, warnings: [] }],
   ])('fails closed when required field %s is absent or invalid', async (_field, data) => {
     mocks.rpc.mockResolvedValue({ data, error: null })
     const result = await fetchChangeQueries(mocks as unknown as NonNullable<Parameters<typeof fetchChangeQueries>[0]>)
     expect(result.changeApplicationsResult.data).toBeNull()
     expect(result.changeApplicationsResult.error).toBeInstanceOf(Error)
     expect(result.changeSnapshotAt).toBeNull()
+  })
+})
+
+describe('change application history envelope validation', () => {
+  const page = {
+    schema_version: 1,
+    snapshot_at: '2026-08-01T00:00:00.000Z',
+    rows: [{
+      id: 'application-1',
+      change_number: 'CC-2026-001',
+      title: '공통 시험법 개정',
+      history_result: 'completed',
+      history_at: '2026-07-31T00:00:00.000Z',
+      application_summary: {
+        change_application_id: 'application-1',
+        workflow_status: 'completed',
+        total_count: 1,
+        pending_count: 0,
+        completed_count: 1,
+        not_applicable_count: 0,
+        scope_removed_count: 0,
+        unresolved_cancelled_count: 0,
+        unassigned_count: 0,
+        processed_count: 1,
+        percent: 100,
+        can_finalize: false,
+      },
+      product_tasks: [{
+        id: 'task-1',
+        action_item_id: 'action-1',
+        product_id: 'product-1',
+        product_name: '제품 A',
+        status: 'completed',
+      }],
+    }],
+    has_more: false,
+    next_cursor: null,
+  }
+
+  it('accepts the v1 history shape and rejects an unrecognized schema version', () => {
+    expect(isValidChangeApplicationHistoryPage(page)).toBe(true)
+    expect(isValidChangeApplicationHistoryPage({ ...page, schema_version: 3 })).toBe(false)
   })
 })

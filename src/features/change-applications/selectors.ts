@@ -9,7 +9,10 @@ import {
   selectProductChangeTaskContexts,
   type ProductChangeTaskContext,
 } from '../../domain/changeApplications/taskContexts'
-import { summarizeProductTaskCompletion } from '../../domain/changeApplications/completion'
+import {
+  selectOrBuildChangeApplicationSummary,
+  summarizeProductTaskCompletion,
+} from '../../domain/changeApplications/completion'
 
 export { selectProductChangeTaskContexts, type ProductChangeTaskContext }
 
@@ -71,6 +74,27 @@ export function selectApplicationTaskContexts(data: ChangeApplicationFeatureData
   )
 }
 
+export function selectChangeApplicationSummary(data: ChangeApplicationFeatureData, applicationId: string) {
+  const application = data.changeApplications.find((item) => item.id === applicationId)
+  if (!application) return null
+  let hasInactiveAssignee = false
+  const tasks = selectApplicationTaskContexts(data, applicationId).map(({ task }) => {
+    if (!task.assignee_id) return task
+    const profile = data.profiles.find((item) => item.id === task.assignee_id)
+    const isActive = profile
+      ? profile.is_active !== false
+      : data.changeAssigneeOptions.some((item) => item.id === task.assignee_id)
+    if (isActive) return task
+    hasInactiveAssignee = true
+    return { ...task, assignee_id: null }
+  })
+  return selectOrBuildChangeApplicationSummary(
+    application,
+    tasks,
+    hasInactiveAssignee ? [] : data.changeApplicationSummaries ?? [],
+  )
+}
+
 export function selectMyProductChangeTaskContexts(data: ChangeApplicationFeatureData, profile: Profile) {
   return selectProductChangeTaskContexts(data)
     .filter(
@@ -120,7 +144,7 @@ export function canEditChangeApplication(
 ) {
   return application.status !== 'cancelled'
     && !application.archived_at
-    && (profile.role === 'leader' || application.created_by === profile.id)
+    && profile.role === 'leader'
     && !application.content_locked_at
     && !hasContentLockingProductTask(contexts)
 }

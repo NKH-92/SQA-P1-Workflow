@@ -74,6 +74,14 @@ export function createSupabaseChangeApplicationRepository(
       if (error) throw translateChangeApplicationError(error)
     },
 
+    async removeProductChangeScope(taskId, reason) {
+      const { error } = await supabase!.rpc('remove_product_from_change_scope', {
+        p_task_id: taskId,
+        p_reason: reason,
+      })
+      if (error) throw translateChangeApplicationError(error)
+    },
+
     async restoreProductChangeScope(taskId, reason) {
       const { error } = await supabase!.rpc('restore_product_change_scope', {
         p_task_id: taskId,
@@ -86,6 +94,25 @@ export function createSupabaseChangeApplicationRepository(
       const { error } = await supabase!.rpc('cancel_change_application', {
         p_change_application_id: changeApplicationId,
         p_reason: reason,
+      })
+      if (error) throw translateChangeApplicationError(error)
+    },
+
+    async finalizeChangeApplication(input) {
+      const { error } = await supabase!.rpc('complete_change_application', {
+        p_change_application_id: input.changeApplicationId,
+        p_expected_updated_at: input.expected_updated_at,
+        p_note: input.note || null,
+      })
+      if (error) throw translateChangeApplicationError(error)
+    },
+
+    async undoFinalizeChangeApplication(input) {
+      const { error } = await supabase!.rpc('undo_change_application_completion', {
+        p_change_application_id: input.changeApplicationId,
+        p_expected_updated_at: input.expected_updated_at,
+        p_reason: input.reason,
+        p_reopen_tasks: input.reopen_tasks,
       })
       if (error) throw translateChangeApplicationError(error)
     },

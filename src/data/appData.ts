@@ -4,6 +4,7 @@ export function createEmptyAppData(): AppData {
   return {
     announcements: [],
     changeApplications: [],
+    changeApplicationSummaries: [],
     changeActionItems: [],
     productChangeTasks: [],
     changeProductScope: [],

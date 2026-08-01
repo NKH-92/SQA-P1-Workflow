@@ -8,7 +8,7 @@ describe('createEmptyAppData', () => {
 
     expect(Object.keys(first).sort()).toEqual([
       'activityLogs', 'allowedUsers', 'announcements', 'auditEvents', 'changeActionItems',
-      'changeApplications', 'changeAssigneeOptions', 'changeProductScope', 'duties',
+      'changeApplicationSummaries', 'changeApplications', 'changeAssigneeOptions', 'changeProductScope', 'duties',
       'dutyAssignments', 'dutyMajorCategories', 'productAssignments', 'productChangeTasks',
       'products', 'profileNotes', 'profiles', 'projectAssignments', 'projects',
       'reviewEvents', 'reviewReadReceipts', 'reviewRequests',

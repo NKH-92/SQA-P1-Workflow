@@ -25,10 +25,28 @@ function modelData(): AppData {
       { id: 'review-3', requester_id: otherMember.id },
     ] as AppData['reviewRequests'],
     productChangeTasks: [
-      { id: 'task-own', status: 'pending', assignee_id: member.id },
-      { id: 'task-other', status: 'pending', assignee_id: otherMember.id },
-      { id: 'task-done', status: 'completed', assignee_id: member.id },
+      { id: 'task-own', action_item_id: 'action-active', status: 'pending', assignee_id: member.id },
+      { id: 'task-other', action_item_id: 'action-active', status: 'pending', assignee_id: otherMember.id },
+      { id: 'task-done', action_item_id: 'action-final', status: 'completed', assignee_id: member.id },
     ] as AppData['productChangeTasks'],
+    changeApplications: [
+      { id: 'change-active', status: 'published' },
+      { id: 'change-final', status: 'published' },
+      { id: 'change-completed', status: 'published', final_completed_at: '2026-07-30T00:00:00Z' },
+      { id: 'change-cancelled', status: 'cancelled' },
+      { id: 'change-legacy', status: 'published', archived_at: '2026-07-29T00:00:00Z' },
+    ] as AppData['changeApplications'],
+    changeApplicationSummaries: [
+      { change_application_id: 'change-active', workflow_status: 'in_progress' },
+      { change_application_id: 'change-final', workflow_status: 'final_review_ready' },
+      { change_application_id: 'change-completed', workflow_status: 'completed' },
+      { change_application_id: 'change-cancelled', workflow_status: 'cancelled' },
+      { change_application_id: 'change-legacy', workflow_status: 'legacy_completed' },
+    ] as AppData['changeApplicationSummaries'],
+    changeActionItems: [
+      { id: 'action-active', change_application_id: 'change-active' },
+      { id: 'action-final', change_application_id: 'change-final' },
+    ] as AppData['changeActionItems'],
     projects: [{ id: 'project-1' }, { id: 'project-2' }, { id: 'project-3' }] as AppData['projects'],
     projectAssignments: [
       { id: 'pa-1', user_id: member.id },
@@ -52,7 +70,7 @@ function modelData(): AppData {
 }
 
 describe('buildShellModel', () => {
-  it('keeps pending and unread review counts separate and includes all leader pending change tasks', () => {
+  it('counts only in-progress and final-review applications for the leader', () => {
     const model = buildShellModel({
       data: modelData(),
       profile: leader,

@@ -5,6 +5,7 @@ import { buildChangeApplication, buildProductChangeTask } from '../../test/build
 import {
   calculateChangeProgress,
   canEditChangeApplication,
+  selectChangeApplicationSummary,
   selectChangeScopeProducts,
   selectMyProductChangeTaskContexts,
   selectProductChangeTaskContexts,
@@ -136,17 +137,43 @@ describe('change application selectors', () => {
     expect(selectMyProductChangeTaskContexts(archivedData, member)).toEqual([])
   })
 
+  it('treats an inactive assignee as unassigned even when a cached summary says final review is ready', () => {
+    const data = dataWithTasks([task('completed', 'completed')])
+    data.profiles = [{ ...member, is_active: false }]
+    data.changeApplicationSummaries = [{
+      change_application_id: application.id,
+      workflow_status: 'final_review_ready',
+      total_count: 1,
+      pending_count: 0,
+      completed_count: 1,
+      not_applicable_count: 0,
+      scope_removed_count: 0,
+      unresolved_cancelled_count: 0,
+      unassigned_count: 0,
+      processed_count: 1,
+      percent: 100,
+      can_finalize: true,
+    }]
+
+    expect(selectChangeApplicationSummary(data, application.id)).toMatchObject({
+      workflow_status: 'in_progress',
+      unassigned_count: 1,
+      can_finalize: false,
+    })
+  })
+
   it('locks content editing after a completed, not-applicable, or cancelled task', () => {
     const editable = selectProductChangeTaskContexts(dataWithTasks([task('pending', 'pending')]))
     const completed = selectProductChangeTaskContexts(dataWithTasks([task('completed', 'completed')]))
     const notApplicable = selectProductChangeTaskContexts(dataWithTasks([task('na', 'not_applicable')]))
     const cancelled = selectProductChangeTaskContexts(dataWithTasks([task('cancelled', 'cancelled')]))
-    const owner = { ...member, id: application.created_by }
+    const leader = { ...member, id: application.created_by, role: 'leader' as const }
 
-    expect(canEditChangeApplication(application, editable, owner)).toBe(true)
-    expect(canEditChangeApplication(application, completed, owner)).toBe(false)
-    expect(canEditChangeApplication(application, notApplicable, owner)).toBe(false)
-    expect(canEditChangeApplication(application, cancelled, owner)).toBe(false)
-    expect(canEditChangeApplication({ ...application, archived_at: '2026-07-17T00:00:00.000Z' }, editable, owner)).toBe(false)
+    expect(canEditChangeApplication(application, editable, member)).toBe(false)
+    expect(canEditChangeApplication(application, editable, leader)).toBe(true)
+    expect(canEditChangeApplication(application, completed, leader)).toBe(false)
+    expect(canEditChangeApplication(application, notApplicable, leader)).toBe(false)
+    expect(canEditChangeApplication(application, cancelled, leader)).toBe(false)
+    expect(canEditChangeApplication({ ...application, archived_at: '2026-07-17T00:00:00.000Z' }, editable, leader)).toBe(false)
   })
 })

@@ -2,6 +2,7 @@ import type {
   AppData,
   ChangeActionItem,
   ChangeApplication,
+  ChangeApplicationSummary,
   ChangeAssigneeOption,
   ChangeProductScopeRow,
   Duty,
@@ -83,6 +84,7 @@ export function assembleAppData(
     productChangeTasksResult,
     changeProductScopeResult,
     changeAssigneeOptionsResult,
+    changeApplicationSummariesResult,
   }: CoreAppDataResults,
   optionalResults: OptionalAppDataResults,
   mergeReviewRequests: ReviewRequestMerger,
@@ -131,6 +133,7 @@ export function assembleAppData(
   return {
     announcements,
     changeApplications: (changeApplicationsResult.data ?? []) as ChangeApplication[],
+    changeApplicationSummaries: (changeApplicationSummariesResult.data ?? []) as ChangeApplicationSummary[],
     changeActionItems: (changeActionItemsResult.data ?? []) as ChangeActionItem[],
     productChangeTasks: (productChangeTasksResult.data ?? []) as ProductChangeTask[],
     changeProductScope: (changeProductScopeResult.data ?? []) as ChangeProductScopeRow[],

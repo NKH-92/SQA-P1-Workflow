@@ -1,23 +1,20 @@
-import { useState } from 'react'
-import { AlertTriangle, Archive, ArchiveRestore, CheckCircle2, RefreshCw, UserRoundCog, XCircle } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { AlertTriangle, ArchiveRestore, CheckCircle2, RefreshCw, UserRoundCog, XCircle } from 'lucide-react'
 import { Modal } from '../../../components/ui'
-import type { AppData, ChangeApplication, ProductChangeTask, Profile } from '../../../types'
+import type { AppData, ChangeApplication, ProductChangeTask } from '../../../types'
 
 export type ChangeActionDialog =
   | { kind: 'complete'; task: ProductChangeTask }
   | { kind: 'not_applicable'; task: ProductChangeTask }
   | { kind: 'reopen'; task: ProductChangeTask }
   | { kind: 'reassign'; task: ProductChangeTask }
-  | { kind: 'cancel_task'; task: ProductChangeTask }
+  | { kind: 'remove_scope'; task: ProductChangeTask }
   | { kind: 'cancel_application'; application: ChangeApplication }
-  | { kind: 'archive_application'; application: ChangeApplication }
-  | { kind: 'restore_application'; application: ChangeApplication }
   | { kind: 'restore_scope'; task: ProductChangeTask }
 
 export type ChangeActionDialogResult = {
   note: string
   reason: string
-  proxyReason: string
   assigneeId: string | null
 }
 
@@ -50,11 +47,11 @@ const copy = {
     submit: '담당자 변경',
     icon: <UserRoundCog size={18} />,
   },
-  cancel_task: {
-    eyebrow: '제품 업무 취소',
-    title: '이 제품의 적용업무를 취소할까요?',
-    description: '행을 삭제하지 않고 취소 상태와 사유를 보관합니다.',
-    submit: '업무 취소',
+  remove_scope: {
+    eyebrow: '적용범위 제외',
+    title: '이 제품을 적용범위에서 제외할까요?',
+    description: '제품은 삭제되지 않고 범위 제외 상태와 사유가 이력에 남습니다.',
+    submit: '범위 제외',
     icon: <XCircle size={18} />,
   },
   cancel_application: {
@@ -63,20 +60,6 @@ const copy = {
     description: '처리되지 않은 제품 업무가 함께 취소되며 완료·해당 없음 이력은 유지됩니다.',
     submit: '변경건 취소',
     icon: <XCircle size={18} />,
-  },
-  archive_application: {
-    eyebrow: '변경건 보관',
-    title: '완료된 변경건을 보관할까요?',
-    description: '기록은 삭제되지 않으며 보관 목록에서 언제든 다시 확인하고 복원할 수 있습니다.',
-    submit: '변경건 보관',
-    icon: <Archive size={18} />,
-  },
-  restore_application: {
-    eyebrow: '변경건 복원',
-    title: '이 변경건을 활성 목록으로 복원할까요?',
-    description: '보관 이력과 기존 제품 처리 기록은 그대로 유지됩니다.',
-    submit: '활성 목록으로 복원',
-    icon: <ArchiveRestore size={18} />,
   },
   restore_scope: {
     eyebrow: '적용범위 복원',
@@ -90,40 +73,55 @@ const copy = {
 export function ChangeActionModal({
   dialog,
   data,
-  profile,
   onClose,
   onConfirm,
 }: {
   dialog: ChangeActionDialog
   data: AppData
-  profile: Profile
   onClose: () => void
   onConfirm: (result: ChangeActionDialogResult) => Promise<boolean>
 }) {
   const [note, setNote] = useState('')
   const [reason, setReason] = useState('')
-  const [proxyReason, setProxyReason] = useState('')
-  const [assigneeId, setAssigneeId] = useState<string | null>(
-    'task' in dialog ? dialog.task.assignee_id : null,
-  )
+  const noteRef = useRef<HTMLTextAreaElement>(null)
+  const reasonRef = useRef<HTMLTextAreaElement>(null)
+  const assigneeRef = useRef<HTMLSelectElement>(null)
+  const [assigneeId, setAssigneeId] = useState<string | null>(() => {
+    if (!('task' in dialog) || !dialog.task.assignee_id) return null
+    const current = data.profiles.find((item) => item.id === dialog.task.assignee_id)
+    return current?.is_active === false ? null : dialog.task.assignee_id
+  })
+  const activeAssignees = data.changeAssigneeOptions.filter((item) => {
+    const assignee = data.profiles.find((profileItem) => profileItem.id === item.id)
+    return assignee?.is_active !== false
+  })
   const config = copy[dialog.kind]
   const task = 'task' in dialog ? dialog.task : null
-  const needsProxyReason = Boolean(
-    task
-    && profile.role === 'leader'
-    && task.assignee_id !== profile.id
-    && (dialog.kind === 'complete' || dialog.kind === 'not_applicable'),
-  )
-  const needsReason = dialog.kind !== 'complete' && dialog.kind !== 'reassign'
-    ? true
-    : dialog.kind === 'reassign'
+  const needsReason = dialog.kind !== 'complete'
+  const reasonLabel = dialog.kind === 'not_applicable'
+    ? '해당 없음 사유'
+    : dialog.kind === 'reopen'
+      ? '재개 사유'
+      : dialog.kind === 'reassign'
+        ? '재배정 사유'
+        : dialog.kind === 'restore_scope'
+          ? '적용범위 복원 사유'
+          : dialog.kind === 'remove_scope'
+            ? '적용범위 제외 사유'
+            : '취소 사유'
   const canSubmit = dialog.kind === 'complete'
-    ? !needsProxyReason || Boolean(proxyReason.trim())
-    : Boolean(reason.trim()) && (!needsProxyReason || Boolean(proxyReason.trim()))
+    ? true
+    : Boolean(reason.trim())
+      && (dialog.kind !== 'reassign' || Boolean(assigneeId))
 
   const subject = task
     ? `${task.product_name} · ${task.assignee_name ?? '담당 미지정'}`
     : 'application' in dialog ? dialog.application.change_number : ''
+  const initialFocusRef = dialog.kind === 'complete'
+    ? noteRef
+    : dialog.kind === 'reassign'
+      ? assigneeRef
+      : reasonRef
 
   return (
     <Modal
@@ -134,13 +132,14 @@ export function ChangeActionModal({
       description={config.description}
       icon={config.icon}
       className="change-action-modal"
+      initialFocusRef={initialFocusRef}
     >
       <form
         className="change-action-form"
         onSubmit={(event) => {
           event.preventDefault()
           if (!canSubmit) return
-          void onConfirm({ note, reason, proxyReason, assigneeId }).then((ok) => {
+          void onConfirm({ note, reason, assigneeId }).then((ok) => {
             if (ok) onClose()
           })
         }}
@@ -150,49 +149,30 @@ export function ChangeActionModal({
         {dialog.kind === 'complete' && (
           <label>
             완료 메모 <small>선택</small>
-            <textarea maxLength={2000} placeholder="예: 제품표준서 Rev.12 반영" value={note} onChange={(event) => setNote(event.target.value)} />
+            <textarea ref={noteRef} maxLength={2000} placeholder="예: 제품표준서 Rev.12 반영" value={note} onChange={(event) => setNote(event.target.value)} />
           </label>
         )}
 
         {dialog.kind === 'reassign' && (
           <label>
             새 적용 책임자
-            <select aria-label="새 적용 책임자" value={assigneeId ?? ''} onChange={(event) => setAssigneeId(event.target.value || null)}>
-              <option value="">담당 미지정</option>
-              {data.changeAssigneeOptions.map((item) => <option key={item.id} value={item.id}>{item.name}{item.role === 'leader' ? ' (파트장)' : ''}</option>)}
+            <select ref={assigneeRef} aria-label="새 적용 책임자" value={assigneeId ?? ''} onChange={(event) => setAssigneeId(event.target.value || null)}>
+              <option disabled value="">책임자를 선택해 주세요</option>
+              {activeAssignees.map((item) => <option key={item.id} value={item.id}>{item.name}{item.role === 'leader' ? ' (파트장)' : ''}</option>)}
             </select>
           </label>
         )}
 
         {needsReason && (
           <label>
-            {dialog.kind === 'not_applicable'
-              ? '해당 없음 사유'
-              : dialog.kind === 'reopen'
-                ? '재개 사유'
-                : dialog.kind === 'reassign'
-                  ? '재배정 사유'
-                  : dialog.kind === 'archive_application'
-                    ? '보관 사유'
-                    : dialog.kind === 'restore_application'
-                      ? '복원 사유'
-                      : dialog.kind === 'restore_scope'
-                        ? '적용범위 복원 사유'
-                      : '취소 사유'} <span className="required">*</span>
-            <textarea autoFocus maxLength={2000} placeholder="처리 사유를 입력해 주세요." value={reason} onChange={(event) => setReason(event.target.value)} />
-          </label>
-        )}
-
-        {needsProxyReason && (
-          <label>
-            대리 처리 사유 <span className="required">*</span>
-            <textarea maxLength={2000} placeholder="파트장이 담당자 대신 처리하는 사유" value={proxyReason} onChange={(event) => setProxyReason(event.target.value)} />
+            {reasonLabel} <span className="required">*</span>
+            <textarea ref={reasonRef} aria-label={reasonLabel} maxLength={2000} placeholder="처리 사유를 입력해 주세요." value={reason} onChange={(event) => setReason(event.target.value)} />
           </label>
         )}
 
         <footer className="modal-footer">
           <button className="ghost" onClick={onClose} type="button">닫기</button>
-          <button className={dialog.kind.startsWith('cancel') ? 'danger' : 'primary'} disabled={!canSubmit} type="submit">{config.submit}</button>
+          <button className={dialog.kind.startsWith('cancel') || dialog.kind === 'remove_scope' ? 'danger' : 'primary'} disabled={!canSubmit} type="submit">{config.submit}</button>
         </footer>
       </form>
     </Modal>

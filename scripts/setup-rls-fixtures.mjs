@@ -169,16 +169,16 @@ if (feedbackError || !feedbackRows || feedbackRows.length !== 5) {
 // Remote browser contract: published change application with a task owned by member A.
 const anonKey = process.env.SUPABASE_ANON_KEY
 if (!anonKey) throw new Error('SUPABASE_ANON_KEY is required to publish change-application fixtures')
-const memberAClient = createClient(url, anonKey, {
+const leaderClient = createClient(url, anonKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 })
-const memberASignIn = await memberAClient.auth.signInWithPassword({
-  email: users[1].email,
+const leaderSignIn = await leaderClient.auth.signInWithPassword({
+  email: users[0].email,
   password,
 })
-if (memberASignIn.error) throw memberASignIn.error
+if (leaderSignIn.error) throw leaderSignIn.error
 const changeNumber = `RLS-E2E-${Date.now()}`
-const publishedChange = await memberAClient.rpc('publish_change_application', {
+const publishedChange = await leaderClient.rpc('publish_change_application', {
   p_change_application_id: null,
   p_expected_updated_at: null,
   p_change_number: changeNumber,

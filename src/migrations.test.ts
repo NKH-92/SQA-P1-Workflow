@@ -10,6 +10,14 @@ function readMigration(name: string) {
   return migrations[`../supabase/migrations/${name}`] ?? ''
 }
 
+function readFunctionDefinition(migration: string, qualifiedName: string) {
+  const start = migration.indexOf(`create or replace function ${qualifiedName}(`)
+  if (start < 0) return ''
+
+  const end = migration.indexOf('\n$$;', start)
+  return end < 0 ? '' : migration.slice(start, end + 4)
+}
+
 describe('Supabase migrations', () => {
   it('enforces changed review content and KST due dates without blocking legacy lifecycle updates', () => {
     const migration = readMigration('20260723120000_review_input_contract.sql')
@@ -980,5 +988,187 @@ describe('Supabase migrations', () => {
     expect(migration).toContain("'processed_with_exceptions'")
     expect(migration).toContain("application.archive_origin = 'automatic'")
     expect(migration).toContain('revoke all on function private.sync_change_application_archive()')
+  })
+
+  it('adds leader final approval with one parent-first task lock contract', () => {
+    const migration = readMigration('20260731230646_change_application_final_approval.sql')
+    const lockHelper = readFunctionDefinition(
+      migration,
+      'private.lock_change_application_and_tasks',
+    )
+    const taskParentHelper = readFunctionDefinition(
+      migration,
+      'private.require_change_application_id_for_task',
+    )
+    const persistMutation = readFunctionDefinition(
+      migration,
+      'private.persist_change_application',
+    )
+
+    expect(migration).toContain('add column final_completed_at timestamptz')
+    expect(migration).toContain('change_applications_final_completion_state_check')
+    expect(migration).toContain('change_applications_history_keyset_idx')
+    expect(lockHelper.indexOf('from public.change_applications application')).toBeGreaterThan(-1)
+    expect(lockHelper.indexOf('from public.product_change_tasks task')).toBeGreaterThan(
+      lockHelper.indexOf('from public.change_applications application'),
+    )
+    expect(lockHelper).toContain('where application.id = p_change_application_id')
+    expect(lockHelper).toContain('for update')
+    expect(lockHelper).toContain(
+      'where action_item.change_application_id = v_application.id',
+    )
+    expect(lockHelper).toContain('order by task.id')
+    expect(lockHelper).toContain('for update of task')
+    expect(taskParentHelper).toContain('action_item.change_application_id')
+    expect(taskParentHelper).toContain("detail = 'SQA_CHANGE_TASK_NOT_FOUND'")
+    expect(taskParentHelper).not.toContain('for update')
+    expect(migration).toContain(
+      'revoke all on function private.lock_change_application_and_tasks(uuid)',
+    )
+    expect(migration).toContain(
+      'revoke all on function private.require_change_application_id_for_task(uuid)',
+    )
+    expect(persistMutation).toContain('private.lock_change_application_and_tasks')
+
+    for (const functionName of [
+      'public.complete_product_change_task',
+      'public.mark_product_change_task_not_applicable',
+      'public.reopen_product_change_task',
+      'public.remove_product_from_change_scope',
+      'public.restore_product_change_scope',
+      'public.cancel_product_change_task',
+    ]) {
+      const definition = readFunctionDefinition(migration, functionName)
+      expect(definition, functionName).toContain(
+        'private.require_change_application_id_for_task',
+      )
+      expect(definition, functionName).toContain(
+        'private.lock_change_application_and_tasks',
+      )
+      expect(
+        definition.indexOf('private.require_change_application_id_for_task'),
+        functionName,
+      ).toBeLessThan(definition.indexOf('private.lock_change_application_and_tasks'))
+    }
+
+    for (const functionName of [
+      'public.reassign_product_change_tasks',
+      'public.cancel_change_application',
+      'public.assign_product_and_transfer_change_tasks',
+      'public.archive_change_application',
+      'public.restore_change_application',
+      'public.complete_change_application',
+      'public.undo_change_application_completion',
+    ]) {
+      expect(readFunctionDefinition(migration, functionName), functionName).toContain(
+        'private.lock_change_application_and_tasks',
+      )
+    }
+
+    for (const functionName of [
+      'public.complete_change_application',
+      'public.undo_change_application_completion',
+    ]) {
+      expect(readFunctionDefinition(migration, functionName), functionName).not.toContain(
+        'for update',
+      )
+    }
+
+    expect(
+      migration.match(/perform private\.record_change_application_final_review_readiness/g),
+    ).toHaveLength(5)
+    expect(migration).toContain('drop trigger if exists product_change_tasks_sync_application_archive')
+    expect(migration).toContain('drop trigger if exists product_change_tasks_sync_final_review_readiness')
+    expect(migration).toContain('create or replace function public.complete_change_application(')
+    expect(migration).toContain('create or replace function public.undo_change_application_completion(')
+    expect(migration).toContain('create or replace function public.get_change_bootstrap_v3()')
+    expect(migration).toContain('create or replace function public.list_change_application_history_v1(')
+    expect(migration).toContain("security definer\nset search_path = ''")
+    expect(migration).toContain(
+      'revoke all on function public.complete_change_application(uuid, timestamptz, text)',
+    )
+    expect(migration).toContain(
+      'grant execute on function public.complete_change_application(uuid, timestamptz, text)',
+    )
+    expect(migration).toContain(
+      'revoke all on function public.list_change_application_history_v1(',
+    )
+    expect(migration).toContain(
+      'grant execute on function public.list_change_application_history_v1(',
+    )
+  })
+
+  it('keeps permanent product-task assignee history outside disposable activity logs', () => {
+    const migration = readMigration('20260731230646_change_application_final_approval.sql')
+    const captureFunction = readFunctionDefinition(
+      migration,
+      'private.capture_product_change_task_assignee_history',
+    )
+    const historyFunction = readFunctionDefinition(
+      migration,
+      'public.list_change_application_history_v1',
+    )
+
+    expect(migration).toContain('create table private.product_change_task_assignee_history')
+    expect(migration).toContain('primary key (task_id, assignee_id)')
+    expect(migration).toContain('product_change_task_assignee_history_assignee_idx')
+    expect(migration).toContain('with candidate_history(task_id, assignee_id, recorded_at) as (')
+    expect(migration).toContain('from private.audit_events audit')
+    expect(migration).toContain('from public.activity_logs activity')
+    expect(migration).toContain(
+      'revoke all on table private.product_change_task_assignee_history',
+    )
+    expect(migration).toContain(
+      'revoke all on function private.capture_product_change_task_assignee_history()',
+    )
+    expect(captureFunction).toContain('old.assignee_id')
+    expect(captureFunction).toContain('new.assignee_id')
+    expect(captureFunction).toContain('new.completed_by')
+    expect(captureFunction).toContain('on conflict (task_id, assignee_id) do nothing')
+    expect(migration).toContain('create trigger product_change_tasks_capture_assignee_history')
+    expect(migration).toContain(
+      'after insert or update of assignee_id, completed_by on public.product_change_tasks',
+    )
+
+    expect(
+      historyFunction.match(/private\.product_change_task_assignee_history/g),
+    ).toHaveLength(2)
+    expect(historyFunction).not.toContain('public.activity_logs')
+  })
+
+  it('keeps bootstrap v3 bounded by the v2 application envelope', () => {
+    const migration = readMigration('20260731230646_change_application_final_approval.sql')
+    const bootstrapFunction = readFunctionDefinition(
+      migration,
+      'public.get_change_bootstrap_v3',
+    )
+
+    expect(bootstrapFunction).toContain('select public.get_change_bootstrap_v2() as payload')
+    expect(bootstrapFunction).toContain('base_application_rows as materialized')
+    expect(bootstrapFunction).toContain('from base_application_rows entry')
+    expect(bootstrapFunction).toContain('join public.change_applications application')
+    expect(bootstrapFunction).toContain('visible_applications as materialized')
+    expect(bootstrapFunction.match(/from visible_applications application/g)).toHaveLength(2)
+    expect(bootstrapFunction).toContain(
+      'join visible_applications application on application.id = (entry.value ->> \'id\')::uuid',
+    )
+    expect(bootstrapFunction).not.toContain('from public.change_applications application')
+    expect(bootstrapFunction).not.toContain('application.created_by = v_actor_id')
+    expect(bootstrapFunction).not.toContain('application.published_at is not null')
+    expect(bootstrapFunction).toContain("'application_summaries', summaries.rows")
+    expect(bootstrapFunction).toContain("'warnings', coalesce(base.payload -> 'warnings'")
+  })
+
+  it('preserves the exact v2 application order in the v3 envelope', () => {
+    const migration = readMigration('20260731230646_change_application_final_approval.sql')
+    const bootstrapFunction = readFunctionDefinition(
+      migration,
+      'public.get_change_bootstrap_v3',
+    )
+
+    expect(bootstrapFunction).toContain('with ordinality as entry(value, ordinality)')
+    expect(bootstrapFunction).toContain('entry.ordinality as bootstrap_ordinal')
+    expect(bootstrapFunction).toContain('order by entry.bootstrap_ordinal')
+    expect(bootstrapFunction).toContain('order by application.bootstrap_ordinal')
   })
 })

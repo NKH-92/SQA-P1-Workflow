@@ -2,7 +2,6 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createPreviewData, previewLeader } from '../demoData'
-import { FULLY_APPLIED_ARCHIVE_REASON } from '../domain/changeApplications/completion'
 import { LeaderDashboard } from './LeaderDashboard'
 
 afterEach(cleanup)
@@ -28,26 +27,39 @@ describe('LeaderDashboard', () => {
     expect(setActiveTab).toHaveBeenCalledWith('change-applications')
   })
 
-  it('shows the leader a durable all-products completion KPI', () => {
+  it('separates in-progress work from applications awaiting final review', () => {
     const setActiveTab = vi.fn()
     const source = createPreviewData()
     const target = source.changeApplications.find((item) => item.status === 'published')!
+    const targetActionIds = new Set(source.changeActionItems
+      .filter((item) => item.change_application_id === target.id)
+      .map((item) => item.id))
     const data = {
       ...source,
-      changeApplications: source.changeApplications.map((application) => application.id === target.id ? {
-        ...application,
-        archived_at: '2026-07-22T02:00:00.000Z',
-        archived_by: null,
-        archive_origin: 'automatic' as const,
-        archive_reason: FULLY_APPLIED_ARCHIVE_REASON,
-      } : application),
+      productChangeTasks: source.productChangeTasks.map((task) => targetActionIds.has(task.action_item_id)
+        ? { ...task, status: 'completed' as const }
+        : task),
+      changeApplicationSummaries: [{
+        change_application_id: target.id,
+        workflow_status: 'final_review_ready' as const,
+        total_count: 12,
+        pending_count: 0,
+        completed_count: 12,
+        not_applicable_count: 0,
+        scope_removed_count: 0,
+        unresolved_cancelled_count: 0,
+        unassigned_count: 0,
+        processed_count: 12,
+        percent: 100,
+        can_finalize: true,
+      }],
     }
 
     render(<LeaderDashboard profile={previewLeader} data={data} setActiveTab={setActiveTab} />)
 
-    const completedKpi = screen.getByRole('button', { name: '완료된 변경1건' })
-    expect(completedKpi).toBeInTheDocument()
-    fireEvent.click(completedKpi)
-    expect(setActiveTab).toHaveBeenCalledWith('change-applications')
+    expect(screen.getByRole('button', { name: '미적용 변경업무0건' })).toBeInTheDocument()
+    const finalReviewKpi = screen.getByRole('button', { name: '최종 확인 대기1건' })
+    fireEvent.click(finalReviewKpi)
+    expect(setActiveTab).toHaveBeenCalledWith('change-applications', target.id)
   })
 })

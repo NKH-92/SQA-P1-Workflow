@@ -10,7 +10,9 @@ export { mergeAnnouncements, sortAnnouncements } from './announcementCollection'
 export { fetchAuditEvents } from './fetch/auditQueries'
 export {
   CHANGE_TASK_HISTORY_MONTHS,
+  CHANGE_APPLICATION_HISTORY_PAGE_SIZE,
   changeTaskHistoryCutoff,
+  fetchChangeApplicationHistoryPage,
   fetchProductChangeTaskHistory,
 } from './fetch/changeQueries'
 export { fetchAnnouncementById } from './fetch/optionalQueries'
@@ -120,6 +122,7 @@ export async function fetchAppData(previous?: AssembledAppData): Promise<FetchAp
     required.productChangeTasksResult,
     required.changeProductScopeResult,
     required.changeAssigneeOptionsResult,
+    required.changeApplicationSummariesResult,
   ]
   const failed = requiredResults.find((result) => result.error)
   if (failed?.error) throw failed.error

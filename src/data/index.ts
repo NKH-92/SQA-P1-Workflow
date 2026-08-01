@@ -7,6 +7,7 @@ export {
 export {
   fetchAuditEvents,
   fetchProductChangeTaskHistory,
+  fetchChangeApplicationHistoryPage,
   fetchReviewHistoryPage,
   fetchReviewEventsPage,
   fetchReviewStatisticsV2,
@@ -75,9 +76,12 @@ export {
   markProductChangeTaskNotApplicable,
   reopenProductChangeTask,
   reassignProductChangeTasks,
+  removeProductChangeScope,
   cancelProductChangeTask,
   restoreProductChangeScope,
   cancelChangeApplication,
+  finalizeChangeApplication,
+  undoFinalizeChangeApplication,
   archiveChangeApplication,
   restoreChangeApplication,
 } from './mutations/changeApplications'

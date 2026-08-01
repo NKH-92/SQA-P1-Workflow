@@ -4,12 +4,17 @@ import type { AppData, Profile } from '../../types'
 import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
 import {
   archiveChangeApplication,
+  cancelChangeApplication,
   cancelProductChangeTask,
   completeProductChangeTask,
+  finalizeChangeApplication,
   markProductChangeTaskNotApplicable,
+  reassignProductChangeTasks,
+  removeProductChangeScope,
   reopenProductChangeTask,
   restoreChangeApplication,
   saveChangeApplication,
+  undoFinalizeChangeApplication,
 } from './changeApplications'
 import type { ChangeApplicationInput } from '../contracts'
 import { createLocalChangeApplicationRepository } from '../local/localChangeApplicationRepository'
@@ -42,7 +47,7 @@ function input(data: AppData): ChangeApplicationInput {
     due_date: '2026-08-28',
     tasks: [
       { product_id: data.changeProductScope[0].product_id, assignee_id: previewMember.id },
-      { product_id: data.changeProductScope.find((row) => row.product_id !== data.changeProductScope[0].product_id)!.product_id, assignee_id: null },
+      { product_id: data.changeProductScope.find((row) => row.product_id !== data.changeProductScope[0].product_id)!.product_id, assignee_id: previewMember.id },
     ],
   }
 }
@@ -60,7 +65,7 @@ describe('local change application mutations', () => {
     expect(application).toMatchObject({ change_number: 'CC-TEST-LOCAL-001', status: 'published' })
     expect(actions).toHaveLength(1)
     expect(tasks).toHaveLength(2)
-    expect(tasks.map((task) => task.assignee_id)).toEqual([previewMember.id, null])
+    expect(tasks.map((task) => task.assignee_id)).toEqual([previewMember.id, previewMember.id])
     expect(state.data.activityLogs[0]).toMatchObject({ entity_type: 'change_application', action: 'published' })
   })
 
@@ -173,7 +178,7 @@ describe('local change application mutations', () => {
     expect(state.data.changeApplications.find((item) => item.id === applicationId)?.title).toBe(payload.title)
   })
 
-  it('automatically archives only after the final product task is processed and restores on reopen', async () => {
+  it('waits for leader final approval and reopens selected products when completion is undone', async () => {
     const state = harness()
     const applicationId = await saveChangeApplication(state.context(previewLeader), input(state.data), true)
     const actionId = state.data.changeActionItems.find((item) => item.change_application_id === applicationId)!.id
@@ -183,27 +188,126 @@ describe('local change application mutations', () => {
     expect(state.data.changeApplications.find((item) => item.id === applicationId)?.archived_at).toBeNull()
 
     await markProductChangeTaskNotApplicable(
-      state.context(previewLeader),
+      state.context(previewMember),
       tasks[1].id,
       '적용 대상 아님',
-      '담당 미지정 업무 대리 처리',
+      '',
     )
     expect(state.data.changeApplications.find((item) => item.id === applicationId)).toMatchObject({
-      archived_by: null,
-      archive_origin: 'automatic',
-      archive_reason: '모든 제품 적용업무가 처리되어 자동 보관됨',
+      archived_at: null,
+      final_completed_at: null,
     })
-    expect(state.data.changeApplications.find((item) => item.id === applicationId)?.archived_at).toBeTruthy()
-    expect(state.data.activityLogs.some((log) => log.entity_id === applicationId && log.action === 'auto_archived')).toBe(true)
+    expect(state.data.changeApplicationSummaries?.find((item) => item.change_application_id === applicationId))
+      .toMatchObject({ workflow_status: 'final_review_ready', can_finalize: true })
 
-    await reopenProductChangeTask(state.context(previewLeader), tasks[1].id, '추가 적용 필요')
+    const readyApplication = state.data.changeApplications.find((item) => item.id === applicationId)!
+    await expect(finalizeChangeApplication(state.context(previewLeader), {
+      changeApplicationId: applicationId,
+      expected_updated_at: readyApplication.updated_at,
+      note: '',
+    })).rejects.toThrow('예외가 있는 경우 최종 확인 메모')
+
+    await finalizeChangeApplication(state.context(previewLeader), {
+      changeApplicationId: applicationId,
+      expected_updated_at: readyApplication.updated_at,
+      note: '해당 없음 사유 확인 완료',
+    })
+    const completedApplication = state.data.changeApplications.find((item) => item.id === applicationId)!
+    expect(completedApplication).toMatchObject({
+      archived_by: previewLeader.id,
+      archive_origin: 'manual',
+      final_completed_by: previewLeader.id,
+      final_completion_note: '해당 없음 사유 확인 완료',
+    })
+    expect(completedApplication.archived_at).toBeTruthy()
+
+    await undoFinalizeChangeApplication(state.context(previewLeader), {
+      changeApplicationId: applicationId,
+      expected_updated_at: completedApplication.updated_at,
+      reason: '추가 적용 필요',
+      reopen_tasks: [{ task_id: tasks[1].id, assignee_id: previewMember.id }],
+    })
     expect(state.data.changeApplications.find((item) => item.id === applicationId)).toMatchObject({
       archived_at: null,
-      archived_by: null,
-      archive_reason: null,
+      final_completed_at: null,
     })
-    expect(state.data.activityLogs.some((log) => log.entity_id === applicationId && log.action === 'archive_restored_automatically')).toBe(true)
+    expect(state.data.productChangeTasks.find((item) => item.id === tasks[1].id)).toMatchObject({
+      status: 'pending',
+      assignee_id: previewMember.id,
+      reopen_reason: '추가 적용 필요',
+    })
   })
+
+  it('removes a pending product from scope without creating an unresolved manual cancellation', async () => {
+    const state = harness()
+    const applicationId = await saveChangeApplication(state.context(previewLeader), input(state.data), true)
+    const actionId = state.data.changeActionItems.find((item) => item.change_application_id === applicationId)!.id
+    const task = state.data.productChangeTasks.find((item) => item.action_item_id === actionId)!
+
+    await removeProductChangeScope(state.context(previewLeader), task.id, '  변경 대상 제품에서 제외  ')
+
+    expect(state.data.productChangeTasks.find((item) => item.id === task.id)).toMatchObject({
+      status: 'cancelled',
+      cancel_kind: 'scope_removed',
+      resolution_reason: '변경 대상 제품에서 제외',
+      cancelled_by: previewLeader.id,
+      completed_by: null,
+      completed_at: null,
+    })
+    expect(state.data.changeApplicationSummaries?.find((item) => item.change_application_id === applicationId))
+      .toMatchObject({ scope_removed_count: 1, unresolved_cancelled_count: 0 })
+    expect(state.data.activityLogs.some((item) => item.entity_id === task.id && item.action === 'scope_removed')).toBe(true)
+  })
+
+  it.each(['completed', 'not_applicable'] as const)(
+    'reassigns a %s task only when its current owner is inactive and preserves processing evidence',
+    async (status) => {
+      const data = createPreviewData()
+      const task = data.productChangeTasks.find((item) => item.status === 'pending' && item.assignee_id)!
+      const previousAssigneeId = task.assignee_id!
+      const replacement = data.profiles.find(
+        (item) => item.role === 'member' && item.id !== previousAssigneeId && item.is_active !== false,
+      )!
+      data.profiles = data.profiles.map((item) => item.id === previousAssigneeId
+        ? { ...item, is_active: false }
+        : item)
+      data.productChangeTasks = data.productChangeTasks.map((item) => item.id === task.id ? {
+        ...item,
+        status,
+        completion_note: status === 'completed' ? '제품표준서 Rev.15 반영' : null,
+        resolution_reason: status === 'not_applicable' ? '변경 원료 미사용' : null,
+        completed_by: previousAssigneeId,
+        completed_by_name: task.assignee_name,
+        completed_at: '2026-07-31T01:02:03.000Z',
+      } : item)
+      const state = harness(data)
+
+      await reassignProductChangeTasks(
+        state.context(previewLeader),
+        [task.id],
+        replacement.id,
+        '퇴사자 업무 복구',
+      )
+
+      expect(state.data.productChangeTasks.find((item) => item.id === task.id)).toMatchObject({
+        status,
+        assignee_id: replacement.id,
+        assignee_name: replacement.name,
+        completion_note: status === 'completed' ? '제품표준서 Rev.15 반영' : null,
+        resolution_reason: status === 'not_applicable' ? '변경 원료 미사용' : null,
+        completed_by: previousAssigneeId,
+        completed_by_name: task.assignee_name,
+        completed_at: '2026-07-31T01:02:03.000Z',
+      })
+
+      await expect(reassignProductChangeTasks(
+        state.context(previewLeader),
+        [task.id],
+        previousAssigneeId,
+        '활성 책임자 업무 재변경',
+      )).rejects.toThrow('활성 담당자를 선택해 주세요')
+    },
+  )
 
   it('does not auto-archive a cancellation and restricts manual archive and restore to leaders', async () => {
     const state = harness()
@@ -213,12 +317,13 @@ describe('local change application mutations', () => {
     const task = state.data.productChangeTasks.find((item) => item.action_item_id === actionId)!
 
     await expect(archiveChangeApplication(state.context(previewLeader), applicationId, '아직 미완료'))
-      .rejects.toThrow('미완료 제품 업무')
+      .rejects.toThrow('파트장 최종 완료')
     await cancelProductChangeTask(state.context(previewLeader), task.id, '적용 취소')
     expect(state.data.changeApplications.find((item) => item.id === applicationId)?.archived_at).toBeNull()
     await expect(archiveChangeApplication(state.context(previewMember), applicationId, '완료 보관'))
       .rejects.toThrow('파트장만')
 
+    await cancelChangeApplication(state.context(previewLeader), applicationId, '변경 자체 취소')
     await archiveChangeApplication(state.context(previewLeader), applicationId, '취소 이력 보관')
     expect(state.data.changeApplications.find((item) => item.id === applicationId)?.archive_reason).toBe('취소 이력 보관')
     await expect(restoreChangeApplication(state.context(previewMember), applicationId, '재검토'))

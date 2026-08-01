@@ -1,6 +1,7 @@
 import type { AppData, Profile } from '../types'
 import type { TabId } from '../app/types'
 import type { AppNotification } from '../lib/notifications'
+import { selectOrBuildChangeApplicationSummary } from '../domain/changeApplications/completion'
 
 export type ShellTabState = {
   count?: number
@@ -17,6 +18,9 @@ export type ShellFeatureData = Pick<
   AppData,
   | 'profiles'
   | 'reviewRequests'
+  | 'changeApplications'
+  | 'changeApplicationSummaries'
+  | 'changeActionItems'
   | 'productChangeTasks'
   | 'projects'
   | 'projectAssignments'
@@ -51,9 +55,30 @@ export function buildShellModel({
   const memberProjectCount = data.projectAssignments.filter((assignment) => assignment.user_id === profile.id).length
   const memberProductCount = data.productAssignments.filter((assignment) => assignment.user_id === profile.id).length
   const memberDutyCount = data.dutyAssignments.filter((assignment) => assignment.user_id === profile.id).length
-  const pendingChangeTaskCount = data.productChangeTasks.filter(
-    (task) => task.status === 'pending' && (leaderMode || task.assignee_id === profile.id),
-  ).length
+  const actionApplicationIds = new Map(
+    data.changeActionItems.map((item) => [item.id, item.change_application_id]),
+  )
+  const tasksByApplication = new Map<string, typeof data.productChangeTasks>()
+  for (const task of data.productChangeTasks) {
+    const applicationId = actionApplicationIds.get(task.action_item_id)
+    if (!applicationId) continue
+    const current = tasksByApplication.get(applicationId) ?? []
+    current.push(task)
+    tasksByApplication.set(applicationId, current)
+  }
+  const actionableChangeCount = leaderMode
+    ? data.changeApplications.filter((application) => {
+        const summary = selectOrBuildChangeApplicationSummary(
+          application,
+          tasksByApplication.get(application.id) ?? [],
+          data.changeApplicationSummaries ?? [],
+        )
+        return summary.workflow_status === 'in_progress'
+          || summary.workflow_status === 'final_review_ready'
+      }).length
+    : data.productChangeTasks.filter(
+        (task) => task.status === 'pending' && task.assignee_id === profile.id,
+      ).length
   return {
     memberCount,
     unreadNotifications: notifications.filter((item) => item.unread).length,
@@ -63,7 +88,7 @@ export function buildShellModel({
         count: leaderMode ? pendingCount : memberPendingReviewCount,
         unreadCount: unreadReviewsCount,
       },
-      'change-applications': { count: pendingChangeTaskCount },
+      'change-applications': { count: actionableChangeCount },
       projects: {
         count: leaderMode ? data.projects.length : memberProjectCount,
       },

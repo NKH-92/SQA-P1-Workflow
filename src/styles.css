@@ -8277,6 +8277,10 @@ button.review-preview-row:hover {
     display: none;
   }
 
+  .leader-dashboard .dashboard-resolution-panel {
+    display: none;
+  }
+
   .leader-dashboard .dashboard-hero {
     padding-top: 14px;
   }

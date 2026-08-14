@@ -69,11 +69,15 @@ async function processOwnTask(
   action: 'complete' | 'not_applicable',
 ) {
   await openChangeApplications(page)
-  await page.getByRole('button', { name: '변경건별', exact: true }).click()
-  const change = await searchActiveChange(page, fixture.title)
-  await expect(change).toBeVisible({ timeout: 45_000 })
-  await change.click()
-  const task = page.getByRole('article').filter({ hasText: productName }).filter({ hasText: fixture.changeNumber })
+  const search = page.getByRole('textbox', { name: '변경 적용 검색' })
+  await search.fill(fixture.title)
+  const product = page
+    .getByRole('navigation', { name: '적용대상 제품 목록' })
+    .getByRole('button', { name: new RegExp(`^${escapeRegExp(productName)}(?:\\s|$)`) })
+  await expect(product).toBeVisible({ timeout: 45_000 })
+  await product.click()
+  const productDetail = page.getByRole('region', { name: `${productName} 변경관리 내용` })
+  const task = productDetail.getByRole('article').filter({ hasText: fixture.changeNumber })
   await expect(task).toBeVisible()
 
   if (action === 'complete') {

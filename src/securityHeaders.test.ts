@@ -9,5 +9,7 @@ describe('security header template', () => {
     expect(headers).toContain('Strict-Transport-Security: max-age=31536000')
     expect(headers).toContain('connect-src')
     expect(headers).toContain('https://*.supabase.co')
+    expect(headers).toContain('/change-application-products-template.xlsx')
+    expect(headers).toContain('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
   })
 })

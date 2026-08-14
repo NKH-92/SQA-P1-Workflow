@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CalendarClock,
   CheckCircle2,
+  ChevronLeft,
   ClipboardList,
   FilePenLine,
   Filter,
@@ -32,6 +33,7 @@ import {
 import { productChangeTaskStatusLabels, type ChangeApplicationInput } from '../features/change-applications/types'
 import {
   applicationCreatorName,
+  buildMemberProductBoardGroups,
   calculateChangeApplicationKpis,
   changeApplicationWorkflowLabel,
   filterApplicationsByLeaderTab,
@@ -71,7 +73,7 @@ function applicationMatchesQuery(
     application.change_number,
     application.title,
     application.summary,
-    ...contexts.flatMap(({ task }) => [task.product_name, task.assignee_name ?? '']),
+    ...contexts.flatMap(({ task, actionItem }) => [task.product_name, task.assignee_name ?? '', actionItem.content]),
   ].join('\n').toLocaleLowerCase('ko').includes(normalized)
 }
 
@@ -98,6 +100,8 @@ export function ChangeApplicationsPanel({
   const [statusFilter, setStatusFilter] = useState<ChangeTaskStatusFilter>(leaderMode ? 'all' : 'pending')
   const [query, setQuery] = useState('')
   const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(initialSelectedId ?? null)
+  const [selectedMemberProductId, setSelectedMemberProductId] = useState<string | null>(null)
+  const [memberDetailOpen, setMemberDetailOpen] = useState(false)
   const [composer, setComposer] = useState<{ editingId: string | null } | null>(null)
   const [dialog, setDialog] = useState<ChangeActionDialog | null>(null)
   const [finalizationDialog, setFinalizationDialog] = useState<FinalizationDialog | null>(null)
@@ -176,6 +180,20 @@ export function ChangeApplicationsPanel({
   const selectedContexts = selectedApplication ? contextsByApplication.get(selectedApplication.id) ?? [] : []
   const selectedSummary = selectedApplication ? summaryByApplication.get(selectedApplication.id) ?? null : null
   const groupedContexts = viewMode === 'change' ? [] : groupChangeTaskContexts(filteredContexts, viewMode)
+  const memberProductGroups = useMemo(() => leaderMode ? [] : buildMemberProductBoardGroups(
+    allContexts.filter((context) => (
+      context.task.assignee_id === profile.id
+      && context.task.status === 'pending'
+      && context.application.status === 'published'
+      && !context.application.final_completed_at
+      && !context.application.archived_at
+      && (statusFilter === 'all' || context.task.status === statusFilter)
+      && applicationMatchesQuery(context.application, [context], query)
+    )),
+  ), [allContexts, leaderMode, profile.id, query, statusFilter])
+  const selectedMemberProduct = memberProductGroups.find((group) => group.key === selectedMemberProductId)
+    ?? memberProductGroups[0]
+    ?? null
   const { overdueCount, dueSoonCount, unassignedCount } = calculateChangeApplicationKpis(allContexts, leaderMode, profile.id)
 
   useEffect(() => {
@@ -196,10 +214,24 @@ export function ChangeApplicationsPanel({
       } else {
         setLeaderTab('active')
       }
+    } else {
+      const initialContext = allContexts.find(
+        ({ application, task }) => application.id === initialSelectedId && task.assignee_id === profile.id,
+      )
+      if (initialContext) {
+        setSelectedMemberProductId(initialContext.task.product_id)
+        setMemberDetailOpen(true)
+      }
     }
     setSelectedApplicationId(initialSelectedId)
     onInitialSelectionApplied?.()
-  }, [initialSelectedId, leaderMode, onInitialSelectionApplied, summaryByApplication])
+  }, [allContexts, initialSelectedId, leaderMode, onInitialSelectionApplied, profile.id, summaryByApplication])
+
+  useEffect(() => {
+    if (leaderMode || memberTab !== 'pending') return
+    if (selectedMemberProductId && memberProductGroups.some((group) => group.key === selectedMemberProductId)) return
+    setSelectedMemberProductId(memberProductGroups[0]?.key ?? null)
+  }, [leaderMode, memberProductGroups, memberTab, selectedMemberProductId])
 
   const showLeaderTab = (tab: LeaderChangeApplicationTab) => {
     setLeaderTab(tab)
@@ -219,13 +251,13 @@ export function ChangeApplicationsPanel({
     if (!dialog) return Promise.resolve(false)
     if (dialog.kind === 'complete') return mutate(async () => {
       await controller.completeTask(dialog.task.id, result.note, '')
-      setMemberTab('history')
-      setStatusFilter('all')
+      setMemberTab('pending')
+      setStatusFilter('pending')
     }, `${dialog.task.product_name} 적용을 완료했습니다.`)
     if (dialog.kind === 'not_applicable') return mutate(async () => {
       await controller.markNotApplicable(dialog.task.id, result.reason, '')
-      setMemberTab('history')
-      setStatusFilter('all')
+      setMemberTab('pending')
+      setStatusFilter('pending')
     }, `${dialog.task.product_name}을 해당 없음으로 처리했습니다.`)
     if (dialog.kind === 'reopen') return mutate(async () => {
       await controller.reopenTask(dialog.task.id, result.reason)
@@ -318,6 +350,47 @@ export function ChangeApplicationsPanel({
     )
   }
 
+  const memberTaskDetail = ({ task, actionItem, application }: ProductChangeTaskContext) => {
+    const workflow = summaryByApplication.get(application.id)?.workflow_status
+    const canProcess = workflow === 'in_progress'
+      && task.status === 'pending'
+      && task.assignee_id === profile.id
+    const overdue = (daysUntil(actionItem.due_date) ?? 0) < 0
+    return (
+      <article className="member-change-detail-card" data-overdue={overdue} key={task.id}>
+        <header>
+          <div>
+            <span>{application.change_number}</span>
+            <h3>{application.title}</h3>
+          </div>
+          <Badge status={overdue ? 'overdue' : task.status}>{overdue ? '기한 초과' : dueDateLabel(actionItem.due_date)}</Badge>
+        </header>
+        <p>{application.summary}</p>
+        <div className="member-change-action">
+          <span>{changeActionLabel(actionItem)}</span>
+          <strong>{actionItem.content}</strong>
+        </div>
+        <dl>
+          <div><dt>시행일</dt><dd>{formatDate(application.effective_date)}</dd></div>
+          <div><dt>적용기한</dt><dd>{formatDate(actionItem.due_date)}</dd></div>
+          <div><dt>등록자</dt><dd>{applicationCreatorName(data, application)}</dd></div>
+        </dl>
+        <footer>
+          <div>
+            <CopyLinkButton tab="change-applications" entityId={application.id} />
+            {application.source_url && <a className="ghost compact" href={application.source_url} rel="noreferrer" target="_blank">공식 문서 열기</a>}
+          </div>
+          {canProcess && (
+            <div>
+              <button className="ghost" onClick={() => setDialog({ kind: 'not_applicable', task })} type="button">해당 없음</button>
+              <button className="primary" onClick={() => setDialog({ kind: 'complete', task })} type="button">적용 완료</button>
+            </div>
+          )}
+        </footer>
+      </article>
+    )
+  }
+
   const renderDetail = () => {
     if (!selectedApplication || !selectedSummary) return <EmptyState icon={<ClipboardList size={22} />} title="변경건을 선택해 주세요." />
     return (
@@ -400,14 +473,76 @@ export function ChangeApplicationsPanel({
           </Section>
         </>
       ) : (
-        <Section title={leaderMode ? (leaderTab === 'final_review' ? '최종 확인 대기' : '공통변경 목록') : '내 미적용 업무'} icon={<Filter size={18} />} aside={`${viewMode === 'change' ? applications.length : filteredContexts.length}건`}>
+        <Section
+          title={leaderMode ? (leaderTab === 'final_review' ? '최종 확인 대기' : '공통변경 목록') : '제품별 미적용 업무'}
+          icon={leaderMode ? <Filter size={18} /> : <Package size={18} />}
+          aside={leaderMode ? `${viewMode === 'change' ? applications.length : filteredContexts.length}건` : `${memberProductGroups.length}개 제품`}
+        >
           <div className="change-list-toolbar compact-controls">
-            <div className="segmented change-view-tabs" role="group" aria-label="보기 방식"><button aria-pressed={viewMode === 'change'} className={viewMode === 'change' ? 'selected' : ''} onClick={() => setViewMode('change')} type="button">변경건별</button><button aria-pressed={viewMode === 'product'} className={viewMode === 'product' ? 'selected' : ''} onClick={() => setViewMode('product')} type="button">제품별</button>{leaderMode && <button aria-pressed={viewMode === 'assignee'} className={viewMode === 'assignee' ? 'selected' : ''} onClick={() => setViewMode('assignee')} type="button">담당자별</button>}</div>
-            <label className="change-search"><Search size={15} /><input aria-label="변경 적용 검색" placeholder="변경번호, 제목, 제품, 담당자 검색" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+            {leaderMode ? (
+              <div className="segmented change-view-tabs" role="group" aria-label="보기 방식"><button aria-pressed={viewMode === 'change'} className={viewMode === 'change' ? 'selected' : ''} onClick={() => setViewMode('change')} type="button">변경건별</button><button aria-pressed={viewMode === 'product'} className={viewMode === 'product' ? 'selected' : ''} onClick={() => setViewMode('product')} type="button">제품별</button><button aria-pressed={viewMode === 'assignee'} className={viewMode === 'assignee' ? 'selected' : ''} onClick={() => setViewMode('assignee')} type="button">담당자별</button></div>
+            ) : (
+              <div className="member-board-label"><Package size={15} /><span><strong>적용대상 제품</strong><small>제품을 선택하면 공통변경 내용을 확인할 수 있습니다.</small></span></div>
+            )}
+            <label className="change-search"><Search size={15} /><input aria-label="변경 적용 검색" placeholder={leaderMode ? '변경번호, 제목, 제품, 담당자 검색' : '제품명 또는 변경내용 검색'} value={query} onChange={(event) => setQuery(event.target.value)} /></label>
             {leaderMode && <select aria-label="업무 상태" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as ChangeTaskStatusFilter)}><option value="all">업무 상태 전체</option><option value="pending">미적용</option><option value="completed">적용 완료</option><option value="not_applicable">해당 없음</option><option value="cancelled">취소</option></select>}
           </div>
 
-          {viewMode === 'change' ? (
+          {!leaderMode ? (
+            memberProductGroups.length > 0 && selectedMemberProduct ? (
+              <div className="member-product-board" data-detail-open={memberDetailOpen}>
+                <nav aria-label="적용대상 제품 목록" className="member-product-list">
+                  {memberProductGroups.map((group) => {
+                    const selected = selectedMemberProduct.key === group.key
+                    const firstTitle = group.items[0]?.application.title ?? ''
+                    return (
+                      <button
+                        aria-current={selected ? 'true' : undefined}
+                        className={selected ? 'selected' : ''}
+                        data-overdue={group.overdue}
+                        key={group.key}
+                        onClick={() => {
+                          setSelectedMemberProductId(group.key)
+                          setMemberDetailOpen(true)
+                        }}
+                        type="button"
+                      >
+                        <span><strong>{group.title}</strong><Badge>{group.items.length}건</Badge></span>
+                        <p>{firstTitle}{group.items.length > 1 ? ` 외 ${group.items.length - 1}건` : ''}</p>
+                        <small>{group.earliestDueDate ? (group.overdue ? '기한 초과' : dueDateLabel(group.earliestDueDate)) : '기한 미정'} · {group.sub}</small>
+                      </button>
+                    )
+                  })}
+                </nav>
+                <section className="member-product-detail" aria-label={`${selectedMemberProduct.title} 변경관리 내용`}>
+                  <button className="ghost compact member-product-back" onClick={() => setMemberDetailOpen(false)} type="button"><ChevronLeft size={15} />제품 목록</button>
+                  <header>
+                    <div><span>적용대상 제품</span><h2>{selectedMemberProduct.title}</h2><p>놓치지 않도록 아래 공통변경을 모두 확인하고 제품별로 완료해 주세요.</p></div>
+                    <Badge>{selectedMemberProduct.items.length}건 남음</Badge>
+                  </header>
+                  <div className="member-change-detail-list">
+                    {selectedMemberProduct.items.map(memberTaskDetail)}
+                  </div>
+                </section>
+              </div>
+            ) : (
+              <>
+                {ownProcessingReachedFinalReview && (
+                  <div className="change-completion-banner" role="status">
+                    <CheckCircle2 size={22} />
+                    <span>
+                      <strong>파트장 최종 확인 대기</strong>
+                      <small>내 제품 처리를 완료했습니다. 파트장이 전체 제품 결과를 확인하면 공통변경이 최종 완료됩니다.</small>
+                    </span>
+                  </div>
+                )}
+                <EmptyState
+                  icon={<CheckCircle2 size={22} />}
+                  title={ownProcessingReachedFinalReview ? '내 제품 처리를 모두 완료했습니다.' : '처리할 제품별 공통변경이 없습니다.'}
+                />
+              </>
+            )
+          ) : viewMode === 'change' ? (
             <div className="change-overview-layout">
               <div className="change-application-list" aria-label="변경건 목록">
                 {applications.map((application) => {

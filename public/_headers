@@ -8,3 +8,8 @@
 
 /version.json
   Cache-Control: no-store
+
+/change-application-products-template.xlsx
+  Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+  Content-Disposition: attachment; filename="change-application-products-template.xlsx"
+  Cache-Control: public, max-age=3600

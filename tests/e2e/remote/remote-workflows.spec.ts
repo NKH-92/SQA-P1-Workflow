@@ -19,6 +19,10 @@ async function requireVisible(locator: Locator, label: string) {
   return locator
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 function supabaseAnon(): SupabaseClient {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
   const anon = process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY
@@ -239,11 +243,17 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
     const admin = serviceRoleClient()
     const beforeDeniedAttempt = await admin
       .from('product_change_tasks')
-      .select('status, updated_at')
+      .select('status, updated_at, product_id')
       .eq('id', taskId)
       .single()
     expect(beforeDeniedAttempt.error).toBeNull()
     expect(beforeDeniedAttempt.data?.status).toBe('pending')
+    const ownedProduct = await admin
+      .from('products')
+      .select('name')
+      .eq('id', beforeDeniedAttempt.data!.product_id)
+      .single()
+    expect(ownedProduct.error).toBeNull()
 
     const denied = await otherMember.rpc('complete_product_change_task', {
       p_task_id: taskId,
@@ -258,12 +268,30 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
       .eq('id', taskId)
       .single()
     expect(afterDeniedAttempt.error).toBeNull()
-    expect(afterDeniedAttempt.data).toEqual(beforeDeniedAttempt.data)
+    expect(afterDeniedAttempt.data).toEqual({
+      status: beforeDeniedAttempt.data!.status,
+      updated_at: beforeDeniedAttempt.data!.updated_at,
+    })
+
+    await signIn(page, fixtureEnv('REMOTE_E2E_MEMBER_B_EMAIL'), fixtureEnv('REMOTE_E2E_MEMBER_B_PASSWORD'))
+    await page.getByRole('button', { name: /^변경 적용/ }).click()
+    await page.getByRole('textbox', { name: '변경 적용 검색' }).fill(ownedProduct.data!.name)
+    await expect(page
+      .getByRole('navigation', { name: '적용대상 제품 목록' })
+      .getByRole('button', { name: new RegExp(`^${escapeRegExp(ownedProduct.data!.name)}(?:\\s|$)`) }))
+      .toHaveCount(0)
 
     await signIn(page, fixtureEnv('REMOTE_E2E_MEMBER_A_EMAIL'), fixtureEnv('REMOTE_E2E_MEMBER_A_PASSWORD'))
     await expectAppShell(page)
     await page.getByRole('button', { name: /^변경 적용/ }).click()
-    const complete = await requireVisible(page.getByRole('button', { name: '적용 완료' }).first(), 'complete task')
+    await page.getByRole('textbox', { name: '변경 적용 검색' }).fill(ownedProduct.data!.name)
+    const ownedProductButton = await requireVisible(page
+      .getByRole('navigation', { name: '적용대상 제품 목록' })
+      .getByRole('button', { name: new RegExp(`^${escapeRegExp(ownedProduct.data!.name)}(?:\\s|$)`) }), 'owned product')
+    await ownedProductButton.click()
+    const complete = await requireVisible(page
+      .getByRole('region', { name: `${ownedProduct.data!.name} 변경관리 내용` })
+      .getByRole('button', { name: '적용 완료' }), 'complete task')
     await complete.click()
     const dialog = page.getByRole('dialog', { name: '실제로 적용을 완료했습니까?' })
     await expect(dialog).toBeVisible()
@@ -271,9 +299,13 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
     await dialog.getByRole('button', { name: '완료 확인' }).click()
     await expect(page.getByText(/적용업무를 완료했습니다|완료/i).first()).toBeVisible({ timeout: 30_000 })
 
-    await signIn(page, fixtureEnv('REMOTE_E2E_MEMBER_B_EMAIL'), fixtureEnv('REMOTE_E2E_MEMBER_B_PASSWORD'))
-    await page.getByRole('button', { name: /^변경 적용/ }).click()
-    await expect(page.getByRole('button', { name: '적용 완료' })).toHaveCount(0)
+    const completed = await admin
+      .from('product_change_tasks')
+      .select('status, completion_note')
+      .eq('id', taskId)
+      .single()
+    expect(completed.error).toBeNull()
+    expect(completed.data).toMatchObject({ status: 'completed', completion_note: 'remote e2e evidence' })
   })
 
   test('R-E2E-09 master stale OCC is rejected with unified message', async ({ page }) => {

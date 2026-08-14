@@ -104,7 +104,7 @@ describe('ChangeApplicationsPanel', () => {
     expect(screen.queryByRole('button', { name: '담당자별' })).not.toBeInTheDocument()
   })
 
-  it('uses a three-step composer and blocks publish until every product has an active owner', () => {
+  it('uses a three-step composer and blocks publish until every product has an active owner', async () => {
     const data = createPreviewData()
     const product = data.changeProductScope[0]
     render(
@@ -124,8 +124,15 @@ describe('ChangeApplicationsPanel', () => {
     fireEvent.change(screen.getByLabelText('적용기한'), { target: { value: '2026-08-25' } })
     fireEvent.click(screen.getByRole('button', { name: /다음/ }))
 
+    expect(screen.getByRole('link', { name: '양식 받기' })).toHaveAttribute('href', '/change-application-products-template.xlsx')
+    const file = new File([`제품명\n${product.product_name}`], '적용제품.csv', { type: 'text/csv' })
+    fireEvent.change(screen.getByLabelText('적용제품 Excel 파일 선택'), { target: { files: [file] } })
+    expect(await screen.findByRole('region', { name: 'Excel 제품 가져오기 검토' })).toBeInTheDocument()
+    expect(screen.getByText('적용제품.csv')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '선택 제품에 반영' }))
+
     const scope = screen.getByRole('list', { name: '적용제품 선택 목록' })
-    fireEvent.click(within(scope).getByRole('button', { name: new RegExp(product.product_name) }))
+    expect(within(scope).getByRole('button', { name: new RegExp(product.product_name) })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByLabelText(`${product.product_name} 적용 책임자`)).not.toHaveValue('')
     fireEvent.click(screen.getByRole('button', { name: /다음/ }))
 
@@ -155,6 +162,29 @@ describe('ChangeApplicationsPanel', () => {
     expect(screen.getByRole('button', { name: `${ownTask.product_name} 담당자 변경` })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: `${ownTask.product_name} 범위 제외` })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: `${ownTask.product_name} 업무 취소` })).not.toBeInTheDocument()
+  })
+
+  it('shows member work as a product list with full change details', () => {
+    const data = createPreviewData()
+    const ownContexts = data.productChangeTasks.filter(
+      (task) => task.assignee_id === previewMember.id && task.status === 'pending',
+    )
+    render(
+      <ChangeApplicationsPanel profile={previewMember} data={data} mutate={vi.fn(runMutation)} setData={vi.fn()} />,
+    )
+
+    const productList = screen.getByRole('navigation', { name: '적용대상 제품 목록' })
+    expect(within(productList).getAllByRole('button')).toHaveLength(new Set(ownContexts.map((task) => task.product_id)).size)
+    expect(screen.queryByRole('button', { name: '변경건별' })).not.toBeInTheDocument()
+
+    const firstTask = ownContexts[0]
+    const action = data.changeActionItems.find((item) => item.id === firstTask.action_item_id)!
+    const application = data.changeApplications.find((item) => item.id === action.change_application_id)!
+    const detail = screen.getByRole('region', { name: `${firstTask.product_name} 변경관리 내용` })
+    expect(detail).toHaveTextContent(application.title)
+    expect(detail).toHaveTextContent(application.summary)
+    expect(detail).toHaveTextContent(action.content)
+    expect(within(detail).getByRole('button', { name: '적용 완료' })).toBeInTheDocument()
   })
 
   it('routes the leader pending-task action through scope removal', async () => {
@@ -218,7 +248,7 @@ describe('ChangeApplicationsPanel', () => {
     await waitFor(() => expect(completeSpy).toHaveBeenCalledOnce())
     expect(completeSpy.mock.calls[0].slice(2)).toEqual(['Rev.13 반영', ''])
     expect(screen.queryByText('대리 처리 사유')).not.toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: '처리 이력' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: /내 미적용/ })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('keeps a member completion in processing history until final approval and lets the assignee reopen it', async () => {

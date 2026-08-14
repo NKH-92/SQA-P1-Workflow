@@ -1,15 +1,24 @@
 import { useMemo, useState } from 'react'
-import { AlertTriangle, Check, ChevronLeft, ChevronRight, ClipboardPlus, Search } from 'lucide-react'
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, ClipboardPlus, FileSpreadsheet, Search, Upload } from 'lucide-react'
 import { Badge, Modal } from '../../../components/ui'
+import { toUserMessage, UserFacingError } from '../../../lib/errors'
 import { selectApplicationTaskContexts, selectChangeScopeProducts } from '../selectors'
+import { matchImportedProductNames, uniqueResolvedProductIds, type ProductImportMatch } from '../productImport'
 import {
   changeActionKindLabels,
   changeApplicationSourceLabels,
   type ChangeApplicationInput,
 } from '../types'
 import type { AppData, ChangeActionKind, ChangeApplicationSource, Profile } from '../../../types'
+import { ChangeProductImportReview, type ChangeProductImportMode } from './ChangeProductImportReview'
 
 type ComposerState = Omit<ChangeApplicationInput, 'tasks'>
+
+type ProductImportReviewState = {
+  fileName: string
+  sheetName: string | null
+  matches: ProductImportMatch[]
+}
 
 function initialComposer(data: AppData, editingApplicationId: string | null) {
   const application = editingApplicationId
@@ -67,6 +76,11 @@ export function ChangeApplicationComposer({
   const [company, setCompany] = useState('all')
   const [assigneeFilter, setAssigneeFilter] = useState('all')
   const [step, setStep] = useState<1 | 2 | 3>(1)
+  const [importReview, setImportReview] = useState<ProductImportReviewState | null>(null)
+  const [importMode, setImportMode] = useState<ChangeProductImportMode>('add')
+  const [excludedImportRows, setExcludedImportRows] = useState<Set<number>>(new Set())
+  const [importError, setImportError] = useState<string | null>(null)
+  const [isImporting, setIsImporting] = useState(false)
 
   const products = useMemo(() => selectChangeScopeProducts(data), [data])
   const companies = useMemo(
@@ -88,6 +102,14 @@ export function ChangeApplicationComposer({
   const activeAssigneeIds = new Set(
     data.profiles.filter((item) => item.is_active !== false).map((item) => item.id),
   )
+  const importedProductIds = importReview
+    ? uniqueResolvedProductIds(importReview.matches.filter((match) => !excludedImportRows.has(match.rowNumber)))
+    : []
+  const importResponsibilityNeededCount = importedProductIds.filter((productId) => {
+    if (productId in selected && selected[productId] && activeAssigneeIds.has(selected[productId]!)) return false
+    const product = products.find((item) => item.id === productId)
+    return product?.assignees.filter((item) => activeAssigneeIds.has(item.id)).length !== 1
+  }).length
   const invalidResponsibilityCount = selectedProductIds.filter(
     (productId) => !selected[productId] || !activeAssigneeIds.has(selected[productId]!),
   ).length
@@ -122,6 +144,56 @@ export function ChangeApplicationComposer({
       }
       return next
     })
+  }
+
+  const openProductImport = async (file: File) => {
+    setImportError(null)
+    setIsImporting(true)
+    try {
+      const { readChangeProductImportFile } = await import('../productImportFile')
+      const result = await readChangeProductImportFile(file)
+      if (result.rows.length === 0) throw new UserFacingError('가져올 제품명이 없습니다.')
+      setImportReview({
+        fileName: result.fileName,
+        sheetName: result.sheetName,
+        matches: matchImportedProductNames(result.rows, products),
+      })
+      setExcludedImportRows(new Set())
+      setImportMode('add')
+    } catch (error) {
+      setImportError(toUserMessage(error))
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
+  const resolveImportedProduct = (rowNumber: number, productId: string | null) => {
+    setImportReview((current) => current ? {
+      ...current,
+      matches: current.matches.map((match) => match.rowNumber === rowNumber ? { ...match, productId } : match),
+    } : null)
+  }
+
+  const applyImportedProducts = () => {
+    if (!importReview) return
+    const ids = uniqueResolvedProductIds(
+      importReview.matches.filter((match) => !excludedImportRows.has(match.rowNumber)),
+    )
+    setSelected((current) => {
+      const next: Record<string, string | null> = importMode === 'replace' ? {} : { ...current }
+      for (const productId of ids) {
+        if (productId in current) {
+          next[productId] = current[productId]
+          continue
+        }
+        const product = products.find((item) => item.id === productId)
+        const activeAssignees = product?.assignees.filter((item) => activeAssigneeIds.has(item.id)) ?? []
+        next[productId] = activeAssignees.length === 1 ? activeAssignees[0].id : null
+      }
+      return next
+    })
+    setImportReview(null)
+    setExcludedImportRows(new Set())
   }
 
   const submit = async (publish: boolean) => {
@@ -272,44 +344,96 @@ export function ChangeApplicationComposer({
 
             <section className="change-compose-section product-scope-section" hidden={step !== 2}>
               <header><span>2</span><div><strong>적용제품과 책임자</strong><small>제품마다 활성 책임자 한 명을 선택합니다.</small></div><Badge>{selectedProductIds.length}개 선택</Badge></header>
-              <div className="scope-toolbar">
-                <label className="scope-search"><Search size={15} /><input aria-label="제품명 검색" placeholder="제품명 또는 회사 검색" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
-                <select aria-label="제품 구분" value={category} onChange={(event) => setCategory(event.target.value)}><option value="all">구분 전체</option><option value="자사">자사</option><option value="위탁">위탁</option></select>
-                <select aria-label="회사" value={company} onChange={(event) => setCompany(event.target.value)}><option value="all">회사 전체</option>{companies.map((value) => <option key={value} value={value}>{value}</option>)}</select>
-                <select aria-label="제품 담당자" value={assigneeFilter} onChange={(event) => setAssigneeFilter(event.target.value)}><option value="all">담당자 전체</option>{data.changeAssigneeOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-              </div>
-              <div className="scope-quick-actions">
-                <button onClick={() => selectProducts(products.filter((product) => product.assignees.some((item) => item.id === profile.id)).map((product) => product.id))} type="button">내 담당제품</button>
-                <button onClick={() => selectProducts(products.filter((product) => product.category === '자사').map((product) => product.id))} type="button">자사제품</button>
-                <button onClick={() => selectProducts(products.filter((product) => product.category === '위탁').map((product) => product.id))} type="button">위탁제품</button>
-                <button onClick={() => allVisibleSelected ? setSelected((current) => { const next = { ...current }; visibleProducts.forEach((product) => delete next[product.id]); return next }) : selectProducts(visibleProducts.map((product) => product.id))} type="button">
-                  {allVisibleSelected ? '검색결과 선택 해제' : `검색결과 전체 ${visibleProducts.length}개 선택`}
-                </button>
-              </div>
-              <div className="scope-list" role="list" aria-label="적용제품 선택 목록">
-                {visibleProducts.map((product) => {
-                  const isSelected = product.id in selected
-                  const responsibilityOptions = product.assignees.length > 0
-                    ? product.assignees
-                    : data.changeAssigneeOptions
-                  return (
-                    <div className={isSelected ? 'scope-product selected' : 'scope-product'} key={product.id} role="listitem">
-                      <button aria-pressed={isSelected} className="scope-product-toggle" onClick={() => toggleProduct(product.id)} type="button">
-                        <span className="scope-check">{isSelected && <Check size={13} />}</span>
-                        <span><strong>{product.name}</strong><small>{[product.category, product.companyName].filter(Boolean).join(' · ') || '구분 없음'}</small></span>
-                      </button>
-                      <span className="scope-current-owner">현재 {product.assignees.map((item) => item.name).join(', ') || '담당자 미지정'}</span>
-                      {isSelected && (
-                        <select aria-label={`${product.name} 적용 책임자`} value={selected[product.id] ?? ''} onChange={(event) => setSelected((current) => ({ ...current, [product.id]: event.target.value || null }))}>
-                          <option value="">담당 미지정</option>
-                          {responsibilityOptions.filter((item) => activeAssigneeIds.has(item.id)).map((item) => <option key={item.id} value={item.id}>{item.name}{'role' in item && item.role === 'leader' ? ' (파트장)' : ''}</option>)}
-                        </select>
-                      )}
-                    </div>
-                  )
-                })}
-                {visibleProducts.length === 0 && <p className="scope-empty">조건에 맞는 제품이 없습니다.</p>}
-              </div>
+              {importError && <p className="change-import-error" role="alert"><AlertTriangle size={16} />{importError}</p>}
+              {importReview ? (
+                <ChangeProductImportReview
+                  excludedRows={excludedImportRows}
+                  fileName={importReview.fileName}
+                  matches={importReview.matches}
+                  mode={importMode}
+                  products={products}
+                  responsibilityNeededCount={importResponsibilityNeededCount}
+                  sheetName={importReview.sheetName}
+                  onApply={applyImportedProducts}
+                  onCancel={() => { setImportReview(null); setExcludedImportRows(new Set()) }}
+                  onExclude={(rowNumber) => setExcludedImportRows((current) => new Set(current).add(rowNumber))}
+                  onModeChange={setImportMode}
+                  onResolve={resolveImportedProduct}
+                  onRestore={(rowNumber) => setExcludedImportRows((current) => {
+                    const next = new Set(current)
+                    next.delete(rowNumber)
+                    return next
+                  })}
+                />
+              ) : (
+                <>
+                  <div
+                    className="change-import-entry"
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => {
+                      event.preventDefault()
+                      const file = event.dataTransfer.files[0]
+                      if (file) void openProductImport(file)
+                    }}
+                  >
+                    <FileSpreadsheet size={22} />
+                    <span><strong>Excel로 제품 일괄 선택</strong><small>.xlsx 또는 .csv · 최대 1,000개 · 공백과 mg/밀리그램 표기 보정</small></span>
+                    <label className="ghost">
+                      <Upload size={15} /> {isImporting ? '읽는 중…' : '파일 선택'}
+                      <input
+                        accept=".xlsx,.csv"
+                        aria-label="적용제품 Excel 파일 선택"
+                        disabled={isImporting}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0]
+                          event.target.value = ''
+                          if (file) void openProductImport(file)
+                        }}
+                        type="file"
+                      />
+                    </label>
+                    <a className="ghost" download href="/change-application-products-template.xlsx">양식 받기</a>
+                  </div>
+                  <div className="scope-toolbar">
+                    <label className="scope-search"><Search size={15} /><input aria-label="제품명 검색" placeholder="제품명 또는 회사 검색" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+                    <select aria-label="제품 구분" value={category} onChange={(event) => setCategory(event.target.value)}><option value="all">구분 전체</option><option value="자사">자사</option><option value="위탁">위탁</option></select>
+                    <select aria-label="회사" value={company} onChange={(event) => setCompany(event.target.value)}><option value="all">회사 전체</option>{companies.map((value) => <option key={value} value={value}>{value}</option>)}</select>
+                    <select aria-label="제품 담당자" value={assigneeFilter} onChange={(event) => setAssigneeFilter(event.target.value)}><option value="all">담당자 전체</option>{data.changeAssigneeOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+                  </div>
+                  <div className="scope-quick-actions">
+                    <button onClick={() => selectProducts(products.filter((product) => product.assignees.some((item) => item.id === profile.id)).map((product) => product.id))} type="button">내 담당제품</button>
+                    <button onClick={() => selectProducts(products.filter((product) => product.category === '자사').map((product) => product.id))} type="button">자사제품</button>
+                    <button onClick={() => selectProducts(products.filter((product) => product.category === '위탁').map((product) => product.id))} type="button">위탁제품</button>
+                    <button onClick={() => allVisibleSelected ? setSelected((current) => { const next = { ...current }; visibleProducts.forEach((product) => delete next[product.id]); return next }) : selectProducts(visibleProducts.map((product) => product.id))} type="button">
+                      {allVisibleSelected ? '검색결과 선택 해제' : `검색결과 전체 ${visibleProducts.length}개 선택`}
+                    </button>
+                  </div>
+                  <div className="scope-list" role="list" aria-label="적용제품 선택 목록">
+                    {visibleProducts.map((product) => {
+                      const isSelected = product.id in selected
+                      const responsibilityOptions = product.assignees.length > 0
+                        ? product.assignees
+                        : data.changeAssigneeOptions
+                      return (
+                        <div className={isSelected ? 'scope-product selected' : 'scope-product'} key={product.id} role="listitem">
+                          <button aria-pressed={isSelected} className="scope-product-toggle" onClick={() => toggleProduct(product.id)} type="button">
+                            <span className="scope-check">{isSelected && <Check size={13} />}</span>
+                            <span><strong>{product.name}</strong><small>{[product.category, product.companyName].filter(Boolean).join(' · ') || '구분 없음'}</small></span>
+                          </button>
+                          <span className="scope-current-owner">현재 {product.assignees.map((item) => item.name).join(', ') || '담당자 미지정'}</span>
+                          {isSelected && (
+                            <select aria-label={`${product.name} 적용 책임자`} value={selected[product.id] ?? ''} onChange={(event) => setSelected((current) => ({ ...current, [product.id]: event.target.value || null }))}>
+                              <option value="">담당 미지정</option>
+                              {responsibilityOptions.filter((item) => activeAssigneeIds.has(item.id)).map((item) => <option key={item.id} value={item.id}>{item.name}{'role' in item && item.role === 'leader' ? ' (파트장)' : ''}</option>)}
+                            </select>
+                          )}
+                        </div>
+                      )
+                    })}
+                    {visibleProducts.length === 0 && <p className="scope-empty">조건에 맞는 제품이 없습니다.</p>}
+                  </div>
+                </>
+              )}
             </section>
 
             <section className="change-compose-section change-compose-review" hidden={step !== 3}>

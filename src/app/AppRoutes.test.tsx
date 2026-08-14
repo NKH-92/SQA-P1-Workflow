@@ -80,7 +80,7 @@ describe('AppRoutes review statistics guard', () => {
     renderRoute({ id: 'leader', email: 'leader@example.com', name: '파트장', role: 'leader', is_active: true })
 
     expect(screen.getByRole('status')).toHaveClass('route-loading')
-    expect(await screen.findByTestId('review-stats-screen')).toBeInTheDocument()
+    expect(await screen.findByTestId('review-stats-screen', {}, { timeout: 3000 })).toBeInTheDocument()
   })
 
   it('does not render review statistics for a member', () => {

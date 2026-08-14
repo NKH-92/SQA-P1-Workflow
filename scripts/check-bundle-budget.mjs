@@ -9,9 +9,10 @@ const MAX_CHUNK_BYTES = 560 * 1024
 // ~140.3 KiB. Splitting gzip dictionaries raises the all-routes sum, so enforce
 // both dimensions: initial navigation and the total code surface.
 const MAX_INITIAL_GZIP_BYTES = 142 * 1024
-// Persistent import diagnostics and explicit accessibility state add a small,
-// intentional all-routes cost without changing the initial navigation budget.
-const MAX_TOTAL_GZIP_BYTES = 213 * 1024
+// The change-application route lazy-loads the browser-only XLSX reader when a
+// leader selects a file. This raises the all-routes sum while keeping initial
+// navigation unchanged, so retain a narrow cap around the measured surface.
+const MAX_TOTAL_GZIP_BYTES = 240 * 1024
 const EXPECTED_ROUTE_DYNAMIC_IMPORTS = new Set([
   'src/screens/AnnouncementsPanel.tsx',
   'src/screens/ChangeApplicationsPanel.tsx',

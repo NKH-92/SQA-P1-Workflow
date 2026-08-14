@@ -179,7 +179,7 @@ export function groupChangeTaskContexts(
   contexts: ProductChangeTaskContext[],
   viewMode: Exclude<ChangeApplicationViewMode, 'change'>,
 ) {
-  const groups = new Map<string, { title: string; sub: string; items: ProductChangeTaskContext[] }>()
+  const groups = new Map<string, { key: string; title: string; sub: string; items: ProductChangeTaskContext[] }>()
   for (const context of contexts) {
     const key = viewMode === 'product'
       ? context.task.product_id
@@ -190,9 +190,45 @@ export function groupChangeTaskContexts(
     const sub = viewMode === 'product'
       ? context.task.products?.category ?? '제품'
       : `${context.task.assignee_id ? '적용 책임자' : '파트장 확인 필요'}`
-    const group = groups.get(key) ?? { title, sub, items: [] }
+    const group = groups.get(key) ?? { key, title, sub, items: [] }
     group.items.push(context)
     groups.set(key, group)
   }
   return [...groups.values()].sort((left, right) => left.title.localeCompare(right.title, 'ko'))
+}
+
+export type MemberProductBoardGroup = ReturnType<typeof groupChangeTaskContexts>[number] & {
+  earliestDueDate: string | null
+  daysRemaining: number | null
+  overdue: boolean
+  sortOrder: number | null
+}
+
+export function buildMemberProductBoardGroups(
+  contexts: ProductChangeTaskContext[],
+  now = new Date(),
+): MemberProductBoardGroup[] {
+  return groupChangeTaskContexts(contexts, 'product')
+    .map((group) => {
+      const items = [...group.items].sort((left, right) => (
+        left.actionItem.due_date.localeCompare(right.actionItem.due_date)
+        || left.application.change_number.localeCompare(right.application.change_number, 'ko')
+      ))
+      const earliestDueDate = items[0]?.actionItem.due_date ?? null
+      const daysRemaining = earliestDueDate ? daysUntil(earliestDueDate, now) : null
+      return {
+        ...group,
+        items,
+        earliestDueDate,
+        daysRemaining,
+        overdue: daysRemaining != null && daysRemaining < 0,
+        sortOrder: items[0]?.task.products?.sort_order ?? null,
+      }
+    })
+    .sort((left, right) => (
+      Number(right.overdue) - Number(left.overdue)
+      || (left.earliestDueDate ?? '9999-12-31').localeCompare(right.earliestDueDate ?? '9999-12-31')
+      || (left.sortOrder ?? Number.MAX_SAFE_INTEGER) - (right.sortOrder ?? Number.MAX_SAFE_INTEGER)
+      || left.title.localeCompare(right.title, 'ko')
+    ))
 }

@@ -83,7 +83,8 @@ test('06 member can complete an assigned change task', async ({ page }) => {
   await dialog.getByPlaceholder('예: 제품표준서 Rev.12 반영').fill('E2E 완료 증빙')
   await dialog.getByRole('button', { name: '완료 확인' }).click()
   await expect(page.getByText('자사제품 B 적용을 완료했습니다.')).toBeVisible()
-  await expect(page.getByRole('tab', { name: '처리 이력' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tab', { name: /^내 미적용/ })).toHaveAttribute('aria-selected', 'true')
+  await page.getByRole('tab', { name: '처리 이력' }).click()
   await expect(page.getByText('E2E 완료 증빙')).toBeVisible()
 })
 
@@ -187,8 +188,10 @@ test('13 leader finalizes a common change only after every assignee has processe
   await page.getByRole('button', { name: /^변경 적용/ }).click()
   for (const productName of ['자사제품 B', '위탁제품 D', '위탁제품 E']) {
     await page.getByRole('tab', { name: /^내 미적용/ }).click()
-    const task = page.locator('.change-task-row').filter({ hasText: productName })
-    await task.getByRole('button', { name: '적용 완료' }).click()
+    const productList = page.getByRole('navigation', { name: '적용대상 제품 목록' })
+    await productList.getByRole('button', { name: new RegExp(productName) }).click()
+    const detail = page.getByRole('region', { name: `${productName} 변경관리 내용` })
+    await detail.getByRole('button', { name: '적용 완료' }).click()
     const completeDialog = page.getByRole('dialog', { name: '실제로 적용을 완료했습니까?' })
     await completeDialog.getByPlaceholder('예: 제품표준서 Rev.12 반영').fill(`${productName} E2E 반영`)
     await completeDialog.getByRole('button', { name: '완료 확인' }).click()
@@ -207,6 +210,38 @@ test('13 leader finalizes a common change only after every assignee has processe
   await expect(page.getByText('CC-2026-014 공통변경을 완료했습니다.')).toBeVisible()
   await expect(page.getByRole('tab', { name: '완료 이력' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByText('해당 없음 사유와 전 제품 처리 결과 확인')).toBeVisible()
+})
+
+test('18 leader reviews an Excel product list before applying it to the composer', async ({ page }) => {
+  await page.goto('/#/change-applications')
+  await page.getByRole('button', { name: '공통변경 등록' }).click()
+  const dialog = page.getByRole('dialog', { name: '변경 적용업무 등록' })
+  await dialog.getByLabel('변경번호').fill('CC-2026-E2E')
+  await dialog.getByLabel('변경 제목').fill('Excel 일괄등록 확인')
+  await dialog.getByLabel('변경 요약').fill('Excel 제품 매칭 검토 흐름을 확인합니다.')
+  await dialog.getByLabel('시행일').fill('2026-09-01')
+  await dialog.getByLabel('적용 내용').fill('제품표준서의 공통 내용을 개정합니다.')
+  await dialog.getByLabel('적용기한').fill('2026-08-31')
+  await dialog.getByRole('button', { name: /다음/ }).click()
+
+  await expect(dialog.getByRole('link', { name: '양식 받기' })).toHaveAttribute('href', '/change-application-products-template.xlsx')
+  await dialog.getByLabel('적용제품 Excel 파일 선택').setInputFiles({
+    name: '적용제품.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from('제품명\n자사제품 B\n일치하지 않는 제품'),
+  })
+  const review = dialog.getByRole('region', { name: 'Excel 제품 가져오기 검토' })
+  await expect(review).toContainText('자동 일치')
+  const applyImport = review.getByRole('button', { name: '선택 제품에 반영' })
+  await expect(applyImport).toBeDisabled()
+  await review.getByRole('button', { name: '제외' }).click()
+  await expect(applyImport).toBeEnabled()
+  await review.getByText('제외한 행 1개 · 다시 포함할 수 있습니다.').click()
+  await review.getByRole('button', { name: '다시 포함' }).click()
+  await expect(applyImport).toBeDisabled()
+  await review.getByRole('button', { name: '제외' }).click()
+  await applyImport.click()
+  await expect(dialog.getByRole('button', { name: /자사제품 B/ })).toHaveAttribute('aria-pressed', 'true')
 })
 
 test('14 visual invariants keep active counts distinct and native controls usable', async ({ page }) => {
@@ -378,4 +413,33 @@ test('19 mobile operations surfaces prioritize work and keep topbar targets usab
     expect(targetSizes.length).toBeGreaterThan(0)
     expect(targetSizes.every(({ width, height }) => width >= 40 && height >= 40)).toBe(true)
   }
+})
+
+test('20 mobile member product board moves from list to detail without horizontal overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.reload()
+  await page.locator('.hamburger').click()
+  await page.getByRole('button', { name: '파트원', exact: true }).click()
+  await page.getByRole('button', { name: /^변경 적용/ }).click()
+
+  const productList = page.getByRole('navigation', { name: '적용대상 제품 목록' })
+  await expect(productList).toBeVisible()
+  const productButtons = productList.getByRole('button')
+  expect(await productButtons.count()).toBeGreaterThan(0)
+  await productButtons.nth(0).click()
+
+  await expect(productList).toBeHidden()
+  await expect(page.getByRole('button', { name: '제품 목록' })).toBeVisible()
+  await expect(page.locator('.member-product-detail')).toBeVisible()
+  const mobileLayout = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    page: document.documentElement.scrollWidth,
+    detailRight: document.querySelector('.member-product-detail')?.getBoundingClientRect().right ?? 0,
+  }))
+  expect(mobileLayout).toMatchObject({ viewport: 390, page: 390 })
+  expect(mobileLayout.detailRight).toBeLessThanOrEqual(390)
+
+  await page.getByRole('button', { name: '제품 목록' }).click()
+  await expect(productList).toBeVisible()
+  await expect(page.locator('.member-product-detail')).toBeHidden()
 })

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ProductChangeTaskContext } from './selectors'
 import {
+  buildMemberProductBoardGroups,
   calculateChangeApplicationKpis,
   filterChangeApplications,
   filterChangeTaskContexts,
@@ -179,5 +180,19 @@ describe('change application view model', () => {
 
     expect(groups.map((group) => group.title)).toEqual(['가', '나'])
     expect(groups[1].items.map(({ task }) => task.id)).toEqual(['task-b1', 'task-b2'])
+  })
+
+  it('sorts the member product board by overdue, earliest due date, then product order', () => {
+    const normal = context({ id: 'normal', productName: '일반제품', dueDate: '2026-07-20' })
+    const urgent = context({ id: 'urgent', productName: '긴급제품', dueDate: '2026-07-18' })
+    const overdue = context({ id: 'overdue-board', productName: '기한초과제품', dueDate: '2026-07-16' })
+    normal.task.products!.sort_order = 1
+    urgent.task.products!.sort_order = 2
+    overdue.task.products!.sort_order = 3
+
+    const groups = buildMemberProductBoardGroups([normal, overdue, urgent], referenceNow)
+
+    expect(groups.map((group) => group.title)).toEqual(['기한초과제품', '긴급제품', '일반제품'])
+    expect(groups[0]).toMatchObject({ overdue: true, daysRemaining: -1, earliestDueDate: '2026-07-16' })
   })
 })

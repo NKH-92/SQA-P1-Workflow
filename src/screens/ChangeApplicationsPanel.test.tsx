@@ -187,6 +187,21 @@ describe('ChangeApplicationsPanel', () => {
     expect(within(detail).getByRole('button', { name: '적용 완료' })).toBeInTheDocument()
   })
 
+  it('confirms final-review readiness after the member finishes their last product', () => {
+    render(
+      <ChangeApplicationsPanel
+        profile={previewMember}
+        data={finalReviewData()}
+        mutate={vi.fn(runMutation)}
+        setData={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent('파트장 최종 확인 대기')
+    expect(screen.getByText('내 제품 처리를 모두 완료했습니다.')).toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: '적용대상 제품 목록' })).not.toBeInTheDocument()
+  })
+
   it('routes the leader pending-task action through scope removal', async () => {
     const data = createPreviewData()
     const task = data.productChangeTasks.find((item) => item.status === 'pending')!

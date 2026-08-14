@@ -526,7 +526,21 @@ export function ChangeApplicationsPanel({
                 </section>
               </div>
             ) : (
-              <EmptyState icon={<CheckCircle2 size={22} />} title="처리할 제품별 공통변경이 없습니다." />
+              <>
+                {ownProcessingReachedFinalReview && (
+                  <div className="change-completion-banner" role="status">
+                    <CheckCircle2 size={22} />
+                    <span>
+                      <strong>파트장 최종 확인 대기</strong>
+                      <small>내 제품 처리를 완료했습니다. 파트장이 전체 제품 결과를 확인하면 공통변경이 최종 완료됩니다.</small>
+                    </span>
+                  </div>
+                )}
+                <EmptyState
+                  icon={<CheckCircle2 size={22} />}
+                  title={ownProcessingReachedFinalReview ? '내 제품 처리를 모두 완료했습니다.' : '처리할 제품별 공통변경이 없습니다.'}
+                />
+              </>
             )
           ) : viewMode === 'change' ? (
             <div className="change-overview-layout">

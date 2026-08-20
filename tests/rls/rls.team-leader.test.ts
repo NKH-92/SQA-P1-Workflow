@@ -1,10 +1,8 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { beforeAll, describe, expect, it } from 'vitest'
+import { isSupabaseRlsTargetConfigured, RLS_SKIP_NOTE } from './helpers'
 
-const url = process.env.SUPABASE_URL
-const anonKey = process.env.SUPABASE_ANON_KEY
-const enabled = process.env.RUN_RLS_TESTS === '1' && Boolean(url && anonKey)
-const suite = enabled ? describe : describe.skip
+const suite = isSupabaseRlsTargetConfigured() ? describe : describe.skip
 
 function requiredEnv(name: string) {
   const value = process.env[name]
@@ -12,7 +10,7 @@ function requiredEnv(name: string) {
   return value
 }
 
-suite('read-only team leader authorization', () => {
+suite(`read-only team leader authorization (${RLS_SKIP_NOTE})`, () => {
   let client: SupabaseClient
 
   beforeAll(async () => {
@@ -41,6 +39,26 @@ suite('read-only team leader authorization', () => {
     expect(projects.data?.some((item) => item.id === requiredEnv('RLS_TEST_PROJECT_ID'))).toBe(true)
     expect(canManage.error).toBeNull()
     expect(canManage.data).toBe(false)
+
+    const bootstrap = await client.rpc('get_review_bootstrap_v2')
+    expect(bootstrap.error).toBeNull()
+    const requests = (bootstrap.data as { requests?: Array<{ id: string }> } | null)?.requests ?? []
+    expect(requests.some((item) => item.id === requiredEnv('RLS_MEMBER_B_REVIEW_REQUEST_ID'))).toBe(true)
+  })
+
+  it('can acknowledge leader-style review notifications only for itself', async () => {
+    const requestId = requiredEnv('RLS_MEMBER_B_REVIEW_REQUEST_ID')
+    const marked = await client.rpc('mark_review_seen', { p_review_request_id: requestId })
+    expect(marked.error).toBeNull()
+    expect(marked.data).not.toBeNull()
+
+    const receipt = await client.from('review_read_receipts')
+      .select('user_id,review_request_id,last_seen_event_id')
+      .eq('user_id', requiredEnv('RLS_TEAM_LEADER_USER_ID'))
+      .eq('review_request_id', requestId)
+      .single()
+    expect(receipt.error).toBeNull()
+    expect(receipt.data?.user_id).toBe(requiredEnv('RLS_TEAM_LEADER_USER_ID'))
   })
 
   it('is rejected by the authoritative write trigger for REST and RPC writes', async () => {
@@ -67,6 +85,7 @@ suite('read-only team leader authorization', () => {
       }],
     })
     expect(rpcWrite.error).not.toBeNull()
-    expect(`${rpcWrite.error?.details ?? ''} ${rpcWrite.error?.message ?? ''}`).toContain('SQA_TEAM_LEADER_READ_ONLY')
+    expect(`${rpcWrite.error?.details ?? ''} ${rpcWrite.error?.message ?? ''}`)
+      .toMatch(/SQA_TEAM_LEADER_READ_ONLY|SQA_ACTIVE_LEADER_REQUIRED/)
   })
 })

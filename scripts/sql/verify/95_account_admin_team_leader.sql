@@ -8,6 +8,8 @@ begin
     select 1 from supabase_migrations.schema_migrations where version = '20260820150507'
   ) or not exists (
     select 1 from supabase_migrations.schema_migrations where version = '20260820150511'
+  ) or not exists (
+    select 1 from supabase_migrations.schema_migrations where version = '20260820161242'
   ) then
     raise exception 'SQA_DB_READY_ACCOUNT_ADMIN_MIGRATION';
   end if;
@@ -31,6 +33,15 @@ begin
      or to_regprocedure('public.prepare_own_password_change(uuid)') is null
      or to_regprocedure('public.cancel_own_password_change(uuid)') is null then
     raise exception 'SQA_DB_READY_ACCOUNT_ADMIN_FUNCTIONS';
+  end if;
+
+  if pg_get_functiondef('private.get_review_bootstrap_v2_numeric_ids()'::regprocedure)
+       not like '%ctx.role in (''leader'', ''team_leader'')%'
+     or pg_get_functiondef('public.mark_review_seen(uuid)'::regprocedure)
+       not like '%v_role in (''leader'', ''team_leader'')%'
+     or pg_get_functiondef('public.mark_all_relevant_reviews_seen()'::regprocedure)
+       not like '%v_role in (''leader'', ''team_leader'')%' then
+    raise exception 'SQA_DB_READY_TEAM_LEADER_REVIEW_SCOPE';
   end if;
 
   select cls.relname into unguarded_table

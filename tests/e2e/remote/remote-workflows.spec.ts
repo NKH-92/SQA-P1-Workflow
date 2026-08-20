@@ -85,6 +85,8 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
     await (await requireVisible(page.getByLabel('새 비밀번호', { exact: true }), 'new password')).fill(nextPassword)
     await (await requireVisible(page.getByLabel('새 비밀번호 확인', { exact: true }), 'confirm password')).fill(nextPassword)
     await page.getByRole('button', { name: '비밀번호 변경', exact: true }).click()
+    await expect(page.getByLabel(/이메일|email/i).first()).toBeVisible({ timeout: 45_000 })
+    await signIn(page, email, nextPassword)
     await expectAppShell(page)
   })
 
@@ -502,5 +504,54 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
         expect(cleanup.error).toBeNull()
       }
     }
+  })
+
+  test('R-E2E-14 team leader sees the leader workspace without management controls', async ({ page }) => {
+    await signIn(
+      page,
+      fixtureEnv('REMOTE_E2E_TEAM_LEADER_EMAIL'),
+      fixtureEnv('REMOTE_E2E_TEAM_LEADER_PASSWORD'),
+    )
+    await expectAppShell(page)
+    await expect(page.getByRole('button', { name: '검토 통계', exact: true })).toBeVisible()
+    await page.goto('/#/invites')
+    await expect(page.getByRole('heading', { name: '계정 관리', exact: true })).toBeVisible({ timeout: 45_000 })
+    await expect(page.getByRole('button', { name: '계정 추가', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '비밀번호 초기화', exact: true })).toHaveCount(0)
+
+    const client = await signInClient(
+      fixtureEnv('REMOTE_E2E_TEAM_LEADER_EMAIL'),
+      fixtureEnv('REMOTE_E2E_TEAM_LEADER_PASSWORD'),
+    )
+    const blockedWrite = await client.from('products').insert({ name: `team-readonly-${Date.now()}` })
+    expect(`${blockedWrite.error?.details ?? ''} ${blockedWrite.error?.message ?? ''}`)
+      .toContain('SQA_TEAM_LEADER_READ_ONLY')
+  })
+
+  test('R-E2E-15 leader creates and resets an account from the account page', async ({ page }) => {
+    const email = `remote-account-${Date.now()}@example.test`
+    await signIn(page, fixtureEnv('REMOTE_E2E_LEADER_EMAIL'), fixtureEnv('REMOTE_E2E_LEADER_PASSWORD'))
+    await expectAppShell(page)
+    await page.goto('/#/invites')
+    await page.getByRole('button', { name: '계정 추가', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: '계정 추가' })
+    await dialog.getByLabel('이메일').fill(email)
+    await dialog.getByLabel('이름').fill('Remote Account User')
+    await dialog.getByLabel('역할').selectOption('member')
+    await dialog.getByRole('button', { name: '계정 추가', exact: true }).click()
+    await expect(page.getByText(/계정을 추가했습니다/)).toBeVisible({ timeout: 45_000 })
+
+    const accountCard = page.getByRole('article').filter({ hasText: email })
+    await expect(accountCard).toBeVisible({ timeout: 45_000 })
+    await accountCard.getByRole('button', { name: '비밀번호 초기화', exact: true }).click()
+    const resetDialog = page.getByRole('dialog', { name: /비밀번호 초기화/ })
+    await resetDialog.getByRole('textbox', { name: /변경 사유/ }).fill('remote e2e reset verification')
+    await resetDialog.getByRole('button', { name: '비밀번호 초기화', exact: true }).click()
+    await expect(page.getByText(/비밀번호를 초기화했습니다/)).toBeVisible({ timeout: 45_000 })
+
+    const client = await signInClient(email, '12345678')
+    const profile = await client.from('profiles').select('must_change_password').single()
+    expect(profile.error).toBeNull()
+    expect(profile.data?.must_change_password).toBe(true)
   })
 })

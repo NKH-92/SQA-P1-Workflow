@@ -177,13 +177,13 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 | 설정 | 권장 | 확인 위치 |
 |---|---|---|
 | Enable email signup | **OFF** | Authentication → Providers → Email |
-| 계정 생성 | Dashboard **Add user**만 | Authentication → Users |
+| 계정 생성 | 앱 **계정 관리**에서 파트장만 | 계정 추가 → 임시 비밀번호 안내 |
 
 > 운영 프로젝트는 `disable_signup: true`를 유지해야 한다. Deploy Worker가 배포 전 실제 Auth settings endpoint를 검사하므로 이 검증을 생략하지 않는다.
 
 > **"Require current password when updating"는 coordinated rollout 전까지 OFF로 둔다.** 현재 client는 `current_password`를 지원하지만 구형 배포 화면은 이를 보내지 않을 수 있다. 화면·Auth 설정을 함께 교체하고 통합 검증하기 전에는 이 토글을 켜지 않는다.
 
-계정 생성 절차와 임시 비밀번호 규칙은 아래 "임시 비밀번호·첫 로그인" 절을 따릅니다.
+계정 생성·초기화 절차와 임시 비밀번호 규칙은 아래 "임시 비밀번호·첫 로그인" 절을 따릅니다.
 
 ### 미승인 Auth 계정 정리
 
@@ -338,17 +338,17 @@ Auth UUID/FK/login 증거가 있을 때만 완료로 판정한다.
 
 ## 임시 비밀번호·첫 로그인
 
-공통 임시 비밀번호를 사용하지 않습니다. 계정마다 **서로 다른 16자 이상의 무작위 임시 비밀번호**를 생성하고 최초 로그인 직후 변경합니다.
+현재 승인된 공통 임시 비밀번호는 `12345678`입니다. 만료시간은 두지 않지만 업무 데이터는 최초 변경 완료 전까지 RLS에서 차단됩니다. 이 값은 서버 함수 코드 외의 DB·감사 로그에 저장하지 않습니다.
 
-1. 파트장이 `allowed_users`에 이메일·이름·역할을 등록합니다.
-2. 비밀번호 관리자에서 계정별 16자 이상의 무작위 임시 비밀번호를 생성한 뒤 Supabase Dashboard > Authentication > Users > **Add user** 로 계정을 만듭니다(앱 가입 UI 없음). 임시 비밀번호를 문서·메신저 단체방·이메일 본문에 기록하지 않습니다.
+1. 파트장이 앱 **계정 관리 → 계정 추가**에서 이메일·이름·역할을 등록합니다.
+2. 생성 완료 뒤 임시 비밀번호 `12345678`을 본인에게 승인된 1:1 채널로 전달합니다. 단체방·이메일 본문에 별도 기록하지 않습니다.
    - Authentication → Providers → Email의 **Minimum password length는 8 이상을 유지하며 임시로 낮추지 않습니다.**
-3. 임시 비밀번호는 본인에게 승인된 1:1 보안 채널로 한 번만 전달합니다. 사용자는 즉시 로그인해 `must_change_password` 화면에서 **8자 이상**의 새 비밀번호로 변경합니다.
-4. 온보딩이 끝날 때까지 담당자가 함께 확인하고, 전달 실패·지연 시 기존 임시 비밀번호를 폐기하고 새 무작위 값으로 재설정합니다.
+3. 사용자는 즉시 로그인해 `must_change_password` 화면에서 임시 비밀번호와 다른 **8자 이상**의 새 비밀번호로 변경한 뒤 재로그인합니다.
+4. 전달 실패·노출 의심·비밀번호 분실 시 파트장이 대상 카드의 **비밀번호 초기화**와 사유를 입력합니다. 기존 세션은 폐기되고 같은 임시 비밀번호가 다시 발급됩니다.
 
 ### 최초 변경 전 데이터 접근 차단
 
-`must_change_password=true`인 동안에는 **RLS 레벨에서 데이터 읽기/쓰기가 차단**됩니다. 완료 플래그는 `auth.users.encrypted_password` 변경을 관찰하는 DB 트리거만 해제하며, 앱은 Auth 비밀번호 변경 후 프로필 상태를 다시 조회합니다. 최종 스키마에는 legacy `mark_password_changed()`의 어떤 overload도 남지 않으며, 구형 review mutation signature도 제거됩니다.
+`must_change_password=true`인 동안에는 **RLS 레벨에서 데이터 읽기/쓰기가 차단**됩니다. 완료 플래그는 `prepare_own_password_change`로 승인된 상태와 `auth.users.encrypted_password` 변경을 함께 확인한 DB 트리거만 해제합니다. 임의의 직접 Auth 비밀번호 변경은 플래그를 해제하지 않습니다. 최종 스키마에는 legacy `mark_password_changed()`의 어떤 overload도 남지 않습니다.
 
 ### 운영 완화책
 

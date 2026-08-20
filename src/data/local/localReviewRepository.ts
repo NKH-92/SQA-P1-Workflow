@@ -6,6 +6,7 @@ import {
   latestRelevantReviewEvent,
 } from '../../lib/readState'
 import type { ReviewFeedback } from '../../types'
+import { canViewTeamData } from '../../domain/permissions'
 import type { RepositoryDeps, ReviewRepository } from '../repositories/types'
 import {
   assertActiveLeader,
@@ -277,7 +278,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
 
     async markAllRelevantReviewsSeen() {
       const relevantRequests = data.reviewRequests.filter((request) =>
-        profile.role === 'leader' || request.requester_id === profile.id,
+        canViewTeamData(profile) || request.requester_id === profile.id,
       )
       const now = new Date().toISOString()
       setData((current) => ({

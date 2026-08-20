@@ -7,7 +7,7 @@ import { ReasonPromptModal } from '../../../components/ui'
 import { downloadCsv } from '../../../lib/csv'
 import { buildProductAllocationCsvRows } from '../../../lib/productAllocationCsv'
 import { parseCsvRows, parseProductImportRows } from '../../../lib/csvImport'
-import { canReceiveAssignment } from '../../../domain/permissions'
+import { canManageTeamData, canReceiveAssignment } from '../../../domain/permissions'
 import { selectProductGroups } from '../master.selectors'
 import { selectProductChangeTaskContexts } from '../../change-applications/selectors'
 import {
@@ -27,6 +27,7 @@ import { ProductRegisterModal } from './ProductRegisterModal'
 import { useProductAdminController } from './useProductAdminController'
 
 export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSubPanelProps) {
+  const canManage = canManageTeamData(profile)
   const controller = useProductAdminController(profile, data, setData)
   const [productForm, setProductForm] = useState({ name: '', category: '자사' as ProductCategory, companyName: '자사' })
   const [productAssignment, setProductAssignment] = useState<ProductAssignmentForm>({
@@ -236,7 +237,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
         </p>
       </div>
       <div className="admin-header master-header">
-        <div className="master-header-actions">
+        {canManage && <div className="master-header-actions">
           <button className="primary" onClick={() => setProductRegisterOpen(true)} type="button">
             <Package size={16} />
             제품 등록
@@ -245,7 +246,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
             <Users size={16} />
             제품 배정
           </button>
-        </div>
+        </div>}
         <label className="search-field">
           <Search aria-hidden="true" size={16} />
           <input
@@ -259,7 +260,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
           <Download size={16} />
           CSV
         </button>
-        <label className="ghost file-import-btn">
+        {canManage && <label className="ghost file-import-btn">
           <Upload size={16} />
           가져오기
           <input
@@ -273,7 +274,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
             }}
             type="file"
           />
-        </label>
+        </label>}
       </div>
 
       <ImportDiagnostics
@@ -301,6 +302,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
                 pendingDelete={pendingDelete}
                 setPendingDelete={setPendingDelete}
                 onDelete={deleteProduct}
+                readOnly={!canManage}
               />
             ))}
             {ownCompanyProducts.length === 0 && <p className="empty">자사제품이 없습니다.</p>}
@@ -323,6 +325,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
                 pendingDelete={pendingDelete}
                 setPendingDelete={setPendingDelete}
                 onDelete={deleteProduct}
+                readOnly={!canManage}
               />
             ))}
             {consignedProducts.length === 0 && <p className="empty">위탁제품이 없습니다.</p>}

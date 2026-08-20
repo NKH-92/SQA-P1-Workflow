@@ -5,6 +5,7 @@ import type { Profile, ReviewRequest, ReviewStatus } from '../../../types'
 import type { ReviewStatusFilter } from '../../../app/types'
 import { dueDateShortLabel, dueDateStatus, relativeDateLabel } from '../../../lib/dates'
 import { formatDate, reviewStatusLabels } from '../../../lib/format'
+import { canViewTeamData } from '../../../domain/permissions'
 
 type ReviewListProps = {
   profile: Profile
@@ -37,10 +38,11 @@ export const ReviewList = memo(function ReviewList({
   unreadIds,
   loading = false,
 }: ReviewListProps) {
+  const leaderMode = canViewTeamData(profile)
   return (
     <aside className="review-list-pane" aria-label="검토요청 목록">
       <div className="review-list-head">
-        <h2>{profile.role === 'leader' ? '검토요청' : '내 검토요청'}</h2>
+        <h2>{leaderMode ? '검토요청' : '내 검토요청'}</h2>
         <span>{visibleReviewRequests.length}건</span>
       </div>
       <div className="review-filter-row" role="group" aria-label="검토요청 상태 필터">
@@ -50,10 +52,10 @@ export const ReviewList = memo(function ReviewList({
           onClick={() => onStatusFilterChange('all')}
           type="button"
         >
-          전체 {profile.role === 'leader' ? scopedReviewRequests.length : scopedReviewRequests.length - statusCounts.withdrawn}
+          전체 {leaderMode ? scopedReviewRequests.length : scopedReviewRequests.length - statusCounts.withdrawn}
         </button>
         {(Object.entries(reviewStatusLabels) as Array<[ReviewStatus, string]>)
-          .filter(([value]) => profile.role === 'leader' || value !== 'withdrawn')
+          .filter(([value]) => leaderMode || value !== 'withdrawn')
           .map(([value, label]) => (
           <button
             aria-pressed={statusFilter === value}
@@ -72,7 +74,7 @@ export const ReviewList = memo(function ReviewList({
           icon={<Inbox size={22} />}
           title={statusFilter === 'withdrawn' ? '회수된 검토요청이 없습니다.' : '검토요청이 없습니다.'}
           description={statusFilter === 'withdrawn'
-            ? profile.role === 'leader'
+            ? leaderMode
               ? '최근 7일 동안 회수된 요청이 여기에 표시됩니다.'
               : '최근 90일 동안 회수된 요청이 여기에 표시됩니다.'
             : '검색어나 필터를 바꾸면 다른 요청이 보입니다.'}

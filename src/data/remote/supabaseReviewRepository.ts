@@ -1,6 +1,7 @@
 import { UserFacingError } from '../../lib/errors'
 import { buildReviewReadReceipts } from '../../lib/readState'
 import { supabase } from '../../lib/supabase'
+import { canViewTeamData } from '../../domain/permissions'
 import type { RepositoryDeps, ReviewRepository } from '../repositories/types'
 import {
   assertActiveMember,
@@ -174,7 +175,7 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
       const { error } = await supabase!.rpc('mark_all_relevant_reviews_seen')
       if (error) throw error
       const relevantRequests = data.reviewRequests.filter((request) =>
-        profile.role === 'leader' || request.requester_id === profile.id,
+        canViewTeamData(profile) || request.requester_id === profile.id,
       )
       const now = new Date().toISOString()
       setData((current) => ({

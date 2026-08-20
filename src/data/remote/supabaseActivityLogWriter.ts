@@ -18,7 +18,7 @@ export function createSupabaseActivityLogWriter(): ActivityLogWriter {
         reportError({
           error,
           route: globalThis.location?.hash || '#/unknown',
-          role: input.actor.role,
+          role: input.actor.role === 'team_leader' ? 'leader' : input.actor.role,
           operation: 'activity-log-write',
         })
       }

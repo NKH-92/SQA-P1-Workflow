@@ -5,7 +5,6 @@ import { toUserMessage } from '../lib/errors'
 import { supabase } from '../lib/supabase'
 import {
   LogOut,
-  RefreshCw,
   Save,
   ShieldCheck,
 } from 'lucide-react'
@@ -21,35 +20,8 @@ export function PasswordChangePanel({ profile, onComplete, onSignOut }: Password
   const [confirmation, setConfirmation] = useState('')
   const [notice, setNotice] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
-  const [passwordChanged, setPasswordChanged] = useState(false)
-  const [retryingCompletion, setRetryingCompletion] = useState(false)
-
-  const completePasswordChange = async () => {
-    if (!supabase) return false
-
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const { data: updatedProfile, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', profile.id)
-        .maybeSingle()
-      if (!profileError && updatedProfile && updatedProfile.must_change_password === false) {
-        onComplete(updatedProfile as Profile)
-        return true
-      }
-      if (attempt < 4) await new Promise((resolve) => setTimeout(resolve, 250))
-    }
-    setNotice('비밀번호 변경은 완료됐지만 계정 상태 확인이 지연되고 있습니다. 새 비밀번호로 다시 로그인하거나 상태 확인을 재시도하세요.')
-    return false
-  }
-
-  const retryCompletion = async () => {
-    if (!supabase) return
-    setRetryingCompletion(true)
-    setNotice(null)
-    await completePasswordChange()
-    setRetryingCompletion(false)
-  }
+  void profile
+  void onComplete
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -63,21 +35,30 @@ export function PasswordChangePanel({ profile, onComplete, onSignOut }: Password
       setNotice('비밀번호 확인이 일치하지 않습니다.')
       return
     }
+    if (password === '12345678') {
+      setNotice('임시 비밀번호와 다른 새 비밀번호를 입력해 주세요.')
+      return
+    }
 
     setPending(true)
     setNotice(null)
-    setPasswordChanged(false)
-    const { error: passwordError } = await supabase.auth.updateUser({ password })
+    const { data, error: passwordError } = await supabase.functions.invoke('complete-password-change', {
+      body: { password },
+    })
     if (passwordError) {
       setPending(false)
       setNotice(toUserMessage(passwordError))
       return
     }
-
-    setPasswordChanged(true)
-    const ok = await completePasswordChange()
+    if (!data?.ok) {
+      setPending(false)
+      setNotice(data?.message ?? '비밀번호를 변경하지 못했습니다.')
+      return
+    }
+    setPassword('')
+    setConfirmation('')
     setPending(false)
-    if (!ok) return
+    onSignOut()
   }
 
   return (
@@ -118,17 +99,11 @@ export function PasswordChangePanel({ profile, onComplete, onSignOut }: Password
           />
         </label>
         {notice && <p className="notice">{notice}</p>}
-        <button className="primary" disabled={pending || retryingCompletion} type="submit">
+        <button className="primary" disabled={pending} type="submit">
           <Save size={16} />
           {pending ? '저장 중...' : '비밀번호 변경'}
         </button>
-        {passwordChanged && notice && (
-          <button className="ghost" disabled={pending || retryingCompletion} onClick={() => void retryCompletion()} type="button">
-            <RefreshCw size={16} />
-            {retryingCompletion ? '완료 처리 재시도 중...' : '완료 처리 재시도'}
-          </button>
-        )}
-        <button className="ghost" disabled={pending || retryingCompletion} type="button" onClick={onSignOut}>
+        <button className="ghost" disabled={pending} type="button" onClick={onSignOut}>
           <LogOut size={16} />
           로그아웃
         </button>

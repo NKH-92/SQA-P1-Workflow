@@ -23,6 +23,7 @@ export function ProductCard({
   pendingDelete,
   setPendingDelete,
   onDelete,
+  readOnly = false,
 }: {
   product: AppData['products'][number]
   data: AppData
@@ -32,13 +33,14 @@ export function ProductCard({
   pendingDelete: PendingAdminDelete | null
   setPendingDelete: (value: PendingAdminDelete | null) => void
   onDelete: (productId: string, input: AuditedDeleteInput) => void
+  readOnly?: boolean
 }) {
   const assignments = data.productAssignments.filter((assignment) => assignment.product_id === product.id)
   const edit = productEdits[product.id]
 
   return (
     <article className={assignments.length === 0 ? 'master-card unassigned' : 'master-card'}>
-      {edit ? (
+      {edit && !readOnly ? (
         <div className="project-edit-form">
           <label>
             제품명
@@ -124,7 +126,7 @@ export function ProductCard({
                 {product.category ?? '자사'} · {product.company_name ?? '회사명 없음'}
               </p>
             </div>
-            <div className="group-actions">
+            {!readOnly && <div className="group-actions">
               <button
                 className="ghost compact"
                 onClick={() =>
@@ -157,7 +159,7 @@ export function ProductCard({
                 setPendingDelete={setPendingDelete}
                 onConfirm={(input) => onDelete(product.id, input)}
               />
-            </div>
+            </div>}
           </div>
           <div className="pill-row">
             {assignments.map((assignment) => (

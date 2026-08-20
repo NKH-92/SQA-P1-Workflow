@@ -69,7 +69,7 @@ export const TAB_NAVIGATION_METADATA: Record<
     leader: { order: 9, section: '마스터', sidebarLabel: '업무 카테고리', paletteLabel: '업무 카테고리', headerLabel: '마스터 / 업무 카테고리' },
   },
   invites: {
-    leader: { order: 10, section: '마스터', sidebarLabel: '초대 관리', paletteLabel: '초대 관리', headerLabel: '마스터 / 초대 관리' },
+    leader: { order: 10, section: '마스터', sidebarLabel: '계정 관리', paletteLabel: '계정 관리', headerLabel: '마스터 / 계정 관리' },
   },
   work: {
     member: { order: 5, section: '내 업무', sidebarLabel: '내 담당', paletteLabel: '내 담당', headerLabel: '내 업무 / 내 담당' },

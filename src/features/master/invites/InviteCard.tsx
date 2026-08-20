@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react'
-import { Pencil, Save } from 'lucide-react'
+import { KeyRound, Pencil, Save } from 'lucide-react'
 import { Badge } from '../../../components/ui'
 import { deleteWarnings } from '../../../app/constants'
 import type { PendingAdminDelete } from '../../../app/types'
@@ -24,6 +24,8 @@ export function InviteCard({
   profileToggleReason,
   setProfileToggleReason,
   onToggleProfileActive,
+  readOnly,
+  onResetPassword,
 }: {
   item: AppData['allowedUsers'][number]
   data: AppData
@@ -38,6 +40,8 @@ export function InviteCard({
   profileToggleReason: string
   setProfileToggleReason: (value: string) => void
   onToggleProfileActive: (email: string, nextActive: boolean) => void
+  readOnly: boolean
+  onResetPassword: (userId: string, name: string) => void
 }) {
   const edit = inviteEdits[item.id]
   const linkedProfile = data.profiles.find((profile) => profile.email.toLowerCase() === item.email.toLowerCase())
@@ -45,7 +49,7 @@ export function InviteCard({
 
   return (
     <article className="master-card">
-      {edit ? (
+      {edit && !readOnly ? (
         <div className="project-edit-form">
           <label>
             이메일
@@ -66,6 +70,7 @@ export function InviteCard({
               onChange={(event) => setInviteEdits({ ...inviteEdits, [item.id]: { ...edit, role: event.target.value as Role } })}
             >
               <option value="member">파트원</option>
+              <option value="team_leader">팀장</option>
               <option value="leader">파트장</option>
             </select>
           </label>
@@ -101,7 +106,7 @@ export function InviteCard({
               <h3>{item.name}</h3>
               <p>{item.email}</p>
             </div>
-            <div className="group-actions">
+            {!readOnly && <div className="group-actions">
               <button
                 className="ghost compact"
                 onClick={() =>
@@ -131,13 +136,13 @@ export function InviteCard({
                 setPendingDelete={setPendingDelete}
                 onConfirm={(input) => onDelete(item.id, input)}
               />
-            </div>
+            </div>}
           </div>
           <div className="inline-actions">
             <Badge status={linkedProfile ? (isActive ? 'approved' : 'rejected') : 'pending'}>
               {linkedProfile ? (isActive ? '활성' : '비활성') : '미가입'}
             </Badge>
-            {linkedProfile &&
+            {linkedProfile && !readOnly &&
               (pendingProfileToggle?.email === item.email ? (
                 <div className="delete-confirm expanded">
                   <p className="draft-notice">
@@ -177,6 +182,12 @@ export function InviteCard({
                   {isActive ? '비활성화' : '활성화'}
                 </button>
               ))}
+            {linkedProfile && !readOnly && (
+              <button className="ghost compact" onClick={() => onResetPassword(linkedProfile.id, linkedProfile.name)} type="button">
+                <KeyRound size={15} />
+                비밀번호 초기화
+              </button>
+            )}
           </div>
           <Badge>{roleLabels[item.role]}</Badge>
         </>

@@ -186,7 +186,7 @@ describeRls(`RLS hardened review workflow (${RLS_SKIP_NOTE})`, () => {
     expect(tombstone.data?.voided_at).toBeTruthy()
   })
 
-  it('observes the Auth password change without exposing the removed legacy RPC', async () => {
+  it('requires a prepared first-login transition before Auth clears the password gate', async () => {
     const client = await authenticatedClient(
       'RLS_HARDENED_PENDING_PASSWORD_EMAIL',
       'RLS_HARDENED_PENDING_PASSWORD',
@@ -202,15 +202,29 @@ describeRls(`RLS hardened review workflow (${RLS_SKIP_NOTE})`, () => {
     expect(before.error).toBeNull()
     expect(before.data?.must_change_password).toBe(true)
 
-    const passwordChange = await client.auth.updateUser({ password: 'Rls-Test-Password-2026!-Changed' })
-    expect(passwordChange.error).toBeNull()
-    const after = await client
+    const bypassAttempt = await client.auth.updateUser({ password: 'Rls-Test-Password-2026!-Attempt' })
+    expect(bypassAttempt.error).toBeNull()
+    const afterBypass = await client
       .from('profiles')
       .select('must_change_password')
       .eq('id', requiredEnv('RLS_HARDENED_PENDING_PASSWORD_USER_ID'))
       .single()
-    expect(after.error).toBeNull()
-    expect(after.data?.must_change_password).toBe(false)
+    expect(afterBypass.error).toBeNull()
+    expect(afterBypass.data?.must_change_password).toBe(true)
+
+    const prepared = await client.rpc('prepare_own_password_change', {
+      p_correlation_id: crypto.randomUUID(),
+    })
+    expect(prepared.error).toBeNull()
+    const passwordChange = await client.auth.updateUser({ password: 'Rls-Test-Password-2026!-Changed' })
+    expect(passwordChange.error).toBeNull()
+    const afterPreparedChange = await client
+      .from('profiles')
+      .select('must_change_password')
+      .eq('id', requiredEnv('RLS_HARDENED_PENDING_PASSWORD_USER_ID'))
+      .single()
+    expect(afterPreparedChange.error).toBeNull()
+    expect(afterPreparedChange.data?.must_change_password).toBe(false)
 
     const removedAfterChange = await client.rpc('mark_password_changed')
     expect(removedAfterChange.error).not.toBeNull()

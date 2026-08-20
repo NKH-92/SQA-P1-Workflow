@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Download, Search, Upload, Users } from 'lucide-react'
+import { Download, Search, Upload, UserPlus } from 'lucide-react'
 import type { PendingAdminDelete } from '../../../app/types'
 import type { AuditedDeleteInput } from '../../../data/contracts'
 import type { Role } from '../../../types'
@@ -7,7 +7,8 @@ import { ReasonPromptModal } from '../../../components/ui'
 import { downloadCsv } from '../../../lib/csv'
 import { parseCsvRows, parseInviteImportRows } from '../../../lib/csvImport'
 import { roleLabels } from '../../../lib/format'
-import { canReceiveAssignment } from '../../../domain/permissions'
+import { canManageTeamData } from '../../../domain/permissions'
+import { supabase } from '../../../lib/supabase'
 import { selectFilteredAllowedUsers } from '../master.selectors'
 import { validateInviteCreate, validateInviteImport, validateInviteUpdate, validateProfileToggle } from '../master.validators'
 import type { MasterSubPanelProps } from '../shared/types'
@@ -19,6 +20,7 @@ import { useInviteAdminController } from './useInviteAdminController'
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubPanelProps) {
+  const canManage = canManageTeamData(profile)
   const controller = useInviteAdminController(profile, data, setData)
   const [allowedForm, setAllowedForm] = useState({ email: '', name: '', role: 'member' as Role })
   const [adminSearch, setAdminSearch] = useState('')
@@ -31,8 +33,9 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
   const [inviteReasonPrompt, setInviteReasonPrompt] = useState<{ inviteId: string } | null>(null)
   const [inviteReason, setInviteReason] = useState('')
   const [inviteImportIssues, setInviteImportIssues] = useState<CsvImportIssue[]>([])
+  const [pendingPasswordReset, setPendingPasswordReset] = useState<{ userId: string; name: string } | null>(null)
+  const [passwordResetReason, setPasswordResetReason] = useState('')
 
-  const memberOptions = data.profiles.filter(canReceiveAssignment)
   const query = adminSearch.trim()
   const filteredAllowedUsers = selectFilteredAllowedUsers(data, query)
 
@@ -91,7 +94,7 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
         return false
       }
       if (extra.invalidRole) {
-        issues.push({ value, reason: `역할 '${extra.invalidRole}'은 파트장 또는 파트원이어야 합니다.` })
+        issues.push({ value, reason: `역할 '${extra.invalidRole}'은 파트장, 팀장 또는 파트원이어야 합니다.` })
         return false
       }
       if (!EMAIL_PATTERN.test(row.email)) {
@@ -124,10 +127,35 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
   const addAllowedUser = async () => {
     const ok = await mutate(async () => {
       const payload = validateInviteCreate(data, allowedForm)
-      await controller.add(payload)
+      if (!supabase) throw new Error('Supabase 연결이 필요합니다.')
+      const { data: response, error } = await supabase.functions.invoke('account-admin', {
+        body: { action: 'create', ...payload },
+      })
+      if (error) throw error
+      if (!response?.ok) throw new Error(response?.message ?? '계정을 생성하지 못했습니다.')
       setAllowedForm({ email: '', name: '', role: 'member' })
-    }, '초대 정보를 등록했습니다.')
+    }, '계정을 추가했습니다. 임시 비밀번호는 12345678이며 최초 로그인 시 변경해야 합니다.')
     if (ok) setInviteRegisterOpen(false)
+  }
+
+  const resetPassword = async () => {
+    if (!pendingPasswordReset || !supabase) return
+    const client = supabase
+    const ok = await mutate(async () => {
+      const { data: response, error } = await client.functions.invoke('account-admin', {
+        body: {
+          action: 'reset_password',
+          userId: pendingPasswordReset.userId,
+          reason: passwordResetReason,
+        },
+      })
+      if (error) throw error
+      if (!response?.ok) throw new Error(response?.message ?? '비밀번호를 초기화하지 못했습니다.')
+    }, '비밀번호를 초기화했습니다. 임시 비밀번호는 12345678이며 다음 로그인 시 변경해야 합니다.')
+    if (ok) {
+      setPendingPasswordReset(null)
+      setPasswordResetReason('')
+    }
   }
 
   const saveInviteEdit = (inviteId: string, reason: string) => {
@@ -181,17 +209,17 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
   return (
     <div className="stack">
       <div className="page-intro master-page-heading">
-        <h1>초대 관리</h1>
+        <h1>계정 관리</h1>
         <p>
-          초대 {data.allowedUsers.length}명 · 파트원 {memberOptions.length}명
+          등록 {data.allowedUsers.length}명 · 활성 계정 {data.profiles.filter((item) => item.is_active !== false).length}명
         </p>
       </div>
       <div className="admin-header master-header">
         <div className="master-header-actions">
-          <button className="primary" onClick={() => setInviteRegisterOpen(true)} type="button">
-            <Users size={16} />
-            초대 등록
-          </button>
+          {canManage && <button className="primary" onClick={() => setInviteRegisterOpen(true)} type="button">
+            <UserPlus size={16} />
+            계정 추가
+          </button>}
         </div>
         <label className="search-field">
           <Search aria-hidden="true" size={16} />
@@ -206,7 +234,7 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
           <Download size={16} />
           CSV
         </button>
-        <label className="ghost file-import-btn">
+        {canManage && <label className="ghost file-import-btn">
           <Upload size={16} />
           가져오기
           <input
@@ -220,7 +248,7 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
             }}
             type="file"
           />
-        </label>
+        </label>}
       </div>
 
       <ImportDiagnostics
@@ -250,6 +278,11 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
             profileToggleReason={profileToggleReason}
             setProfileToggleReason={setProfileToggleReason}
             onToggleProfileActive={(email, nextActive) => void toggleProfileActive(email, nextActive)}
+            readOnly={!canManage}
+            onResetPassword={(userId, name) => {
+              setPendingPasswordReset({ userId, name })
+              setPasswordResetReason('')
+            }}
           />
         ))}
         {filteredAllowedUsers.length === 0 && <p className="empty">등록된 초대 대상이 없습니다.</p>}
@@ -261,6 +294,19 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
         allowedForm={allowedForm}
         setAllowedForm={setAllowedForm}
         onSubmit={addAllowedUser}
+      />
+      <ReasonPromptModal
+        open={pendingPasswordReset !== null}
+        onClose={() => {
+          setPendingPasswordReset(null)
+          setPasswordResetReason('')
+        }}
+        title={`${pendingPasswordReset?.name ?? '사용자'} 비밀번호 초기화`}
+        description="기존 세션을 종료하고 임시 비밀번호 12345678을 발급합니다. 사용자는 다음 로그인 시 새 비밀번호로 변경해야 합니다."
+        reason={passwordResetReason}
+        setReason={setPasswordResetReason}
+        onSubmit={() => void resetPassword()}
+        submitLabel="비밀번호 초기화"
       />
       <ReasonPromptModal
         open={inviteReasonPrompt !== null}

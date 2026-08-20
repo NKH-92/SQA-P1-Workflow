@@ -19,7 +19,7 @@ DB/repository/운영 변경은 Docker와 pinned Supabase CLI `2.109.1`이 준비
 
 Playwright **preview** project(`npm run test:e2e`)는 local adapter 회귀용 17개 시나리오로 다음 계약을 독립적으로 차단한다: leader/member navigation, command palette, review lifecycle, project CRUD, product transfer, change task lifecycle, deep-link, density persistence, mobile sidebar, notification/read navigation, review stats filter, modal focus return.
 
-Playwright **remote** project(`npm run test:e2e:remote`)는 local Supabase + production build 정적 자산으로 UI→Auth→RPC→RLS 종단 13개 시나리오(R-E2E-01~13)를 차단한다. setup만 service role을 사용하고 브라우저에는 anon key와 시험 사용자 credential만 전달한다. production secret 사용을 금지한다. Docker/local Supabase가 없으면 이 게이트는 실행하지 않으며, `REMOTE_E2E_REQUIRED=1`일 때 미구성은 fail-closed다.
+Playwright **remote** project(`npm run test:e2e:remote`)는 local Supabase + production build 정적 자산으로 UI→Auth→Edge Function→RPC→RLS 종단 15개 workflow 시나리오(R-E2E-01~15)를 차단한다. setup만 service role을 사용하고 브라우저에는 anon key와 시험 사용자 credential만 전달한다. production secret 사용을 금지한다. Docker/local Supabase가 없으면 이 게이트는 실행하지 않으며, `REMOTE_E2E_REQUIRED=1`일 때 미구성은 fail-closed다.
 
 권장 CI 순서:
 
@@ -129,7 +129,7 @@ Supabase에 최소 3명(`leader`, `member A`, `member B`)을 등록한 뒤 각 �
 - 빈 댓글 `reject_review_request`는 active leader에게만 허용되고, 피드백 미생성 및 `comment_provided=false` 이벤트·활동 메타데이터와 `댓글 없이 반려` 감사 사유를 원자적으로 기록해야 한다.
 - 로컬 전용 보존 probe는 365일 초과 종결 요청과 모든 연결 원문만 삭제하고, 정확한 365일 경계·최근 종결·오래된 `pending`을 보존하며 두 번째 실행이 0건인지 확인한 뒤 subtransaction 전체를 롤백해야 한다. 운영 readiness SQL은 데이터 생성·삭제 없이 함수·ACL·인덱스·Cron만 정적으로 검사한다.
 - 읽음 처리는 `review_read_receipts`와 DB 시각을 사용하며, 사용자는 자신의 영수증과 권한이 있는 요청의 이벤트만 조회할 수 있어야 한다.
-- `mark_password_changed()`의 모든 overload와 구형 review RPC signature는 제거 상태여야 하며, 실제 Auth 비밀번호 hash 변경만 `must_change_password=false`를 만들고 `profiles` 물리 삭제는 service role에도 차단되어야 한다.
+- `mark_password_changed()`의 모든 overload와 구형 review RPC signature는 제거 상태여야 하며, 준비된 `complete_temp` 전이 뒤의 실제 Auth 비밀번호 hash 변경만 `must_change_password=false`를 만들고 `profiles` 물리 삭제는 service role에도 차단되어야 한다.
 - anon은 `public` schema USAGE가 없고, authenticated/service role은 필요한 schema USAGE만 가지며 CREATE는 없어야 한다. 새 routine의 전역 default ACL에는 PUBLIC EXECUTE가 없어야 한다.
 - `member` 계정을 `profiles.is_active = false`로 설정하면 본인 데이터 조회·쓰기가 RLS에서 거부되어야 한다.
 - `leader` 계정을 `profiles.is_active = false`로 설정해도 API로 제품·프로젝트·검토요청을 조회·수정할 수 없어야 한다.
@@ -137,13 +137,15 @@ Supabase에 최소 3명(`leader`, `member A`, `member B`)을 등록한 뒤 각 �
 - `member` 계정으로 로그인해 검토요청·대시보드에서 파트장 **이름**이 표시되는지 확인한다. `public_leader_profiles` select가 실패하지 않고 **행이 0건이 아니어야** 한다(owner 권한 조회 — 202607080001).
 - `member`는 파트장의 email 등 민감 정보를 볼 수 없어야 한다.
 
-### 비밀번호 변경 강제 검증 (202607080001)
+### 계정 관리·비밀번호 변경 강제·팀장 검증 (20260820150511)
 
 `must_change_password`는 RLS 헬퍼(`can_use_app`/`is_active_leader`)에서 서버 강제되므로 아래를 반드시 수행한다.
 
-- `profiles.must_change_password = true`인 계정(계정별 무작위 임시 비밀번호로 방금 만든 계정)으로 로그인하면 앱이 비밀번호 변경 화면을 표시한다.
+- 파트장이 계정 관리에서 사용자를 만들면 임시 비밀번호 `12345678`로 로그인할 수 있고 비밀번호 변경 화면이 표시된다.
 - 그 상태에서 세션 토큰으로 REST/RPC를 직접 호출해도(비밀번호 변경 화면 우회 시도) `products`·`review_requests`·`projects` 등 어떤 테이블도 조회·쓰기가 되지 않아야 한다(빈 결과/거부).
-- 비밀번호 변경(8자 이상)을 완료해 `must_change_password = false`가 되면 이후 정상적으로 데이터가 조회·쓰기된다.
+- `12345678` 재사용은 거부되고, 다른 비밀번호(8자 이상)를 완료해 `must_change_password = false`가 되면 새 비밀번호로 재로그인 후 정상적으로 데이터가 조회·쓰기된다.
+- 파트장이 비밀번호를 초기화하면 기존 세션은 더 이상 `current_session_is_valid()`를 통과하지 못하고, `12345678`로 재로그인한 뒤 다시 최초 변경을 완료해야 한다.
+- `team_leader`는 파트장 탭과 전체 검토·프로젝트·마스터·활동 데이터를 조회할 수 있지만 직접 REST 쓰기와 SECURITY DEFINER RPC 쓰기가 모두 `SQA_TEAM_LEADER_READ_ONLY`로 거부되어야 한다. 본인 비밀번호 변경과 읽음 영수증은 허용한다.
 - 첫 파트장 계정도 동일하게, 비밀번호 변경 전에는 마스터/배정 등 leader 작업이 거부되고 변경 후 정상 동작해야 한다.
 - 위 검증 후, 본문의 `is_active=false` 항목과 member/leader 격리 항목도 함께 확인해 헬퍼가 기존 격리를 깨지 않는지 확인한다.
 

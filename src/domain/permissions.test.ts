@@ -4,6 +4,7 @@ import {
   canCreateProject,
   canCreateReviewFor,
   canManageTeamData,
+  canViewTeamData,
   canViewProfile,
   canViewProjectAssignment,
   canViewReviewRequest,
@@ -13,11 +14,14 @@ import type { Profile } from '../types'
 const leader: Profile = { id: 'leader-1', email: 'leader@example.com', name: 'Leader', role: 'leader' }
 const memberA: Profile = { id: 'member-a', email: 'a@example.com', name: 'A', role: 'member' }
 const memberB: Profile = { id: 'member-b', email: 'b@example.com', name: 'B', role: 'member' }
+const teamLeader: Profile = { id: 'team-leader-1', email: 'team@example.com', name: 'Team Leader', role: 'team_leader' }
 
 describe('role visibility rules mirrored by RLS', () => {
   it('allows leaders to manage team data', () => {
     expect(canManageTeamData(leader)).toBe(true)
     expect(canManageTeamData(memberA)).toBe(false)
+    expect(canManageTeamData(teamLeader)).toBe(false)
+    expect(canViewTeamData(teamLeader)).toBe(true)
   })
 
   it('keeps project creation and assignment role-specific', () => {
@@ -33,6 +37,7 @@ describe('role visibility rules mirrored by RLS', () => {
     expect(canViewProfile(memberA, memberA)).toBe(true)
     expect(canViewProfile(memberA, memberB)).toBe(false)
     expect(canViewProfile(leader, memberB)).toBe(true)
+    expect(canViewProfile(teamLeader, memberB)).toBe(true)
   })
 
   it('keeps review requests scoped to requester unless leader', () => {
@@ -41,11 +46,13 @@ describe('role visibility rules mirrored by RLS', () => {
     expect(canViewReviewRequest(memberA, { requester_id: memberA.id })).toBe(true)
     expect(canViewReviewRequest(memberA, { requester_id: memberB.id })).toBe(false)
     expect(canViewReviewRequest(leader, { requester_id: memberB.id })).toBe(true)
+    expect(canViewReviewRequest(teamLeader, { requester_id: memberB.id })).toBe(true)
   })
 
   it('keeps project assignments scoped to assignee unless leader', () => {
     expect(canViewProjectAssignment(memberA, { user_id: memberA.id })).toBe(true)
     expect(canViewProjectAssignment(memberA, { user_id: memberB.id })).toBe(false)
     expect(canViewProjectAssignment(leader, { user_id: memberB.id })).toBe(true)
+    expect(canViewProjectAssignment(teamLeader, { user_id: memberB.id })).toBe(true)
   })
 })

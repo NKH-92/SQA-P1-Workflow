@@ -22,6 +22,7 @@ import { useReviewSelection } from '../features/reviews/useReviewSelection'
 import { useReviewController } from '../features/reviews/useReviewController'
 import { Archive, LayoutGrid, List, Search, Send } from 'lucide-react'
 import { isLeaderDefaultReviewRequest } from '../lib/reviewHistory'
+import { canViewTeamData } from '../domain/permissions'
 
 export function ReviewsPanel({
   profile,
@@ -39,6 +40,7 @@ export function ReviewsPanel({
   onInitialSelectionApplied?: () => void
 }) {
   const controller = useReviewController(profile, data, setData)
+  const leaderMode = canViewTeamData(profile)
   const [editingReviewId, setEditingReviewId] = useState<string | null>(null)
   const [pendingWithdrawId, setPendingWithdrawId] = useState<string | null>(null)
   const [withdrawDialogId, setWithdrawDialogId] = useState<string | null>(null)
@@ -158,7 +160,7 @@ export function ReviewsPanel({
   const selectReview = useCallback((id: string) => {
     const target = scopedReviewRequests.find((request) => request.id === id)
     if (!target) return
-    if (profile.role === 'leader' && !isLeaderDefaultReviewRequest(target)) {
+    if (leaderMode && !isLeaderDefaultReviewRequest(target)) {
       openHistory(target)
       return
     }
@@ -169,13 +171,13 @@ export function ReviewsPanel({
     }
     setSelectedReviewId(id)
     revealReviewDetailOnMobile(id)
-  }, [openArchive, openHistory, profile.role, revealReviewDetailOnMobile, scopedReviewRequests, setSelectedReviewId, statusFilter])
+  }, [leaderMode, openArchive, openHistory, profile.role, revealReviewDetailOnMobile, scopedReviewRequests, setSelectedReviewId, statusFilter])
 
   useEffect(() => {
     if (!initialSelectedId) return
     const target = scopedReviewRequests.find((request) => request.id === initialSelectedId)
     if (!target) return
-    if (profile.role === 'leader' && !isLeaderDefaultReviewRequest(target)) {
+    if (leaderMode && !isLeaderDefaultReviewRequest(target)) {
       openHistory(target)
       onInitialSelectionApplied?.()
       return
@@ -185,7 +187,7 @@ export function ReviewsPanel({
     } else if (statusFilter !== 'all' && target.status !== statusFilter) {
       setStatusFilter('all')
     }
-  }, [initialSelectedId, onInitialSelectionApplied, openArchive, openHistory, profile.role, scopedReviewRequests, statusFilter])
+  }, [initialSelectedId, leaderMode, onInitialSelectionApplied, openArchive, openHistory, profile.role, scopedReviewRequests, statusFilter])
 
   const markSeenInFlightRef = useRef(new Set<string>())
   useEffect(() => {
@@ -369,8 +371,8 @@ export function ReviewsPanel({
         />
       )}
       <div className="workspace-header">
-        <h2>{profile.role === 'leader' ? '검토 워크스페이스' : '내 검토 기록'}</h2>
-        {profile.role === 'leader' ? (
+        <h2>{leaderMode ? '검토 워크스페이스' : '내 검토 기록'}</h2>
+        {leaderMode ? (
           <label className="search-field review-workspace-search">
             <Search size={15} aria-hidden="true" />
             <input
@@ -397,7 +399,7 @@ export function ReviewsPanel({
             {archivePage >= 0 && ` (${statusCounts.withdrawn}${archiveHasMore ? '+' : ''})`}
           </button>
         )}
-        {profile.role === 'leader' && (
+        {leaderMode && (
           <div className="workspace-header-actions">
             <button className="ghost" onClick={() => openHistory()} type="button">
               <Archive size={15} aria-hidden="true" />
@@ -429,7 +431,7 @@ export function ReviewsPanel({
           </div>
         )}
       </div>
-      {reviewView === 'kanban' && profile.role === 'leader' ? (
+      {reviewView === 'kanban' && leaderMode ? (
         <section className="review-workspace kanban-mode">
           <ReviewKanban
             onSelectReview={selectReview}
@@ -502,7 +504,7 @@ export function ReviewsPanel({
           )}
         </div>
       )}
-      {profile.role === 'leader' && (
+      {leaderMode && (
         <ReviewHistoryModal
           initialRequest={historyInitialRequest}
           localEvents={data.reviewEvents}

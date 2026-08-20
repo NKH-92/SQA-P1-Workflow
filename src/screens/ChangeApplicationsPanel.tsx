@@ -46,6 +46,7 @@ import {
 import { useChangeApplicationController } from '../features/change-applications/useChangeApplicationController'
 import { daysUntil, dueDateLabel } from '../lib/dates'
 import { formatDate } from '../lib/format'
+import { canManageTeamData } from '../domain/permissions'
 import type {
   AppData,
   ChangeApplication,
@@ -93,7 +94,8 @@ export function ChangeApplicationsPanel({
   onInitialSelectionApplied?: () => void
 }) {
   const controller = useChangeApplicationController(profile, data, setData)
-  const leaderMode = profile.role === 'leader'
+  const leaderMode = profile.role === 'leader' || profile.role === 'team_leader'
+  const canManageTeam = canManageTeamData(profile)
   const [leaderTab, setLeaderTab] = useState<LeaderChangeApplicationTab>('active')
   const [memberTab, setMemberTab] = useState<MemberChangeApplicationTab>('pending')
   const [viewMode, setViewMode] = useState<ChangeApplicationViewMode>(leaderMode ? 'change' : 'product')
@@ -317,7 +319,7 @@ export function ChangeApplicationsPanel({
       && workflow === 'in_progress'
       && task.status === 'pending'
       && task.assignee_id === profile.id
-    const canManage = leaderMode && workflow === 'in_progress'
+    const canManage = canManageTeam && workflow === 'in_progress'
     const canReopen = !leaderMode
       && (workflow === 'in_progress' || workflow === 'final_review_ready')
       && (task.status === 'completed' || task.status === 'not_applicable')
@@ -343,7 +345,7 @@ export function ChangeApplicationsPanel({
           {canReassign && <button aria-label={`${task.product_name} ${needsRecoveryReassignment ? '활성 책임자 재배정' : '담당자 변경'}`} className="icon-button" onClick={() => setDialog({ kind: 'reassign', task })} title={needsRecoveryReassignment ? '활성 책임자 재배정' : '담당자 변경'} type="button"><UserRoundCog size={15} /></button>}
           {canManage && task.status === 'pending' && <button aria-label={`${task.product_name} 범위 제외`} className="icon-button" onClick={() => setDialog({ kind: 'remove_scope', task })} title="범위 제외" type="button"><XCircle size={15} /></button>}
           {canReopen && <button className="ghost compact" onClick={() => setDialog({ kind: 'reopen', task })} type="button"><RotateCcw size={14} />다시 열기</button>}
-          {leaderMode && task.status === 'cancelled' && task.cancel_kind === 'scope_removed' && !application.content_locked_at && <button className="ghost compact" onClick={() => setDialog({ kind: 'restore_scope', task })} type="button">범위 복원</button>}
+          {canManageTeam && task.status === 'cancelled' && task.cancel_kind === 'scope_removed' && !application.content_locked_at && <button className="ghost compact" onClick={() => setDialog({ kind: 'restore_scope', task })} type="button">범위 복원</button>}
         </div>
         {(task.completion_note || task.resolution_reason || task.reopen_reason) && <p className="change-task-note">{task.completion_note || task.resolution_reason || `재개: ${task.reopen_reason}`}</p>}
       </article>
@@ -400,9 +402,9 @@ export function ChangeApplicationsPanel({
           <div><span>{selectedApplication.change_number}</span><h2>{selectedApplication.title}</h2><p>{selectedApplication.summary}</p></div>
           <div className="change-detail-actions">
             <CopyLinkButton tab="change-applications" entityId={selectedApplication.id} />
-            {leaderMode && canEditChangeApplication(selectedApplication, selectedContexts, profile) && <button className="ghost compact" onClick={() => setComposer({ editingId: selectedApplication.id })} type="button"><FilePenLine size={14} />{selectedApplication.status === 'draft' ? '초안 이어쓰기' : '수정'}</button>}
-            {leaderMode && selectedSummary.workflow_status === 'final_review_ready' && <button className="primary compact" onClick={() => setFinalizationDialog({ mode: 'finalize', application: selectedApplication, summary: selectedSummary, tasks: selectedContexts.map(({ task }) => task) })} type="button"><CheckCircle2 size={14} />변경 완료</button>}
-            {leaderMode && selectedApplication.status !== 'cancelled' && <button className="ghost compact" onClick={() => setDialog({ kind: 'cancel_application', application: selectedApplication })} type="button"><XCircle size={14} />변경 취소</button>}
+            {canManageTeam && canEditChangeApplication(selectedApplication, selectedContexts, profile) && <button className="ghost compact" onClick={() => setComposer({ editingId: selectedApplication.id })} type="button"><FilePenLine size={14} />{selectedApplication.status === 'draft' ? '초안 이어쓰기' : '수정'}</button>}
+            {canManageTeam && selectedSummary.workflow_status === 'final_review_ready' && <button className="primary compact" onClick={() => setFinalizationDialog({ mode: 'finalize', application: selectedApplication, summary: selectedSummary, tasks: selectedContexts.map(({ task }) => task) })} type="button"><CheckCircle2 size={14} />변경 완료</button>}
+            {canManageTeam && selectedApplication.status !== 'cancelled' && <button className="ghost compact" onClick={() => setDialog({ kind: 'cancel_application', application: selectedApplication })} type="button"><XCircle size={14} />변경 취소</button>}
           </div>
         </header>
         <div className="change-detail-meta"><span>등록자 <strong>{applicationCreatorName(data, selectedApplication)}</strong></span><span>시행일 <strong>{formatDate(selectedApplication.effective_date)}</strong></span><span>상태 <strong>{changeApplicationWorkflowLabel(selectedSummary.workflow_status)}</strong></span>{selectedApplication.source_url && <a href={selectedApplication.source_url} rel="noreferrer" target="_blank">공식 문서 열기</a>}</div>
@@ -418,7 +420,7 @@ export function ChangeApplicationsPanel({
     <div className="stack change-applications-page">
       <div className="page-intro change-page-intro">
         <div><h1>변경 적용</h1><p>{leaderMode ? '제품별 처리를 확인하고 공통변경을 최종 완료합니다.' : '내 제품의 미적용 공통변경을 처리하고 이력을 확인합니다.'}</p></div>
-        {leaderMode && <button className="primary" onClick={() => setComposer({ editingId: null })} type="button"><Plus size={16} />공통변경 등록</button>}
+        {canManageTeam && <button className="primary" onClick={() => setComposer({ editingId: null })} type="button"><Plus size={16} />공통변경 등록</button>}
       </div>
 
       {leaderMode ? (
@@ -466,7 +468,7 @@ export function ChangeApplicationsPanel({
               data={data}
               profile={profile}
               fetchPage={controller.fetchHistoryPage}
-              onUndoCompletion={leaderMode ? openHistoryUndo : undefined}
+              onUndoCompletion={canManageTeam ? openHistoryUndo : undefined}
               initialSelectedId={initialSelectedId}
               onInitialSelectionApplied={onInitialSelectionApplied}
             />

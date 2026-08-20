@@ -1,5 +1,6 @@
 import type { AppData, Profile, ReviewEvent, ReviewReadReceipt, ReviewRequest } from '../types'
 import { compareDecimalIds, maxDecimalId } from './decimalId'
+import { canViewTeamData } from '../domain/permissions'
 
 const leaderRelevantEvents = new Set<ReviewEvent['event_type']>(['submitted', 'resubmitted'])
 const memberRelevantEvents = new Set<ReviewEvent['event_type']>([
@@ -12,7 +13,7 @@ const memberRelevantEvents = new Set<ReviewEvent['event_type']>([
 ])
 
 export function isRelevantReviewEvent(event: ReviewEvent, request: ReviewRequest, profile: Profile): boolean {
-  if (profile.role === 'leader') return leaderRelevantEvents.has(event.event_type)
+  if (canViewTeamData(profile)) return leaderRelevantEvents.has(event.event_type)
   return request.requester_id === profile.id && memberRelevantEvents.has(event.event_type)
 }
 

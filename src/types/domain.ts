@@ -1,4 +1,4 @@
-export type Role = 'leader' | 'member'
+export type Role = 'leader' | 'team_leader' | 'member'
 export type ReviewStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn'
 export type ReviewEventType =
   | 'submitted'

@@ -4,7 +4,7 @@
 
 ## 런타임 구조
 
-SQA P1 Workflow는 React 18 + TypeScript + Vite SPA다. Supabase Auth/Postgres/RLS가 인증과 영속 권한을 담당하고 Cloudflare Worker가 정적 자산을 제공한다. URL은 `#/reviews?id=...` 형식의 해시 경로를 사용한다.
+SQA P1 Workflow는 React 18 + TypeScript + Vite SPA다. Supabase Auth/Postgres/RLS와 JWT 검증 Edge Function이 인증·계정관리·영속 권한을 담당하고 Cloudflare Worker가 정적 자산을 제공한다. URL은 `#/reviews?id=...` 형식의 해시 경로를 사용한다.
 
 ```text
 App / app hooks
@@ -27,7 +27,9 @@ lib (저수준 순수 유틸리티)
 - `src/app`: 인증, refresh, hash navigation, desktop notification, command palette 단축키, mutation runner를 조립한다.
 - `src/lib`: 날짜, 표시, CSV, 오류, 알림 등 저수준 유틸리티다. DB write를 두지 않는다.
 
-Supabase Auth 자체를 다루는 `AuthPanel`과 `PasswordChangePanel`은 repository 대상 업무 데이터가 아니므로 인증 client를 직접 사용한다.
+Supabase Auth 자체를 다루는 `AuthPanel`은 인증 client를 직접 사용한다. 계정 생성·초기화와 최초 비밀번호 변경은 브라우저에 service role을 노출하지 않도록 `account-admin`, `complete-password-change` Edge Function을 호출한다. 두 함수는 사용자 JWT와 DB profile/session을 다시 검증한다.
+
+역할은 `leader`, `team_leader`, `member`다. `team_leader`는 기존 leader 조회 경로를 사용하지만 `private.reject_team_leader_business_write` 트리거가 `review_read_receipts`를 제외한 모든 public 업무 테이블 쓰기를 최종 차단한다. UI의 조회/관리 capability 분리와 DB 트리거를 함께 유지한다.
 
 ## Repository 계약
 
@@ -102,7 +104,7 @@ type BootstrapEnvelope<T> = {
 
 - 정적: typecheck, ESLint, dependency boundary checker
 - 도메인/데이터/UI: Vitest
-- 브라우저 계약: Playwright preview 17개 + 실제 local Supabase remote 13개 시나리오
+- 브라우저 계약: Playwright preview 21개 + 실제 local Supabase remote workflow 15개 시나리오
 - DB 권한: pinned Supabase CLI + Docker의 full RLS gate
 - 산출물: production build + bundle budget + security header render
 

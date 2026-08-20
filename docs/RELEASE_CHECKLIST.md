@@ -62,7 +62,7 @@ npm run test:e2e:remote
 | production build·bundle budget | [ ] PASS |
 | Preview Playwright 17개 | [ ] PASS |
 | Full RLS(skip 0, 해당 변경 시 필수) | [ ] PASS / [ ] 해당 없음 |
-| Remote E2E 13개(해당 변경 시 필수) | [ ] PASS / [ ] 해당 없음 |
+| Remote workflow E2E 15개(해당 변경 시 필수) | [ ] PASS / [ ] 해당 없음 |
 | `git diff --check` | [ ] PASS |
 
 ## 3. PR과 CI
@@ -149,7 +149,8 @@ DB 변경이 없어도 같은 SHA의 migration history와 readiness를 증명하
 | 역할 | 확인 | 기대 | 완료 |
 |---|---|---|:---:|
 | 공통 | 로그인·로그아웃 | 설정 오류·콘솔 치명 오류 없음 | [ ] |
-| leader | 홈·공지·검토·변경·프로젝트·파트원 탭 | 권한 화면 정상 | [ ] |
+| leader | 홈·공지·검토·변경·프로젝트·파트원·계정 탭과 계정 생성/초기화 | 권한 화면·관리 동작 정상 | [ ] |
+| team_leader | 파트장 탭 전체와 계정·활동·감사 데이터 | 조회 가능, 업무·계정 수정 버튼 없음, 직접 쓰기 거부 | [ ] |
 | member | 홈·내 검토·변경·프로젝트·내 담당 | leader 전용 탭 미노출 | [ ] |
 | member | 검토요청 생성·딥링크 | pending 생성, 새로고침 후 같은 항목 | [ ] |
 | leader | 피드백·최종 판단 | 상태·이력·badge 반영 | [ ] |

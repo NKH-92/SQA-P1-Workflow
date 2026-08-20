@@ -68,12 +68,18 @@ function assertSecretScope(source: string, expected: SecretUse[]) {
 }
 
 const migrateSecrets: SecretUse[] = [
+  { job: 'migrate', step: 'Check secret', secret: 'SUPABASE_ACCESS_TOKEN' },
   { job: 'migrate', step: 'Check secret', secret: 'SUPABASE_DB_URL' },
+  { job: 'migrate', step: 'Check secret', secret: 'SUPABASE_PROJECT_REF' },
   { job: 'migrate', step: 'Guard migration history', secret: 'SUPABASE_DB_URL' },
   { job: 'migrate', step: 'List migration status (before)', secret: 'SUPABASE_DB_URL' },
   { job: 'migrate', step: 'Guard Stage B Storage handoff', secret: 'SUPABASE_DB_URL' },
   { job: 'migrate', step: 'Push pending migrations', secret: 'SUPABASE_DB_URL' },
   { job: 'migrate', step: 'Verify production DB readiness from canonical SQL', secret: 'SUPABASE_DB_URL' },
+  { job: 'migrate', step: 'Deploy account Edge Functions', secret: 'SUPABASE_ACCESS_TOKEN' },
+  { job: 'migrate', step: 'Deploy account Edge Functions', secret: 'SUPABASE_PROJECT_REF' },
+  { job: 'migrate', step: 'Verify account Edge Functions', secret: 'SUPABASE_ACCESS_TOKEN' },
+  { job: 'migrate', step: 'Verify account Edge Functions', secret: 'SUPABASE_PROJECT_REF' },
 ]
 
 const deploySecrets: SecretUse[] = [

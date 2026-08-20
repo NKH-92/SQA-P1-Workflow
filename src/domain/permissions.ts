@@ -13,6 +13,10 @@ export function canManageTeamData(profile: Pick<Profile, 'role'> | null | undefi
   return isLeader(profile)
 }
 
+export function canViewTeamData(profile: Pick<Profile, 'role'> | null | undefined): boolean {
+  return profile?.role === 'leader' || profile?.role === 'team_leader'
+}
+
 export function canCreateProject(profile: Pick<Profile, 'role'> | null | undefined): boolean {
   return isLeader(profile)
 }
@@ -30,7 +34,7 @@ export function canReceiveAssignment(profile: Pick<Profile, 'role' | 'is_active'
 }
 
 export function canViewProfile(current: Profile, target: Pick<Profile, 'id'>): boolean {
-  return current.role === 'leader' || current.id === target.id
+  return canViewTeamData(current) || current.id === target.id
 }
 
 export function canCreateReviewFor(current: Profile, requesterId: string): boolean {
@@ -38,12 +42,12 @@ export function canCreateReviewFor(current: Profile, requesterId: string): boole
 }
 
 export function canViewReviewRequest(current: Profile, request: Pick<ReviewRequest, 'requester_id'>): boolean {
-  return current.role === 'leader' || current.id === request.requester_id
+  return canViewTeamData(current) || current.id === request.requester_id
 }
 
 export function canViewProjectAssignment(
   current: Profile,
   assignment: Pick<ProjectAssignment, 'user_id'>,
 ): boolean {
-  return current.role === 'leader' || current.id === assignment.user_id
+  return canViewTeamData(current) || current.id === assignment.user_id
 }

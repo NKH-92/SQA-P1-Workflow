@@ -2,6 +2,7 @@ import type { ProjectStatus, ReviewStatus, Role } from '../types'
 
 export const roleLabels: Record<Role, string> = {
   leader: '파트장',
+  team_leader: '팀장',
   member: '파트원',
 }
 

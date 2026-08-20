@@ -27,6 +27,7 @@ export function DutyTable({
   onSaveMajorCategory,
   onDeleteDuty,
   onDeleteMajorCategory,
+  readOnly,
 }: {
   data: AppData
   dutyTableGroups: DutyTableGroup[]
@@ -40,10 +41,11 @@ export function DutyTable({
   onSaveMajorCategory: (majorCategoryId: string) => void
   onDeleteDuty: (dutyId: string, input: AuditedDeleteInput) => void
   onDeleteMajorCategory: (majorCategoryId: string, input: AuditedDeleteInput) => void
+  readOnly: boolean
 }) {
   const renderMajorCategoryCell = (category: DutyMajorCategory, categoryDutyCount: number) => {
     const majorEdit = majorCategoryEdits[category.id]
-    if (majorEdit) {
+    if (majorEdit && !readOnly) {
       return (
         <div className="table-inline-form">
           <input
@@ -87,7 +89,7 @@ export function DutyTable({
     return (
       <div className="major-category-cell-content">
         <strong>{category.name}</strong>
-        <div className="group-actions">
+        {!readOnly && <div className="group-actions">
           <button
             aria-label={`${category.name} 대분류 수정`}
             className="ghost compact"
@@ -115,7 +117,7 @@ export function DutyTable({
               onConfirm={(input) => onDeleteMajorCategory(category.id, input)}
             />
           )}
-        </div>
+        </div>}
       </div>
     )
   }
@@ -158,7 +160,7 @@ export function DutyTable({
                     </td>
                   )}
                   <td>
-                    {edit ? (
+                    {edit && !readOnly ? (
                       <div className="table-inline-form">
                         <select
                           aria-label={`${duty.name} 업무 대분류`}
@@ -231,7 +233,7 @@ export function DutyTable({
                   </td>
                   <td>{duty.notes || '-'}</td>
                   <td>
-                    {!edit && (
+                    {!edit && !readOnly && (
                       <div className="group-actions">
                         <button
                           aria-label={`${duty.name} 업무 수정`}

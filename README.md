@@ -1,7 +1,7 @@
 # SQA P1 Workflow
 
 파트의 업무 배정, 검토 요청, 변경 적용, 프로젝트와 공지를 한곳에서 관리하는
-내부 업무용 웹 애플리케이션입니다. 파트장과 파트원의 화면·권한을 분리하고,
+내부 업무용 웹 애플리케이션입니다. 파트장, 읽기 전용 팀장, 파트원의 화면·권한을 분리하고,
 Supabase Row Level Security(RLS)와 감사 이벤트로 서버 측 권한을 강제합니다.
 
 > **저장소 등급: Private / 내부 운영용**
@@ -35,7 +35,7 @@ Supabase Row Level Security(RLS)와 감사 이벤트로 서버 측 권한을 강
 | 검토 통계 | 기간·요청자·상태별 집계 | - |
 | 변경 적용 | 변경건·제품·담당자별 관리 | 본인 적용업무 확인·완료 |
 | 프로젝트 | 생성·수정·배정·삭제 | 본인 배정 프로젝트 조회 |
-| 파트원·마스터 | 파트원, 제품, 업무 카테고리, 초대 관리 | 본인 담당제품·업무 조회 |
+| 파트원·마스터 | 파트원, 제품, 업무 카테고리, 계정 관리 | 본인 담당제품·업무 조회 |
 | 활동 로그 | 최근 업무 이력과 감사 이력 조회 | - |
 
 ### 검토 요청 흐름
@@ -130,9 +130,10 @@ Cloudflare token, 백업 암구호를 `VITE_*` 변수나 로컬 파일에 넣지
 | `development` | Supabase | 설정 오류 화면 |
 | `production` | Supabase | 로그인 우회 없이 설정 오류 화면 |
 
-앱에는 공개 가입 화면이 없습니다. 운영 계정은 파트장이 `allowed_users`를 등록하고
-Supabase Dashboard에서 생성합니다. 임시 비밀번호 사용자는 최초 로그인 후 비밀번호를
-변경하기 전까지 RLS에 의해 업무 데이터 접근이 차단됩니다.
+앱에는 공개 가입 화면이 없습니다. 운영 계정은 파트장이 앱의 계정 관리 화면에서
+생성합니다. 임시 비밀번호 `12345678`은 최초 로그인 직후 다른 8자 이상 비밀번호로
+변경해야 하며, 완료 전에는 RLS가 업무 데이터 접근을 차단합니다. 팀장은 파트장
+워크스페이스 전체를 조회하지만 업무·계정 데이터는 수정할 수 없습니다.
 
 ## 명령어
 
@@ -146,7 +147,7 @@ Supabase Dashboard에서 생성합니다. 임시 비밀번호 사용자는 최�
 | `npm test -- --run` | Vitest 단위·통합 테스트 |
 | `npm run test:e2e` | Preview Playwright 17개 시나리오 |
 | `npm run test:rls:full` | local Supabase 전체 RLS gate |
-| `npm run test:e2e:remote` | local Supabase 기반 remote E2E 13개 시나리오 |
+| `npm run test:e2e:remote` | local Supabase 기반 remote workflow E2E 15개 시나리오 |
 | `npm run check:bundle` | 초기·전체·개별 chunk 번들 예산 |
 | `npm run docs:migrations:check` | migration 문서와 파일 목록 일치 확인 |
 

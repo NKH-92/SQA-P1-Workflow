@@ -99,13 +99,17 @@ jobs:
       - name: Check secret
         env:
           DB_URL_SET: ${{ secrets.SUPABASE_DB_URL != '' }}
+          ACCESS_TOKEN_SET: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' }}
+          PROJECT_REF_SET: ${{ secrets.SUPABASE_PROJECT_REF != '' }}
         run: |
-          if [ "$DB_URL_SET" != "true" ]; then
+          if [ "$DB_URL_SET" != "true" ] || [ "$ACCESS_TOKEN_SET" != "true" ] || [ "$PROJECT_REF_SET" != "true" ]; then
             {
-              echo "## DB migrate failed — missing secret: SUPABASE_DB_URL"
+              echo "## DB migrate failed — missing Supabase release secret"
               echo ""
               echo "Repository Settings > Secrets and variables > Actions에 등록하세요."
               echo "- \`SUPABASE_DB_URL\`: Dashboard > Connect의 Session pooler URI (비밀번호 포함)"
+              echo "- \`SUPABASE_ACCESS_TOKEN\`: Edge Function 배포용 personal access token"
+              echo "- \`SUPABASE_PROJECT_REF\`: 배포 대상 project ref"
             } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
@@ -180,8 +184,39 @@ jobs:
             psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f "scripts/sql/verify/$readiness_sql"
           done < <(node -e "const m=require('./scripts/sql/verify/manifest.json'); process.stdout.write(m.readinessFiles.join('\n'))")
           {
-            echo "## DB migrate OK"
+            echo "## DB readiness OK"
             echo ""
             echo "- migration history: exact manifest set verified"
             echo "- canonical readiness: SQA_DB_READY_OK"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Deploy account Edge Functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -Eeuo pipefail
+          supabase functions deploy account-admin complete-password-change \
+            --project-ref "$PROJECT_REF" \
+            --use-api
+
+      - name: Verify account Edge Functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -Eeuo pipefail
+          functions_json=$(supabase functions list --project-ref "$PROJECT_REF" --output json)
+          for function_name in account-admin complete-password-change; do
+            count=$(jq --arg name "$function_name" '[.[] | select(.name == $name and .status == "ACTIVE" and .verify_jwt == true)] | length' <<<"$functions_json")
+            if [ "$count" -ne 1 ]; then
+              echo "::error::SQA_EDGE_FUNCTION_NOT_READY:$function_name"
+              exit 1
+            fi
+          done
+          {
+            echo ""
+            echo "- account Edge Functions: active, JWT verification enabled"
+            echo ""
+            echo "## DB migrate and Edge Function release OK"
           } >> "$GITHUB_STEP_SUMMARY"

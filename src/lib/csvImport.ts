@@ -99,6 +99,7 @@ export function parseInviteImportRows(rows: string[][]) {
     const trimmed = value.trim()
     const normalized = trimmed.toLowerCase()
     if (normalized === 'leader' || trimmed === '파트장') return { role: 'leader' }
+    if (normalized === 'team_leader' || trimmed === '팀장') return { role: 'team_leader' }
     if (!trimmed || normalized === 'member' || trimmed === '파트원') return { role: 'member' }
     return { role: 'member', invalidRole: trimmed }
   }

@@ -20,11 +20,11 @@ export function InviteRegisterModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="초대 대상 등록"
+      title="계정 추가"
       titleId="invite-register-title"
-      eyebrow="초대 관리"
+      eyebrow="계정 관리"
       icon={<Users size={18} />}
-      closeLabel="초대 등록 닫기"
+      closeLabel="계정 추가 닫기"
     >
       <FormGrid
         fields={
@@ -41,6 +41,7 @@ export function InviteRegisterModal({
               역할
               <select value={allowedForm.role} onChange={(event) => setAllowedForm({ ...allowedForm, role: event.target.value as Role })}>
                 <option value="member">파트원</option>
+                <option value="team_leader">팀장</option>
                 <option value="leader">파트장</option>
               </select>
             </label>
@@ -48,7 +49,7 @@ export function InviteRegisterModal({
         }
         onSubmit={onSubmit}
         disabled={!allowedForm.email.trim() || !allowedForm.name.trim()}
-        submitLabel="초대 등록"
+        submitLabel="계정 추가"
       />
     </Modal>
   )

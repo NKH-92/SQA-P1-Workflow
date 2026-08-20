@@ -11,6 +11,7 @@ import type { ProductSortKey } from '../lib/products'
 import { useTeamSummaries } from '../hooks/useTeamSummaries'
 import { useTeamController } from '../features/team/useTeamController'
 import { useModalDismiss } from '../hooks/useModalDismiss'
+import { canManageTeamData } from '../domain/permissions'
 import {
   Download,
   Package,
@@ -38,6 +39,7 @@ export function TeamPanel({
   initialSelectedId?: string | null
   onInitialSelectionApplied?: () => void
 }) {
+  const canManage = canManageTeamData(profile)
   const controller = useTeamController(profile, data, setData)
   const { teamMembers, teamSummaries } = useTeamSummaries(data)
   const [memberSearch, setMemberSearch] = useState('')
@@ -139,10 +141,10 @@ export function TeamPanel({
         >
           비활성 포함
         </button>
-        <button className="primary" onClick={() => setActiveTab('products')} type="button">
+        {canManage && <button className="primary" onClick={() => setActiveTab('products')} type="button">
           <Package size={16} />
           배정 관리
-        </button>
+        </button>}
       </div>
       <div className="team-workbench">
         <div className="team-directory">
@@ -192,11 +194,11 @@ export function TeamPanel({
               <span>선택 파트원</span>
               <div className="detail-header-title-row">
                 <strong>{selectedSummary.member.name}</strong>
-                <button className="ghost compact" onClick={() => setNoteModalOpen(true)} type="button">
+                {canManage && <button className="ghost compact" onClick={() => setNoteModalOpen(true)} type="button">
                   <StickyNote size={15} />
                   관리 메모
                   {selectedSummary.notes.length > 0 && <span className="memo-count">{selectedSummary.notes.length}</span>}
-                </button>
+                </button>}
               </div>
               <p>{selectedSummary.member.email}</p>
             </div>
@@ -209,9 +211,9 @@ export function TeamPanel({
                   <option value="company">위탁사명순</option>
                 </select>
               </label>
-              <button className="ghost" onClick={() => setActiveTab('products')} type="button">
+              {canManage && <button className="ghost" onClick={() => setActiveTab('products')} type="button">
                 배정 관리
-              </button>
+              </button>}
             </div>
           </div>
           <div className="team-member-quad">
@@ -261,7 +263,7 @@ export function TeamPanel({
       )}
       </div>
 
-      {noteModalOpen && selectedSummary && (
+      {canManage && noteModalOpen && selectedSummary && (
         <div className="modal-backdrop" onMouseDown={closeNoteModal} role="presentation">
           <section
             aria-labelledby="team-note-modal-title"

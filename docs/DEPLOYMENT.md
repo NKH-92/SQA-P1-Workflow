@@ -31,7 +31,7 @@ set name = excluded.name,
 ```
 
 4. Supabase Dashboard > Authentication > Users > **Add user** 로 첫 파트장 계정을 만든 뒤 앱에서 로그인한다. `auth.users` 생성 시 trigger가 `profiles`를 만든다.
-5. 이후 초대 사용자는 `allowed_users` 등록 후 Dashboard에서 사용자를 생성한다 (앱 가입 UI 없음).
+5. 이후 사용자는 파트장이 앱의 **계정 관리**에서 생성한다. `account-admin` Edge Function이 `allowed_users`와 Auth 사용자를 함께 만들며 공개 가입 UI는 없다.
 6. 여러 사용자를 한 번에 넣어야 하면 `supabase/private_seed.example.sql`을 `supabase/private_seed.local.sql`로 복사한 뒤 실제 이메일/이름으로 바꿔 SQL Editor에서 실행한다. `.local.sql` 파일은 커밋하지 않는다.
 
 ### 사용자 제거 (퇴사·전배자)
@@ -63,6 +63,8 @@ Repository Settings > Secrets and variables > Actions에 다음을 등록한다.
 | Secret | `VITE_SUPABASE_ANON_KEY` | Supabase anon(publishable) key |
 | Secret | `CLOUDFLARE_API_TOKEN` | Workers 배포 권한이 있는 API 토큰 |
 | Secret | `SUPABASE_DB_URL` | Backup DB·DB Migrate·배포 readiness용 Session pooler URI |
+| Secret | `SUPABASE_ACCESS_TOKEN` | DB Migrate 단계의 Edge Function 배포용 PAT |
+| Secret | `SUPABASE_PROJECT_REF` | Edge Function 배포 대상 project ref |
 | Secret | `BACKUP_PASSPHRASE` | 암호화 백업용 암구호 |
 
 빌드 시 `VITE_APP_MODE=production`이 GitHub Actions Build 단계에 주입된다. Supabase env 없이 production 빌드가 배포되면 앱은 로그인 우회 없이 **설정 오류 화면**만 표시한다. 로컬 데모 미리보기는 `VITE_APP_MODE=preview`와 빈 Supabase env로 실행한다.

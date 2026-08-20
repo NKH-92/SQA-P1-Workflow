@@ -2,11 +2,12 @@ import type { ReviewStatusFilter } from '../../app/types'
 import { compareReviewRequests } from '../../lib/priority'
 import { isLeaderDefaultReviewRequest, matchesReviewSearch } from '../../lib/reviewHistory'
 import type { AppData, Profile, ReviewRequest, ReviewStatus } from '../../types'
+import { canViewTeamData } from '../../domain/permissions'
 
 export type ReviewFeatureData = Pick<AppData, 'reviewRequests'>
 
 export function selectScopedReviewRequests(data: ReviewFeatureData, profile: Profile): ReviewRequest[] {
-  return profile.role === 'leader'
+  return canViewTeamData(profile)
     ? data.reviewRequests
     : data.reviewRequests.filter((request) => request.requester_id === profile.id)
 }
@@ -17,7 +18,7 @@ export function selectDefaultReviewRequests(
   now = new Date(),
 ): ReviewRequest[] {
   const scoped = selectScopedReviewRequests(data, profile)
-  return profile.role === 'leader'
+  return canViewTeamData(profile)
     ? scoped.filter((request) => isLeaderDefaultReviewRequest(request, now))
     : scoped
 }
@@ -41,7 +42,7 @@ export function selectVisibleReviewRequests(
 ): ReviewRequest[] {
   const scoped = selectDefaultReviewRequests(data, profile, now)
   const base = statusFilter === 'all'
-    ? profile.role === 'leader' ? scoped : scoped.filter((request) => request.status !== 'withdrawn')
+    ? canViewTeamData(profile) ? scoped : scoped.filter((request) => request.status !== 'withdrawn')
     : scoped.filter((request) => request.status === statusFilter)
 
   return base

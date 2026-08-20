@@ -219,6 +219,8 @@ console.log('SQA_REMOTE_E2E_UNINVITED_READY')
     REMOTE_E2E_LEADER_PASSWORD: fixtures.RLS_LEADER_PASSWORD,
     REMOTE_E2E_LEADER_B_EMAIL: fixtures.RLS_LEADER_B_EMAIL,
     REMOTE_E2E_LEADER_B_PASSWORD: fixtures.RLS_LEADER_B_PASSWORD,
+    REMOTE_E2E_TEAM_LEADER_EMAIL: fixtures.RLS_TEAM_LEADER_EMAIL,
+    REMOTE_E2E_TEAM_LEADER_PASSWORD: fixtures.RLS_TEAM_LEADER_PASSWORD,
     REMOTE_E2E_MEMBER_A_EMAIL: fixtures.RLS_MEMBER_A_EMAIL,
     REMOTE_E2E_MEMBER_A_PASSWORD: fixtures.RLS_MEMBER_A_PASSWORD,
     REMOTE_E2E_MEMBER_B_EMAIL: fixtures.RLS_MEMBER_B_EMAIL,
@@ -255,7 +257,7 @@ console.log('SQA_REMOTE_E2E_UNINVITED_READY')
   )
 
   run(npx, ['playwright', 'test', '--project=remote'], { env: remoteEnv })
-  console.log('SQA_REMOTE_E2E_OK: 13 remote browser scenarios')
+  console.log('SQA_REMOTE_E2E_OK: 15 remote workflow scenarios')
 } finally {
   restoreMigrations(heldMigrations)
   if (startedStack) {

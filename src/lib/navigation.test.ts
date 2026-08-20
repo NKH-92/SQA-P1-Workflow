@@ -95,7 +95,7 @@ describe('tab navigation metadata', () => {
       { tab: 'activity', section: '워크스페이스', sidebar: '활동 로그', palette: '활동 로그', header: '워크스페이스 / 활동 로그' },
       { tab: 'products', section: '마스터', sidebar: '제품', palette: '제품 마스터', header: '마스터 / 제품' },
       { tab: 'duties', section: '마스터', sidebar: '업무 카테고리', palette: '업무 카테고리', header: '마스터 / 업무 카테고리' },
-      { tab: 'invites', section: '마스터', sidebar: '초대 관리', palette: '초대 관리', header: '마스터 / 초대 관리' },
+      { tab: 'invites', section: '마스터', sidebar: '계정 관리', palette: '계정 관리', header: '마스터 / 계정 관리' },
     ])
   })
 

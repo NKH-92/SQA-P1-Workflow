@@ -54,6 +54,7 @@ const users = [
   { key: 'pending', email: 'rls-pending-password@example.test', name: 'RLS Pending Password', role: 'member', active: true, mustChangePassword: true },
   { key: 'leaderB', email: 'rls-leader-b@example.test', name: 'RLS Leader B', role: 'leader', active: true },
   { key: 'pendingHardened', email: 'rls-pending-password-hardened@example.test', name: 'RLS Hardened Pending Password', role: 'member', active: true, mustChangePassword: true },
+  { key: 'teamLeader', email: 'rls-team-leader@example.test', name: 'RLS Team Leader', role: 'team_leader', active: true },
 ]
 
 const { error: allowedError } = await admin.from('allowed_users').insert(
@@ -246,6 +247,9 @@ const output = {
   RLS_LEADER_B_EMAIL: users.find((user) => user.key === 'leaderB').email,
   RLS_LEADER_B_PASSWORD: password,
   RLS_LEADER_B_USER_ID: created.leaderB.id,
+  RLS_TEAM_LEADER_EMAIL: users.find((user) => user.key === 'teamLeader').email,
+  RLS_TEAM_LEADER_PASSWORD: password,
+  RLS_TEAM_LEADER_USER_ID: created.teamLeader.id,
   RLS_OWNED_CHANGE_APPLICATION_ID: publishedChange.data,
   RLS_OWNED_CHANGE_TASK_ID: ownedTask.id,
 }

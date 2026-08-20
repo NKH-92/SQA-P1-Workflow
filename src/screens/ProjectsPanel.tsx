@@ -6,7 +6,7 @@ import { downloadCsv } from '../lib/csv'
 import type { MutateFn, PendingAdminDelete } from '../app/types'
 import type { AuditedDeleteInput } from '../data/contracts'
 import { formatDate, projectStatusLabels } from '../lib/format'
-import { canAssignProjectTo } from '../domain/permissions'
+import { canAssignProjectTo, canManageTeamData, canViewTeamData } from '../domain/permissions'
 import { ProjectBoard } from '../features/projects/components/ProjectBoard'
 import { AssignmentEditModal } from '../features/projects/components/AssignmentEditModal'
 import { ProjectComposerModal } from '../features/projects/components/ProjectComposerModal'
@@ -57,7 +57,8 @@ export function ProjectsPanel({
   const [assignmentExpectedUpdatedAt, setAssignmentExpectedUpdatedAt] = useState<string | null>(null)
   const [assignmentEditMemberIds, setAssignmentEditMemberIds] = useState<string[]>([])
   const [pendingProjectDelete, setPendingProjectDelete] = useState<PendingAdminDelete | null>(null)
-  const leaderMode = profile.role === 'leader'
+  const leaderMode = canViewTeamData(profile)
+  const canManage = canManageTeamData(profile)
   // 파트원은 자기 프로젝트만 보므로 사람별 보기가 의미 없다 — 항상 프로젝트별로 고정한다.
   const effectiveViewMode = leaderMode ? viewMode : 'project'
   const projectCandidateProfiles = data.profiles.some((candidate) => candidate.id === profile.id)
@@ -226,7 +227,7 @@ export function ProjectsPanel({
           <Download size={16} />
           CSV
         </button>
-        {leaderMode && (
+        {canManage && (
           <button className="primary" onClick={() => setProjectComposerOpen(true)} type="button">
             <Plus size={16} />
             프로젝트
@@ -234,7 +235,7 @@ export function ProjectsPanel({
         )}
       </div>
       <ProjectBoard groups={projectStatusGroups} />
-      {leaderMode && (
+      {canManage && (
         <ProjectComposerModal
           open={isProjectComposerOpen}
           form={projectForm}
@@ -247,7 +248,7 @@ export function ProjectsPanel({
           onSubmit={() => void createProject()}
         />
       )}
-      {leaderMode && assignmentEditProjectId && (
+      {canManage && assignmentEditProjectId && (
         <AssignmentEditModal
           projectName={data.projects.find((item) => item.id === assignmentEditProjectId)?.name ?? '프로젝트'}
           memberOptions={memberOptions}
@@ -341,7 +342,7 @@ export function ProjectsPanel({
                       <div className="group-actions">
                         <Badge status={project.status}>{projectStatusLabels[project.status]}</Badge>
                         <CopyLinkButton tab="projects" entityId={project.id} />
-                        {leaderMode && (
+                        {canManage && (
                           <>
                             <button
                               className="ghost compact"
@@ -423,4 +424,3 @@ export function ProjectsPanel({
     </div>
   )
 }
-

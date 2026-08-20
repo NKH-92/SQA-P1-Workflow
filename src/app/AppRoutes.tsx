@@ -1,6 +1,6 @@
 import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from 'react'
 import { ErrorBoundary } from '../components/ErrorBoundary'
-import { canManageTeamData } from '../domain/permissions'
+import { canViewTeamData } from '../domain/permissions'
 import type { AppData, Profile } from '../types'
 import type { MutateFn, TabId } from './types'
 
@@ -55,7 +55,7 @@ export function AppRoutes({
   setData,
   setActiveTab,
 }: AppRoutesProps) {
-  const leaderMode = profile.is_active !== false && canManageTeamData(profile)
+  const leaderMode = profile.is_active !== false && canViewTeamData(profile)
 
   return (
     <ErrorBoundary key={activeTab} role={leaderMode ? 'leader' : 'member'}>

@@ -14,7 +14,7 @@ import { useCommandPalette } from './app/hooks/useCommandPalette'
 import { useReviewNotificationController } from './app/hooks/useReviewNotificationController'
 import { reconciledProfile } from './app/profileSync'
 import { CommandPalette } from './components/CommandPalette'
-import { canManageTeamData } from './domain/permissions'
+import { canViewTeamData } from './domain/permissions'
 import { toUserMessage } from './lib/errors'
 import { buildNotifications } from './lib/notifications'
 import { countUnreadReviews } from './lib/readState'
@@ -73,7 +73,7 @@ function App() {
     sessionUser,
     signOut,
   } = auth
-  const leaderMode = canManageTeamData(profile)
+  const leaderMode = canViewTeamData(profile)
   const navigation = useHashNavigation(leaderMode, Boolean(profile))
   const { setActiveTab: setNavigationActiveTab } = navigation
   const setActiveTab = useCallback((tab: TabId, entityId?: string) => {

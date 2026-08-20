@@ -5,7 +5,7 @@ import type { AuditedDeleteInput } from '../../../data/contracts'
 import { ReasonPromptModal } from '../../../components/ui'
 import { downloadCsv } from '../../../lib/csv'
 import { roleLabels } from '../../../lib/format'
-import { canReceiveAssignment } from '../../../domain/permissions'
+import { canManageTeamData, canReceiveAssignment } from '../../../domain/permissions'
 import { selectDutyTableGroups, selectProductGroups } from '../master.selectors'
 import {
   validateDutyCreate,
@@ -21,6 +21,7 @@ import { MajorCategoryRegisterModal } from './MajorCategoryRegisterModal'
 import { useDutyAdminController } from './useDutyAdminController'
 
 export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPanelProps) {
+  const canManage = canManageTeamData(profile)
   const controller = useDutyAdminController(profile, data, setData)
   const [dutyForm, setDutyForm] = useState({ major_category_id: '', name: '' })
   const [majorCategoryForm, setMajorCategoryForm] = useState({ name: '' })
@@ -192,7 +193,7 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
         </p>
       </div>
       <div className="admin-header master-header">
-        <div className="master-header-actions">
+        {canManage && <div className="master-header-actions">
           <button className="ghost" onClick={() => setMajorCategoryRegisterOpen(true)} type="button">
             <ClipboardList size={16} />
             대분류 등록
@@ -215,7 +216,7 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
             <Users size={16} />
             업무 배정
           </button>
-        </div>
+        </div>}
         <label className="search-field">
           <Search aria-hidden="true" size={16} />
           <input
@@ -244,6 +245,7 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
         onSaveMajorCategory={(majorCategoryId) => setDutyReasonPrompt({ kind: 'category', id: majorCategoryId })}
         onDeleteDuty={deleteDuty}
         onDeleteMajorCategory={deleteMajorCategory}
+        readOnly={!canManage}
       />
 
       <MajorCategoryRegisterModal

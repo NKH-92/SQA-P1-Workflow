@@ -14,7 +14,8 @@
     "91_master_occ_contract.sql",
     "92_full_code_review_hardening.sql",
     "93_review_history_retention.sql",
-    "94_change_application_final_approval.sql"
+    "94_change_application_final_approval.sql",
+    "95_account_admin_team_leader.sql"
   ],
   "migrationVersions": [
     "202607020001",
@@ -92,6 +93,8 @@
     "20260722120452",
     "20260723120000",
     "20260731151100",
-    "20260731230646"
+    "20260731230646",
+    "20260820150507",
+    "20260820150511"
   ]
 }

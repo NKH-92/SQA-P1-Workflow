@@ -114,7 +114,7 @@ describe('CommandPalette review statistics navigation', () => {
       '활동 로그',
       '제품 마스터',
       '업무 카테고리',
-      '초대 관리',
+      '계정 관리',
     ])
   })
 

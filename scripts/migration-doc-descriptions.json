@@ -74,5 +74,7 @@
   "20260722120452_distinguish_fully_applied_change.sql": "전 제품 실제 적용 완료와 해당 없음 포함 전체 처리를 구분해 자동 보관 사유·감사 메타데이터에 영속화",
   "20260723120000_review_input_contract.sql": "신규·변경 검토 제목·설명 길이와 과거 기한을 강제하면서 기존 행의 상태 변경은 보존하는 공통 입력 계약",
   "20260731151100_review_history_retention.sql": "파트장 최근 7일 검토 워크스페이스와 검색 가능한 종결 이력, 선택적 반려 댓글, 종결 후 365일 보존 및 매일 06:00 KST 자동 삭제",
-  "20260731230646_change_application_final_approval.sql": "공통변경 담당자별 적용 처리, 파트장 최종 완료·완료 취소, 서버 집계와 영구 검색 이력"
+  "20260731230646_change_application_final_approval.sql": "공통변경 담당자별 적용 처리, 파트장 최종 완료·완료 취소, 서버 집계와 영구 검색 이력",
+  "20260820150507_add_team_leader_role.sql": "읽기 전용 팀장 app_role enum 값 추가",
+  "20260820150511_account_admin_and_team_leader_access.sql": "팀장 전체 조회·업무 쓰기 차단, 세션 즉시 폐기 확인, 계정 비밀번호 초기화와 최초 변경 상태 전이"
 }

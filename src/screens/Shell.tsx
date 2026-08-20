@@ -165,7 +165,7 @@ export function Shell({
     team: '파트원별 담당 제품, 업무, 프로젝트',
     products: '제품 등록과 담당자 배정 기준',
     duties: '업무 카테고리와 담당 범위',
-    invites: '초대 대상과 역할 관리',
+    invites: '계정 생성, 역할과 접근 상태 관리',
     activity: '팀 전체 활동 이력',
     work: '내 담당 제품과 정기 업무',
   }

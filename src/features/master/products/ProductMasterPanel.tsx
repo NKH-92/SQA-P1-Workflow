@@ -55,6 +55,8 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
     setProductAssignment({
       product_id: productId,
       user_id: assignment?.user_id ?? UNASSIGNED_PRODUCT_USER_ID,
+      previous_user_id: assignment?.user_id,
+      expected_updated_at: product?.updated_at ?? null,
       unassigned_reason: product?.unassigned_reason ?? '',
       transfer_pending_tasks: false,
     })
@@ -157,13 +159,23 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
     // is known, not when mutate() is called.
     let noop = false
     const ok = await mutate(async () => {
-      const result = await controller.assign({
+      const result = productAssignment.transfer_pending_tasks ? await controller.assign({
         userId: productAssignment.user_id,
         productId: productAssignment.product_id,
         transferPendingChangeTasks: productAssignment.transfer_pending_tasks,
         transferReason: productAssignment.transfer_pending_tasks
           ? '제품 담당자 배정 변경에 따른 미완료 적용업무 이관'
           : undefined,
+      }) : await controller.saveAssignments({
+        productId: productAssignment.product_id,
+        nextMemberIds: [...new Set([
+          ...data.productAssignments
+            .filter((item) => item.product_id === productAssignment.product_id && item.user_id !== productAssignment.previous_user_id)
+            .map((item) => item.user_id),
+          productAssignment.user_id,
+        ])],
+        reason: '제품 카드에서 담당자 변경',
+        expectedUpdatedAt: productAssignment.expected_updated_at,
       })
       noop = result.noop
       setProductAssignment({ user_id: '', product_id: '', unassigned_reason: '', transfer_pending_tasks: false })
@@ -183,6 +195,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
         nextMemberIds: [],
         unassignedReason: productAssignment.unassigned_reason,
         reason,
+        expectedUpdatedAt: productAssignment.expected_updated_at,
       })
       setProductAssignment({ user_id: '', product_id: '', unassigned_reason: '', transfer_pending_tasks: false })
     }, '제품을 미지정 상태로 저장했습니다.')

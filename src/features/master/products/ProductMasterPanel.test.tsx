@@ -38,6 +38,28 @@ function Harness({ initialData }: { initialData: AppData }) {
 }
 
 describe('ProductMasterPanel reason-required update', () => {
+  it('replaces only the chosen existing member on a product with multiple assignees', async () => {
+    const user = userEvent.setup()
+    const data = createPreviewData()
+    const product = data.products[0]!
+    const [first, second, replacement] = data.profiles.filter((item) => item.role === 'member' && item.is_active !== false)
+    data.productAssignments = [first!, second!].map((member, index) => ({
+      id: `assignment-${index}`,
+      product_id: product.id,
+      user_id: member.id,
+      profiles: { name: member.name, email: member.email },
+    }))
+    render(<Harness initialData={data} />)
+    const card = screen.getByRole('heading', { name: product.name }).closest('article')!
+    await user.click(within(card).getByRole('button', { name: '수정' }))
+    await user.selectOptions(screen.getByLabelText('변경할 기존 담당자'), second!.id)
+    await user.selectOptions(screen.getByLabelText('담당 상태'), replacement!.id)
+    await user.click(screen.getByRole('button', { name: '담당자 저장' }))
+    expect(within(card).getByText(first!.name)).toBeInTheDocument()
+    expect(within(card).getByText(replacement!.name)).toBeInTheDocument()
+    expect(within(card).queryByText(second!.name)).not.toBeInTheDocument()
+  })
+
   it('assigns directly from the selected product card without a separate allocation entry', async () => {
     const user = userEvent.setup()
     const data = createPreviewData()
@@ -57,8 +79,15 @@ describe('ProductMasterPanel reason-required update', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(within(card).getByText(member.name)).toBeInTheDocument()
 
+    const replacement = data.profiles.find((item) => item.role === 'member' && item.is_active !== false && item.id !== member.id)!
     await user.click(within(card).getByRole('button', { name: '수정' }))
-    expect(screen.getByLabelText('담당 상태')).toHaveValue(member.id)
+    await user.selectOptions(screen.getByLabelText('담당 상태'), replacement.id)
+    await user.click(screen.getByRole('button', { name: '담당자 저장' }))
+    expect(within(card).getByText(replacement.name)).toBeInTheDocument()
+    expect(within(card).queryByText(member.name)).not.toBeInTheDocument()
+
+    await user.click(within(card).getByRole('button', { name: '수정' }))
+    expect(screen.getByLabelText('담당 상태')).toHaveValue(replacement.id)
     await user.selectOptions(screen.getByLabelText('담당 상태'), '__unassigned__')
     await user.click(screen.getByRole('button', { name: '미지정으로 저장' }))
     const reasonDialog = screen.getByRole('dialog', { name: '제품 배정 해제 사유' })

@@ -11,6 +11,8 @@ export type ProductAssignmentForm = {
   product_id: string
   unassigned_reason: string
   transfer_pending_tasks: boolean
+  previous_user_id?: string
+  expected_updated_at?: string | null
 }
 
 export function ProductAssignModal({
@@ -65,6 +67,17 @@ export function ProductAssignModal({
         fields={
           <>
             {fixedProduct && <p className="wide"><strong>{data.products.find((product) => product.id === productAssignment.product_id)?.name}</strong></p>}
+            {fixedProduct && selectedProductAssignments.length > 1 && <label>
+              변경할 기존 담당자
+              <select value={productAssignment.previous_user_id ?? ''} onChange={(event) => setProductAssignment({
+                ...productAssignment,
+                previous_user_id: event.target.value,
+                user_id: event.target.value,
+                transfer_pending_tasks: false,
+              })}>
+                {selectedProductAssignments.map((assignment, index) => <option key={assignment.id} value={assignment.user_id}>{currentAssigneeNames[index]}</option>)}
+              </select>
+            </label>}
             <label>
               담당 상태
               <select
@@ -138,7 +151,10 @@ export function ProductAssignModal({
                   현재 담당 <strong>{currentAssigneeNames.join(', ') || '미지정'}</strong>
                   <span>미완료 변경 적용업무 <strong>{transferableTasks.length}건</strong></span>
                 </p>
-                {transferableTasks.length > 0 && (
+                {transferableTasks.length > 0 && fixedProduct && productAssignment.user_id !== productAssignment.previous_user_id && (
+                  <p>담당자 저장 후 다시 수정을 열어 미완료 적용업무를 이관할 수 있습니다.</p>
+                )}
+                {transferableTasks.length > 0 && (!fixedProduct || productAssignment.user_id === productAssignment.previous_user_id) && (
                   <label className="product-transfer-option">
                     <input
                       checked={productAssignment.transfer_pending_tasks}

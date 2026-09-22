@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Download, Package, Search, Upload, Users } from 'lucide-react'
+import { Download, Package, Search, Upload } from 'lucide-react'
 import type { ProductCategory } from '../../../types'
 import type { PendingAdminDelete } from '../../../app/types'
 import type { AuditedDeleteInput } from '../../../data/contracts'
@@ -49,6 +49,17 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
   const [productImportIssues, setProductImportIssues] = useState<CsvImportIssue[]>([])
 
   const memberOptions = data.profiles.filter(canReceiveAssignment)
+  const editProductAssignment = (productId: string) => {
+    const product = data.products.find((item) => item.id === productId)
+    const assignment = data.productAssignments.find((item) => item.product_id === productId)
+    setProductAssignment({
+      product_id: productId,
+      user_id: assignment?.user_id ?? UNASSIGNED_PRODUCT_USER_ID,
+      unassigned_reason: product?.unassigned_reason ?? '',
+      transfer_pending_tasks: false,
+    })
+    setProductAssignOpen(true)
+  }
   const query = adminSearch.trim()
   const { ownCompanyProducts, consignedProducts, unassignedProducts } = selectProductGroups(data, query)
 
@@ -242,10 +253,6 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
             <Package size={16} />
             제품 등록
           </button>
-          <button className="ghost" onClick={() => setProductAssignOpen(true)} type="button">
-            <Users size={16} />
-            제품 배정
-          </button>
         </div>}
         <label className="search-field">
           <Search aria-hidden="true" size={16} />
@@ -302,6 +309,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
                 pendingDelete={pendingDelete}
                 setPendingDelete={setPendingDelete}
                 onDelete={deleteProduct}
+                onAssign={editProductAssignment}
                 readOnly={!canManage}
               />
             ))}
@@ -325,6 +333,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
                 pendingDelete={pendingDelete}
                 setPendingDelete={setPendingDelete}
                 onDelete={deleteProduct}
+                onAssign={editProductAssignment}
                 readOnly={!canManage}
               />
             ))}
@@ -341,6 +350,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
         onSubmit={addProduct}
       />
       <ProductAssignModal
+        fixedProduct
         open={productAssignOpen}
         onClose={() => setProductAssignOpen(false)}
         data={data}

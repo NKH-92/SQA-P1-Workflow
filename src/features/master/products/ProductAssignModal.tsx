@@ -21,6 +21,7 @@ export function ProductAssignModal({
   productAssignment,
   setProductAssignment,
   onSubmit,
+  fixedProduct = false,
 }: {
   open: boolean
   onClose: () => void
@@ -29,6 +30,7 @@ export function ProductAssignModal({
   productAssignment: ProductAssignmentForm
   setProductAssignment: Dispatch<SetStateAction<ProductAssignmentForm>>
   onSubmit: () => void
+  fixedProduct?: boolean
 }) {
   const isUnassigned = productAssignment.user_id === UNASSIGNED_PRODUCT_USER_ID
   const selectedProductAssignments = data.productAssignments.filter(
@@ -53,15 +55,16 @@ export function ProductAssignModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="제품 배정"
+      title={fixedProduct ? '제품 담당자 수정' : '제품 배정'}
       titleId="product-assign-title"
       eyebrow="제품 마스터"
       icon={<Users size={18} />}
-      closeLabel="제품 배정 닫기"
+      closeLabel={fixedProduct ? '제품 담당자 수정 닫기' : '제품 배정 닫기'}
     >
       <FormGrid
         fields={
           <>
+            {fixedProduct && <p className="wide"><strong>{data.products.find((product) => product.id === productAssignment.product_id)?.name}</strong></p>}
             <label>
               담당 상태
               <select
@@ -80,6 +83,11 @@ export function ProductAssignModal({
               >
                 <option value="">선택</option>
                 <option value={UNASSIGNED_PRODUCT_USER_ID}>미지정</option>
+                {productAssignment.user_id && !isUnassigned && !memberOptions.some((member) => member.id === productAssignment.user_id) && (
+                  <option value={productAssignment.user_id} disabled>
+                    담당 · {data.profiles.find((member) => member.id === productAssignment.user_id)?.name ?? productAssignment.user_id} (배정 불가)
+                  </option>
+                )}
                 {memberOptions.map((member) => (
                   <option key={member.id} value={member.id}>
                     담당 · {member.name}
@@ -87,7 +95,7 @@ export function ProductAssignModal({
                 ))}
               </select>
             </label>
-            <label>
+            {!fixedProduct && <label>
               제품
               <select
                 value={productAssignment.product_id}
@@ -109,7 +117,7 @@ export function ProductAssignModal({
                   </option>
                 ))}
               </select>
-            </label>
+            </label>}
             {isUnassigned && (
               <label className="wide">
                 비고 · 담당자 미지정 사유 (선택)
@@ -151,8 +159,8 @@ export function ProductAssignModal({
           </>
         }
         onSubmit={onSubmit}
-        disabled={!productAssignment.user_id || !productAssignment.product_id}
-        submitLabel={isUnassigned ? '미지정으로 저장' : '제품 배정'}
+        disabled={!productAssignment.product_id || (!isUnassigned && !memberOptions.some((member) => member.id === productAssignment.user_id))}
+        submitLabel={isUnassigned ? '미지정으로 저장' : fixedProduct ? '담당자 저장' : '제품 배정'}
       />
     </Modal>
   )

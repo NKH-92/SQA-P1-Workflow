@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Download, Package, Search, Upload, Users } from 'lucide-react'
+import { Download, Package, Search, Upload } from 'lucide-react'
 import type { ProductCategory } from '../../../types'
 import type { PendingAdminDelete } from '../../../app/types'
 import type { AuditedDeleteInput } from '../../../data/contracts'
@@ -49,6 +49,19 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
   const [productImportIssues, setProductImportIssues] = useState<CsvImportIssue[]>([])
 
   const memberOptions = data.profiles.filter(canReceiveAssignment)
+  const editProductAssignment = (productId: string) => {
+    const product = data.products.find((item) => item.id === productId)
+    const assignment = data.productAssignments.find((item) => item.product_id === productId)
+    setProductAssignment({
+      product_id: productId,
+      user_id: assignment?.user_id ?? UNASSIGNED_PRODUCT_USER_ID,
+      previous_user_id: assignment?.user_id,
+      expected_updated_at: product?.updated_at ?? null,
+      unassigned_reason: product?.unassigned_reason ?? '',
+      transfer_pending_tasks: false,
+    })
+    setProductAssignOpen(true)
+  }
   const query = adminSearch.trim()
   const { ownCompanyProducts, consignedProducts, unassignedProducts } = selectProductGroups(data, query)
 
@@ -146,13 +159,23 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
     // is known, not when mutate() is called.
     let noop = false
     const ok = await mutate(async () => {
-      const result = await controller.assign({
+      const result = productAssignment.transfer_pending_tasks ? await controller.assign({
         userId: productAssignment.user_id,
         productId: productAssignment.product_id,
         transferPendingChangeTasks: productAssignment.transfer_pending_tasks,
         transferReason: productAssignment.transfer_pending_tasks
           ? '제품 담당자 배정 변경에 따른 미완료 적용업무 이관'
           : undefined,
+      }) : await controller.saveAssignments({
+        productId: productAssignment.product_id,
+        nextMemberIds: [...new Set([
+          ...data.productAssignments
+            .filter((item) => item.product_id === productAssignment.product_id && item.user_id !== productAssignment.previous_user_id)
+            .map((item) => item.user_id),
+          productAssignment.user_id,
+        ])],
+        reason: '제품 카드에서 담당자 변경',
+        expectedUpdatedAt: productAssignment.expected_updated_at,
       })
       noop = result.noop
       setProductAssignment({ user_id: '', product_id: '', unassigned_reason: '', transfer_pending_tasks: false })
@@ -172,6 +195,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
         nextMemberIds: [],
         unassignedReason: productAssignment.unassigned_reason,
         reason,
+        expectedUpdatedAt: productAssignment.expected_updated_at,
       })
       setProductAssignment({ user_id: '', product_id: '', unassigned_reason: '', transfer_pending_tasks: false })
     }, '제품을 미지정 상태로 저장했습니다.')
@@ -242,10 +266,6 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
             <Package size={16} />
             제품 등록
           </button>
-          <button className="ghost" onClick={() => setProductAssignOpen(true)} type="button">
-            <Users size={16} />
-            제품 배정
-          </button>
         </div>}
         <label className="search-field">
           <Search aria-hidden="true" size={16} />
@@ -302,6 +322,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
                 pendingDelete={pendingDelete}
                 setPendingDelete={setPendingDelete}
                 onDelete={deleteProduct}
+                onAssign={editProductAssignment}
                 readOnly={!canManage}
               />
             ))}
@@ -325,6 +346,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
                 pendingDelete={pendingDelete}
                 setPendingDelete={setPendingDelete}
                 onDelete={deleteProduct}
+                onAssign={editProductAssignment}
                 readOnly={!canManage}
               />
             ))}
@@ -341,6 +363,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
         onSubmit={addProduct}
       />
       <ProductAssignModal
+        fixedProduct
         open={productAssignOpen}
         onClose={() => setProductAssignOpen(false)}
         data={data}

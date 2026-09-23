@@ -23,6 +23,7 @@ export function ProductCard({
   pendingDelete,
   setPendingDelete,
   onDelete,
+  onAssign,
   readOnly = false,
 }: {
   product: AppData['products'][number]
@@ -33,6 +34,7 @@ export function ProductCard({
   pendingDelete: PendingAdminDelete | null
   setPendingDelete: (value: PendingAdminDelete | null) => void
   onDelete: (productId: string, input: AuditedDeleteInput) => void
+  onAssign?: (productId: string) => void
   readOnly?: boolean
 }) {
   const assignments = data.productAssignments.filter((assignment) => assignment.product_id === product.id)
@@ -127,6 +129,10 @@ export function ProductCard({
               </p>
             </div>
             {!readOnly && <div className="group-actions">
+              {onAssign && <button className="ghost compact" onClick={() => onAssign(product.id)} type="button">
+                <Pencil size={16} />
+                수정
+              </button>}
               <button
                 className="ghost compact"
                 onClick={() =>
@@ -144,7 +150,7 @@ export function ProductCard({
                 title="제품 수정"
                 type="button"
               >
-                <Pencil size={16} />
+                제품 정보 수정
               </button>
               <DeleteConfirmAction
                 table="products"

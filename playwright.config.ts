@@ -18,6 +18,9 @@ if (process.env.REMOTE_E2E_REQUIRED === '1' && !remoteConfigured) {
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: false,
+  // Remote specs share fixture users. A global sign-out in one worker revokes
+  // another worker's session, so run the local Supabase suite sequentially.
+  workers: process.env.REMOTE_E2E_USE_BUILT_SERVER === '1' ? 1 : undefined,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? 'github' : 'list',

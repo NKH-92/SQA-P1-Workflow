@@ -173,9 +173,14 @@ describeRemote(`change-application final approval E2E (${REMOTE_E2E_SKIP_NOTE})`
         await dialog.getByRole('checkbox', { name: new RegExp(escapeRegExp(fixture.products[0].name)) }).check()
         await dialog.getByRole('combobox', { name: `${fixture.products[0].name} 재개 책임자` }).selectOption(fixture.memberA.id)
         await dialog.getByRole('button', { name: '완료 취소 및 업무 재개', exact: true }).click()
-        await expect(page.getByRole('status').filter({
-          hasText: `${fixture.changeNumber.toUpperCase()} 완료를 취소하고 선택한 제품 업무를 재개했습니다.`,
-        })).toBeVisible({ timeout: 30_000 })
+        // The dialog only closes after the mutation succeeds. The snapshot
+        // below verifies the saved result; a failed RPC reports its notice.
+        try {
+          await expect(dialog).toBeHidden({ timeout: 30_000 })
+        } catch (error) {
+          const notices = await page.locator('.toast').allTextContents()
+          throw new Error(`Completion undo did not close: ${notices.join(' | ') || 'no toast'}`, { cause: error })
+        }
 
         const snapshot = await readChangeApprovalSnapshot(fixture)
         const productA = snapshot.tasks.find((task) => task.product_id === fixture.products[0].id)

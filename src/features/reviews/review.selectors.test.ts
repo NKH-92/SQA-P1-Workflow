@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { createPreviewData, previewLeader } from '../../demoData'
 import type { ReviewRequest } from '../../types'
-import { selectDefaultReviewRequests, selectVisibleReviewRequests } from './review.selectors'
+import {
+  selectDefaultReviewRequests,
+  selectNextPendingReviewId,
+  selectVisibleReviewRequests,
+} from './review.selectors'
 
 describe('review.selectors', () => {
   it('does not mutate the source reviewRequests array when sorting', () => {
@@ -62,6 +66,42 @@ describe('review.selectors', () => {
     const visible = selectDefaultReviewRequests(data, previewLeader, new Date('2026-08-01T03:00:00.000Z'))
 
     expect(visible.map((request) => request.id)).toEqual(['old-pending', 'recent-rejected'])
+  })
+
+  it('applies the leader sort mode when one is chosen', () => {
+    const requests: ReviewRequest[] = [
+      {
+        id: 'overdue-old', requester_id: 'member-01', title: 'old', description: '',
+        due_date: '2026-07-01', status: 'pending', created_at: '2026-06-20T00:00:00.000Z',
+      },
+      {
+        id: 'new-no-due', requester_id: 'member-01', title: 'new', description: '',
+        due_date: null, status: 'pending', created_at: '2026-07-02T00:00:00.000Z',
+      },
+    ]
+    const data = { ...createPreviewData(), reviewRequests: requests }
+    const now = new Date('2026-07-03T00:00:00.000Z')
+
+    expect(selectVisibleReviewRequests(data, previewLeader, 'all', '', now, 'recent').map((request) => request.id))
+      .toEqual(['new-no-due', 'overdue-old'])
+    expect(selectVisibleReviewRequests(data, previewLeader, 'all', '', now, 'due').map((request) => request.id))
+      .toEqual(['overdue-old', 'new-no-due'])
+  })
+
+  it('finds the next pending request after a decision, wrapping to earlier items', () => {
+    const order = [
+      { id: 'a', status: 'pending' },
+      { id: 'b', status: 'approved' },
+      { id: 'c', status: 'pending' },
+      { id: 'd', status: 'rejected' },
+    ].map((item) => ({
+      ...item, requester_id: 'm', title: item.id, description: '', due_date: null,
+    })) as ReviewRequest[]
+
+    expect(selectNextPendingReviewId(order, 'a')).toBe('c')
+    expect(selectNextPendingReviewId(order, 'c')).toBe('a')
+    expect(selectNextPendingReviewId(order.slice(1, 2), 'b')).toBeNull()
+    expect(selectNextPendingReviewId(order, 'missing')).toBe('a')
   })
 
   it('filters the default leader collection by title, body, and requester', () => {

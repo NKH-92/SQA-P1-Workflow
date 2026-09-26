@@ -36,7 +36,7 @@ async function selectProduct(dialog: Locator, productName: string) {
   const product = dialog.getByRole('button', { name: new RegExp(`^${escapeRegExp(productName)}(?:\\s|$)`) })
   await expect(product).toBeVisible()
   await product.click()
-  await expect(dialog.getByRole('combobox', { name: `${productName} 적용 책임자` })).not.toHaveValue('')
+  await expect(dialog.getByRole('combobox', { name: `${productName} 적용 담당자` })).not.toHaveValue('')
 }
 
 async function registerTwoProductChange(page: Page, fixture: ChangeApprovalFixture) {
@@ -50,16 +50,16 @@ async function registerTwoProductChange(page: Page, fixture: ChangeApprovalFixtu
   await dialog.getByRole('textbox', { name: '변경 요약' }).fill('두 제품의 담당자 처리를 파트장이 최종 확인하는 E2E 검증입니다.')
   await dialog.getByLabel('시행일').fill('2099-03-01')
   await dialog.getByRole('textbox', { name: '적용 내용' }).fill('제품표준서의 공통 변경사항을 반영하고 처리 결과를 기록합니다.')
-  await dialog.getByLabel('적용기한').fill('2099-03-10')
+  await dialog.getByLabel('적용 기한', { exact: true }).fill('2099-03-10')
 
   await dialog.getByRole('button', { name: '다음', exact: true }).click()
   await selectProduct(dialog, fixture.products[0].name)
   await selectProduct(dialog, fixture.products[1].name)
 
   await dialog.getByRole('button', { name: '다음', exact: true }).click()
-  await expect(dialog.locator('.change-review-summary article').filter({ hasText: '적용제품' })).toContainText('2개')
+  await expect(dialog.locator('.change-review-summary article').filter({ hasText: '적용 제품' })).toContainText('2개')
   await dialog.getByRole('button', { name: /2개 제품에 배포|공통변경 배포/ }).click()
-  await expect(page.getByText('공통변경을 배포했습니다.', { exact: true })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText(/공통변경을 배포했어요/).first()).toBeVisible({ timeout: 30_000 })
 }
 
 async function processOwnTask(
@@ -82,14 +82,14 @@ async function processOwnTask(
 
   if (action === 'complete') {
     await task.getByRole('button', { name: '적용 완료', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: '실제로 적용을 완료했습니까?' })
+    const dialog = page.getByRole('dialog', { name: '이 제품에 변경을 적용했나요?' })
     await dialog.getByRole('textbox', { name: /완료 메모/ }).fill('E2E 제품표준서 반영 완료')
-    await dialog.getByRole('button', { name: '완료 확인', exact: true }).click()
+    await dialog.getByRole('button', { name: '적용 완료하기', exact: true }).click()
   } else {
     await task.getByRole('button', { name: '해당 없음', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: '이 제품은 적용 대상이 아닙니까?' })
+    const dialog = page.getByRole('dialog', { name: '이 제품을 ‘해당 없음’으로 처리할까요?' })
     await dialog.getByRole('textbox', { name: '해당 없음 사유' }).fill('E2E 제품 구성상 변경 대상이 아님')
-    await dialog.getByRole('button', { name: '해당 없음 처리', exact: true }).click()
+    await dialog.getByRole('button', { name: '해당 없음으로 처리하기', exact: true }).click()
   }
 }
 
@@ -140,14 +140,14 @@ describeRemote(`change-application final approval E2E (${REMOTE_E2E_SKIP_NOTE})`
         const change = await searchActiveChange(page, fixture.title)
         await expect(change).toBeVisible({ timeout: 45_000 })
         await change.click()
-        await page.getByRole('button', { name: '변경 완료', exact: true }).click()
+        await page.getByRole('button', { name: '공통변경 완료하기', exact: true }).click()
 
         const dialog = page.getByRole('dialog', { name: '공통변경을 최종 완료할까요?' })
-        await expect(dialog.getByRole('region', { name: '예외 사유 확인' })).toContainText(fixture.products[1].name)
+        await expect(dialog.getByRole('region', { name: '해당 없음·범위 제외 사유' })).toContainText(fixture.products[1].name)
         await expect(dialog.getByText('E2E 제품 구성상 변경 대상이 아님')).toBeVisible()
         await dialog.getByRole('textbox', { name: '최종 확인 메모' }).fill('해당 없음 사유를 확인하고 공통변경을 종결합니다.')
-        await dialog.getByRole('button', { name: '변경 완료', exact: true }).click()
-        await expect(page.getByText(/공통변경.*완료|변경을 완료했습니다/).first()).toBeVisible({ timeout: 30_000 })
+        await dialog.getByRole('button', { name: '공통변경 완료하기', exact: true }).click()
+        await expect(page.getByText(/공통변경을 완료했어요/).first()).toBeVisible({ timeout: 30_000 })
 
         const snapshot = await readChangeApprovalSnapshot(fixture)
         expect(snapshot.application.final_completed_at).toBeTruthy()
@@ -171,8 +171,8 @@ describeRemote(`change-application final approval E2E (${REMOTE_E2E_SKIP_NOTE})`
         await expect(dialog).toBeVisible({ timeout: 15_000 })
         await dialog.getByRole('textbox', { name: '완료 취소 사유' }).fill('제품 A 추가 반영이 필요해 선택적으로 재개합니다.')
         await dialog.getByRole('checkbox', { name: new RegExp(escapeRegExp(fixture.products[0].name)) }).check()
-        await dialog.getByRole('combobox', { name: `${fixture.products[0].name} 재개 책임자` }).selectOption(fixture.memberA.id)
-        await dialog.getByRole('button', { name: '완료 취소 및 업무 재개', exact: true }).click()
+        await dialog.getByRole('combobox', { name: `${fixture.products[0].name} 담당자` }).selectOption(fixture.memberA.id)
+        await dialog.getByRole('button', { name: '완료 취소하고 다시 열기', exact: true }).click()
         // The dialog only closes after the mutation succeeds. The snapshot
         // below verifies the saved result; a failed RPC reports its notice.
         try {

@@ -15,6 +15,7 @@ import {
   voidReviewFeedback,
   withdrawReviewRequest,
 } from '../../data'
+import { resubmitReviewRequestWithEdits } from '../../data/mutations/reviews'
 import type {
   AppData,
   Profile,
@@ -56,6 +57,9 @@ export function useReviewController(profile: Profile, data: AppData, setData: Ap
     updateStatus: (requestId: string, status: ReviewStatus) => updateReviewStatus(context, requestId, status),
     reopen: (requestId: string) => reopenReviewRequest(context, requestId),
     resubmit: (requestId: string, comment: string) => resubmitReviewRequest(context, requestId, comment),
+    /** 반려된 요청을 고쳐서 같은 요청으로 다시 보낸다(내용 수정 + 재요청을 한 번에). */
+    resubmitWithEdits: (requestId: string, payload: ReviewRequestPayload, comment: string) =>
+      resubmitReviewRequestWithEdits(context, requestId, payload, comment),
     addFeedback: (requestId: string, comment: string) => addReviewFeedback(context, requestId, comment),
     updateFeedback: (feedbackId: string, comment: string) => updateReviewFeedback(context, feedbackId, comment),
     voidFeedback: (feedbackId: string, reason: string) => voidReviewFeedback(context, feedbackId, reason),

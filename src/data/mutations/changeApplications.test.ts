@@ -110,7 +110,7 @@ describe('local change application mutations', () => {
       changeApplicationId: applicationId,
       expected_updated_at: state.data.changeApplications.find((item) => item.id === applicationId)!.updated_at,
       title: '재개 후에도 바꿀 수 없는 제목',
-    }, true)).rejects.toThrow('한 제품이라도 처리된 뒤')
+    }, true)).rejects.toThrow('처리를 시작한 제품이 있어서')
   })
 
   it('blocks a non-assignee and locks content after the first completed task', async () => {
@@ -121,14 +121,14 @@ describe('local change application mutations', () => {
     const task = state.data.productChangeTasks.find((item) => item.action_item_id === actionId && item.assignee_id === previewMember.id)!
     const other = state.data.profiles.find((item) => item.role === 'member' && item.id !== previewMember.id)!
 
-    await expect(completeProductChangeTask(state.context(other), task.id, '', '')).rejects.toThrow('지정된 담당자')
+    await expect(completeProductChangeTask(state.context(other), task.id, '', '')).rejects.toThrow('이 업무의 담당자만')
     await completeProductChangeTask(state.context(previewMember), task.id, '', '')
     await expect(saveChangeApplication(state.context(previewLeader), {
       ...payload,
       changeApplicationId: applicationId,
       expected_updated_at: state.data.changeApplications.find((item) => item.id === applicationId)!.updated_at,
       title: '처리 후 바꾸려는 제목',
-    }, true)).rejects.toThrow('한 제품이라도 처리된 뒤')
+    }, true)).rejects.toThrow('처리를 시작한 제품이 있어서')
   })
 
   it('rejects a direct local save that would reactivate a cancelled product task', async () => {
@@ -150,7 +150,7 @@ describe('local change application mutations', () => {
       changeApplicationId: applicationId,
       expected_updated_at: state.data.changeApplications.find((item) => item.id === applicationId)!.updated_at,
       title: '취소된 업무를 다시 포함하는 수정',
-    }, true)).rejects.toThrow('한 제품이라도 처리된 뒤에는 변경 내용을 수정할 수 없습니다.')
+    }, true)).rejects.toThrow('처리를 시작한 제품이 있어서 변경 내용을 수정할 수 없어요.')
 
     expect(state.data.changeApplications.find((item) => item.id === applicationId)?.title).toBe(payload.title)
     expect(state.data.productChangeTasks.find((item) => item.id === task.id)?.status).toBe('cancelled')
@@ -172,7 +172,7 @@ describe('local change application mutations', () => {
       changeApplicationId: applicationId,
       expected_updated_at: '2026-01-01T00:00:00.000Z',
       title: '오래된 화면에서 저장한 제목',
-    }, true)).rejects.toThrow('다른 사용자가 변경건을 수정했습니다. 새로고침 후 다시 시도해 주세요.')
+    }, true)).rejects.toThrow('다른 사람이 먼저 공통변경을 수정했어요. 새로고침한 뒤 다시 시도해 주세요.')
 
     expect(state.data).toBe(before)
     expect(state.data.changeApplications.find((item) => item.id === applicationId)?.title).toBe(payload.title)
@@ -205,7 +205,7 @@ describe('local change application mutations', () => {
       changeApplicationId: applicationId,
       expected_updated_at: readyApplication.updated_at,
       note: '',
-    })).rejects.toThrow('예외가 있는 경우 최종 확인 메모')
+    })).rejects.toThrow('최종 확인 메모를 적어 주세요')
 
     await finalizeChangeApplication(state.context(previewLeader), {
       changeApplicationId: applicationId,
@@ -305,7 +305,7 @@ describe('local change application mutations', () => {
         [task.id],
         previousAssigneeId,
         '활성 책임자 업무 재변경',
-      )).rejects.toThrow('활성 담당자를 선택해 주세요')
+      )).rejects.toThrow('활성 상태인 담당자를 선택해 주세요')
     },
   )
 
@@ -317,7 +317,7 @@ describe('local change application mutations', () => {
     const task = state.data.productChangeTasks.find((item) => item.action_item_id === actionId)!
 
     await expect(archiveChangeApplication(state.context(previewLeader), applicationId, '아직 미완료'))
-      .rejects.toThrow('파트장 최종 완료')
+      .rejects.toThrow('파트장 최종 완료로 마무리')
     await cancelProductChangeTask(state.context(previewLeader), task.id, '적용 취소')
     expect(state.data.changeApplications.find((item) => item.id === applicationId)?.archived_at).toBeNull()
     await expect(archiveChangeApplication(state.context(previewMember), applicationId, '완료 보관'))

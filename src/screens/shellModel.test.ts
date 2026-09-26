@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { emptyData } from '../app/constants'
 import type { AppData, Profile } from '../types'
 import type { AppNotification } from '../lib/notifications'
-import { buildShellModel } from './shellModel'
+import { buildShellModel, shellTabAccessibleName } from './shellModel'
 
 const leader: Profile = { id: 'leader', email: 'leader@example.com', name: '파트장', role: 'leader', is_active: true }
 const member: Profile = { id: 'member', email: 'member@example.com', name: '파트원', role: 'member', is_active: true }
@@ -55,9 +55,9 @@ function modelData(): AppData {
     ] as AppData['projectAssignments'],
     products: [{ id: 'product-1' }, { id: 'product-2' }] as AppData['products'],
     productAssignments: [
-      { id: 'product-a-1', user_id: member.id },
-      { id: 'product-a-2', user_id: member.id },
-      { id: 'product-a-3', user_id: otherMember.id },
+      { id: 'product-a-1', user_id: member.id, product_id: 'product-1' },
+      { id: 'product-a-2', user_id: member.id, product_id: 'product-2' },
+      { id: 'product-a-3', user_id: otherMember.id, product_id: 'product-1' },
     ] as AppData['productAssignments'],
     duties: [{ id: 'duty-1' }] as AppData['duties'],
     dutyAssignments: [
@@ -70,7 +70,7 @@ function modelData(): AppData {
 }
 
 describe('buildShellModel', () => {
-  it('counts only in-progress and final-review applications for the leader', () => {
+  it('badges only what the leader must act on: pending reviews, change applications and missing owners', () => {
     const model = buildShellModel({
       data: modelData(),
       profile: leader,
@@ -80,43 +80,22 @@ describe('buildShellModel', () => {
       notifications,
     })
 
-    expect(model.memberCount).toBe(2)
     expect(model.unreadNotifications).toBe(2)
-    expect(model.tabs).toMatchObject({
-      announcements: { count: 2 },
-      reviews: { count: 7, unreadCount: 3 },
-      'change-applications': { count: 2 },
-      projects: { count: 3 },
-      team: { count: 2 },
-      activity: { count: 1 },
-      products: { count: 2 },
-      duties: { count: 1 },
-      invites: { count: 2 },
+    expect(model.tabs).toEqual({
+      reviews: { count: 7, countLabel: '대기 7건', unreadCount: 3 },
+      // 최종 확인을 기다리는 공통변경만 센다. 담당자가 모두 있는 진행 중 공통변경은 파트원의 일이다.
+      'change-applications': { count: 1, countLabel: '확인할 공통변경 1건' },
     })
+    // 공지·프로젝트·파트원·활동 로그·마스터 같은 전체 개수는 메뉴에 달지 않는다.
+    for (const tab of ['announcements', 'projects', 'team', 'activity', 'products', 'duties', 'invites'] as const) {
+      expect(model.tabs[tab]).toBeUndefined()
+    }
   })
 
-  it('falls back to the member review count and scopes work counts to that member', () => {
-    const model = buildShellModel({
-      data: modelData(),
-      profile: member,
-      leaderMode: false,
-      pendingCount: 99,
-      unreadReviewsCount: 0,
-      notifications,
-    })
-
-    expect(model.tabs).toMatchObject({
-      reviews: { count: 0, unreadCount: 0 },
-      'change-applications': { count: 1 },
-      projects: { count: 2 },
-      work: { count: 3 },
-    })
-  })
-
-  it('excludes inactive users from the current member count', () => {
+  it('counts an in-progress change application with an unassigned pending task for the leader', () => {
     const data = modelData()
-    data.profiles = data.profiles.map((item) => (
-      item.id === otherMember.id ? { ...item, is_active: false } : item
+    data.productChangeTasks = data.productChangeTasks.map((task) => (
+      task.id === 'task-other' ? { ...task, assignee_id: null } : task
     ))
 
     const model = buildShellModel({
@@ -128,7 +107,66 @@ describe('buildShellModel', () => {
       notifications: [],
     })
 
-    expect(model.memberCount).toBe(1)
-    expect(model.tabs.team).toEqual({ count: 1 })
+    expect(model.tabs['change-applications']).toEqual({ count: 2, countLabel: '확인할 공통변경 2건' })
+  })
+
+  it('marks products with a dot when a product has no owner', () => {
+    const data = modelData()
+    data.products = [...data.products, { id: 'product-unassigned', name: '담당자 없는 제품' }] as AppData['products']
+
+    const model = buildShellModel({
+      data,
+      profile: leader,
+      leaderMode: true,
+      pendingCount: 0,
+      unreadReviewsCount: 0,
+      notifications: [],
+    })
+
+    expect(model.tabs.products).toEqual({ attention: '담당자 없는 제품 있음' })
+  })
+
+  it('gives a member only their own pending tasks as a number and unread review news as a dot', () => {
+    const model = buildShellModel({
+      data: modelData(),
+      profile: member,
+      leaderMode: false,
+      pendingCount: 99,
+      unreadReviewsCount: 2,
+      notifications,
+    })
+
+    expect(model.tabs).toEqual({
+      reviews: { unreadCount: 2 },
+      'change-applications': { count: 1, countLabel: '미적용 1건' },
+    })
+  })
+
+  it('shows no action badges to a read-only team leader', () => {
+    const teamLeader: Profile = { id: 'team-leader', email: 'tl@example.com', name: '팀장', role: 'team_leader', is_active: true }
+    const model = buildShellModel({
+      data: modelData(),
+      profile: teamLeader,
+      leaderMode: true,
+      canManage: false,
+      pendingCount: 7,
+      unreadReviewsCount: 3,
+      notifications,
+    })
+
+    expect(model.tabs).toEqual({})
+  })
+})
+
+describe('shellTabAccessibleName', () => {
+  it('reads the number, the unread news and the attention mark after the label', () => {
+    expect(shellTabAccessibleName('검토요청', { count: 3, countLabel: '대기 3건', unreadCount: 2 }))
+      .toBe('검토요청, 대기 3건, 새 소식 2건')
+    expect(shellTabAccessibleName('제품', { attention: '담당자 없는 제품 있음' })).toBe('제품, 담당자 없는 제품 있음')
+  })
+
+  it('keeps the plain label when there is nothing to announce', () => {
+    expect(shellTabAccessibleName('변경 적용', { count: 0, countLabel: '미적용 0건' })).toBeUndefined()
+    expect(shellTabAccessibleName('공지', undefined)).toBeUndefined()
   })
 })

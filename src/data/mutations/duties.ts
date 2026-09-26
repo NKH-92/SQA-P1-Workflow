@@ -1,4 +1,5 @@
 import type { DutyMajorCategory } from '../../types'
+import { quotedWithJosa } from '../../lib/korean'
 import type { RepositoryContext } from '../repositoryContext'
 import type { AuditedDeleteInput } from '../contracts'
 import { logAdminActivity } from './adminActivity'
@@ -9,7 +10,7 @@ export async function addDutyMajorCategory(
 ): Promise<void> {
   const payload = { name: input.name.trim(), sort_order: input.sortOrder ?? null }
   await ctx.repositories.duties.addDutyMajorCategory(payload)
-  await logAdminActivity(ctx, 'duty_major_category', 'created', `${payload.name} 대분류를 추가했습니다.`, null, payload)
+  await logAdminActivity(ctx, 'duty_major_category', 'created', `${quotedWithJosa(payload.name, '을/를')} 대분류로 등록했어요.`, null, payload)
 }
 
 export async function addDuty(
@@ -22,7 +23,7 @@ export async function addDuty(
     sort_order: input.sortOrder ?? null,
   }
   await ctx.repositories.duties.addDuty(payload)
-  await logAdminActivity(ctx, 'duty', 'created', `${payload.name} 업무를 추가했습니다.`, null, payload)
+  await logAdminActivity(ctx, 'duty', 'created', `${quotedWithJosa(payload.name, '을/를')} 업무로 등록했어요.`, null, payload)
 }
 
 export async function saveDutyAssignments(
@@ -43,7 +44,7 @@ export async function saveDutyAssignments(
   const result = await ctx.repositories.duties.saveDutyAssignments(input)
   // A true set no-op must not write a user-facing activity entry.
   if (result.noop) return { noop: true }
-  await logAdminActivity(ctx, 'duty_assignment', 'updated', '업무 배정을 조정했습니다.', input.dutyId, {
+  await logAdminActivity(ctx, 'duty_assignment', 'updated', '업무 담당자를 바꿨어요.', input.dutyId, {
     assigned_user_ids: input.nextMemberIds,
   })
   return { noop: false }
@@ -57,7 +58,7 @@ export async function assignDuty(
   // A no-op duplicate must not produce a client activity log — the assignment already
   // exists, so nothing actually changed for the private authoritative audit either (D-05).
   if (!changed) return { noop: true }
-  await logAdminActivity(ctx, 'duty_assignment', 'created', '업무를 배정했습니다.', input.dutyId, {
+  await logAdminActivity(ctx, 'duty_assignment', 'created', '업무를 배정했어요.', input.dutyId, {
     user_id: input.userId,
   })
   return { noop: false }
@@ -70,7 +71,7 @@ export async function updateDutyMajorCategory(
 ): Promise<{ noop: boolean }> {
   const result = await ctx.repositories.duties.updateDutyMajorCategory(majorCategoryId, payload)
   if (!result.noop) {
-    await logAdminActivity(ctx, 'duty_major_category', 'updated', '업무 대분류를 수정했습니다.', majorCategoryId, payload)
+    await logAdminActivity(ctx, 'duty_major_category', 'updated', '업무 대분류를 수정했어요.', majorCategoryId, payload)
   }
   return result
 }
@@ -90,14 +91,14 @@ export async function updateDuty(
 ): Promise<{ noop: boolean }> {
   const result = await ctx.repositories.duties.updateDuty(dutyId, payload)
   if (!result.noop) {
-    await logAdminActivity(ctx, 'duty', 'updated', '업무 정보를 수정했습니다.', dutyId, payload)
+    await logAdminActivity(ctx, 'duty', 'updated', '업무 정보를 수정했어요.', dutyId, payload)
   }
   return result
 }
 
 export async function deleteDuty(ctx: RepositoryContext, id: string, input: AuditedDeleteInput): Promise<void> {
   const name = await ctx.repositories.duties.deleteDuty(id, input)
-  await logAdminActivity(ctx, 'duty', 'deleted', `${name ?? '업무'}를 삭제했습니다.`, id, {
+  await logAdminActivity(ctx, 'duty', 'deleted', `${quotedWithJosa(name ?? '업무', '을/를')} 삭제했어요.`, id, {
     reason: input.reason.trim(),
   })
 }
@@ -108,7 +109,7 @@ export async function deleteDutyMajorCategory(
   input: AuditedDeleteInput,
 ): Promise<void> {
   const name = await ctx.repositories.duties.deleteDutyMajorCategory(id, input)
-  await logAdminActivity(ctx, 'duty_major_category', 'deleted', `${name ?? '대분류'}를 삭제했습니다.`, id, {
+  await logAdminActivity(ctx, 'duty_major_category', 'deleted', `${quotedWithJosa(name ?? '대분류', '을/를')} 삭제했어요.`, id, {
     reason: input.reason.trim(),
   })
 }

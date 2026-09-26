@@ -74,9 +74,39 @@ function completedHistoryData(): AppData {
   return data
 }
 
+/** 같은 제품에 공통변경을 하나 더 배포해, 한 제품에 적용 업무가 두 건인 상황을 만든다. */
+function twoTasksForOneProductData(): { data: AppData; tasks: ProductChangeTask[] } {
+  const data = createPreviewData()
+  const ownTask = data.productChangeTasks.find(
+    (task) => task.assignee_id === previewMember.id && task.status === 'pending' && task.action_item_id === 'change-action-01',
+  )!
+  const baseApplication = data.changeApplications.find((item) => item.id === 'change-application-01')!
+  const baseAction = data.changeActionItems.find((item) => item.id === 'change-action-01')!
+  data.changeApplications = [...data.changeApplications, {
+    ...baseApplication,
+    id: 'change-application-02',
+    change_number: 'CC-2026-015',
+    title: '포장 재질 변경',
+    content_locked_at: null,
+  }]
+  data.changeActionItems = [...data.changeActionItems, {
+    ...baseAction,
+    id: 'change-action-02',
+    change_application_id: 'change-application-02',
+    content: '포장 재질 정보를 제품표준서에 반영합니다.',
+  }]
+  const secondTask: ProductChangeTask = { ...ownTask, id: 'product-change-task-extra', action_item_id: 'change-action-02' }
+  data.productChangeTasks = [...data.productChangeTasks, secondTask]
+  data.changeApplicationSummaries = []
+  return { data, tasks: [ownTask, secondTask] }
+}
+
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  // 보기 상태(useViewState)와 임시저장이 다음 테스트로 새지 않게 비운다.
+  window.sessionStorage.clear()
+  window.localStorage.clear()
 })
 
 describe('ChangeApplicationsPanel', () => {
@@ -92,6 +122,8 @@ describe('ChangeApplicationsPanel', () => {
     expect(screen.getByRole('tab', { name: '완료 이력' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '공통변경 등록' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '담당자별' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '공통변경별' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('textbox', { name: '변경 적용 검색' })).toHaveAttribute('placeholder', '공통변경·제품·담당자 검색')
 
     leaderView.unmount()
     render(
@@ -112,33 +144,49 @@ describe('ChangeApplicationsPanel', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: '공통변경 등록' }))
+    expect(screen.getByRole('dialog', { name: '공통변경 등록' })).toBeInTheDocument()
     expect(screen.getByRole('navigation', { name: '공통변경 등록 단계' })).toBeInTheDocument()
-    expect(screen.getByText('변경 정보')).toBeInTheDocument()
-    expect(screen.queryByRole('list', { name: '적용제품 선택 목록' })).not.toBeInTheDocument()
+    expect(screen.getAllByText('변경 정보').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('list', { name: '적용 제품 선택 목록' })).not.toBeInTheDocument()
+
+    // 비어 있는 채로 다음을 누르면 단계는 그대로이고, 빠진 칸마다 이유를 보여준다.
+    fireEvent.click(screen.getByRole('button', { name: /다음/ }))
+    expect(screen.getByLabelText('변경 제목')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByText('변경 제목을 입력해 주세요.')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '양식 받기' })).not.toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('변경번호'), { target: { value: 'CC-2026-099' } })
     fireEvent.change(screen.getByLabelText('변경 제목'), { target: { value: '시험 방법 공통 개정' } })
     fireEvent.change(screen.getByLabelText('변경 요약'), { target: { value: '시험 방법 변경을 모든 대상 제품에 반영합니다.' } })
     fireEvent.change(screen.getByLabelText('시행일'), { target: { value: '2026-09-01' } })
     fireEvent.change(screen.getByLabelText('적용 내용'), { target: { value: '제품표준서 시험 방법을 개정합니다.' } })
-    fireEvent.change(screen.getByLabelText('적용기한'), { target: { value: '2026-08-25' } })
+    // 적용 기한은 시행일 기준 빠른 선택으로 채운다.
+    fireEvent.click(screen.getByRole('button', { name: /^14일 후/ }))
+    expect(screen.getByLabelText('적용 기한')).toHaveValue('2026-09-15')
+    expect(screen.queryByText('변경 제목을 입력해 주세요.')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /다음/ }))
 
     expect(screen.getByRole('link', { name: '양식 받기' })).toHaveAttribute('href', '/change-application-products-template.xlsx')
+    // 제품명 검색에서 Enter를 눌러도 단계가 넘어가지 않는다(D-3).
+    const productSearch = screen.getByRole('textbox', { name: '제품명 검색' })
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    productSearch.dispatchEvent(enter)
+    expect(enter.defaultPrevented).toBe(true)
+    expect(screen.getByRole('link', { name: '양식 받기' })).toBeInTheDocument()
     const file = new File([`제품명\n${product.product_name}`], '적용제품.csv', { type: 'text/csv' })
-    fireEvent.change(screen.getByLabelText('적용제품 Excel 파일 선택'), { target: { files: [file] } })
+    fireEvent.change(screen.getByLabelText('적용 제품 Excel 파일 선택'), { target: { files: [file] } })
     expect(await screen.findByRole('region', { name: 'Excel 제품 가져오기 검토' })).toBeInTheDocument()
     expect(screen.getByText('적용제품.csv')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '선택 제품에 반영' }))
 
-    const scope = screen.getByRole('list', { name: '적용제품 선택 목록' })
+    const scope = screen.getByRole('list', { name: '적용 제품 선택 목록' })
     expect(within(scope).getByRole('button', { name: new RegExp(product.product_name) })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByLabelText(`${product.product_name} 적용 책임자`)).not.toHaveValue('')
+    expect(screen.getByLabelText(`${product.product_name} 적용 담당자`)).not.toHaveValue('')
     fireEvent.click(screen.getByRole('button', { name: /다음/ }))
 
     expect(screen.getAllByText('최종 검토·배포')).toHaveLength(2)
-    expect(screen.getByText('모든 제품에 활성 책임자 지정 완료')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '1개 제품에 배포' })).toBeEnabled()
+    expect(screen.getByText('모든 제품에 담당자를 정했어요')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '1개 제품에 배포하기' })).toBeEnabled()
   })
 
   it('shows process actions only to the assigned member, never to the leader', () => {
@@ -160,7 +208,7 @@ describe('ChangeApplicationsPanel', () => {
     expect(screen.queryByRole('button', { name: '적용 완료' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '해당 없음' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: `${ownTask.product_name} 담당자 변경` })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: `${ownTask.product_name} 범위 제외` })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: `${ownTask.product_name} 범위에서 빼기` })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: `${ownTask.product_name} 업무 취소` })).not.toBeInTheDocument()
   })
 
@@ -175,7 +223,7 @@ describe('ChangeApplicationsPanel', () => {
 
     const productList = screen.getByRole('navigation', { name: '적용대상 제품 목록' })
     expect(within(productList).getAllByRole('button')).toHaveLength(new Set(ownContexts.map((task) => task.product_id)).size)
-    expect(screen.queryByRole('button', { name: '변경건별' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '공통변경별' })).not.toBeInTheDocument()
 
     const firstTask = ownContexts[0]
     const action = data.changeActionItems.find((item) => item.id === firstTask.action_item_id)!
@@ -198,8 +246,25 @@ describe('ChangeApplicationsPanel', () => {
     )
 
     expect(screen.getByRole('status')).toHaveTextContent('파트장 최종 확인 대기')
-    expect(screen.getByText('내 제품 처리를 모두 완료했습니다.')).toBeInTheDocument()
+    expect(screen.getByText('내 제품 처리를 모두 마쳤어요')).toBeInTheDocument()
     expect(screen.queryByRole('navigation', { name: '적용대상 제품 목록' })).not.toBeInTheDocument()
+  })
+
+  it('reports final-review readiness instead of a search miss when the last task is done under a saved search', () => {
+    // 검색어를 넣은 채 마지막 업무를 처리했다. 목록이 빈 까닭은 검색이 아니라 남은 업무가 없어서다.
+    window.sessionStorage.setItem('sqa.view.changes.member.query', JSON.stringify('원료'))
+    render(
+      <ChangeApplicationsPanel
+        profile={previewMember}
+        data={finalReviewData()}
+        mutate={vi.fn(runMutation)}
+        setData={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent('파트장 최종 확인 대기')
+    expect(screen.getByText('내 제품 처리를 모두 마쳤어요')).toBeInTheDocument()
+    expect(screen.queryByText('조건에 맞는 적용 업무가 없어요')).not.toBeInTheDocument()
   })
 
   it('routes the leader pending-task action through scope removal', async () => {
@@ -210,10 +275,14 @@ describe('ChangeApplicationsPanel', () => {
       <ChangeApplicationsPanel profile={previewLeader} data={data} mutate={vi.fn(runMutation)} setData={vi.fn()} />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: `${task.product_name} 범위 제외` }))
-    expect(screen.getByRole('heading', { name: '이 제품을 적용범위에서 제외할까요?' })).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText('적용범위 제외 사유'), { target: { value: '변경 대상 아님' } })
-    fireEvent.click(screen.getByRole('button', { name: '범위 제외' }))
+    fireEvent.click(screen.getByRole('button', { name: `${task.product_name} 범위에서 빼기` }))
+    expect(screen.getByRole('heading', { name: '이 제품을 적용 범위에서 뺄까요?' })).toBeInTheDocument()
+    // 사유 없이 누르면 칸 아래에 이유를 보여주고 저장하지 않는다.
+    fireEvent.click(screen.getByRole('button', { name: '범위에서 빼기' }))
+    expect(screen.getByText('범위에서 빼는 이유를 적어 주세요.')).toBeInTheDocument()
+    expect(removeScopeSpy).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText('범위에서 빼는 이유'), { target: { value: '변경 대상 아님' } })
+    fireEvent.click(screen.getByRole('button', { name: '범위에서 빼기' }))
 
     await waitFor(() => expect(removeScopeSpy).toHaveBeenCalledOnce())
     expect(removeScopeSpy.mock.calls[0].slice(1)).toEqual([task.id, '변경 대상 아님'])
@@ -236,12 +305,13 @@ describe('ChangeApplicationsPanel', () => {
       <ChangeApplicationsPanel profile={previewLeader} data={data} mutate={vi.fn(runMutation)} setData={vi.fn()} />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: `${task.product_name} 활성 책임자 재배정` }))
-    const assigneeSelect = screen.getByLabelText('새 적용 책임자')
+    fireEvent.click(screen.getByRole('button', { name: `${task.product_name} 담당자 다시 배정` }))
+    expect(screen.getByRole('heading', { name: '이 업무의 담당자를 바꿀까요?' })).toBeInTheDocument()
+    const assigneeSelect = screen.getByLabelText('새 담당자')
     expect(assigneeSelect).toHaveValue('')
     expect(within(assigneeSelect).queryByRole('option', { name: task.assignee_name! })).not.toBeInTheDocument()
     fireEvent.change(assigneeSelect, { target: { value: replacement.id } })
-    fireEvent.change(screen.getByLabelText('재배정 사유'), { target: { value: '퇴사자 업무 복구' } })
+    fireEvent.change(screen.getByLabelText('담당자를 바꾸는 이유'), { target: { value: '퇴사자 업무 복구' } })
     fireEvent.click(screen.getByRole('button', { name: '담당자 변경' }))
 
     await waitFor(() => expect(reassignSpy).toHaveBeenCalledOnce())
@@ -258,7 +328,8 @@ describe('ChangeApplicationsPanel', () => {
     fireEvent.click(screen.getAllByRole('button', { name: '적용 완료' })[0])
     await waitFor(() => expect(screen.getByPlaceholderText('예: 제품표준서 Rev.12 반영')).toHaveFocus())
     fireEvent.change(screen.getByPlaceholderText('예: 제품표준서 Rev.12 반영'), { target: { value: 'Rev.13 반영' } })
-    fireEvent.click(screen.getByRole('button', { name: '완료 확인' }))
+    expect(screen.getByRole('heading', { name: '이 제품에 변경을 적용했나요?' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '적용 완료하기' }))
 
     await waitFor(() => expect(completeSpy).toHaveBeenCalledOnce())
     expect(completeSpy.mock.calls[0].slice(2)).toEqual(['Rev.13 반영', ''])
@@ -290,9 +361,9 @@ describe('ChangeApplicationsPanel', () => {
     expect(screen.getByRole('heading', { name: '최종 확인 전 처리' })).toBeInTheDocument()
     expect(screen.getByText('내 제품 처리 완료')).toBeInTheDocument()
     const targetRow = screen.getByText('제품표준서 반영 완료').closest('article')!
-    fireEvent.click(within(targetRow).getByRole('button', { name: '다시 열기' }))
-    await waitFor(() => expect(screen.getByLabelText('재개 사유')).toHaveFocus())
-    fireEvent.change(screen.getByLabelText('재개 사유'), { target: { value: '반영 내용 재확인 필요' } })
+    fireEvent.click(within(targetRow).getByRole('button', { name: `${task.product_name} 다시 열기` }))
+    await waitFor(() => expect(screen.getByLabelText('다시 여는 이유')).toHaveFocus())
+    fireEvent.change(screen.getByLabelText('다시 여는 이유'), { target: { value: '반영 내용 재확인 필요' } })
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '다시 열기' }))
 
     await waitFor(() => expect(reopenSpy).toHaveBeenCalledOnce())
@@ -318,7 +389,7 @@ describe('ChangeApplicationsPanel', () => {
     const view = render(
       <ChangeApplicationsPanel profile={previewLeader} data={data} mutate={vi.fn(runMutation)} setData={vi.fn()} />,
     )
-    expect(screen.queryByRole('button', { name: '범위 복원' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: `${task.product_name} 범위에 다시 넣기` })).not.toBeInTheDocument()
 
     view.rerender(
       <ChangeApplicationsPanel
@@ -333,7 +404,7 @@ describe('ChangeApplicationsPanel', () => {
         setData={vi.fn()}
       />,
     )
-    expect(screen.getByRole('button', { name: '범위 복원' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: `${task.product_name} 범위에 다시 넣기` })).toBeInTheDocument()
   })
 
   it('moves terminal product work to final review and requires a memo for exceptions', async () => {
@@ -345,15 +416,21 @@ describe('ChangeApplicationsPanel', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: /최종 확인 대기/ }))
     expect(screen.getByText('파트장 최종 확인 대기')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '변경 취소' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '변경 완료' }))
+    // 공통변경 취소처럼 드물고 되돌리기 어려운 행동은 더보기 메뉴에 있다.
+    fireEvent.click(screen.getByRole('button', { name: 'CC-2026-014 더보기' }))
+    expect(screen.getByRole('menuitem', { name: '공통변경 취소' })).toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: '공통변경 완료하기' }))
 
     expect(screen.getByRole('heading', { name: '공통변경을 최종 완료할까요?' })).toBeInTheDocument()
     expect(screen.getAllByText('이 제품은 변경 원료를 사용하지 않음')).toHaveLength(2)
     const finalizationDialog = screen.getByRole('dialog', { name: '공통변경을 최종 완료할까요?' })
-    expect(within(finalizationDialog).getByRole('button', { name: '변경 완료' })).toBeDisabled()
+    // 예외가 있으면 메모가 필요하다. 비어 있으면 칸 아래에 이유를 보여주고 완료하지 않는다.
+    fireEvent.click(within(finalizationDialog).getByRole('button', { name: '공통변경 완료하기' }))
+    expect(within(finalizationDialog).getByText('해당 없음이나 범위 제외가 있으면 확인한 내용을 적어 주세요.')).toBeInTheDocument()
+    expect(finalizeSpy).not.toHaveBeenCalled()
     fireEvent.change(screen.getByLabelText('최종 확인 메모'), { target: { value: '해당 없음 사유를 확인함' } })
-    fireEvent.click(within(finalizationDialog).getByRole('button', { name: '변경 완료' }))
+    fireEvent.click(within(finalizationDialog).getByRole('button', { name: '공통변경 완료하기' }))
 
     await waitFor(() => expect(finalizeSpy).toHaveBeenCalledOnce())
     expect(finalizeSpy.mock.calls[0][1]).toMatchObject({
@@ -386,8 +463,8 @@ describe('ChangeApplicationsPanel', () => {
     fireEvent.change(screen.getByLabelText('완료 취소 사유'), { target: { value: '추가 반영 필요' } })
     const reopenable = data.productChangeTasks.find((task) => task.action_item_id === 'change-action-01') as ProductChangeTask
     fireEvent.click(screen.getByRole('checkbox', { name: new RegExp(reopenable.product_name) }))
-    expect(screen.getByLabelText(`${reopenable.product_name} 재개 책임자`)).not.toHaveValue('')
-    fireEvent.click(screen.getByRole('button', { name: '완료 취소 및 업무 재개' }))
+    expect(screen.getByLabelText(`${reopenable.product_name} 담당자`)).not.toHaveValue('')
+    fireEvent.click(screen.getByRole('button', { name: '완료 취소하고 다시 열기' }))
 
     await waitFor(() => expect(undoSpy).toHaveBeenCalledOnce())
     expect(undoSpy.mock.calls[0][1]).toMatchObject({
@@ -430,5 +507,128 @@ describe('ChangeApplicationsPanel', () => {
     expect(historySpy.mock.calls[0][0]).toMatchObject({ assignee_id: previewMember.id })
     expect(screen.queryByLabelText('이력 담당자')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '완료 취소' })).not.toBeInTheDocument()
+  })
+
+  it('filters the task list from the summary cards and shows how to clear the filter', () => {
+    const data = createPreviewData()
+    render(
+      <ChangeApplicationsPanel profile={previewLeader} data={data} mutate={vi.fn(runMutation)} setData={vi.fn()} />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '제품별' }))
+    const unassignedCard = screen.getByRole('button', { name: /^담당자 없음/ })
+    expect(unassignedCard).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(unassignedCard)
+
+    expect(unassignedCard).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('담당자 없음 업무만 보고 있어요')).toBeInTheDocument()
+    const published = data.productChangeTasks.filter((task) => task.action_item_id === 'change-action-01' && task.status === 'pending')
+    const unassigned = published.filter((task) => !task.assignee_id)
+    const assigned = published.filter((task) => task.assignee_id)
+    expect(unassigned.length).toBeGreaterThan(0)
+    for (const task of unassigned) expect(screen.getAllByText(task.product_name).length).toBeGreaterThan(0)
+    expect(screen.queryByText(assigned[0].product_name)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '필터 해제' }))
+    expect(unassignedCard).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getAllByText(assigned[0].product_name).length).toBeGreaterThan(0)
+  })
+
+  it('keeps the search and view when switching tabs and after coming back to the screen', () => {
+    const data = createPreviewData()
+    const view = render(
+      <ChangeApplicationsPanel profile={previewLeader} data={data} mutate={vi.fn(runMutation)} setData={vi.fn()} />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '담당자별' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '변경 적용 검색' }), { target: { value: '원료' } })
+    fireEvent.click(screen.getByRole('tab', { name: /최종 확인 대기/ }))
+    fireEvent.click(screen.getByRole('tab', { name: '진행 중' }))
+    expect(screen.getByRole('textbox', { name: '변경 적용 검색' })).toHaveValue('원료')
+    expect(screen.getByRole('button', { name: '담당자별' })).toHaveAttribute('aria-pressed', 'true')
+
+    view.unmount()
+    render(
+      <ChangeApplicationsPanel profile={previewLeader} data={data} mutate={vi.fn(runMutation)} setData={vi.fn()} />,
+    )
+    expect(screen.getByRole('textbox', { name: '변경 적용 검색' })).toHaveValue('원료')
+    expect(screen.getByRole('button', { name: '담당자별' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('reassigns several selected tasks at once from the product view', async () => {
+    const data = createPreviewData()
+    const reassignSpy = vi.spyOn(dataModule, 'reassignProductChangeTasks').mockResolvedValue()
+    const pending = data.productChangeTasks
+      .filter((task) => task.action_item_id === 'change-action-01' && task.status === 'pending')
+      .slice(0, 2)
+    const replacement = data.changeAssigneeOptions.find((item) => item.role === 'member')!
+    render(
+      <ChangeApplicationsPanel profile={previewLeader} data={data} mutate={vi.fn(runMutation)} setData={vi.fn()} />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '제품별' }))
+    for (const task of pending) {
+      fireEvent.click(screen.getByRole('checkbox', { name: `${task.product_name} · CC-2026-014 선택` }))
+    }
+    expect(screen.getByText('2건 선택')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '선택한 적용 업무 담당자 변경' }))
+    expect(screen.getByRole('heading', { name: '선택한 적용 업무 2건의 담당자를 바꿀까요?' })).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('새 담당자'), { target: { value: replacement.id } })
+    fireEvent.change(screen.getByLabelText('담당자를 바꾸는 이유'), { target: { value: '담당 재조정' } })
+    fireEvent.click(screen.getByRole('button', { name: '담당자 변경' }))
+
+    await waitFor(() => expect(reassignSpy).toHaveBeenCalledOnce())
+    expect(reassignSpy.mock.calls[0].slice(1)).toEqual([pending.map((task) => task.id), replacement.id, '담당 재조정'])
+  })
+
+  it('lets a member complete every task of one product with a single memo', async () => {
+    const { data, tasks } = twoTasksForOneProductData()
+    const completeSpy = vi.spyOn(dataModule, 'completeProductChangeTask').mockResolvedValue()
+    render(
+      <ChangeApplicationsPanel profile={previewMember} data={data} mutate={vi.fn(runMutation)} setData={vi.fn()} />,
+    )
+
+    const productList = screen.getByRole('navigation', { name: '적용대상 제품 목록' })
+    fireEvent.click(within(productList).getByRole('button', { name: new RegExp(tasks[0].product_name) }))
+    const detail = screen.getByRole('region', { name: `${tasks[0].product_name} 변경관리 내용` })
+    fireEvent.click(within(detail).getByRole('button', { name: '이 제품 모두 적용 완료' }))
+    expect(screen.getByRole('heading', { name: '이 제품의 적용 업무 2건을 모두 완료할까요?' })).toBeInTheDocument()
+    fireEvent.change(screen.getByPlaceholderText('예: 제품표준서 Rev.12 반영'), { target: { value: '두 건 모두 반영' } })
+    fireEvent.click(screen.getByRole('button', { name: '모두 적용 완료하기' }))
+
+    await waitFor(() => expect(completeSpy).toHaveBeenCalledTimes(2))
+    expect(completeSpy.mock.calls.map((call) => call.slice(2))).toEqual([
+      ['두 건 모두 반영', ''],
+      ['두 건 모두 반영', ''],
+    ])
+    expect(completeSpy.mock.calls.map((call) => call[1]).sort()).toEqual(tasks.map((task) => task.id).sort())
+  })
+
+  it('keeps a title-only draft on this device, guards unsaved typing, and restores it on reopen', () => {
+    const data = createPreviewData()
+    render(
+      <ChangeApplicationsPanel profile={previewLeader} data={data} mutate={vi.fn(runMutation)} setData={vi.fn()} />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '공통변경 등록' }))
+    fireEvent.click(screen.getByRole('button', { name: '임시저장' }))
+    expect(screen.getByText('제목을 입력하면 임시저장할 수 있어요.')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('변경 제목'), { target: { value: '제목만 쓴 공통변경' } })
+    // 저장하지 않은 입력이 있으면 닫기 전에 한 번 묻는다.
+    fireEvent.click(screen.getByRole('button', { name: '공통변경 등록 닫기' }))
+    expect(screen.getByText('작성 중인 내용이 있어요. 닫으면 입력한 내용이 사라져요.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '계속 쓰기' }))
+
+    fireEvent.click(screen.getByRole('button', { name: '임시저장' }))
+    expect(screen.getByText(/이 기기에 임시저장했어요/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '공통변경 등록 닫기' }))
+    expect(screen.queryByRole('dialog', { name: '공통변경 등록' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '공통변경 등록' }))
+    expect(screen.getByLabelText('변경 제목')).toHaveValue('제목만 쓴 공통변경')
+    expect(screen.getByText(/이 기기에 임시저장한 내용을 불러왔어요/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '새로 쓰기' }))
+    expect(screen.getByLabelText('변경 제목')).toHaveValue('')
   })
 })

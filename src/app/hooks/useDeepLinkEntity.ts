@@ -1,9 +1,12 @@
 import { useEffect, useRef } from 'react'
-import type { Dispatch, SetStateAction } from 'react'
 import { selectScopedReviewRequests } from '../../features/reviews/review.selectors'
 import { toUserMessage } from '../../lib/errors'
 import type { AppData, Profile } from '../../types'
-import type { TabId, ToastMessage } from '../types'
+import { replaceHashEntityId } from '../../lib/navigation'
+import type { SetToast, TabId } from '../types'
+
+export const MISSING_LINK_TARGET_MESSAGE =
+  '링크한 항목을 찾지 못했어요. 삭제됐거나 볼 수 있는 권한이 없는 항목일 수 있어요.'
 
 type EntityLoader = (entityId: string, signal: AbortSignal) => Promise<boolean | null>
 
@@ -16,7 +19,7 @@ export type DeepLinkEntityOptions = {
   setEntityId: (entityId: string | null) => void
   loadReviewRequest: EntityLoader
   loadAnnouncement: EntityLoader
-  setMessage: Dispatch<SetStateAction<ToastMessage | null>>
+  setMessage: SetToast
 }
 
 function hasDeepLinkEntity(
@@ -97,7 +100,8 @@ export function useDeepLinkEntity({
           }
           if (loaded) return
           setEntityId(null)
-          setMessage({ text: '링크 대상을 찾을 수 없습니다. 삭제되었거나 접근 권한이 없는 항목일 수 있습니다.', tone: 'warning' })
+          replaceHashEntityId(activeTab, null)
+          setMessage({ text: MISSING_LINK_TARGET_MESSAGE, tone: 'warning' })
         })
         .catch((error) => {
           if (lookupRef.current !== lookupKey) return
@@ -110,7 +114,8 @@ export function useDeepLinkEntity({
     abortRef.current = null
     lookupRef.current = null
     setEntityId(null)
-    setMessage({ text: '링크 대상을 찾을 수 없습니다. 삭제되었거나 접근 권한이 없는 항목일 수 있습니다.', tone: 'warning' })
+    replaceHashEntityId(activeTab, null)
+    setMessage({ text: MISSING_LINK_TARGET_MESSAGE, tone: 'warning' })
   }, [
     entityId,
     activeTab,

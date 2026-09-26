@@ -27,7 +27,7 @@ export function createSupabaseChangeApplicationRepository(
         },
       )
       if (error) throw translateChangeApplicationError(error)
-      if (typeof data !== 'string') throw new UserFacingError('변경 적용업무 등록 결과를 확인할 수 없습니다.')
+      if (typeof data !== 'string') throw new UserFacingError('공통변경을 저장했는지 확인하지 못했어요. 목록을 새로고침해서 확인해 주세요.')
       return data
     },
 

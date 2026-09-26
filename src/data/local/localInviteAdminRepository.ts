@@ -1,7 +1,7 @@
 import { assertRecordExists, UserFacingError } from '../../lib/errors'
 import { makeId } from '../../lib/format'
 import type { InviteAdminRepository, RepositoryDeps } from '../repositories/types'
-import { normalizeMasterReason } from '../validation/masterOcc'
+import { LAST_ACTIVE_LEADER_MESSAGE, normalizeMasterReason } from '../validation/masterOcc'
 import { removeAllowedUser } from './appDataReducers'
 import { assertLocalLeader, assertLocalMasterCurrent } from './localAdminGuards'
 
@@ -89,7 +89,7 @@ export function createLocalInviteAdminRepository(deps: RepositoryDeps): InviteAd
           (item) => item.role === 'leader' && item.is_active !== false && item.id !== profileId,
         )
         if (remainingLeaders.length === 0) {
-          throw new UserFacingError('활성 파트장은 최소 한 명 이상 유지해야 합니다.')
+          throw new UserFacingError(LAST_ACTIVE_LEADER_MESSAGE)
         }
       }
       if ((target.is_active ?? true) === nextActive) return { noop: true }
@@ -114,7 +114,7 @@ export function createLocalInviteAdminRepository(deps: RepositoryDeps): InviteAd
           (item) => item.role === 'leader' && item.is_active !== false && item.id !== profileId,
         )
         if (remainingLeaders.length === 0) {
-          throw new UserFacingError('활성 파트장은 최소 한 명 이상 유지해야 합니다.')
+          throw new UserFacingError(LAST_ACTIVE_LEADER_MESSAGE)
         }
       }
       if (target.role === role) return { noop: true }

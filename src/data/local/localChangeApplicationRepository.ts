@@ -10,7 +10,7 @@ import type {
 import type { ChangeApplicationInput } from '../contracts'
 import type { ChangeApplicationRepository, RepositoryDeps } from '../repositories/types'
 import { selectProductChangeTaskContexts } from '../selectors/changeTaskContexts'
-import { CHANGE_APPLICATION_STALE_MESSAGE } from '../validation/changeApplications'
+import { CHANGE_APPLICATION_STALE_MESSAGE, CHANGE_CONTENT_LOCKED_MESSAGE } from '../validation/changeApplications'
 import { businessYear } from '../../lib/businessTime'
 import {
   archiveChangeApplicationTransition,
@@ -28,7 +28,7 @@ import { changeTaskAssigneeHistory } from '../../domain/changeApplications/assig
 
 function assertActive(profile: RepositoryDeps['profile']) {
   if (profile.is_active === false || profile.must_change_password === true) {
-    throw new UserFacingError('활성 사용자만 변경 적용업무를 처리할 수 있습니다.')
+    throw new UserFacingError('활성 상태인 사람만 처리할 수 있어요.')
   }
 }
 
@@ -47,7 +47,7 @@ function nextChangeNumber(data: AppData, source: ChangeApplicationInput['source'
 function productSnapshot(data: AppData, productId: string) {
   const product = data.products.find((item) => item.id === productId)
   const scope = data.changeProductScope.find((item) => item.product_id === productId)
-  if (!product && !scope) throw new UserFacingError('제품 정보를 찾을 수 없습니다.')
+  if (!product && !scope) throw new UserFacingError('제품 정보를 찾지 못했어요. 목록을 새로고침해 주세요.')
   return {
     name: product?.name ?? scope!.product_name,
     category: product?.category ?? scope?.category ?? null,
@@ -85,31 +85,31 @@ function saveLocalData(
 ) {
   const { now, year, createId } = environment
   if (profile.role !== 'leader') {
-    throw new UserFacingError('파트장만 공통변경을 등록하거나 수정할 수 있습니다.')
+    throw new UserFacingError('파트장만 공통변경을 등록하거나 수정할 수 있어요.')
   }
   if (publish && input.tasks.some((task) => !task.assignee_id)) {
-    throw new UserFacingError('배포하려면 모든 제품에 활성 책임자를 지정해 주세요.')
+    throw new UserFacingError('배포하려면 모든 제품에 담당자를 정해 주세요.')
   }
   for (const task of input.tasks) {
     if (!task.assignee_id) continue
     const assignee = activeAssignee(data, task.assignee_id)
-    if (!assignee) throw new UserFacingError('활성 책임자를 지정해 주세요.')
+    if (!assignee) throw new UserFacingError('활성 상태인 담당자를 정해 주세요.')
   }
   const existing = input.changeApplicationId
     ? data.changeApplications.find((item) => item.id === input.changeApplicationId)
     : null
-  if (input.changeApplicationId && !existing) throw new UserFacingError('변경건을 찾을 수 없습니다.')
+  if (input.changeApplicationId && !existing) throw new UserFacingError('공통변경을 찾지 못했어요. 목록을 새로고침해 주세요.')
   if (existing) {
     if (!input.expected_updated_at || input.expected_updated_at !== existing.updated_at) {
       throw new UserFacingError(CHANGE_APPLICATION_STALE_MESSAGE)
     }
-    if (existing.status === 'cancelled') throw new UserFacingError('취소된 변경건은 수정할 수 없습니다.')
-    if (existing.archived_at) throw new UserFacingError('보관된 변경건은 수정할 수 없습니다. 먼저 복원해 주세요.')
+    if (existing.status === 'cancelled') throw new UserFacingError('취소한 공통변경은 수정할 수 없어요.')
+    if (existing.archived_at) throw new UserFacingError('보관한 공통변경은 복원하면 수정할 수 있어요.')
     if (existing.created_by !== profile.id && profile.role !== 'leader') {
-      throw new UserFacingError('등록자 또는 파트장만 변경건을 수정할 수 있습니다.')
+      throw new UserFacingError('등록한 사람이나 파트장만 수정할 수 있어요.')
     }
     if (existing.status === 'published' && !publish) {
-      throw new UserFacingError('배포된 변경건은 다시 초안으로 바꿀 수 없습니다.')
+      throw new UserFacingError('배포한 공통변경은 초안으로 되돌릴 수 없어요.')
     }
     const contexts = selectProductChangeTaskContexts(data).filter(
       (context) => context.application.id === existing.id,
@@ -118,7 +118,7 @@ function saveLocalData(
       task.status === 'completed'
       || task.status === 'not_applicable'
        || (task.status === 'cancelled' && task.cancel_kind !== 'scope_removed'))) {
-      throw new UserFacingError('한 제품이라도 처리된 뒤에는 변경 내용을 수정할 수 없습니다.')
+      throw new UserFacingError(CHANGE_CONTENT_LOCKED_MESSAGE)
     }
   }
 
@@ -192,8 +192,8 @@ function saveLocalData(
     if (task.status === 'cancelled') {
       throw new UserFacingError(
         task.cancel_kind === 'scope_removed'
-          ? '범위에서 제외된 제품은 사유를 입력해 먼저 복원해 주세요.'
-          : '수동 취소된 제품 업무는 다시 활성화할 수 없습니다.',
+          ? '범위에서 뺀 제품은 사유를 적어 범위에 먼저 다시 넣어 주세요.'
+          : '직접 취소한 적용 업무는 다시 열 수 없어요.',
       )
     }
     const product = productSnapshot(data, task.product_id)
@@ -262,7 +262,7 @@ function saveLocalData(
       entityType: 'change_application' as const,
       entityId: applicationId,
       action: publish ? 'published' : 'draft_saved',
-      summary: `${profile.name}님이 ${changeNumber} 변경 적용업무를 ${publish ? '등록했습니다.' : '초안으로 저장했습니다.'}`,
+      summary: `${profile.name}님이 ${changeNumber} 공통변경을 ${publish ? '등록했어요.' : '초안으로 저장했어요.'}`,
       metadata: { status: publish ? 'published' : 'draft', task_count: input.tasks.length },
     }],
   }
@@ -275,14 +275,14 @@ export function createLocalChangeApplicationRepository(
 
   const taskContext = (taskId: string) => {
     const context = selectProductChangeTaskContexts(data).find(({ task }) => task.id === taskId)
-    if (!context) throw new UserFacingError('제품 적용업무를 찾을 수 없습니다.')
+    if (!context) throw new UserFacingError('적용 업무를 찾지 못했어요. 목록을 새로고침해 주세요.')
     return context
   }
   const assertCanProcess = (task: ProductChangeTask, proxyReason: string) => {
     if (task.assignee_id !== profile.id) {
-      throw new UserFacingError('지정된 담당자만 이 업무를 처리할 수 있습니다.')
+      throw new UserFacingError('이 업무의 담당자만 처리할 수 있어요.')
     }
-    if (proxyReason) throw new UserFacingError('대리 처리는 허용되지 않습니다.')
+    if (proxyReason) throw new UserFacingError('다른 사람의 업무는 대신 처리할 수 없어요. 담당자에게 요청해 주세요.')
   }
   const persistTransition = async (result: ChangeTransitionResult) => {
     const summaries = result.data.changeApplications.map((application) => {
@@ -319,7 +319,7 @@ export function createLocalChangeApplicationRepository(
       assertActive(profile)
       const { task, application } = taskContext(taskId)
       if (application.status !== 'published' || task.status !== 'pending') {
-        throw new UserFacingError('이미 처리되었거나 배포되지 않은 업무입니다.')
+        throw new UserFacingError('이미 처리했거나 아직 배포하지 않은 업무예요. 목록을 새로고침해 주세요.')
       }
       assertCanProcess(task, proxyReason)
       const now = new Date().toISOString()
@@ -336,7 +336,7 @@ export function createLocalChangeApplicationRepository(
       assertActive(profile)
       const { task, application } = taskContext(taskId)
       if (application.status !== 'published' || task.status !== 'pending') {
-        throw new UserFacingError('이미 처리되었거나 배포되지 않은 업무입니다.')
+        throw new UserFacingError('이미 처리했거나 아직 배포하지 않은 업무예요. 목록을 새로고침해 주세요.')
       }
       assertCanProcess(task, proxyReason)
       if (!reason.trim()) throw new UserFacingError('해당 없음 사유를 입력해 주세요.')
@@ -354,10 +354,10 @@ export function createLocalChangeApplicationRepository(
       assertActive(profile)
       const { task, application } = taskContext(taskId)
       if (application.status !== 'published' || !['completed', 'not_applicable'].includes(task.status)) {
-        throw new UserFacingError('완료 또는 해당 없음 업무만 다시 열 수 있습니다.')
+        throw new UserFacingError('완료했거나 해당 없음으로 처리한 업무만 다시 열 수 있어요.')
       }
       if (task.assignee_id !== profile.id) {
-        throw new UserFacingError('지정된 담당자만 업무를 다시 열 수 있습니다.')
+        throw new UserFacingError('이 업무의 담당자만 다시 열 수 있어요.')
       }
       const now = new Date().toISOString()
       await persistTransition(reopenProductTaskTransition({
@@ -368,10 +368,10 @@ export function createLocalChangeApplicationRepository(
 
     async reassignProductTasks(taskIds, assigneeId, reason) {
       assertActive(profile)
-      if (profile.role !== 'leader') throw new UserFacingError('파트장만 담당자를 변경할 수 있습니다.')
-      if (!assigneeId) throw new UserFacingError('활성 담당자를 선택해 주세요.')
+      if (profile.role !== 'leader') throw new UserFacingError('파트장만 담당자를 바꿀 수 있어요.')
+      if (!assigneeId) throw new UserFacingError('활성 상태인 담당자를 선택해 주세요.')
       const assignee = activeAssignee(data, assigneeId)
-      if (!assignee) throw new UserFacingError('활성 담당자를 선택해 주세요.')
+      if (!assignee) throw new UserFacingError('활성 상태인 담당자를 선택해 주세요.')
       const contexts = taskIds.map(taskContext)
       for (const { task, application } of contexts) {
         const inactiveTerminalTask = ['completed', 'not_applicable'].includes(task.status)
@@ -382,7 +382,7 @@ export function createLocalChangeApplicationRepository(
           || Boolean(application.final_completed_at)
           || (task.status !== 'pending' && !inactiveTerminalTask)
         ) {
-          throw new UserFacingError('현재 상태에서는 책임자를 재배정할 수 없습니다.')
+          throw new UserFacingError('지금 상태에서는 담당자를 바꿀 수 없어요. 목록을 새로고침해 주세요.')
         }
       }
       const now = new Date().toISOString()
@@ -401,8 +401,8 @@ export function createLocalChangeApplicationRepository(
     async cancelProductTask(taskId, reason) {
       assertActive(profile)
       const { task, application } = taskContext(taskId)
-      if (profile.role !== 'leader') throw new UserFacingError('파트장만 제품 적용업무를 취소할 수 있습니다.')
-      if (task.status !== 'pending') throw new UserFacingError('미적용 업무만 취소할 수 있습니다.')
+      if (profile.role !== 'leader') throw new UserFacingError('파트장만 적용 업무를 취소할 수 있어요.')
+      if (task.status !== 'pending') throw new UserFacingError('미적용 업무만 취소할 수 있어요.')
       const now = new Date().toISOString()
       await persistTransition(cancelProductTaskTransition({
         data, actor: profile, task, application, reason, now,
@@ -412,15 +412,15 @@ export function createLocalChangeApplicationRepository(
     async removeProductChangeScope(taskId, reason) {
       assertActive(profile)
       const { task, application } = taskContext(taskId)
-      if (profile.role !== 'leader') throw new UserFacingError('파트장만 제품을 적용범위에서 제외할 수 있습니다.')
+      if (profile.role !== 'leader') throw new UserFacingError('파트장만 제품을 적용 범위에서 뺄 수 있어요.')
       if (
         !['draft', 'published'].includes(application.status)
         || application.archived_at
         || application.final_completed_at
       ) {
-        throw new UserFacingError('활성 변경건의 제품만 적용범위에서 제외할 수 있습니다.')
+        throw new UserFacingError('진행 중인 공통변경의 제품만 적용 범위에서 뺄 수 있어요.')
       }
-      if (task.status !== 'pending') throw new UserFacingError('미적용 업무만 적용범위에서 제외할 수 있습니다.')
+      if (task.status !== 'pending') throw new UserFacingError('미적용 업무만 적용 범위에서 뺄 수 있어요.')
       const now = new Date().toISOString()
       await persistTransition({
         data: {
@@ -444,7 +444,7 @@ export function createLocalChangeApplicationRepository(
           entityType: 'product_change_task',
           entityId: task.id,
           action: 'scope_removed',
-          summary: `${task.product_name} 제품을 변경 적용범위에서 제외했습니다.`,
+          summary: `${profile.name}님이 ${task.product_name} 제품을 적용 범위에서 뺐어요.`,
           metadata: { reason },
         }],
       })
@@ -453,13 +453,13 @@ export function createLocalChangeApplicationRepository(
     async restoreProductChangeScope(taskId, reason) {
       assertActive(profile)
       const { task, application } = taskContext(taskId)
-      if (profile.role !== 'leader') throw new UserFacingError('파트장만 제품 범위를 복원할 수 있습니다.')
+      if (profile.role !== 'leader') throw new UserFacingError('파트장만 제품을 적용 범위에 다시 넣을 수 있어요.')
       if (task.status !== 'cancelled' || task.cancel_kind !== 'scope_removed') {
-        throw new UserFacingError('범위에서 제외된 제품만 복원할 수 있습니다.')
+        throw new UserFacingError('범위에서 뺀 제품만 다시 넣을 수 있어요.')
       }
-      if (application.content_locked_at) throw new UserFacingError('처리가 시작된 변경건의 범위는 복원할 수 없습니다.')
+      if (application.content_locked_at) throw new UserFacingError('처리를 시작한 공통변경은 범위에 다시 넣을 수 없어요.')
       if (!activeAssignee(data, task.assignee_id)) {
-        throw new UserFacingError('활성 담당자를 지정한 뒤 제품 범위를 복원해 주세요.')
+        throw new UserFacingError('담당자를 정한 뒤 범위에 다시 넣어 주세요.')
       }
       const now = new Date().toISOString()
       await persistTransition(restoreProductScopeTransition({
@@ -470,13 +470,13 @@ export function createLocalChangeApplicationRepository(
     async cancelChangeApplication(changeApplicationId, reason) {
       assertActive(profile)
       const application = data.changeApplications.find((item) => item.id === changeApplicationId)
-      if (!application) throw new UserFacingError('변경건을 찾을 수 없습니다.')
-      if (profile.role !== 'leader') throw new UserFacingError('파트장만 변경건을 취소할 수 있습니다.')
+      if (!application) throw new UserFacingError('공통변경을 찾지 못했어요. 목록을 새로고침해 주세요.')
+      if (profile.role !== 'leader') throw new UserFacingError('파트장만 공통변경을 취소할 수 있어요.')
       const contexts = selectProductChangeTaskContexts(data).filter(
         (context) => context.application.id === changeApplicationId,
       )
       if (profile.role !== 'leader' && (application.content_locked_at || contexts.some(({ task }) => ['completed', 'not_applicable'].includes(task.status)))) {
-        throw new UserFacingError('처리가 시작된 변경건은 파트장만 취소할 수 있습니다.')
+        throw new UserFacingError('처리를 시작한 공통변경은 파트장만 취소할 수 있어요.')
       }
       const now = new Date().toISOString()
       const actionItemIds = new Set(
@@ -491,12 +491,12 @@ export function createLocalChangeApplicationRepository(
 
     async finalizeChangeApplication(input) {
       assertActive(profile)
-      if (profile.role !== 'leader') throw new UserFacingError('파트장만 공통변경을 최종 완료할 수 있습니다.')
+      if (profile.role !== 'leader') throw new UserFacingError('파트장만 공통변경을 최종 완료할 수 있어요.')
       const application = data.changeApplications.find((item) => item.id === input.changeApplicationId)
-      if (!application) throw new UserFacingError('변경건을 찾을 수 없습니다.')
+      if (!application) throw new UserFacingError('공통변경을 찾지 못했어요. 목록을 새로고침해 주세요.')
       if (application.updated_at !== input.expected_updated_at) throw new UserFacingError(CHANGE_APPLICATION_STALE_MESSAGE)
       if (application.status !== 'published' || application.archived_at || application.final_completed_at) {
-        throw new UserFacingError('최종 완료할 수 없는 변경건입니다.')
+        throw new UserFacingError('아직 최종 완료할 수 없는 공통변경이에요.')
       }
       const contexts = selectProductChangeTaskContexts(data).filter(({ application: item }) => item.id === application.id)
       const tasks = contexts.map(({ task }) => task)
@@ -510,9 +510,9 @@ export function createLocalChangeApplicationRepository(
             || !data.profiles.some((item) => item.id === task.assignee_id && item.is_active !== false)))
           || (task.status === 'cancelled' && !scopeRemoved)
       })
-      if (invalid) throw new UserFacingError('미적용, 담당 미지정 또는 미해결 취소가 남아 있습니다.')
+      if (invalid) throw new UserFacingError('미적용·담당자 없음·확인할 취소를 모두 정리하면 완료할 수 있어요.')
       const hasExceptions = workflowTasks.some((task) => task.status === 'not_applicable' || task.cancel_kind === 'scope_removed')
-      if (hasExceptions && !input.note.trim()) throw new UserFacingError('예외가 있는 경우 최종 확인 메모가 필요합니다.')
+      if (hasExceptions && !input.note.trim()) throw new UserFacingError('해당 없음이나 범위 제외가 있으면 최종 확인 메모를 적어 주세요.')
       const now = new Date().toISOString()
       await persistTransition({
         data: {
@@ -535,7 +535,7 @@ export function createLocalChangeApplicationRepository(
           entityType: 'change_application',
           entityId: application.id,
           action: 'final_completed',
-          summary: `${profile.name}님이 ${application.change_number} 공통변경을 최종 완료했습니다.`,
+          summary: `${profile.name}님이 ${application.change_number} 공통변경을 최종 완료했어요.`,
           metadata: { note: input.note || null },
         }],
       })
@@ -543,27 +543,27 @@ export function createLocalChangeApplicationRepository(
 
     async undoFinalizeChangeApplication(input) {
       assertActive(profile)
-      if (profile.role !== 'leader') throw new UserFacingError('파트장만 완료를 취소할 수 있습니다.')
+      if (profile.role !== 'leader') throw new UserFacingError('파트장만 완료를 취소할 수 있어요.')
       const application = data.changeApplications.find((item) => item.id === input.changeApplicationId)
-      if (!application) throw new UserFacingError('변경건을 찾을 수 없습니다.')
+      if (!application) throw new UserFacingError('공통변경을 찾지 못했어요. 목록을 새로고침해 주세요.')
       if (application.updated_at !== input.expected_updated_at) throw new UserFacingError(CHANGE_APPLICATION_STALE_MESSAGE)
-      if (!application.final_completed_at || !application.archived_at) throw new UserFacingError('최종 완료된 변경건이 아닙니다.')
+      if (!application.final_completed_at || !application.archived_at) throw new UserFacingError('아직 최종 완료하지 않은 공통변경이에요.')
       if (!input.reason.trim()) throw new UserFacingError('완료 취소 사유를 입력해 주세요.')
-      if (input.reopen_tasks.length === 0) throw new UserFacingError('재개할 제품을 한 개 이상 선택해 주세요.')
+      if (input.reopen_tasks.length === 0) throw new UserFacingError('다시 열 제품을 한 개 이상 선택해 주세요.')
       const selected = new Map(input.reopen_tasks.map((item) => [item.task_id, item.assignee_id]))
-      if (selected.size !== input.reopen_tasks.length) throw new UserFacingError('재개할 제품이 중복되었습니다.')
+      if (selected.size !== input.reopen_tasks.length) throw new UserFacingError('같은 제품을 두 번 선택했어요.')
       const actionIds = new Set(data.changeActionItems.filter((item) => item.change_application_id === application.id).map((item) => item.id))
       const selectedTasks = data.productChangeTasks.filter((task) => selected.has(task.id) && actionIds.has(task.action_item_id))
-      if (selectedTasks.length !== selected.size) throw new UserFacingError('재개할 제품 업무를 찾을 수 없습니다.')
+      if (selectedTasks.length !== selected.size) throw new UserFacingError('다시 열 적용 업무를 찾지 못했어요. 목록을 새로고침해 주세요.')
       for (const task of selectedTasks) {
         if (!(task.status === 'completed'
           || task.status === 'not_applicable'
           || (task.status === 'cancelled' && task.cancel_kind === 'scope_removed'))) {
-          throw new UserFacingError('완료 또는 범위 제외된 제품만 재개할 수 있습니다.')
+          throw new UserFacingError('완료했거나 범위에서 뺀 제품만 다시 열 수 있어요.')
         }
         const assigneeId = selected.get(task.id)!
         if (!data.profiles.some((item) => item.id === assigneeId && item.is_active !== false)) {
-          throw new UserFacingError('재개 제품에는 활성 책임자를 지정해 주세요.')
+          throw new UserFacingError('다시 열 제품에 활성 담당자를 정해 주세요.')
         }
       }
       const now = new Date().toISOString()
@@ -614,7 +614,7 @@ export function createLocalChangeApplicationRepository(
           entityType: 'change_application',
           entityId: application.id,
           action: 'final_completion_undone',
-          summary: `${profile.name}님이 ${application.change_number} 공통변경 완료를 취소했습니다.`,
+          summary: `${profile.name}님이 ${application.change_number} 공통변경 완료를 취소했어요.`,
           metadata: { reason: input.reason, reopen_task_ids: [...selected.keys()] },
         }],
       })
@@ -622,19 +622,19 @@ export function createLocalChangeApplicationRepository(
 
     async archiveChangeApplication(changeApplicationId, reason) {
       assertActive(profile)
-      if (profile.role !== 'leader') throw new UserFacingError('파트장만 변경건을 보관할 수 있습니다.')
+      if (profile.role !== 'leader') throw new UserFacingError('파트장만 공통변경을 보관할 수 있어요.')
       const application = data.changeApplications.find((item) => item.id === changeApplicationId)
-      if (!application) throw new UserFacingError('변경건을 찾을 수 없습니다.')
-      if (application.archived_at) throw new UserFacingError('이미 보관된 변경건입니다.')
+      if (!application) throw new UserFacingError('공통변경을 찾지 못했어요. 목록을 새로고침해 주세요.')
+      if (application.archived_at) throw new UserFacingError('이미 보관한 공통변경이에요.')
       if (application.status !== 'cancelled' || application.final_completed_at) {
-        throw new UserFacingError('배포된 변경건은 파트장 최종 완료로 처리해 주세요.')
+        throw new UserFacingError('배포한 공통변경은 파트장 최종 완료로 마무리해 주세요.')
       }
       const contexts = selectProductChangeTaskContexts(data).filter(
         (context) => context.application.id === changeApplicationId,
       )
-      if (contexts.length === 0) throw new UserFacingError('제품 적용업무가 없는 변경건은 보관할 수 없습니다.')
+      if (contexts.length === 0) throw new UserFacingError('적용 업무가 없는 공통변경은 보관할 수 없어요.')
       if (contexts.some(({ task }) => task.status === 'pending')) {
-        throw new UserFacingError('미완료 제품 업무가 남아 있어 보관할 수 없습니다.')
+        throw new UserFacingError('남은 적용 업무를 모두 처리하면 보관할 수 있어요.')
       }
       const now = new Date().toISOString()
       await persistTransition(archiveChangeApplicationTransition({
@@ -644,12 +644,12 @@ export function createLocalChangeApplicationRepository(
 
     async restoreChangeApplication(changeApplicationId, reason) {
       assertActive(profile)
-      if (profile.role !== 'leader') throw new UserFacingError('파트장만 변경건을 복원할 수 있습니다.')
+      if (profile.role !== 'leader') throw new UserFacingError('파트장만 공통변경을 복원할 수 있어요.')
       const application = data.changeApplications.find((item) => item.id === changeApplicationId)
-      if (!application) throw new UserFacingError('변경건을 찾을 수 없습니다.')
-      if (!application.archived_at) throw new UserFacingError('보관되지 않은 변경건입니다.')
+      if (!application) throw new UserFacingError('공통변경을 찾지 못했어요. 목록을 새로고침해 주세요.')
+      if (!application.archived_at) throw new UserFacingError('보관하지 않은 공통변경이에요.')
       if (application.final_completed_at || application.archive_origin === 'automatic') {
-        throw new UserFacingError('완료 이력은 직접 복원할 수 없습니다. 완료 취소를 사용해 주세요.')
+        throw new UserFacingError('완료 이력은 [완료 취소]로 다시 열 수 있어요.')
       }
       const now = new Date().toISOString()
       await persistTransition(restoreChangeApplicationTransition({

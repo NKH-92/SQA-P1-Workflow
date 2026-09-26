@@ -56,6 +56,7 @@ export {
   assignProduct,
   assignDuty,
   saveProductAssignments,
+  saveDutyAssignments,
   updateProduct,
   updateDutyMajorCategory,
   updateDuty,

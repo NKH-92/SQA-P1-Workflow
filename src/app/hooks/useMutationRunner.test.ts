@@ -29,7 +29,7 @@ describe('useMutationRunner', () => {
     })
 
     expect(ok).toBe(true)
-    expect(result.current.message).toEqual({ text: '저장했습니다.', tone: 'success' })
+    expect(result.current.message).toMatchObject({ text: '저장했습니다.', tone: 'success' })
     expect(result.current.saving).toBe(false)
   })
 
@@ -44,7 +44,7 @@ describe('useMutationRunner', () => {
     })
 
     expect(ok).toBe(false)
-    expect(result.current.message).toEqual({ text: '저장에 실패했습니다.', tone: 'error' })
+    expect(result.current.message).toMatchObject({ text: '저장에 실패했습니다.', tone: 'error' })
     expect(result.current.saving).toBe(false)
   })
 
@@ -109,5 +109,46 @@ describe('useMutationRunner', () => {
     })
 
     expect(reporter.report).not.toHaveBeenCalled()
+  })
+
+  it('passes a toast action and persistence through to the success toast', async () => {
+    const { result } = renderHook(() => useMutationRunner(refreshData))
+    const undo = vi.fn()
+
+    await act(async () => {
+      await result.current.mutate(async () => undefined, { text: '‘검토’를 승인했어요.', action: { label: '되돌리기', onClick: undo } })
+    })
+
+    expect(result.current.message).toMatchObject({ text: '‘검토’를 승인했어요.', tone: 'success', action: { label: '되돌리기' } })
+  })
+
+  it('stacks at most three toasts and replaces an identical visible toast instead of duplicating it', () => {
+    const { result } = renderHook(() => useMutationRunner(refreshData))
+
+    act(() => {
+      result.current.setMessage({ text: '하나', tone: 'info' })
+      result.current.setMessage({ text: '둘', tone: 'info' })
+      result.current.setMessage({ text: '셋', tone: 'info' })
+      result.current.setMessage({ text: '넷', tone: 'info' })
+      result.current.setMessage({ text: '셋', tone: 'info' })
+    })
+
+    expect(result.current.toasts.map((toast) => toast.text)).toEqual(['둘', '넷', '셋'])
+  })
+
+  it('keeps persistent toasts when messages are cleared and lets the user dismiss them', () => {
+    const { result } = renderHook(() => useMutationRunner(refreshData))
+
+    act(() => {
+      result.current.setMessage({ text: '임시 비밀번호를 전달해 주세요.', tone: 'info', persistent: true })
+      result.current.setMessage({ text: '잠시 보이는 안내', tone: 'info' })
+      result.current.setMessage(null)
+    })
+    expect(result.current.toasts.map((toast) => toast.text)).toEqual(['임시 비밀번호를 전달해 주세요.'])
+
+    act(() => {
+      result.current.dismissToast(result.current.toasts[0].id)
+    })
+    expect(result.current.toasts).toEqual([])
   })
 })

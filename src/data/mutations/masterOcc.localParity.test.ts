@@ -23,7 +23,7 @@ describe('local master OCC parity', () => {
         expectedUpdatedAt: '2000-01-01T00:00:00.000Z',
         reason: '사유',
       }),
-    ).rejects.toThrow('다른 사용자가 변경했습니다. 새로고침 후 다시 시도해 주세요.')
+    ).rejects.toThrow('다른 사람이 먼저 수정했어요. 새로고침한 뒤 다시 시도해 주세요.')
   })
 
   it('rejects an update with a blank reason with the same message the remote RPC produces', async () => {
@@ -45,7 +45,7 @@ describe('local master OCC parity', () => {
     await expect(deleteProduct(ctx, product.id, {
       expectedUpdatedAt: '2000-01-01T00:00:00.000Z',
       reason: '중복 데이터 정리',
-    })).rejects.toThrow('다른 사용자가 변경했습니다. 새로고침 후 다시 시도해 주세요.')
+    })).rejects.toThrow('다른 사람이 먼저 수정했어요. 새로고침한 뒤 다시 시도해 주세요.')
     expect(ctx.setData).not.toHaveBeenCalled()
   })
 
@@ -93,7 +93,7 @@ describe('local master OCC parity', () => {
         expectedUpdatedAt: snapshotAtOpen,
         reason: 'Actor A 변경',
       }),
-    ).rejects.toThrow('다른 사용자가 변경했습니다. 새로고침 후 다시 시도해 주세요.')
+    ).rejects.toThrow('다른 사람이 먼저 수정했어요. 새로고침한 뒤 다시 시도해 주세요.')
 
     // Actor B's committed name is untouched by actor A's rejected, stale save.
     expect(liveData.products.find((item) => item.id === product.id)?.name).toBe('Actor B name')

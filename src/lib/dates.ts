@@ -54,23 +54,62 @@ export function relativeDateLabel(value?: string | null, now = Date.now()): stri
   return formatDate(value)
 }
 
-/** 칩용 압축 D-표기: 지연 'n일 지남' / 오늘 / 내일 / 'D-n'. 기한이 없으면 null. */
-export function dueDateShortLabel(value?: string | null, now = new Date()): string | null {
-  const days = daysUntil(value, now)
-  if (!value || days == null) return null
-  if (days < 0) return `${Math.abs(days)}일 지남`
-  if (days === 0) return '오늘'
-  if (days === 1) return '내일'
-  return `D-${days}`
+/**
+ * 기한 표기의 단일 기준. 모든 화면이 같은 말을 쓴다(‘지남’ 하나로 통일, ‘초과’·‘D+n’ 혼용 금지).
+ * - 지남: 'n일 지남' / 오늘: '오늘 마감' / 내일: '내일 마감' / 그 뒤: 칩은 'D-n', 문장은 'n일 남음'
+ * - 끝난 항목(done)은 기한 경과를 보여주지 않는다.
+ */
+export type DueKind = 'none' | 'done' | 'overdue' | 'today' | 'tomorrow' | 'soon' | 'later'
+
+export type DueState = {
+  kind: DueKind
+  /** 오늘 기준 남은 달력 일수(지났으면 음수). 기한이 없으면 null. */
+  days: number | null
+  /** 문장·상세용 표기 */
+  label: string
+  /** 칩·목록용 짧은 표기 */
+  shortLabel: string
+  tone: 'urgent' | 'warning' | 'normal' | 'done'
 }
 
-export function dueDateLabel(value?: string | null, now = new Date()) {
+export function dueState(
+  value?: string | null,
+  { done = false, now = new Date(), soonDays = 7 }: { done?: boolean; now?: Date; soonDays?: number } = {},
+): DueState {
+  if (done) return { kind: 'done', days: null, label: '완료', shortLabel: '완료', tone: 'done' }
   const days = daysUntil(value, now)
-  if (!value || days == null) return '기한 없음'
-  if (days < 0) return `기한 ${Math.abs(days)}일 초과`
-  if (days === 0) return '오늘까지'
-  if (days === 1) return '내일까지'
-  return `${days}일 남음`
+  if (!value || days == null) return { kind: 'none', days: null, label: '기한 없음', shortLabel: '기한 없음', tone: 'normal' }
+  if (days < 0) {
+    const text = `${Math.abs(days)}일 지남`
+    return { kind: 'overdue', days, label: text, shortLabel: text, tone: 'urgent' }
+  }
+  if (days === 0) return { kind: 'today', days, label: '오늘 마감', shortLabel: '오늘 마감', tone: 'urgent' }
+  if (days === 1) return { kind: 'tomorrow', days, label: '내일 마감', shortLabel: '내일 마감', tone: 'urgent' }
+  if (days <= soonDays) return { kind: 'soon', days, label: `${days}일 남음`, shortLabel: `D-${days}`, tone: 'warning' }
+  return { kind: 'later', days, label: `${days}일 남음`, shortLabel: `D-${days}`, tone: 'normal' }
+}
+
+/** 아직 지나지 않았고 n일 안에 마감되는가. 이미 지난 항목은 ‘임박’이 아니라 ‘지남’이다. */
+export function isDueWithin(value: string | null | undefined, withinDays: number, now = new Date()) {
+  const days = daysUntil(value, now)
+  return days != null && days >= 0 && days <= withinDays
+}
+
+/** 기한이 지났는가(오늘 마감은 아직 지나지 않았다). */
+export function isOverdue(value: string | null | undefined, now = new Date()) {
+  const days = daysUntil(value, now)
+  return days != null && days < 0
+}
+
+/** 칩용 압축 표기: 'n일 지남' / '오늘 마감' / '내일 마감' / 'D-n'. 기한이 없으면 null. */
+export function dueDateShortLabel(value?: string | null, now = new Date()): string | null {
+  const state = dueState(value, { now })
+  return state.kind === 'none' ? null : state.shortLabel
+}
+
+/** 문장·상세용 표기: '기한 없음' / 'n일 지남' / '오늘 마감' / '내일 마감' / 'n일 남음'. */
+export function dueDateLabel(value?: string | null, now = new Date()) {
+  return dueState(value, { now }).label
 }
 
 export function dueDateStatus(value?: string | null, now = new Date()) {

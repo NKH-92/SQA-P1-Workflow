@@ -93,7 +93,8 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
   test('R-E2E-04 member cannot access another member review data', async ({ page }) => {
     await signIn(page, fixtureEnv('REMOTE_E2E_MEMBER_A_EMAIL'), fixtureEnv('REMOTE_E2E_MEMBER_A_PASSWORD'))
     await expectAppShell(page)
-    await page.getByRole('button', { name: /^내 검토요청/ }).click()
+    // 홈의 할 일 행도 ‘내 검토요청 …’으로 시작하므로 주 메뉴 안에서 찾는다.
+    await page.getByRole('navigation', { name: '주 메뉴 항목' }).getByRole('button', { name: /^내 검토요청/ }).click()
     const foreignTitle = fixtureEnv('REMOTE_E2E_MEMBER_B_REVIEW_TITLE')
     await expect(page.getByText(foreignTitle, { exact: true })).toHaveCount(0)
   })
@@ -111,26 +112,32 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
       detail.getByRole('textbox', { name: /검토 피드백/i }),
       'reject reason',
     )).fill('remote e2e reject reason')
-    await (await requireVisible(detail.getByRole('button', { name: /반려/ }), 'reject')).click()
-    const rejectDialog = page.getByRole('dialog', { name: '검토요청을 반려할까요?' })
+    await (await requireVisible(detail.getByRole('button', { name: '반려하기', exact: true }), 'reject')).click()
+    // 반려 사유는 필수이고, 작성 중이던 피드백이 사유 칸으로 옮겨 온다.
+    const rejectDialog = page.getByRole('dialog', { name: /^‘Member A pending’[을를] 반려할까요\?$/ })
     await expect(rejectDialog).toBeVisible()
+    await expect(rejectDialog.getByRole('textbox', { name: /반려 사유/ })).toHaveValue('remote e2e reject reason')
     await rejectDialog.getByRole('button', { name: '반려하기', exact: true }).click()
-    await expect(page.getByText('검토요청을 반려했습니다.', { exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(page.locator('.toast').filter({ hasText: /‘Member A pending’[을를] 반려했어요\./ })).toBeVisible({ timeout: 30_000 })
 
     await signIn(page, fixtureEnv('REMOTE_E2E_MEMBER_A_EMAIL'), fixtureEnv('REMOTE_E2E_MEMBER_A_PASSWORD'))
-    await page.getByRole('button', { name: /^내 검토요청/ }).click()
+    await page.getByRole('navigation', { name: '주 메뉴 항목' }).getByRole('button', { name: /^내 검토요청/ }).click()
     await expect(page.getByText(reviewTitle, { exact: true }).first()).toBeVisible({ timeout: 45_000 })
     await page.getByText(reviewTitle, { exact: true }).first().click()
     const memberDetail = page.getByRole('article').filter({ hasText: reviewTitle }).first()
+    // 재요청(고쳐서 다시 요청하기): 내용 수정과 재요청 내용을 한 창에서 보낸다.
     await (await requireVisible(
-      memberDetail.getByRole('textbox', { name: /재검토 요청 내용/i }),
-      'resubmit feedback',
-    )).fill('remote e2e resubmit feedback')
-    await (await requireVisible(memberDetail.getByRole('button', { name: /재검토|재제출|재요청/ }), 'resubmit')).click()
-    const resubmitDialog = page.getByRole('dialog', { name: '재검토를 요청할까요?' })
+      memberDetail.getByRole('button', { name: '고쳐서 다시 요청하기', exact: true }),
+      'resubmit',
+    )).click()
+    const resubmitDialog = page.getByRole('dialog', { name: '반려 사유를 반영해 고쳐 주세요' })
     await expect(resubmitDialog).toBeVisible()
-    await resubmitDialog.getByRole('button', { name: '재검토 요청', exact: true }).click()
-    await expect(page.getByText('같은 검토요청으로 재검토를 요청했습니다.', { exact: true }).first()).toBeVisible({
+    await (await requireVisible(
+      resubmitDialog.getByRole('textbox', { name: /재요청 내용/ }),
+      'resubmit note',
+    )).fill('remote e2e resubmit feedback')
+    await resubmitDialog.getByRole('button', { name: '다시 요청하기', exact: true }).click()
+    await expect(page.locator('.toast').filter({ hasText: /‘Member A pending’[을를] 다시 요청했어요\./ })).toBeVisible({
       timeout: 30_000,
     })
 
@@ -139,11 +146,11 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
     await expect(page.getByText(reviewTitle, { exact: true }).first()).toBeVisible({ timeout: 45_000 })
     await page.getByText(reviewTitle, { exact: true }).first().click()
     const leaderDetail = page.getByRole('article').filter({ hasText: reviewTitle }).first()
-    await (await requireVisible(leaderDetail.getByRole('button', { name: /완료 처리|승인/ }), 'approve')).click()
-    const approveDialog = page.getByRole('dialog', { name: '검토요청을 완료 처리할까요?' })
+    await (await requireVisible(leaderDetail.getByRole('button', { name: '승인하기', exact: true }), 'approve')).click()
+    const approveDialog = page.getByRole('dialog', { name: /^‘Member A pending’[을를] 승인할까요\?$/ })
     await expect(approveDialog).toBeVisible()
-    await approveDialog.getByRole('button', { name: '완료 처리', exact: true }).click()
-    await expect(page.getByText('검토요청 상태를 변경했습니다.', { exact: true })).toBeVisible({
+    await approveDialog.getByRole('button', { name: '승인하기', exact: true }).click()
+    await expect(page.locator('.toast').filter({ hasText: /‘Member A pending’[을를] 승인했어요\./ })).toBeVisible({
       timeout: 30_000,
     })
   })
@@ -158,7 +165,7 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
     await expect(page.getByText(reviewTitle, { exact: true }).first()).toBeVisible({ timeout: 45_000 })
     await page.getByText(reviewTitle, { exact: true }).first().click()
     const detail = page.getByRole('article').filter({ hasText: reviewTitle }).first()
-    await expect(detail.getByRole('button', { name: /완료 처리|승인/ })).toBeVisible()
+    await expect(detail.getByRole('button', { name: '승인하기', exact: true })).toBeVisible()
 
     // Pause the approval RPC after the browser has captured its expected revision,
     // then advance updated_at. This keeps Realtime refreshes from racing the test
@@ -197,16 +204,16 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
       await route.continue()
     })
 
-    await detail.getByRole('button', { name: /완료 처리|승인/ }).click()
-    const approveDialog = page.getByRole('dialog', { name: '검토요청을 완료 처리할까요?' })
+    await detail.getByRole('button', { name: '승인하기', exact: true }).click()
+    const approveDialog = page.getByRole('dialog', { name: /^‘Hardened OCC approval fixture’[을를] 승인할까요\?$/ })
     await expect(approveDialog).toBeVisible()
-    await approveDialog.getByRole('button', { name: '완료 처리', exact: true }).click()
+    await approveDialog.getByRole('button', { name: '승인하기', exact: true }).click()
     await expect.poll(
       () => concurrentEditCompleted,
       { message: 'approval RPC must pass through the OCC race gate', timeout: 15_000 },
     ).toBe(true)
     expect(concurrentEditError, 'concurrent owner edit must succeed to create stale state').toBeNull()
-    await expect(page.getByText(/다른 사용자가 변경했습니다|새로고침 후 다시 시도/i).first()).toBeVisible({
+    await expect(page.getByText(/다른 사람이 먼저 수정했어요|새로고침한 뒤 다시 시도/).first()).toBeVisible({
       timeout: 15_000,
     })
   })
@@ -295,11 +302,11 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
       .getByRole('region', { name: `${ownedProduct.data!.name} 변경관리 내용` })
       .getByRole('button', { name: '적용 완료' }), 'complete task')
     await complete.click()
-    const dialog = page.getByRole('dialog', { name: '실제로 적용을 완료했습니까?' })
+    const dialog = page.getByRole('dialog', { name: '이 제품에 변경을 적용했나요?' })
     await expect(dialog).toBeVisible()
     await dialog.getByPlaceholder('예: 제품표준서 Rev.12 반영').fill('remote e2e evidence')
-    await dialog.getByRole('button', { name: '완료 확인' }).click()
-    await expect(page.getByText(/적용업무를 완료했습니다|완료/i).first()).toBeVisible({ timeout: 30_000 })
+    await dialog.getByRole('button', { name: '적용 완료하기' }).click()
+    await expect(page.getByText(/적용을 완료했어요/).first()).toBeVisible({ timeout: 30_000 })
 
     const completed = await admin
       .from('product_change_tasks')
@@ -338,7 +345,9 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
     const productCard = page.locator('article.master-card').filter({
       has: page.getByRole('heading', { name: originalName, exact: true }),
     })
-    await (await requireVisible(productCard.getByTitle('제품 수정'), 'product edit')).click()
+    // 제품 정보 수정은 카드의 더보기(⋯) 메뉴에 있다.
+    await (await requireVisible(productCard.getByRole('button', { name: `${originalName} 더보기` }), 'product more menu')).click()
+    await page.getByRole('menuitem', { name: '제품 정보 수정' }).click()
     const nameInput = page.getByRole('textbox', { name: '제품명', exact: true })
     await expect(nameInput).toHaveValue(originalName)
     await nameInput.fill(`${originalName}-stale-ui`)
@@ -357,11 +366,11 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
     expect(concurrent.error).toBeNull()
 
     await page.getByRole('button', { name: '저장', exact: true }).click()
-    const reasonDialog = page.getByRole('dialog', { name: '제품 정보 변경 사유' })
+    const reasonDialog = page.getByRole('dialog', { name: '제품 정보를 바꿀까요?' })
     await expect(reasonDialog).toBeVisible()
     await reasonDialog.getByRole('textbox').fill('stale UI save attempt')
-    await reasonDialog.getByRole('button', { name: '수정 저장' }).click()
-    await expect(page.getByText(/다른 사용자가 변경했습니다|새로고침 후 다시 시도/i).first()).toBeVisible({
+    await reasonDialog.getByRole('button', { name: '저장하기' }).click()
+    await expect(page.getByText(/다른 사람이 먼저 수정했어요|새로고침한 뒤 다시 시도/i).first()).toBeVisible({
       timeout: 15_000,
     })
 
@@ -538,16 +547,17 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
     await dialog.getByLabel('이메일').fill(email)
     await dialog.getByLabel('이름').fill('Remote Account User')
     await dialog.getByLabel('역할').selectOption('member')
-    await dialog.getByRole('button', { name: '계정 추가', exact: true }).click()
-    await expect(page.getByText(/계정을 추가했습니다/)).toBeVisible({ timeout: 45_000 })
+    await dialog.getByRole('button', { name: '계정 추가하기', exact: true }).click()
+    // 임시 비밀번호 안내는 사용자가 닫을 때까지 남는다.
+    await expect(page.getByText(/계정을 추가했어요/)).toBeVisible({ timeout: 45_000 })
 
     const accountCard = page.getByRole('article').filter({ hasText: email })
     await expect(accountCard).toBeVisible({ timeout: 45_000 })
     await accountCard.getByRole('button', { name: '비밀번호 초기화', exact: true }).click()
-    const resetDialog = page.getByRole('dialog', { name: /비밀번호 초기화/ })
-    await resetDialog.getByRole('textbox', { name: /변경 사유/ }).fill('remote e2e reset verification')
-    await resetDialog.getByRole('button', { name: '비밀번호 초기화', exact: true }).click()
-    await expect(page.getByText(/비밀번호를 초기화했습니다/)).toBeVisible({ timeout: 45_000 })
+    const resetDialog = page.getByRole('dialog', { name: /비밀번호를 초기화할까요/ })
+    await resetDialog.getByRole('textbox', { name: /초기화 사유/ }).fill('remote e2e reset verification')
+    await resetDialog.getByRole('button', { name: '비밀번호 초기화하기', exact: true }).click()
+    await expect(page.getByText(/비밀번호를 초기화했어요/)).toBeVisible({ timeout: 45_000 })
 
     const client = await signInClient(email, '12345678')
     const profile = await client.from('profiles').select('must_change_password').single()

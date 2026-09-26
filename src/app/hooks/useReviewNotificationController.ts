@@ -14,6 +14,6 @@ export function useReviewNotificationController(
     if (!profile) return
     void mutate(async () => {
       await markAllRelevantReviewsSeen(createRepositoryContext(profile, data, setData))
-    }, '검토 알림을 모두 읽음 처리했습니다.')
+    }, '검토 알림을 모두 읽음으로 표시했어요.')
   }, [data, mutate, profile, setData])
 }

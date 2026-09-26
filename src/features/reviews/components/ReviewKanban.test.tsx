@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ReviewRequest } from '../../../types'
@@ -20,12 +20,32 @@ function requests(count: number): ReviewRequest[] {
 afterEach(cleanup)
 
 describe('ReviewKanban', () => {
-  it('shows all four workflow states, including recent withdrawals', () => {
+  it('shows all four workflow states with the glossary names, including recent withdrawals', () => {
     const withdrawn = { ...requests(1)[0]!, id: 'withdrawn-1', title: '최근 회수', status: 'withdrawn' as const }
     render(<ReviewKanban requests={[withdrawn]} selectedReviewId={null} onSelectReview={vi.fn()} />)
 
-    expect(screen.getByText('회수')).toBeInTheDocument()
-    expect(screen.getByText('최근 회수')).toBeInTheDocument()
+    expect(screen.getAllByRole('region').map((region) => region.getAttribute('aria-label'))).toEqual([
+      '대기 중 0건',
+      '승인 0건',
+      '반려 0건',
+      '회수 1건',
+    ])
+    expect(within(screen.getByRole('region', { name: '회수 1건' })).getByText('최근 회수')).toBeInTheDocument()
+  })
+
+  it('shows a decided card by its decision day instead of an overdue due date', () => {
+    const approved: ReviewRequest = {
+      ...requests(1)[0]!,
+      id: 'approved-1',
+      status: 'approved',
+      due_date: '2026-01-01',
+      closed_at: '2026-09-25T16:30:00.000Z',
+    }
+    render(<ReviewKanban requests={[approved]} selectedReviewId={null} onSelectReview={vi.fn()} />)
+
+    const column = screen.getByRole('region', { name: '승인 1건' })
+    expect(within(column).getByText('9월 26일 승인')).toBeInTheDocument()
+    expect(within(column).queryByText(/지남/)).toBeNull()
   })
 
   it('shows three cards per column by default and lets the leader expand and collapse', async () => {
@@ -36,7 +56,7 @@ describe('ReviewKanban', () => {
     expect(screen.getByText('검토 항목 3')).toBeInTheDocument()
     expect(screen.queryByText('검토 항목 4')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '나머지 2개 보기' }))
+    await user.click(screen.getByRole('button', { name: '나머지 2건 보기' }))
     expect(screen.getByText('검토 항목 4')).toBeInTheDocument()
     expect(screen.getByText('검토 항목 5')).toBeInTheDocument()
 

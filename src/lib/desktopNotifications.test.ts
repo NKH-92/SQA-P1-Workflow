@@ -142,7 +142,11 @@ describe('buildNotificationContent — privacy defaults', () => {
       { ...alert, isResubmission: true },
       { hideRequesterName: true, revealReviewTitle: false },
     )
-    expect(content.title).toBe('재검토 요청')
+    expect(content.title).toBe('재요청')
+  })
+
+  it('uses a friendly 해요체 safe body that names no review details', () => {
+    expect(SAFE_DEFAULT_NOTIFICATION_BODY).toBe('새 검토요청이 왔어요. 앱에서 확인해 보세요.')
   })
 })
 

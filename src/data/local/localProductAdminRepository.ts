@@ -3,7 +3,7 @@ import { assertRecordExists, UserFacingError } from '../../lib/errors'
 import { makeId } from '../../lib/format'
 import type { ProductAdminRepository, RepositoryDeps } from '../repositories/types'
 import { selectProductChangeTaskContexts } from '../selectors/changeTaskContexts'
-import { normalizeMasterReason } from '../validation/masterOcc'
+import { normalizeMasterReason, PRODUCT_HAS_CHANGE_HISTORY_MESSAGE } from '../validation/masterOcc'
 import { changeTaskAssigneeHistory } from '../../domain/changeApplications/assigneeHistory'
 import {
   appendProductAssignment,
@@ -96,10 +96,10 @@ export function createLocalProductAdminRepository(deps: RepositoryDeps): Product
       assertRecordExists(member)
       assertRecordExists(product)
       if (!canReceiveAssignment(member)) {
-        throw new UserFacingError('활성 상태인 파트원에게만 제품을 배정할 수 있습니다.')
+        throw new UserFacingError('활성 상태인 파트원에게만 제품을 배정할 수 있어요.')
       }
       if (transferPending && !transferReason) {
-        throw new UserFacingError('미완료 변경 적용업무 이관 사유가 필요합니다.')
+        throw new UserFacingError('미완료 적용 업무를 넘기는 이유를 적어 주세요.')
       }
       if (alreadyAssigned && !transferPending) return { kind: 'noop' }
 
@@ -176,7 +176,7 @@ export function createLocalProductAdminRepository(deps: RepositoryDeps): Product
       normalizeMasterReason(input.reason)
       assertLocalMasterCurrent(product, input.expectedUpdatedAt)
       if (data.productChangeTasks.some((task) => task.product_id === id)) {
-        throw new UserFacingError('변경 적용 이력이 있는 제품은 삭제할 수 없습니다. 제품 이력을 유지해 주세요.')
+        throw new UserFacingError(PRODUCT_HAS_CHANGE_HISTORY_MESSAGE)
       }
       setData((current) => removeProduct(current, id))
       return product.name

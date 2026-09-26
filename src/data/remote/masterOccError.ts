@@ -1,5 +1,10 @@
 import { UserFacingError } from '../../lib/errors'
-import { MASTER_REASON_REQUIRED_MESSAGE, MASTER_STALE_MESSAGE } from '../validation/masterOcc'
+import {
+  LAST_ACTIVE_LEADER_MESSAGE,
+  MASTER_REASON_REQUIRED_MESSAGE,
+  MASTER_STALE_MESSAGE,
+  SELF_DEACTIVATION_MESSAGE,
+} from '../validation/masterOcc'
 
 /**
  * Translate the stable RPC error text raised by the `*_if_current`
@@ -20,16 +25,17 @@ export function translateMasterOccError<T extends { message?: string }>(error: T
     return new UserFacingError(MASTER_REASON_REQUIRED_MESSAGE)
   }
   if (message.includes('change reason must be')) {
-    return new UserFacingError(message.replace('change reason must be', '변경 사유는').replace('characters or fewer', '자 이하로 입력해 주세요.'))
+    const limit = /(\d+)/.exec(message)?.[1]
+    return new UserFacingError(limit ? `변경 사유는 ${limit}자 이하로 입력해 주세요.` : '변경 사유를 조금 더 짧게 입력해 주세요.')
   }
   if (
     message.includes('cannot disable or demote the last active leader')
     || message.includes('cannot demote the last active leader')
   ) {
-    return new UserFacingError('활성 파트장은 최소 한 명 이상 유지해야 합니다.')
+    return new UserFacingError(LAST_ACTIVE_LEADER_MESSAGE)
   }
   if (message.includes('cannot deactivate your own account')) {
-    return new UserFacingError('본인 계정은 비활성화할 수 없습니다.')
+    return new UserFacingError(SELF_DEACTIVATION_MESSAGE)
   }
   return error
 }

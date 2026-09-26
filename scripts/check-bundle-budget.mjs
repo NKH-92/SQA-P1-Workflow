@@ -8,12 +8,30 @@ const MAX_CHUNK_BYTES = 560 * 1024
 // Route-level lazy loading reduced the measured initial JS from ~185.3 KiB to
 // ~140.3 KiB. Splitting gzip dictionaries raises the all-routes sum, so enforce
 // both dimensions: initial navigation and the total code surface.
-const MAX_INITIAL_GZIP_BYTES = 142 * 1024
+// 2026-09 UX overhaul: origin/main measured 144,903 B. The always-on shell gained the
+// mobile tab bar, stacked toasts, history-aware overlays and the profile area; the
+// command palette, notification panel and sign-in/password/error gate screens moved to
+// lazy chunks to compensate. Measured 147,034 B afterwards, so the cap moves to 146 KiB.
+const MAX_INITIAL_GZIP_BYTES = 146 * 1024
 // The change-application route lazy-loads the browser-only XLSX reader when a
 // leader selects a file. This raises the all-routes sum while keeping initial
 // navigation unchanged, so retain a narrow cap around the measured surface.
-const MAX_TOTAL_GZIP_BYTES = 240 * 1024
+// 2026-09 UX overhaul: 240,351 B → 275,234 B measured. The growth is route code for the
+// requested features (duty reassignment, one-pass product transfer and overflow menus in
+// master; bulk actions, drafts and attention filters in change applications; resubmit
+// with edits, decision-time sorting and inline validation in reviews; project edit/delete
+// dialogs) plus chunk overhead from the new lazy gate screens.
+const MAX_TOTAL_GZIP_BYTES = 272 * 1024
+// 빠른 이동(Ctrl K)과 알림 패널은 열 때만 쓰므로 첫 화면에서 빼고 지연 로딩한다(한가할 때 미리 받음).
 const EXPECTED_ROUTE_DYNAMIC_IMPORTS = new Set([
+  'src/components/CommandPalette.tsx',
+  'src/components/NotificationPanel.tsx',
+  // 로그인·비밀번호 변경·계정 안내·설정 오류 화면은 해당 상태일 때만 받는다.
+  'src/screens/AuthPanel.tsx',
+  'src/screens/BlockedProfile.tsx',
+  'src/screens/ConfigErrorScreen.tsx',
+  'src/screens/PasswordChangePanel.tsx',
+  'src/screens/ProfileLoadErrorScreen.tsx',
   'src/screens/AnnouncementsPanel.tsx',
   'src/screens/ChangeApplicationsPanel.tsx',
   'src/screens/DashboardPanels.ts',

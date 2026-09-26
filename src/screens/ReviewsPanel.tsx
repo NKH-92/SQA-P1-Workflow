@@ -1,63 +1,156 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import type { AppData, Profile, ReviewRequest, ReviewStatus } from '../types'
+import type { AppData, Profile, ReviewRequest } from '../types'
 import type { ReviewStatusFilter, MutateFn } from '../app/types'
-import { toUserMessage, UserFacingError } from '../lib/errors'
-import { REVIEW_REQUEST_LIMITS } from '../data/validation/reviews'
+import { toUserMessage } from '../lib/errors'
+import { quotedWithJosa } from '../lib/korean'
 import { isReviewUnread } from '../lib/readState'
+import { isLeaderDefaultReviewRequest, matchesReviewSearch } from '../lib/reviewHistory'
+import { preferredScrollBehavior } from '../lib/motion'
 import {
   selectDefaultReviewRequests,
+  selectNextPendingReviewId,
   selectReviewStatusCounts,
   selectScopedReviewRequests,
   selectVisibleReviewRequests,
 } from '../features/reviews/review.selectors'
-import { ReviewComposerModal } from '../features/reviews/components/ReviewComposerModal'
+import {
+  buildDecisionEventIndex,
+  DEFAULT_REVIEW_SORT_MODE,
+  isReviewSortMode,
+  type ReviewSortMode,
+} from '../features/reviews/reviewOrdering'
+import { latestLeaderFeedback } from '../features/reviews/reviewRequestItemModel'
+import {
+  ReviewComposerModal,
+  type ReviewComposerMode,
+} from '../features/reviews/components/ReviewComposerModal'
 import { ReviewDetail } from '../features/reviews/components/ReviewDetail'
 import { ReviewKanban } from '../features/reviews/components/ReviewKanban'
 import { ReviewList } from '../features/reviews/components/ReviewList'
 import { ReviewHistoryModal } from '../features/reviews/components/ReviewHistoryModal'
 import { ReasonPromptModal } from '../components/ui'
-import { useReviewDraft } from '../features/reviews/useReviewDraft'
+import { emptyReviewForm, useReviewDraft, type ReviewFormState } from '../features/reviews/useReviewDraft'
 import { useReviewSelection } from '../features/reviews/useReviewSelection'
 import { useReviewController } from '../features/reviews/useReviewController'
+import { REVIEW_COMPACT_QUERY, useMediaQuery } from '../features/reviews/useMediaQuery'
+import { isMobileDetailViewport, useMobileDetail } from '../hooks/useMobileDetail'
+import { useViewState } from '../hooks/useViewState'
+import { useComposerIntent } from '../app/hooks/useComposerIntent'
+import { useSelectionHashSync } from '../app/hooks/useHashNavigation'
 import { Archive, LayoutGrid, List, Search, Send } from 'lucide-react'
-import { isLeaderDefaultReviewRequest } from '../lib/reviewHistory'
 import { canViewTeamData } from '../domain/permissions'
 
-export function ReviewsPanel({
-  profile,
-  data,
-  mutate,
-  setData,
-  initialSelectedId,
-  onInitialSelectionApplied,
-}: {
+type ReviewsPanelProps = {
   profile: Profile
   data: AppData
   mutate: MutateFn
   setData: Dispatch<SetStateAction<AppData>>
   initialSelectedId?: string | null
   onInitialSelectionApplied?: () => void
-}) {
+}
+
+type ComposerState =
+  | { mode: 'new' }
+  | { mode: Exclude<ReviewComposerMode, 'new'>; request: ReviewRequest }
+  | null
+
+type ReviewViewMode = 'list' | 'kanban'
+
+const REVIEW_STATUS_FILTERS: ReadonlyArray<ReviewStatusFilter> = ['all', 'pending', 'approved', 'rejected', 'withdrawn']
+
+function isReviewStatusFilter(value: unknown): value is ReviewStatusFilter {
+  return typeof value === 'string' && (REVIEW_STATUS_FILTERS as ReadonlyArray<string>).includes(value)
+}
+
+function isReviewViewMode(value: unknown): value is ReviewViewMode {
+  return value === 'list' || value === 'kanban'
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string'
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string'
+}
+
+function formFromRequest(request: ReviewRequest): ReviewFormState {
+  return {
+    title: request.title,
+    description: request.description,
+    deadlineMode: request.due_date ? 'date' : 'none',
+    due_date: request.due_date?.slice(0, 10) ?? '',
+  }
+}
+
+function sameForm(left: ReviewFormState, right: ReviewFormState) {
+  return left.title === right.title
+    && left.description === right.description
+    && left.deadlineMode === right.deadlineMode
+    && (left.deadlineMode === 'none' || left.due_date === right.due_date)
+}
+
+function payloadFromForm(form: ReviewFormState) {
+  return {
+    title: form.title.trim(),
+    description: form.description.trim(),
+    due_date: form.deadlineMode === 'date' ? form.due_date : null,
+  }
+}
+
+/** 역할이 바뀌면(미리보기 역할 전환 등) 보기 상태와 작성 중 상태를 새로 시작한다. */
+export function ReviewsPanel(props: ReviewsPanelProps) {
+  return <ReviewsWorkspace key={props.profile.id} {...props} />
+}
+
+function ReviewsWorkspace({
+  profile,
+  data,
+  mutate,
+  setData,
+  initialSelectedId,
+  onInitialSelectionApplied,
+}: ReviewsPanelProps) {
   const controller = useReviewController(profile, data, setData)
   const leaderMode = canViewTeamData(profile)
-  const [editingReviewId, setEditingReviewId] = useState<string | null>(null)
-  const [pendingWithdrawId, setPendingWithdrawId] = useState<string | null>(null)
-  const [withdrawDialogId, setWithdrawDialogId] = useState<string | null>(null)
+  const roleKey = leaderMode ? 'leader' : 'member'
+  const [statusFilter, setStatusFilter] = useViewState<ReviewStatusFilter>(
+    `reviews.${roleKey}.status`,
+    'all',
+    isReviewStatusFilter,
+  )
+  const [searchQuery, setSearchQuery] = useViewState<string>(`reviews.${roleKey}.search`, '', isString)
+  // 칸반은 상태 흐름 전체를 보는 파트장에게 유용하다. 파트원은 목록만.
+  const [storedReviewView, setReviewView] = useViewState<ReviewViewMode>('reviews.leader.view', 'list', isReviewViewMode)
+  const [sortMode, setSortMode] = useViewState<ReviewSortMode>(
+    'reviews.leader.sort',
+    DEFAULT_REVIEW_SORT_MODE,
+    isReviewSortMode,
+  )
+  const selectionState = useViewState<string | null>(`reviews.${roleKey}.selection`, null, isNullableString)
+  const reviewView: ReviewViewMode = leaderMode ? storedReviewView : 'list'
+
+  const [composer, setComposer] = useState<ComposerState>(null)
+  const [editForm, setEditForm] = useState<ReviewFormState>(emptyReviewForm)
+  const [editBaseline, setEditBaseline] = useState<ReviewFormState>(emptyReviewForm)
+  const [resubmitNote, setResubmitNote] = useState('')
+  const [composerSubmitting, setComposerSubmitting] = useState(false)
+  const [withdrawTarget, setWithdrawTarget] = useState<ReviewRequest | null>(null)
   const [withdrawReason, setWithdrawReason] = useState('')
-  const [isReviewComposerOpen, setReviewComposerOpen] = useState(false)
-  const [statusFilter, setStatusFilter] = useState<ReviewStatusFilter>('all')
-  const [searchQuery, setSearchQuery] = useState('')
+  const [withdrawSubmitting, setWithdrawSubmitting] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyInitialRequest, setHistoryInitialRequest] = useState<ReviewRequest | null>(null)
-  // 칸반은 상태 흐름 전체를 보는 파트장에게 유용하다. 파트원은 목록만.
-  const [reviewView, setReviewView] = useState<'list' | 'kanban'>('list')
   const [archivePage, setArchivePage] = useState(-1)
   const [archiveHasMore, setArchiveHasMore] = useState(true)
   const [archiveLoading, setArchiveLoading] = useState(false)
   const [archiveError, setArchiveError] = useState<string | null>(null)
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
+  const compact = useMediaQuery(REVIEW_COMPACT_QUERY)
+  const rootRef = useRef<HTMLDivElement>(null)
   const reviewDetailRef = useRef<HTMLDivElement>(null)
-  const mobileDetailFrameRef = useRef<number | null>(null)
+  const archiveRequestedRef = useRef(false)
+  const titleFocusTargetRef = useRef<string | null>(null)
 
   const loadArchivePage = useCallback(async (page: number) => {
     setArchiveLoading(true)
@@ -90,9 +183,17 @@ export function ReviewsPanel({
     [defaultReviewRequests],
   )
   const visibleReviewRequests = useMemo(
-    () => selectVisibleReviewRequests(data, profile, statusFilter, searchQuery),
-    [data, profile, searchQuery, statusFilter],
+    () => selectVisibleReviewRequests(
+      data,
+      profile,
+      statusFilter,
+      leaderMode ? searchQuery : '',
+      undefined,
+      leaderMode ? sortMode : null,
+    ),
+    [data, leaderMode, profile, searchQuery, sortMode, statusFilter],
   )
+  const decisionEvents = useMemo(() => buildDecisionEventIndex(data.reviewEvents ?? []), [data.reviewEvents])
   const unreadReviewIds = useMemo(
     () =>
       new Set(
@@ -106,57 +207,77 @@ export function ReviewsPanel({
     visibleReviewRequests,
     initialSelectedId,
     onInitialSelectionApplied,
+    selectionState,
   )
 
   const openArchive = useCallback(() => {
     setStatusFilter('withdrawn')
     setReviewView('list')
-    if (archivePage < 0 && !archiveLoading) void loadArchivePage(0)
-  }, [archiveLoading, archivePage, loadArchivePage])
+    if (archivePage < 0 && !archiveLoading && !archiveRequestedRef.current) {
+      archiveRequestedRef.current = true
+      void loadArchivePage(0)
+    }
+  }, [archiveLoading, archivePage, loadArchivePage, setReviewView, setStatusFilter])
+
+  // 회수 보관함을 보던 파트원이 다른 메뉴에 다녀오면 보관함 첫 페이지를 다시 불러온다.
+  useEffect(() => {
+    if (leaderMode || statusFilter !== 'withdrawn' || archiveRequestedRef.current) return
+    archiveRequestedRef.current = true
+    void loadArchivePage(0)
+  }, [leaderMode, loadArchivePage, statusFilter])
 
   const openHistory = useCallback((request: ReviewRequest | null = null) => {
     setHistoryInitialRequest(request)
     setHistoryOpen(true)
   }, [])
 
-  const revealReviewDetailOnMobile = useCallback((reviewId: string) => {
-    if (
-      typeof window === 'undefined'
-      || typeof window.matchMedia !== 'function'
-      || !window.matchMedia('(max-width: 640px)').matches
-    ) return
+  const focusSelectedListItem = useCallback(() => {
+    window.setTimeout(() => {
+      const item = rootRef.current?.querySelector<HTMLElement>('.review-list-item.selected, .kanban-card.selected')
+      if (!item) return
+      item.scrollIntoView({ behavior: preferredScrollBehavior(), block: 'nearest' })
+      item.focus({ preventScroll: true })
+    }, 0)
+  }, [])
 
-    if (mobileDetailFrameRef.current != null) {
-      window.cancelAnimationFrame(mobileDetailFrameRef.current)
-    }
+  const closeMobileDetail = useCallback(() => {
+    setMobileDetailOpen(false)
+    focusSelectedListItem()
+  }, [focusSelectedListItem])
 
-    let remainingFrames = 2
-    const reveal = () => {
+  // 좁은 화면(≤980px): 항목을 고르면 상세를 화면 위로 가져와 제목에 포커스하고, 뒤로가기는 목록으로 돌아간다.
+  useMobileDetail({
+    open: mobileDetailOpen,
+    detailRef: reviewDetailRef,
+    onBack: closeMobileDetail,
+    selectionKey: selectedReview?.id ?? null,
+    headingSelector: '.request-title',
+  })
+
+  // 결정 뒤 다음 요청으로 넘어가면 그 제목으로 포커스를 옮긴다(키보드·보조기기 사용자가 이어서 처리하도록).
+  useEffect(() => {
+    const targetId = titleFocusTargetRef.current
+    if (!targetId || selectedReview?.id !== targetId) return
+    titleFocusTargetRef.current = null
+    const timer = window.setTimeout(() => {
       const detail = reviewDetailRef.current
-      if (detail?.dataset.reviewId !== reviewId && remainingFrames > 0) {
-        remainingFrames -= 1
-        mobileDetailFrameRef.current = window.requestAnimationFrame(reveal)
-        return
-      }
-
-      mobileDetailFrameRef.current = null
-      const title = detail?.querySelector<HTMLElement>('.request-title')
-      if (!detail || !title) return
-      detail.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      title.focus({ preventScroll: true })
-    }
-
-    mobileDetailFrameRef.current = window.requestAnimationFrame(reveal)
-  }, [])
-
-  useEffect(() => () => {
-    if (mobileDetailFrameRef.current != null) {
-      window.cancelAnimationFrame(mobileDetailFrameRef.current)
-    }
-  }, [])
+      if (detail?.dataset.reviewId !== targetId) return
+      detail.querySelector<HTMLElement>('.request-title')?.focus({ preventScroll: isMobileDetailViewport() })
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [selectedReview?.id])
 
   // 칸반 카드·딥링크가 현재 필터 밖 요청을 가리키면 먼저 목록이 그 요청을
   // 포함하도록 전환한 뒤 선택한다. 상세는 visible collection에서만 파생된다.
+  const revealTarget = useCallback((target: ReviewRequest) => {
+    if (profile.role === 'member' && target.status === 'withdrawn') {
+      openArchive()
+    } else if (statusFilter !== 'all' && target.status !== statusFilter) {
+      setStatusFilter('all')
+    }
+    if (leaderMode && !matchesReviewSearch(target, searchQuery)) setSearchQuery('')
+  }, [leaderMode, openArchive, profile.role, searchQuery, setSearchQuery, setStatusFilter, statusFilter])
+
   const selectReview = useCallback((id: string) => {
     const target = scopedReviewRequests.find((request) => request.id === id)
     if (!target) return
@@ -164,14 +285,10 @@ export function ReviewsPanel({
       openHistory(target)
       return
     }
-    if (profile.role === 'member' && target.status === 'withdrawn') {
-      openArchive()
-    } else if (statusFilter !== 'all' && target.status !== statusFilter) {
-      setStatusFilter('all')
-    }
+    revealTarget(target)
     setSelectedReviewId(id)
-    revealReviewDetailOnMobile(id)
-  }, [leaderMode, openArchive, openHistory, profile.role, revealReviewDetailOnMobile, scopedReviewRequests, setSelectedReviewId, statusFilter])
+    if (isMobileDetailViewport()) setMobileDetailOpen(true)
+  }, [leaderMode, openHistory, revealTarget, scopedReviewRequests, setSelectedReviewId])
 
   useEffect(() => {
     if (!initialSelectedId) return
@@ -182,12 +299,9 @@ export function ReviewsPanel({
       onInitialSelectionApplied?.()
       return
     }
-    if (profile.role === 'member' && target.status === 'withdrawn') {
-      openArchive()
-    } else if (statusFilter !== 'all' && target.status !== statusFilter) {
-      setStatusFilter('all')
-    }
-  }, [initialSelectedId, leaderMode, onInitialSelectionApplied, openArchive, openHistory, profile.role, scopedReviewRequests, statusFilter])
+    revealTarget(target)
+    if (isMobileDetailViewport()) setMobileDetailOpen(true)
+  }, [initialSelectedId, leaderMode, onInitialSelectionApplied, openHistory, revealTarget, scopedReviewRequests])
 
   const markSeenInFlightRef = useRef(new Set<string>())
   useEffect(() => {
@@ -207,171 +321,223 @@ export function ReviewsPanel({
   }, [controller, selectedReview, unreadReviewIds])
 
   const {
-    form,
-    setForm,
+    form: draftForm,
+    setForm: setDraftForm,
     draftNotice,
-    setDraftNotice,
     draftSavedAt,
-    saveReviewDraft,
+    hasUnsavedChanges: draftPending,
+    flushDraft,
     openComposerDraft,
-    clearDraftStorage,
-    resetForm,
+    discardDraft,
   } = useReviewDraft(profile.id)
 
-  const isReviewSubmitDisabled =
-    form.title.trim().length < REVIEW_REQUEST_LIMITS.titleMin
-    || form.title.trim().length > REVIEW_REQUEST_LIMITS.titleMax
-    || form.description.trim().length < REVIEW_REQUEST_LIMITS.descriptionMin
-    || form.description.trim().length > REVIEW_REQUEST_LIMITS.descriptionMax
-    || (form.deadlineMode === 'date' && !form.due_date)
-
-  const openReviewComposer = () => {
-    setEditingReviewId(null)
+  const openNewComposer = () => {
     openComposerDraft()
-    setReviewComposerOpen(true)
+    setComposer({ mode: 'new' })
   }
 
-  const openReviewEditor = (request: ReviewRequest) => {
-    setEditingReviewId(request.id)
-    setForm({
-      title: request.title,
-      description: request.description,
-      deadlineMode: request.due_date ? 'date' : 'none',
-      due_date: request.due_date?.slice(0, 10) ?? '',
-    })
-    setDraftNotice(null)
-    setReviewComposerOpen(true)
+  // 홈의 ‘검토요청 쓰기’ 같은 다른 화면의 요청으로도 작성 창을 연다.
+  useComposerIntent('reviews', openNewComposer, profile.role === 'member')
+  // 고른 요청을 주소(?id=)에 맞춰 둬 새로고침·공유·뒤로가기에도 같은 요청으로 돌아온다.
+  useSelectionHashSync('reviews', initialSelectedId ? undefined : selectedReview?.id ?? null)
+
+  const openRequestComposer = (request: ReviewRequest, mode: 'edit' | 'resubmit') => {
+    const form = formFromRequest(request)
+    setEditForm(form)
+    setEditBaseline(form)
+    setResubmitNote('')
+    setComposer({ mode, request })
   }
 
-  const closeReviewComposer = useCallback(() => {
-      setReviewComposerOpen(false)
-      setEditingReviewId(null)
-    },
-    [],
-  )
+  const closeComposer = useCallback(() => {
+    if (composer?.mode === 'new') flushDraft()
+    setComposer(null)
+  }, [composer?.mode, flushDraft])
 
-  const createReview = () =>
-    mutate(async () => {
-      const title = form.title.trim()
-      const description = form.description.trim()
-      if (!title || !description) {
-        throw new UserFacingError('제목과 설명을 입력해 주세요.')
-      }
-      const dueDate = form.deadlineMode === 'date' ? form.due_date : null
-      if (form.deadlineMode === 'date' && !dueDate) {
-        throw new UserFacingError('검토 기한 날짜를 선택해 주세요.')
-      }
-      const result = await controller.save(editingReviewId, { title, description, due_date: dueDate })
-      if (result.isUpdate) {
-        setEditingReviewId(null)
-        resetForm()
-        setReviewComposerOpen(false)
+  const submitComposer = async () => {
+    if (!composer || composerSubmitting) return
+    const form = composer.mode === 'new' ? draftForm : editForm
+    const payload = payloadFromForm(form)
+    setComposerSubmitting(true)
+    try {
+      if (composer.mode === 'new') {
+        await mutate(async () => {
+          await controller.save(null, payload)
+          discardDraft()
+          setComposer(null)
+        }, `${quotedWithJosa(payload.title, '을/를')} 보냈어요.`)
         return
       }
-      resetForm()
-      clearDraftStorage()
-      setReviewComposerOpen(false)
-    }, editingReviewId ? '검토요청을 수정했습니다.' : '검토요청을 등록했습니다.')
+      const request = composer.request
+      if (composer.mode === 'edit') {
+        await mutate(async () => {
+          await controller.save(request.id, payload)
+          setComposer(null)
+        }, `${quotedWithJosa(payload.title, '을/를')} 수정했어요.`)
+        return
+      }
+      await mutate(async () => {
+        await controller.resubmitWithEdits(request.id, payload, resubmitNote.trim())
+        setComposer(null)
+      }, `${quotedWithJosa(payload.title, '을/를')} 다시 요청했어요.`)
+    } finally {
+      setComposerSubmitting(false)
+    }
+  }
 
-  const withdrawReview = (requestId: string) => {
+  const composerMode: ReviewComposerMode = composer?.mode ?? 'new'
+  const composerForm = composerMode === 'new' ? draftForm : editForm
+  const setComposerForm = composerMode === 'new' ? setDraftForm : setEditForm
+  const composerRequest = composer && composer.mode !== 'new' ? composer.request : null
+  const composerDirty = composerMode !== 'new'
+    && (!sameForm(editForm, editBaseline) || resubmitNote.trim().length > 0)
+
+  const withdrawReview = (request: ReviewRequest) => {
     setWithdrawReason('')
-    setWithdrawDialogId(requestId)
+    setWithdrawTarget(request)
   }
 
   const confirmWithdrawReview = async () => {
-    if (!withdrawDialogId || withdrawReason.trim().length < 2) return
-    const requestId = withdrawDialogId
+    if (!withdrawTarget || withdrawReason.trim().length < 2 || withdrawSubmitting) return
+    const target = withdrawTarget
+    setWithdrawSubmitting(true)
     const ok = await mutate(async () => {
-      await controller.withdraw(requestId, withdrawReason.trim())
-    }, '검토요청을 회수 보관함으로 옮겼습니다.')
+      await controller.withdraw(target.id, withdrawReason.trim())
+    }, `${quotedWithJosa(target.title, '을/를')} 회수했어요. 회수 보관함에서 볼 수 있어요.`)
+    setWithdrawSubmitting(false)
     if (!ok) return
-    setWithdrawDialogId(null)
+    setWithdrawTarget(null)
     setWithdrawReason('')
-    setPendingWithdrawId(null)
-    if (selectedReviewId === requestId) setSelectedReviewId(null)
+    if (selectedReviewId === target.id) setSelectedReviewId(null)
   }
 
-  const rejectReview = async (requestId: string, comment: string): Promise<boolean> =>
-    mutate(async () => {
-      const trimmedComment = comment.trim()
-      await controller.reject(requestId, trimmedComment)
-    }, '검토요청을 반려했습니다.')
+  /** 승인·반려 뒤: 지금 순서·필터에서 다음 대기 중 요청을 고르고 그 제목에 포커스한다. */
+  const advanceAfterDecision = (decidedId: string, order: ReadonlyArray<ReviewRequest>) => {
+    const nextId = selectNextPendingReviewId(order, decidedId)
+    if (!nextId) return
+    titleFocusTargetRef.current = nextId
+    setSelectedReviewId(nextId)
+  }
 
-  const updateStatus = async (id: string, status: ReviewStatus): Promise<boolean> =>
-    mutate(async () => {
-      await controller.updateStatus(id, status)
-    }, '검토요청 상태를 변경했습니다.')
-
-  const reopenReview = async (id: string): Promise<boolean> => {
+  const approveReview = async (request: ReviewRequest): Promise<boolean> => {
+    const order = visibleReviewRequests
     const ok = await mutate(async () => {
-      await controller.reopen(id)
-    }, '검토요청을 다시 열었습니다.')
+      await controller.updateStatus(request.id, 'approved')
+    }, `${quotedWithJosa(request.title, '을/를')} 승인했어요.`)
+    if (ok) advanceAfterDecision(request.id, order)
+    return ok
+  }
+
+  const rejectReview = async (request: ReviewRequest, reason: string): Promise<boolean> => {
+    const order = visibleReviewRequests
+    const ok = await mutate(async () => {
+      await controller.reject(request.id, reason.trim())
+    }, `${quotedWithJosa(request.title, '을/를')} 반려했어요.`)
+    if (ok) advanceAfterDecision(request.id, order)
+    return ok
+  }
+
+  const reopenReview = async (request: ReviewRequest): Promise<boolean> => {
+    const ok = await mutate(async () => {
+      await controller.reopen(request.id)
+    }, `${quotedWithJosa(request.title, '을/를')} 다시 열었어요.`)
     if (ok) {
       setSearchQuery('')
       setStatusFilter('all')
-      setSelectedReviewId(id)
+      setSelectedReviewId(request.id)
     }
     return ok
   }
 
-  const resubmitReview = async (id: string, comment: string): Promise<boolean> =>
-    mutate(async () => {
-      const trimmedComment = comment.trim()
-      if (!trimmedComment) throw new UserFacingError('재검토 요청 피드백을 입력해 주세요.')
-      await controller.resubmit(id, trimmedComment)
-    }, '같은 검토요청으로 재검토를 요청했습니다.')
-
   const updateFeedback = async (feedbackId: string, comment: string): Promise<boolean> =>
     mutate(async () => {
       await controller.updateFeedback(feedbackId, comment)
-    }, '피드백을 수정했습니다.')
+    }, '피드백을 수정했어요.')
 
   const voidFeedback = async (feedbackId: string, reason: string): Promise<boolean> =>
     mutate(async () => {
       await controller.voidFeedback(feedbackId, reason)
-    }, '피드백을 무효화했습니다.')
+    }, '피드백을 무효화했어요.')
 
   const addFeedback = (requestId: string, comment: string): Promise<boolean> =>
     mutate(async () => {
       const trimmedComment = comment.trim()
       if (!trimmedComment) return
       await controller.addFeedback(requestId, trimmedComment)
-    }, '피드백을 남겼습니다.')
+    }, '피드백을 남겼어요.')
+
+  const detailHandlers = {
+    onApprove: approveReview,
+    onReject: rejectReview,
+    onReopen: reopenReview,
+    onEdit: (request: ReviewRequest) => openRequestComposer(request, 'edit'),
+    onResubmit: (request: ReviewRequest) => openRequestComposer(request, 'resubmit'),
+    onWithdraw: withdrawReview,
+    addFeedback,
+    updateFeedback,
+    voidFeedback,
+  }
+
+  const detail = (
+    <ReviewDetail
+      {...detailHandlers}
+      // 휴대폰에서 상세를 연 동안에만 처리 버튼을 화면 아래 줄로 옮긴다(목록을 볼 때는 하단 탭바를 가리지 않게).
+      compact={compact && mobileDetailOpen}
+      detailRef={reviewDetailRef}
+      localEvents={data.reviewEvents}
+      onBackToList={mobileDetailOpen ? closeMobileDetail : undefined}
+      profile={profile}
+      selectedReview={selectedReview}
+    />
+  )
+
+  const draftHasContent = Boolean(draftForm.title.trim() || draftForm.description.trim())
 
   return (
-    <div className="stack review-stack">
+    <div
+      className="stack review-stack"
+      data-mobile-detail={mobileDetailOpen ? 'open' : undefined}
+      ref={rootRef}
+    >
       {profile.role === 'member' && (
         <div className="composer-callout">
           <div>
             <span>새 검토요청</span>
-            <strong>{form.title || '무엇을 검토받고 싶으세요?'}</strong>
+            <strong>{draftForm.title.trim() || '어떤 검토가 필요한가요?'}</strong>
             <p>
-              제목과 검토 포인트를 먼저 적고 기한을 더하세요. 자료는 별도 메신저로 전달하고 요청 설명에 자료명을 남겨 주세요.
+              {draftHasContent
+                ? '쓰던 검토요청이 있어요. 이어서 쓰고 보내 주세요.'
+                : '제목과 검토할 점을 적고 기한을 정해 주세요. 자료는 메신저로 따로 보내고, 설명에 자료 이름을 남겨 주세요.'}
             </p>
           </div>
-          <button className="primary" onClick={() => openReviewComposer()} type="button">
-            <Send size={16} />
-            검토요청 작성
+          <button className="primary" onClick={() => openNewComposer()} type="button">
+            <Send size={16} aria-hidden="true" />
+            검토요청 쓰기
           </button>
         </div>
       )}
       {profile.role === 'member' && (
         <ReviewComposerModal
-          open={isReviewComposerOpen}
-          editingReviewId={editingReviewId}
-          form={form}
-          setForm={setForm}
-          draftNotice={draftNotice}
-          draftSavedAt={draftSavedAt}
+          autosavePending={draftPending}
+          dirty={composerDirty}
+          draftNotice={composerMode === 'new' ? draftNotice : null}
+          draftSavedAt={composerMode === 'new' ? draftSavedAt : null}
+          form={composerForm}
+          mode={composerMode}
+          note={resubmitNote}
+          onClose={closeComposer}
+          onSubmit={() => void submitComposer()}
+          open={composer !== null}
+          originalDueDate={composerRequest?.due_date ?? null}
+          rejectionReason={composerRequest ? latestLeaderFeedback(composerRequest)?.comment ?? null : null}
           reviewTargetName={reviewTarget?.name ?? null}
-          isSubmitDisabled={isReviewSubmitDisabled}
-          onSaveDraft={saveReviewDraft}
-          onClose={closeReviewComposer}
-          onSubmit={() => void createReview()}
+          setForm={setComposerForm}
+          setNote={setResubmitNote}
+          submitting={composerSubmitting}
         />
       )}
       <div className="workspace-header">
-        <h2>{leaderMode ? '검토 워크스페이스' : '내 검토 기록'}</h2>
+        <h1 className="workspace-title">{leaderMode ? '검토요청' : '내 검토요청'}</h1>
         {leaderMode ? (
           <label className="search-field review-workspace-search">
             <Search size={15} aria-hidden="true" />
@@ -379,7 +545,7 @@ export function ReviewsPanel({
               aria-label="검토요청 검색"
               maxLength={200}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="제목, 본문, 요청자 검색"
+              placeholder="제목, 설명, 요청자로 찾기"
               type="search"
               value={searchQuery}
             />
@@ -431,75 +597,56 @@ export function ReviewsPanel({
           </div>
         )}
       </div>
-      {reviewView === 'kanban' && leaderMode ? (
-        <section className="review-workspace kanban-mode">
+      {reviewView === 'kanban' ? (
+        <section aria-label="검토요청 칸반" className="review-workspace kanban-mode">
           <ReviewKanban
+            decisionEvents={decisionEvents}
             onSelectReview={selectReview}
             requests={visibleReviewRequests}
             selectedReviewId={selectedReview?.id ?? null}
           />
-          {selectedReview && (
-            <div className="kanban-detail">
-              <ReviewDetail
-                addFeedback={addFeedback}
-                detailRef={reviewDetailRef}
-                localEvents={data.reviewEvents}
-                onEdit={openReviewEditor}
-                onWithdraw={(id) => setPendingWithdrawId(id)}
-                pendingWithdrawId={pendingWithdrawId}
-                profile={profile}
-                rejectReview={rejectReview}
-                reopenReview={reopenReview}
-                resubmitReview={resubmitReview}
-                updateFeedback={updateFeedback}
-                voidFeedback={voidFeedback}
-                selectedReview={selectedReview}
-                updateStatus={updateStatus}
-                withdrawReview={withdrawReview}
-              />
-            </div>
-          )}
+          {selectedReview && <div className="kanban-detail">{detail}</div>}
         </section>
       ) : (
-        <section className="review-workspace">
+        <section aria-label="검토요청 작업 공간" className="review-workspace">
           <ReviewList
+            decisionEvents={decisionEvents}
             loading={statusFilter === 'withdrawn' && archiveLoading && archivePage < 0}
             onSelectReview={selectReview}
+            onSortModeChange={leaderMode ? setSortMode : undefined}
             onStatusFilterChange={setStatusFilter}
             profile={profile}
             scopedReviewRequests={defaultReviewRequests}
             selectedReviewId={selectedReview?.id ?? null}
+            sortMode={leaderMode ? sortMode : undefined}
             statusCounts={statusCounts}
             statusFilter={statusFilter}
             unreadIds={unreadReviewIds}
             visibleReviewRequests={visibleReviewRequests}
           />
-          <ReviewDetail
-            addFeedback={addFeedback}
-            detailRef={reviewDetailRef}
-            localEvents={data.reviewEvents}
-            onEdit={openReviewEditor}
-            onWithdraw={(id) => setPendingWithdrawId(id)}
-            pendingWithdrawId={pendingWithdrawId}
-            profile={profile}
-            rejectReview={rejectReview}
-            reopenReview={reopenReview}
-            resubmitReview={resubmitReview}
-            updateFeedback={updateFeedback}
-            voidFeedback={voidFeedback}
-            selectedReview={selectedReview}
-            updateStatus={updateStatus}
-            withdrawReview={withdrawReview}
-          />
+          {detail}
         </section>
       )}
       {profile.role === 'member' && statusFilter === 'withdrawn' && (
-        <div className="workspace-header">
-          <p className="empty-copy">최근 90일 회수 요청을 50건씩 불러옵니다.</p>
-          {archiveError && <p className="notice">회수 보관함을 불러오지 못했습니다. {archiveError}</p>}
-          {archiveHasMore && (
+        <div className="workspace-header review-archive-foot">
+          <p className="empty-copy">최근 90일 동안 회수한 요청을 50건씩 보여 줘요.</p>
+          {archiveError && (
+            <p className="notice" role="alert">
+              회수 보관함을 불러오지 못했어요. {archiveError}
+            </p>
+          )}
+          {archiveError ? (
+            <button
+              className="ghost"
+              disabled={archiveLoading}
+              onClick={() => void loadArchivePage(Math.max(archivePage + 1, 0))}
+              type="button"
+            >
+              다시 시도
+            </button>
+          ) : archiveHasMore && (
             <button className="ghost" disabled={archiveLoading} onClick={() => void loadArchivePage(archivePage + 1)} type="button">
-              {archiveLoading ? '불러오는 중...' : '이전 회수 요청 더 보기'}
+              {archiveLoading ? '불러오는 중…' : '회수한 요청 더 보기'}
             </button>
           )}
         </div>
@@ -519,19 +666,22 @@ export function ReviewsPanel({
         />
       )}
       <ReasonPromptModal
-        description="요청은 삭제되지 않고 회수 보관함에 보존됩니다."
+        description="회수해도 요청은 삭제되지 않아요. 회수 보관함에서 다시 볼 수 있어요."
+        label="회수 사유"
         maxLength={500}
         minLength={2}
         onClose={() => {
-          setWithdrawDialogId(null)
+          setWithdrawTarget(null)
           setWithdrawReason('')
         }}
         onSubmit={() => void confirmWithdrawReview()}
-        open={Boolean(withdrawDialogId)}
+        open={Boolean(withdrawTarget)}
+        placeholder="예: 요청 내용을 다시 정리할게요"
         reason={withdrawReason}
         setReason={setWithdrawReason}
         submitLabel="회수하기"
-        title="검토요청을 회수할까요?"
+        submitting={withdrawSubmitting}
+        title={withdrawTarget ? `${quotedWithJosa(withdrawTarget.title, '을/를')} 회수할까요?` : '검토요청을 회수할까요?'}
       />
     </div>
   )

@@ -1,84 +1,65 @@
 import type { Ref } from 'react'
 import { MousePointerClick } from 'lucide-react'
 import { EmptyState } from '../../../components/ui'
-import type { Profile, ReviewEvent, ReviewRequest, ReviewStatus } from '../../../types'
+import type { Profile, ReviewEvent, ReviewRequest } from '../../../types'
 import { ReviewEventHistory } from './ReviewEventHistory'
-import { ReviewRequestItem } from './ReviewRequestItem'
+import { ReviewRequestItem, type ReviewRequestItemHandlers } from './ReviewRequestItem'
 
-type ReviewDetailProps = {
+type ReviewDetailProps = ReviewRequestItemHandlers & {
   detailRef?: Ref<HTMLDivElement>
   profile: Profile
   selectedReview: ReviewRequest | null
-  pendingWithdrawId: string | null
   localEvents?: ReviewEvent[]
   readOnly?: boolean
-  onEdit: (request: ReviewRequest) => void
-  onWithdraw: (id: string | null) => void
-  withdrawReview: (requestId: string) => void
-  rejectReview: (requestId: string, comment: string) => Promise<boolean>
-  reopenReview: (requestId: string) => Promise<boolean>
-  resubmitReview: (requestId: string, comment: string) => Promise<boolean>
-  updateFeedback: (feedbackId: string, comment: string) => Promise<boolean>
-  voidFeedback: (feedbackId: string, reason: string) => Promise<boolean>
-  updateStatus: (id: string, status: ReviewStatus) => Promise<boolean>
-  addFeedback: (requestId: string, comment: string) => Promise<boolean>
+  inlineConfirm?: boolean
+  compact?: boolean
+  onBackToList?: () => void
 }
 
+/**
+ * 검토요청 상세 칸. 항목을 고를 때마다 칸 전체를 읽어 주지 않도록 aria-live를 두지 않고,
+ * 필요한 곳(목록에서 고른 뒤 등)에서 제목(h2)으로 포커스를 옮긴다.
+ */
 export function ReviewDetail({
   detailRef,
   profile,
   selectedReview,
-  pendingWithdrawId,
   localEvents = [],
   readOnly = false,
-  onEdit,
-  onWithdraw,
-  withdrawReview,
-  rejectReview,
-  reopenReview,
-  resubmitReview,
-  updateFeedback,
-  voidFeedback,
-  updateStatus,
-  addFeedback,
+  inlineConfirm = false,
+  compact = false,
+  onBackToList,
+  ...handlers
 }: ReviewDetailProps) {
   return (
     <div
-      aria-live="polite"
       className="review-detail-pane"
       data-review-id={selectedReview?.id}
       ref={detailRef}
     >
       {selectedReview ? (
-        <>
-          <ReviewRequestItem
-            addFeedback={addFeedback}
-            key={selectedReview.id}
-            onEdit={onEdit}
-            onWithdraw={onWithdraw}
-            pendingWithdraw={pendingWithdrawId === selectedReview.id}
-            profile={profile}
-            rejectReview={rejectReview}
-            reopenReview={reopenReview}
-            resubmitReview={resubmitReview}
-            updateFeedback={updateFeedback}
-            voidFeedback={voidFeedback}
-            request={selectedReview}
-            readOnly={readOnly}
-            updateStatus={updateStatus}
-            withdrawReview={withdrawReview}
-          />
-          <ReviewEventHistory
-            key={`history-${selectedReview.id}`}
-            localEvents={localEvents}
-            reviewRequestId={selectedReview.id}
-          />
-        </>
+        <ReviewRequestItem
+          {...handlers}
+          compact={compact}
+          footer={(
+            <ReviewEventHistory
+              key={`history-${selectedReview.id}`}
+              localEvents={localEvents}
+              reviewRequestId={selectedReview.id}
+            />
+          )}
+          inlineConfirm={inlineConfirm}
+          key={selectedReview.id}
+          onBackToList={onBackToList}
+          profile={profile}
+          readOnly={readOnly}
+          request={selectedReview}
+        />
       ) : (
         <EmptyState
           icon={<MousePointerClick size={22} />}
-          title="왼쪽 목록에서 검토요청을 선택하세요."
-          description="제목을 클릭하면 상세 내용과 피드백 흐름이 여기에 열립니다."
+          title="목록에서 검토요청을 골라 주세요"
+          description="요청을 누르면 내용과 피드백을 여기서 볼 수 있어요."
         />
       )}
     </div>

@@ -8,8 +8,8 @@ import '@fontsource-variable/jetbrains-mono'
 import App from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { loadBuildShaFromVersionFile } from './lib/errorReporter'
+import { clearStaleOverlayHistory } from './lib/navigation'
 import './styles.css'
-import './styles.final-hardening.css'
 
 // 부가 진단 정보라 fire-and-forget — 실패해도(오프라인, 프리뷰 등) 앱 시작을 막지 않는다.
 void loadBuildShaFromVersionFile()
@@ -23,6 +23,9 @@ try {
 } catch {
   // 저장소가 막힌 환경(사생활 보호 모드 등)에서는 기본 밀도로 시작한다.
 }
+
+// 창을 연 채 새로고침했다면 그 기록의 창 표시를 지운다(뒤로가기가 헛돌지 않게).
+clearStaleOverlayHistory()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

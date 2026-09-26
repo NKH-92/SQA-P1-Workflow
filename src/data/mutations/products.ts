@@ -1,5 +1,6 @@
 import { recordActivityLog } from '../activityLog'
 import { UserFacingError } from '../../lib/errors'
+import { quotedWithJosa } from '../../lib/korean'
 import type { Product, ProductCategory } from '../../types'
 import type { RepositoryContext } from '../repositoryContext'
 import type { AuditedDeleteInput } from '../contracts'
@@ -15,7 +16,7 @@ export type ProductInput = {
 function normalizeUnassignedReason(value: string | null | undefined): string | null {
   const reason = value?.trim() || null
   if (reason && reason.length > 1000) {
-    throw new UserFacingError('담당자 미지정 사유는 1000자 이하로 입력해 주세요.')
+    throw new UserFacingError('담당자가 없는 이유는 1,000자 이하로 입력해 주세요.')
   }
   return reason
 }
@@ -33,7 +34,7 @@ function normalizeProductInput(input: ProductInput) {
 export async function importProducts(ctx: RepositoryContext, rows: ProductInput[]): Promise<void> {
   const products = rows.map(normalizeProductInput)
   await ctx.repositories.products.importProducts(products)
-  await logAdminActivity(ctx, 'product', 'created', `${products.length}개 제품을 가져왔습니다.`, null, {
+  await logAdminActivity(ctx, 'product', 'created', `제품 ${products.length}개를 가져왔어요.`, null, {
     count: products.length,
   })
 }
@@ -41,7 +42,7 @@ export async function importProducts(ctx: RepositoryContext, rows: ProductInput[
 export async function addProduct(ctx: RepositoryContext, input: ProductInput): Promise<void> {
   const product = normalizeProductInput(input)
   await ctx.repositories.products.addProduct(product)
-  await logAdminActivity(ctx, 'product', 'created', `${product.name} 제품을 추가했습니다.`, null, product)
+  await logAdminActivity(ctx, 'product', 'created', `${quotedWithJosa(product.name, '을/를')} 제품으로 등록했어요.`, null, product)
 }
 
 export async function saveProductAssignments(
@@ -63,7 +64,7 @@ export async function saveProductAssignments(
   })
   // A true set no-op must not write a user-facing activity entry.
   if (result.noop) return { noop: true }
-  await logAdminActivity(ctx, 'product_assignment', 'updated', '제품 배정을 조정했습니다.', input.productId, {
+  await logAdminActivity(ctx, 'product_assignment', 'updated', '제품 담당자를 바꿨어요.', input.productId, {
     assigned_user_ids: input.nextMemberIds,
     unassigned_reason: input.nextMemberIds.length === 0 ? normalizedReason : null,
   })
@@ -99,7 +100,7 @@ export async function assignProduct(
     ctx,
     'product_assignment',
     result.action,
-    transferPending ? '제품을 배정하고 미완료 변경 적용업무를 이관했습니다.' : '제품을 배정했습니다.',
+    transferPending ? '제품 담당자를 배정하고 미완료 적용 업무를 넘겼어요.' : '제품 담당자를 배정했어요.',
     input.productId,
     metadata,
   )
@@ -110,7 +111,7 @@ export async function assignProduct(
       entityType: 'product_change_task',
       entityId: task.id,
       action: 'reassigned',
-      summary: `${ctx.profile.name}님이 ${task.productName} 변경 적용 담당자를 ${result.assigneeName}님으로 이관했습니다.`,
+      summary: `${ctx.profile.name}님이 ${task.productName} 적용 업무 담당자를 ${result.assigneeName}님으로 바꿨어요.`,
       metadata: {
         from_assignee_id: task.fromAssigneeId,
         to_assignee_id: input.userId,
@@ -142,14 +143,14 @@ export async function updateProduct(
   // D-05: a no-op update must not add a user-facing activity-log entry either —
   // nothing actually changed, so there is nothing to announce.
   if (!result.noop) {
-    await logAdminActivity(ctx, 'product', 'updated', '제품 정보를 수정했습니다.', productId, normalizedPayload)
+    await logAdminActivity(ctx, 'product', 'updated', '제품 정보를 수정했어요.', productId, normalizedPayload)
   }
   return result
 }
 
 export async function deleteProduct(ctx: RepositoryContext, id: string, input: AuditedDeleteInput): Promise<void> {
   const name = await ctx.repositories.products.deleteProduct(id, input)
-  await logAdminActivity(ctx, 'product', 'deleted', `${name ?? '제품'}을 삭제했습니다.`, id, {
+  await logAdminActivity(ctx, 'product', 'deleted', `${quotedWithJosa(name ?? '제품', '을/를')} 삭제했어요.`, id, {
     reason: input.reason.trim(),
   })
 }

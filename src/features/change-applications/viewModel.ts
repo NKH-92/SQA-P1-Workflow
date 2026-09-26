@@ -20,6 +20,52 @@ export type ChangeApplicationArchiveFilter = 'active' | 'archived' | 'all'
 export type ChangeActionKindFilter = 'all' | ChangeActionKind
 export type ChangeAttentionFilter = 'all' | 'overdue' | 'due_soon' | 'unassigned'
 
+/** 요약 칸(KPI)과 필터 칩에 같은 이름을 쓴다. */
+export const changeAttentionLabels: Record<Exclude<ChangeAttentionFilter, 'all'>, string> = {
+  overdue: '기한 지남',
+  due_soon: '3일 안에 마감',
+  unassigned: '담당자 없음',
+}
+
+export function isChangeAttentionFilter(value: unknown): value is ChangeAttentionFilter {
+  return value === 'all' || value === 'overdue' || value === 'due_soon' || value === 'unassigned'
+}
+
+export function isChangeApplicationViewMode(value: unknown): value is ChangeApplicationViewMode {
+  return value === 'change' || value === 'product' || value === 'assignee'
+}
+
+export function isLeaderChangeApplicationTab(value: unknown): value is LeaderChangeApplicationTab {
+  return value === 'active' || value === 'final_review' || value === 'history'
+}
+
+export function isMemberChangeApplicationTab(value: unknown): value is MemberChangeApplicationTab {
+  return value === 'pending' || value === 'history'
+}
+
+export function isChangeTaskStatusFilter(value: unknown): value is ChangeTaskStatusFilter {
+  return value === 'all' || value === 'pending' || value === 'completed' || value === 'not_applicable' || value === 'cancelled'
+}
+
+/**
+ * 한 적용 업무가 요약 칸의 조건(기한 지남·3일 안에 마감·담당자 없음)에 맞는가.
+ * 요약 칸의 숫자(calculateChangeApplicationKpis)와 같은 기준이어야 누른 뒤 보이는 목록 수가 숫자와 맞는다.
+ */
+export function matchesChangeAttention(
+  context: ProductChangeTaskContext,
+  attention: ChangeAttentionFilter,
+  now = new Date(),
+) {
+  if (attention === 'all') return true
+  const { task, actionItem, application } = context
+  if (application.status !== 'published' || application.archived_at) return false
+  if (task.status !== 'pending') return false
+  const days = daysUntil(actionItem.due_date, now)
+  if (attention === 'overdue') return days != null && days < 0
+  if (attention === 'due_soon') return days != null && days >= 0 && days <= 3
+  return !task.assignee_id
+}
+
 export type ChangeApplicationFilters = {
   status: ChangeTaskStatusFilter
   application: ChangeApplicationStatusFilter
@@ -33,16 +79,16 @@ export function changeApplicationWorkflowLabel(status: ChangeApplicationWorkflow
   if (status === 'draft') return '초안'
   if (status === 'in_progress') return '진행 중'
   if (status === 'final_review_ready') return '최종 확인 대기'
-  if (status === 'completed') return '변경 완료'
+  if (status === 'completed') return '완료'
   if (status === 'cancelled') return '취소'
-  return '기존 완료'
+  return '이전 방식 완료'
 }
 
 export function changeApplicationHistoryResultLabel(result: ChangeApplicationHistoryResult) {
-  if (result === 'completed') return '변경 완료'
+  if (result === 'completed') return '완료'
   if (result === 'cancelled') return '취소'
-  if (result === 'legacy_auto') return '기존 자동 완료'
-  return '기존 보관'
+  if (result === 'legacy_auto') return '이전 방식 자동 완료'
+  return '이전 방식 보관'
 }
 
 export function filterApplicationsByLeaderTab(
@@ -102,13 +148,8 @@ export function filterChangeTaskContexts(
     if (filters.status !== 'all' && task.status !== filters.status) return false
     if (filters.application !== 'all' && application.status !== filters.application) return false
     if (filters.actionKind !== 'all' && actionItem.kind !== filters.actionKind) return false
-    if (filters.attention !== 'all') {
-      const days = daysUntil(actionItem.due_date, now)
-      if (application.status !== 'published') return false
-      if (task.status !== 'pending') return false
-      if (filters.attention === 'overdue' && (days == null || days >= 0)) return false
-      if (filters.attention === 'due_soon' && (days == null || days < 0 || days > 3)) return false
-      if (filters.attention === 'unassigned' && task.assignee_id) return false
+    if (filters.attention !== 'all' && !matchesChangeAttention({ task, actionItem, application }, filters.attention, now)) {
+      return false
     }
     if (!normalized) return true
     return `${application.change_number} ${application.title} ${actionItem.content} ${task.product_name} ${task.assignee_name ?? ''}`
@@ -186,10 +227,10 @@ export function groupChangeTaskContexts(
       : context.task.assignee_id ?? '__unassigned__'
     const title = viewMode === 'product'
       ? context.task.product_name
-      : context.task.assignee_name ?? '담당 미지정'
+      : context.task.assignee_name ?? '담당자 없음'
     const sub = viewMode === 'product'
       ? context.task.products?.category ?? '제품'
-      : `${context.task.assignee_id ? '적용 책임자' : '파트장 확인 필요'}`
+      : `${context.task.assignee_id ? '적용 담당자' : '담당자 배정 필요'}`
     const group = groups.get(key) ?? { key, title, sub, items: [] }
     group.items.push(context)
     groups.set(key, group)

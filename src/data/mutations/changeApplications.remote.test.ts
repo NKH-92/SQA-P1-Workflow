@@ -116,7 +116,7 @@ describe('change application mutation contracts (remote)', () => {
     })
 
     await expect(saveChangeApplication(ctx, input, false)).rejects.toThrow(
-      '다른 사용자가 변경건을 수정했습니다. 새로고침 후 다시 시도해 주세요.',
+      '다른 사람이 먼저 공통변경을 수정했어요. 새로고침한 뒤 다시 시도해 주세요.',
     )
   })
 

@@ -27,6 +27,8 @@ export type DesktopNotificationControls = {
  * 파트장 전용 크롬(브라우저) 알림. 데이터가 갱신될 때마다 기준선 이후의 새 대기
  * 검토요청을 찾아 데스크톱 알림을 띄운다. 트리거가 폴링이든 Realtime이든 동일하게
  * 동작한다 — 이 훅은 data 변화만 본다.
+ * leaderMode에는 역할이 아니라 수정 권한(canManageTeamData)을 넘긴다 — 읽기 전용(팀장)은
+ * 처리할 수 없는 검토요청 알림을 받지 않는다.
  */
 export function useDesktopNotifications(
   profileId: string | null,

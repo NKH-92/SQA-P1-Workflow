@@ -21,7 +21,7 @@ export function ImportDiagnostics({
       <header>
         <div role="status">
           <strong id={id}>가져오지 않은 {subject} {issues.length}건</strong>
-          <span>값을 수정한 뒤 CSV를 다시 가져오세요.</span>
+          <span>값을 고친 뒤 CSV를 다시 가져와 주세요.</span>
         </div>
         <button className="ghost compact" onClick={onClose} type="button">결과 닫기</button>
       </header>

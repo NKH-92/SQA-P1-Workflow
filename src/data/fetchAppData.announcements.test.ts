@@ -236,10 +236,10 @@ describe('fetchAppData orchestration and optional data', () => {
     const result = await fetchAppData()
 
     expect(result.optionalWarnings).toEqual([
-      '공지 조회에 실패해 마지막 정상 데이터를 유지합니다.',
-      '초대 목록 조회에 실패해 마지막 정상 데이터를 유지합니다.',
-      '프로필 메모 조회에 실패해 마지막 정상 데이터를 유지합니다.',
-      '활동 로그 조회에 실패해 마지막 정상 데이터를 유지합니다.',
+      '공지: 새로 불러오지 못해 이전 내용을 보여 주고 있어요.',
+      '계정 목록: 새로 불러오지 못해 이전 내용을 보여 주고 있어요.',
+      '관리 메모: 새로 불러오지 못해 이전 내용을 보여 주고 있어요.',
+      '활동 로그: 새로 불러오지 못해 이전 내용을 보여 주고 있어요.',
     ])
   })
 
@@ -430,10 +430,10 @@ describe('fetchAppData orchestration and optional data', () => {
     const result = await fetchAppData(previous)
 
     expect(result.optionalWarnings).toEqual([
-      '공지 조회에 실패해 마지막 정상 데이터를 유지합니다.',
-      '초대 목록 조회에 실패해 마지막 정상 데이터를 유지합니다.',
-      '프로필 메모 조회에 실패해 마지막 정상 데이터를 유지합니다.',
-      '활동 로그 조회에 실패해 마지막 정상 데이터를 유지합니다.',
+      '공지: 새로 불러오지 못해 이전 내용을 보여 주고 있어요.',
+      '계정 목록: 새로 불러오지 못해 이전 내용을 보여 주고 있어요.',
+      '관리 메모: 새로 불러오지 못해 이전 내용을 보여 주고 있어요.',
+      '활동 로그: 새로 불러오지 못해 이전 내용을 보여 주고 있어요.',
     ])
     expect(result.profiles).toEqual([
       {
@@ -470,7 +470,7 @@ describe('fetchAppData orchestration and optional data', () => {
     const result = await fetchAppData()
 
     expect(result.announcements).toHaveLength(200)
-    expect(result.optionalWarnings).toContain('공지: 최신 200건만 표시합니다.')
+    expect(result.optionalWarnings).toContain('공지: 최근 200건까지만 보여요.')
   })
 
   it('keeps the recent-100 activity cap informational instead of reporting stale data', async () => {
@@ -486,7 +486,7 @@ describe('fetchAppData orchestration and optional data', () => {
 
     expect(mocks.queries.activity_logs?.limit).toHaveBeenCalledWith(101)
     expect(result.activityLogs).toHaveLength(100)
-    expect(result.optionalWarnings).not.toContain('활동 로그: 최신 100건만 표시합니다.')
+    expect(result.optionalWarnings).not.toContain('활동 로그: 최근 100건까지만 보여요.')
     expect(result.optionalWarnings).toEqual([])
   })
 

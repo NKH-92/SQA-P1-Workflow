@@ -42,7 +42,7 @@ describe('review resubmission read state', () => {
   it('builds a leader notification from the immutable resubmission event', () => {
     const notifications = buildNotifications(leader, appData(), true, Date.parse('2026-07-15T01:05:00.000Z'))
     expect(notifications[0]).toEqual(expect.objectContaining({
-      title: '파트원님이 “재검토 대상” 재검토를 요청했습니다.', unread: true,
+      title: '파트원이 ‘재검토 대상’ 검토를 다시 요청했어요.', kind: '재요청', unread: true,
       at: Date.parse('2026-07-15T01:00:00.000Z'),
     }))
   })

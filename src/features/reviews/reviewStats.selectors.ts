@@ -212,7 +212,7 @@ export function resolveReviewStatsRange(filters: ReviewStatsFilters, now = new D
       endDate: filters.customEndDate || maxDate,
       valid: false,
       wasClamped: false,
-      validationMessage: '시작일과 종료일을 모두 선택해 주세요.',
+      validationMessage: '시작일과 종료일을 모두 골라 주세요.',
     }
   }
 
@@ -224,7 +224,7 @@ export function resolveReviewStatsRange(filters: ReviewStatsFilters, now = new D
       endDate: filters.customEndDate,
       valid: false,
       wasClamped: false,
-      validationMessage: '시작일은 종료일보다 늦을 수 없습니다.',
+      validationMessage: '시작일을 종료일과 같거나 더 이른 날짜로 골라 주세요.',
     }
   }
 
@@ -240,7 +240,7 @@ export function resolveReviewStatsRange(filters: ReviewStatsFilters, now = new D
     wasClamped: startDate !== filters.customStartDate || endDate !== filters.customEndDate,
     validationMessage: overlapsAvailableRange
       ? null
-      : '선택한 기간이 조회 가능한 최근 6개월 범위와 겹치지 않습니다.',
+      : '최근 6개월 안에서 기간을 골라 주세요.',
   }
 }
 

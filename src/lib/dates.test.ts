@@ -52,3 +52,26 @@ describe('Asia/Seoul date helpers', () => {
     expect(relativeDaysAgo(new Date(event).toISOString(), Date.parse('2026-07-16T15:01:00.000Z'))).toBe(1)
   })
 })
+
+describe('dueState (single due-date vocabulary)', () => {
+  it('uses one wording for every state', async () => {
+    const { dueState, dueDateLabel, dueDateShortLabel } = await import('./dates')
+    expect(dueState('2026-07-03', { now }).label).toBe('3일 지남')
+    expect(dueState('2026-07-06', { now }).label).toBe('오늘 마감')
+    expect(dueState('2026-07-07', { now }).label).toBe('내일 마감')
+    expect(dueState('2026-07-09', { now })).toMatchObject({ kind: 'soon', label: '3일 남음', shortLabel: 'D-3', tone: 'warning' })
+    expect(dueState('2026-07-30', { now })).toMatchObject({ kind: 'later', shortLabel: 'D-24', tone: 'normal' })
+    expect(dueState(null, { now }).label).toBe('기한 없음')
+    expect(dueDateLabel('2026-07-01', now)).toBe('5일 지남')
+    expect(dueDateShortLabel(null, now)).toBeNull()
+  })
+
+  it('never reports overdue for finished work and never calls overdue work imminent', async () => {
+    const { dueState, isDueWithin, isOverdue } = await import('./dates')
+    expect(dueState('2026-05-01', { now, done: true })).toMatchObject({ kind: 'done', label: '완료' })
+    expect(isDueWithin('2026-05-01', 3, now)).toBe(false)
+    expect(isDueWithin('2026-07-08', 3, now)).toBe(true)
+    expect(isOverdue('2026-07-05', now)).toBe(true)
+    expect(isOverdue('2026-07-06', now)).toBe(false)
+  })
+})

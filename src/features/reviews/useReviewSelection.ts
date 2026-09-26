@@ -1,12 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReviewRequest } from '../../types'
 
+type SelectionState = readonly [string | null, (value: string | null) => void]
+
+/**
+ * 상세에 보일 검토요청. 딥링크(initialSelectedId)가 먼저이고, 그다음 사용자가 고른 요청,
+ * 둘 다 목록에 없으면 첫 요청을 고른다. selectionState를 넘기면 그 저장소(예: 세션 보기 상태)를 쓴다.
+ */
 export function useReviewSelection(
   visibleReviewRequests: ReviewRequest[],
   initialSelectedId?: string | null,
   onInitialSelectionApplied?: () => void,
+  selectionState?: SelectionState,
 ) {
-  const [selectedReviewId, setSelectedReviewId] = useState<string | null>(null)
+  const internalState = useState<string | null>(null)
+  const [selectedReviewId, setSelectedReviewId] = selectionState ?? internalState
   const appliedInitialIdRef = useRef<string | null>(null)
   const visibleReviewKey = visibleReviewRequests.map((request) => request.id).join('|')
   const initialSelectedReview = initialSelectedId
@@ -22,7 +30,7 @@ export function useReviewSelection(
     if (resolvedSelectedReviewId !== selectedReviewId) {
       setSelectedReviewId(resolvedSelectedReviewId)
     }
-  }, [resolvedSelectedReviewId, selectedReviewId, visibleReviewKey])
+  }, [resolvedSelectedReviewId, selectedReviewId, setSelectedReviewId, visibleReviewKey])
 
   useEffect(() => {
     if (!initialSelectedId) {
@@ -34,7 +42,7 @@ export function useReviewSelection(
     appliedInitialIdRef.current = initialSelectedReview.id
     setSelectedReviewId(initialSelectedReview.id)
     onInitialSelectionApplied?.()
-  }, [initialSelectedId, initialSelectedReview, onInitialSelectionApplied, visibleReviewKey])
+  }, [initialSelectedId, initialSelectedReview, onInitialSelectionApplied, setSelectedReviewId, visibleReviewKey])
 
   return { selectedReviewId: resolvedSelectedReviewId, setSelectedReviewId, selectedReview }
 }

@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
 import { emptyData } from '../app/constants'
@@ -14,6 +14,8 @@ const authState = vi.hoisted(() => ({
   initialLoading: false,
   sessionUser: null as null | undefined,
   sessionWithoutProfile: false,
+  profileInactive: false,
+  retryProfileLoad: vi.fn(),
 }))
 
 const supabaseFlags = vi.hoisted(() => ({
@@ -50,6 +52,8 @@ vi.mock('../app/hooks/useAuthProfile', () => ({
     setProfile: vi.fn(),
     authReady: authState.authReady,
     sessionWithoutProfile: authState.sessionWithoutProfile,
+    profileInactive: authState.profileInactive,
+    retryProfileLoad: authState.retryProfileLoad,
     initialLoading: authState.initialLoading,
     signOut: vi.fn(),
   }),
@@ -84,6 +88,8 @@ function resetAuthState() {
   authState.initialLoading = false
   authState.sessionUser = null
   authState.sessionWithoutProfile = false
+  authState.profileInactive = false
+  authState.retryProfileLoad.mockReset()
 }
 
 function resetSupabaseFlags() {
@@ -110,10 +116,11 @@ describe('auth route guards', () => {
     cleanup()
   })
 
-  it('shows config error in production without Supabase env', () => {
+  it('shows config error in production without Supabase env', async () => {
     render(<App />)
 
-    expect(screen.getByRole('alert')).toHaveTextContent('로그인 설정 오류')
+    // 설정 안내·로그인·계정 안내 화면은 해당 상태일 때만 지연 로딩한다.
+    expect(await screen.findByRole('alert', {}, { timeout: 5000 })).toHaveTextContent(/로그인 설정/)
     expect(screen.queryByText(/안녕하세요,/)).not.toBeInTheDocument()
   })
 
@@ -124,28 +131,45 @@ describe('auth route guards', () => {
 
     render(<App />)
 
-    expect(await screen.findByText(`안녕하세요, ${previewLeader.name}님.`)).toBeInTheDocument()
-    expect(screen.queryByText('로그인 설정 오류')).not.toBeInTheDocument()
+    // 홈은 지연 로딩 화면이라 변환 시간이 긴 테스트 환경에서는 조금 기다린다.
+    expect(await screen.findByText(new RegExp(`안녕하세요, ${previewLeader.name}님`), {}, { timeout: 5000 })).toBeInTheDocument()
+    expect(document.title).toBe('홈 · SQA P1')
+    expect(screen.queryByText(/로그인 설정/)).not.toBeInTheDocument()
   })
 
-  it('shows login panel when Supabase is configured without a session', () => {
+  it('shows login panel when Supabase is configured without a session', async () => {
     supabaseFlags.hasSupabaseConfig = true
     supabaseFlags.isProductionMode = true
     authState.sessionUser = null
 
     render(<App />)
 
-    expect(screen.getByRole('heading', { name: '로그인' })).toBeInTheDocument()
-    expect(screen.queryByText('로그인 설정 오류')).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '로그인' }, { timeout: 5000 })).toBeInTheDocument()
+    expect(screen.queryByText(/로그인 설정/)).not.toBeInTheDocument()
   })
 
-  it('shows password change panel when must_change_password is true', () => {
+  it.each([
+    { profileInactive: true, heading: /활성화/ },
+    { profileInactive: false, heading: /등록/ },
+  ])('tells a blocked account what to ask for (inactive: $profileInactive) and retries the profile', async ({ profileInactive, heading }) => {
+    supabaseFlags.hasSupabaseConfig = true
+    authState.sessionWithoutProfile = true
+    authState.profileInactive = profileInactive
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { level: 1 }, { timeout: 5000 })).toHaveTextContent(heading)
+    fireEvent.click(screen.getByRole('button', { name: /다시 확인/ }))
+    expect(authState.retryProfileLoad).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows password change panel when must_change_password is true', async () => {
     supabaseFlags.hasSupabaseConfig = true
     authState.profile = { ...previewLeader, id: 'user-1', must_change_password: true }
 
     render(<App />)
 
-    expect(screen.getByRole('heading', { name: '비밀번호 변경 필요' })).toBeInTheDocument()
+    expect((await screen.findAllByRole('heading', { name: /비밀번호/ }, { timeout: 5000 })).length).toBeGreaterThan(0)
   })
 
   it('loads an announcement deep link outside the capped board query on demand', async () => {
@@ -182,7 +206,8 @@ describe('auth route guards', () => {
 
     render(<App />)
 
-    expect(screen.queryByText('먼저 확인할 것들')).not.toBeInTheDocument()
-    expect(await screen.findByText(`${previewMember.name}님의 오늘 업무`)).toBeInTheDocument()
+    expect(await screen.findByText(new RegExp(`안녕하세요, ${previewMember.name}님`), {}, { timeout: 5000 })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/오늘 할 일/)
+    expect(screen.queryByRole('button', { name: '검토 통계' })).not.toBeInTheDocument()
   })
 })

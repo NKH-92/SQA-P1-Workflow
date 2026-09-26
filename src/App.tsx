@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { AppRoutes } from './app/AppRoutes'
 import { useAppData } from './app/hooks/useAppData'
 import { useBackgroundRefresh } from './app/hooks/useBackgroundRefresh'
@@ -13,24 +13,42 @@ import { useDeepLinkEntity } from './app/hooks/useDeepLinkEntity'
 import { useCommandPalette } from './app/hooks/useCommandPalette'
 import { useReviewNotificationController } from './app/hooks/useReviewNotificationController'
 import { reconciledProfile } from './app/profileSync'
-import { CommandPalette } from './components/CommandPalette'
-import { canViewTeamData } from './domain/permissions'
+import { canManageTeamData, canViewTeamData } from './domain/permissions'
 import { toUserMessage } from './lib/errors'
+import { prefetchWhenIdle } from './lib/prefetch'
+import type { NavigateOptions } from './lib/navigation'
 import { buildNotifications } from './lib/notifications'
 import { countUnreadReviews } from './lib/readState'
 import { hasSupabaseConfig, isPreviewMode } from './lib/supabase'
 import type { Profile } from './types'
 import type { TabId } from './app/types'
-import { AuthPanel } from './screens/AuthPanel'
-import { BlockedProfile } from './screens/BlockedProfile'
-import { ConfigErrorScreen } from './screens/ConfigErrorScreen'
+import type { DataWarningReport } from './app/hooks/useAppData'
 import { LoadingScreen } from './screens/LoadingScreen'
-import { PasswordChangePanel } from './screens/PasswordChangePanel'
-import { ProfileLoadErrorScreen } from './screens/ProfileLoadErrorScreen'
 import { Shell } from './screens/Shell'
 
+/**
+ * 빠른 이동(Ctrl K)은 열 때만 필요하다. 첫 화면 번들에서 빼고, 첫 화면이 뜬 뒤 한가할 때 미리 받아 둔다.
+ */
+const loadCommandPalette = () => import('./components/CommandPalette')
+const CommandPalette = lazy(() => loadCommandPalette().then((module) => ({ default: module.CommandPalette })))
+
+/**
+ * 로그인·비밀번호 변경·계정 안내·설정 오류 화면은 로그인한 사용자가 매일 여는 첫 화면에 필요 없다.
+ * 해당 상태일 때만 받아 첫 화면 번들을 가볍게 유지한다(받는 동안은 로딩 화면).
+ */
+const AuthPanel = lazy(() => import('./screens/AuthPanel').then((module) => ({ default: module.AuthPanel })))
+const BlockedProfile = lazy(() => import('./screens/BlockedProfile').then((module) => ({ default: module.BlockedProfile })))
+const ConfigErrorScreen = lazy(() => import('./screens/ConfigErrorScreen').then((module) => ({ default: module.ConfigErrorScreen })))
+const PasswordChangePanel = lazy(() => import('./screens/PasswordChangePanel').then((module) => ({ default: module.PasswordChangePanel })))
+const ProfileLoadErrorScreen = lazy(() => import('./screens/ProfileLoadErrorScreen').then((module) => ({ default: module.ProfileLoadErrorScreen })))
+
+function GateScreen({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<LoadingScreen />}>{children}</Suspense>
+}
+
+
 function App() {
-  const reportWarningsRef = useRef<(warnings: string[]) => void>(() => {})
+  const reportWarningsRef = useRef<(report: DataWarningReport) => void>(() => {})
   const {
     data,
     setData,
@@ -42,17 +60,22 @@ function App() {
     loadReviewRequest,
     loadAnnouncement,
     resetSyncState,
-  } = useAppData((warnings) =>
-    reportWarningsRef.current(warnings),
+  } = useAppData((report) =>
+    reportWarningsRef.current(report),
   )
   // profile/leaderMode/route는 이 아래에서 정해지므로(이 훅보다 뒤) getter로 최신 값을 넘긴다.
   const mutationReportContextRef = useRef<MutationErrorReportContext>({ role: 'unknown', route: 'unknown' })
-  const { saving, message, setMessage, mutate } = useMutationRunner(
+  const { saving, toasts, setMessage, dismissToast, mutate } = useMutationRunner(
     refreshData,
     () => mutationReportContextRef.current,
   )
+  // 안내는 내용이 바뀔 때만 한 번 알린다(useAppData가 같은 내용의 반복 보고를 거른다).
+  // 불러오기 실패는 경고, 목록 표시 상한 같은 평상시 안내는 정보 토스트로 보여 준다.
   useEffect(() => {
-    reportWarningsRef.current = (warnings) => setMessage({ text: warnings.join(' '), tone: 'warning' })
+    reportWarningsRef.current = ({ warnings, notices }) => {
+      if (warnings.length > 0) setMessage({ text: warnings.join(' '), tone: 'warning' })
+      if (notices.length > 0) setMessage({ text: notices.join(' '), tone: 'info' })
+    }
   }, [setMessage])
   const resetNavigationRef = useRef<() => void>(() => {})
   const auth = useAuthProfile(
@@ -67,6 +90,7 @@ function App() {
     setProfile,
     authReady,
     sessionWithoutProfile,
+    profileInactive,
     profileLoadError,
     retryProfileLoad,
     initialLoading,
@@ -74,10 +98,12 @@ function App() {
     signOut,
   } = auth
   const leaderMode = canViewTeamData(profile)
+  // 팀장처럼 보기만 하는 역할은 처리할 수 없는 검토 알림·데스크톱 알림을 받지 않는다.
+  const canManage = canManageTeamData(profile)
   const navigation = useHashNavigation(leaderMode, Boolean(profile))
   const { setActiveTab: setNavigationActiveTab } = navigation
-  const setActiveTab = useCallback((tab: TabId, entityId?: string) => {
-    setNavigationActiveTab(tab, entityId)
+  const setActiveTab = useCallback((tab: TabId, entityId?: string, options?: NavigateOptions) => {
+    setNavigationActiveTab(tab, entityId, options)
   }, [setNavigationActiveTab])
   useEffect(() => {
     resetNavigationRef.current = navigation.resetNavigation
@@ -101,13 +127,13 @@ function App() {
   const backgroundSyncEnabled =
     hasSupabaseConfig && Boolean(profile) && profile?.is_active !== false && !profile?.must_change_password
   useBackgroundRefresh(backgroundSyncEnabled, () => refreshData({ silent: true }))
-  // 새 검토요청의 수신자는 파트장뿐이므로 구독도 파트장만 연다.
-  useRealtimeReviewInserts(backgroundSyncEnabled && leaderMode, () => {
+  // 새 검토요청을 처리하는 사람은 파트장뿐이므로 구독도 파트장만 연다.
+  useRealtimeReviewInserts(backgroundSyncEnabled && canManage, () => {
     refreshData({ silent: true }).catch(() => {})
   })
   const desktopNotifications = useDesktopNotifications(
     profile?.id ?? null,
-    leaderMode,
+    canManage,
     data,
     setActiveTab,
   )
@@ -148,6 +174,7 @@ function App() {
     !(hasSupabaseConfig && profile?.must_change_password)
 
   const commandPalette = useCommandPalette(commandPaletteAvailable)
+  useEffect(() => (commandPaletteAvailable ? prefetchWhenIdle(loadCommandPalette) : undefined), [commandPaletteAvailable])
   const markAllNotificationsRead = useReviewNotificationController(profile, data, setData, mutate)
 
   // signOut이 resetNavigation까지 수행한다(useAuthProfile → useHashNavigation).
@@ -160,48 +187,61 @@ function App() {
   }
 
   if (!hasSupabaseConfig && !isPreviewMode) {
-    return <ConfigErrorScreen />
+    return <GateScreen><ConfigErrorScreen /></GateScreen>
   }
 
+  // 비활성 계정과 아직 등록되지 않은 계정은 안내가 다르다. ‘다시 확인하기’는 프로필을 다시 불러온다.
   if (!profile && hasSupabaseConfig && sessionWithoutProfile) {
-    return <BlockedProfile onSignOut={() => void handleSignOut()} inactive />
+    return (
+      <GateScreen>
+        <BlockedProfile
+          inactive={profileInactive}
+          onRetry={retryProfileLoad}
+          onSignOut={() => void handleSignOut()}
+        />
+      </GateScreen>
+    )
   }
 
   if (!profile && hasSupabaseConfig && profileLoadError) {
     return (
-      <ProfileLoadErrorScreen
-        message={profileLoadError}
-        onRetry={retryProfileLoad}
-        onSignOut={() => void handleSignOut()}
-      />
+      <GateScreen>
+        <ProfileLoadErrorScreen
+          message={profileLoadError}
+          onRetry={retryProfileLoad}
+          onSignOut={() => void handleSignOut()}
+        />
+      </GateScreen>
     )
   }
 
   if (!profile && hasSupabaseConfig) {
-    return <AuthPanel />
+    return <GateScreen><AuthPanel /></GateScreen>
   }
 
   if (!profile) {
-    return <ConfigErrorScreen />
+    return <GateScreen><ConfigErrorScreen /></GateScreen>
   }
 
   if (profile.is_active === false) {
-    return <BlockedProfile onSignOut={() => void handleSignOut()} inactive />
+    return <GateScreen><BlockedProfile inactive onRetry={retryProfileLoad} onSignOut={() => void handleSignOut()} /></GateScreen>
   }
 
   if (hasSupabaseConfig && profile.must_change_password) {
     return (
-      <PasswordChangePanel
-        profile={profile}
-        onComplete={(updatedProfile: Profile) => {
-          setProfile(updatedProfile)
-          setMessage({ text: '비밀번호가 변경되었습니다. 다음 로그인부터 새 비밀번호를 사용하세요.', tone: 'success' })
-          // 변경 전 초기 로드는 RLS가 막아 빈 데이터였으므로 이 refresh가 유일한 로드 경로다.
-          // 실패를 삼키면 성공 토스트와 빈 대시보드만 남는다.
-          refreshData().catch((error) => setMessage({ text: toUserMessage(error), tone: 'error' }))
-        }}
-        onSignOut={() => void handleSignOut()}
-      />
+      <GateScreen>
+        <PasswordChangePanel
+          profile={profile}
+          onComplete={(updatedProfile: Profile) => {
+            setProfile(updatedProfile)
+            setMessage({ text: '비밀번호를 바꿨어요. 다음 로그인부터 새 비밀번호를 써 주세요.', tone: 'success' })
+            // 변경 전 초기 로드는 RLS가 막아 빈 데이터였으므로 이 refresh가 유일한 로드 경로다.
+            // 실패를 삼키면 성공 토스트와 빈 대시보드만 남는다.
+            refreshData().catch((error) => setMessage({ text: toUserMessage(error), tone: 'error' }))
+          }}
+          onSignOut={() => void handleSignOut()}
+        />
+      </GateScreen>
     )
   }
 
@@ -213,7 +253,7 @@ function App() {
         profile={profile}
         data={data}
         leaderMode={leaderMode}
-        message={message}
+        toasts={toasts}
         saving={saving}
         refreshing={refreshing}
         lastSyncedAt={lastSyncedAt}
@@ -222,10 +262,10 @@ function App() {
         pendingCount={pendingCount}
         unreadReviewsCount={unreadReviewsCount}
         notifications={notifications}
-        desktopNotifications={leaderMode ? desktopNotifications : undefined}
+        desktopNotifications={canManage ? desktopNotifications : undefined}
         onMarkAllRead={markAllNotificationsRead}
         onOpenCommandPalette={commandPalette.show}
-        onDismissMessage={() => setMessage(null)}
+        onDismissToast={dismissToast}
         onRefresh={() => {
           refreshData().catch((error) => setMessage({ text: toUserMessage(error), tone: 'error' }))
         }}
@@ -243,14 +283,18 @@ function App() {
           setActiveTab={setActiveTab}
         />
       </Shell>
-      <CommandPalette
-        open={commandPalette.open}
-        onClose={commandPalette.close}
-        profile={profile}
-        data={data}
-        leaderMode={leaderMode}
-        setActiveTab={setActiveTab}
-      />
+      {commandPalette.open && (
+        <Suspense fallback={null}>
+          <CommandPalette
+            open={commandPalette.open}
+            onClose={commandPalette.close}
+            profile={profile}
+            data={data}
+            leaderMode={leaderMode}
+            setActiveTab={setActiveTab}
+          />
+        </Suspense>
+      )}
     </>
   )
 }

@@ -1,4 +1,4 @@
-import { assertRecordExists, STALE_WRITE_MESSAGE, UserFacingError } from '../../lib/errors'
+import { assertRecordExists, PERMISSION_MESSAGE, STALE_WRITE_MESSAGE, UserFacingError } from '../../lib/errors'
 import { makeId } from '../../lib/format'
 import type { AnnouncementRepository, RepositoryDeps } from '../repositories/types'
 import {
@@ -13,7 +13,7 @@ export function createLocalAnnouncementRepository(ctx: RepositoryDeps): Announce
 
   const assertLeader = () => {
     if (profile.role !== 'leader' || profile.is_active === false || profile.must_change_password === true) {
-      throw new UserFacingError('활성 파트장 권한이 필요합니다.')
+      throw new UserFacingError(PERMISSION_MESSAGE)
     }
   }
 

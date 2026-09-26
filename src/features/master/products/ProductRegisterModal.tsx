@@ -1,7 +1,9 @@
 import type { Dispatch, SetStateAction } from 'react'
-import { Package } from 'lucide-react'
+import { Package, Plus } from 'lucide-react'
 import { FormGrid, Modal } from '../../../components/ui'
 import type { ProductCategory } from '../../../types'
+
+type ProductRegisterForm = { name: string; category: ProductCategory; companyName: string }
 
 export function ProductRegisterModal({
   open,
@@ -9,29 +11,38 @@ export function ProductRegisterModal({
   productForm,
   setProductForm,
   onSubmit,
+  submitting = false,
 }: {
   open: boolean
   onClose: () => void
-  productForm: { name: string; category: ProductCategory; companyName: string }
-  setProductForm: Dispatch<SetStateAction<{ name: string; category: ProductCategory; companyName: string }>>
+  productForm: ProductRegisterForm
+  setProductForm: Dispatch<SetStateAction<ProductRegisterForm>>
   onSubmit: () => void
+  submitting?: boolean
 }) {
+  const consigned = productForm.category === '위탁'
+  const dirty = Boolean(productForm.name.trim()) || (consigned && Boolean(productForm.companyName.trim()))
   return (
     <Modal
       open={open}
       onClose={onClose}
       title="제품 등록"
       titleId="product-register-title"
-      eyebrow="제품 마스터"
+      eyebrow="제품"
       icon={<Package size={18} />}
       closeLabel="제품 등록 닫기"
+      dirty={dirty && !submitting}
     >
       <FormGrid
         fields={
           <>
             <label>
-              제품명
-              <input value={productForm.name} onChange={(event) => setProductForm({ ...productForm, name: event.target.value })} />
+              <span>제품명 <span aria-hidden="true">*</span></span>
+              <input
+                aria-required="true"
+                value={productForm.name}
+                onChange={(event) => setProductForm({ ...productForm, name: event.target.value })}
+              />
             </label>
             <label>
               구분
@@ -50,18 +61,25 @@ export function ProductRegisterModal({
                 <option value="위탁">위탁</option>
               </select>
             </label>
-            <label>
-              위탁사명
-              <input
-                value={productForm.companyName}
-                onChange={(event) => setProductForm({ ...productForm, companyName: event.target.value })}
-              />
-            </label>
+            {consigned && (
+              <label>
+                위탁사명
+                <input
+                  placeholder="예: 위탁사 A"
+                  value={productForm.companyName}
+                  onChange={(event) => setProductForm({ ...productForm, companyName: event.target.value })}
+                />
+              </label>
+            )}
           </>
         }
         onSubmit={onSubmit}
+        onCancel={onClose}
         disabled={!productForm.name.trim()}
-        submitLabel="제품 추가"
+        disabledReason="제품명을 입력하면 등록할 수 있어요."
+        icon={<Plus size={16} />}
+        submitting={submitting}
+        submitLabel="제품 등록하기"
       />
     </Modal>
   )

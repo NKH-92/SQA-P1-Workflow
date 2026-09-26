@@ -47,7 +47,8 @@ vi.mock('../../data/fetchAppData', () => ({
   mergeAnnouncements: (current: AppData['announcements'], incoming: AppData['announcements']) => [...current, ...incoming],
 }))
 
-import { useAppData } from './useAppData'
+import { listCapNotice, optionalLoadFailureWarning } from '../../data/fetch/assembleAppData'
+import { splitDataWarnings, useAppData } from './useAppData'
 
 afterEach(() => {
   cleanup()
@@ -73,7 +74,7 @@ function SyncHealthShellHarness() {
       dataWarnings={dataWarnings}
       lastSyncedAt={lastSyncedAt}
       leaderMode
-      message={null}
+      toasts={[]}
       notifications={[]}
       onMarkAllRead={vi.fn()}
       onOpenCommandPalette={vi.fn()}
@@ -131,16 +132,54 @@ describe('useAppData session reset', () => {
     expect(result.current.lastSyncedAt).toBeInstanceOf(Date)
   })
 
-  it('reports bootstrap overflow warnings through the user-visible warning callback', async () => {
-    const warning = '[SQA_CHANGE_APPLICATIONS_TRUNCATED] 최신 1,000건만 불러왔습니다.'
+  it('reports bootstrap overflow as a neutral notice without the internal code', async () => {
+    const warning = '[SQA_CHANGE_APPLICATIONS_TRUNCATED] 변경 신청이 1,000건을 초과해 최신 1,000건만 불러왔습니다.'
     const reportWarnings = vi.fn()
     fetchAppDataMock.mockResolvedValueOnce({ ...emptyResult, optionalWarnings: [warning] })
     const { result } = renderHook(() => useAppData(reportWarnings))
 
     await act(async () => result.current.refreshData())
 
-    expect(reportWarnings).toHaveBeenCalledWith([warning])
-    expect(result.current.dataWarnings).toEqual([warning])
+    expect(reportWarnings).toHaveBeenCalledWith({ warnings: [], notices: ['공통변경: 최근 1,000건까지만 보여요.'] })
+    expect(result.current.dataWarnings).toEqual([])
+    expect(result.current.dataNotices).toEqual(['공통변경: 최근 1,000건까지만 보여요.'])
+  })
+
+  it('keeps list caps out of the stale-data banner and reports failures only when they change', async () => {
+    const failure = optionalLoadFailureWarning('공지')
+    const cap = listCapNotice('계정 목록', 1000)
+    const reportWarnings = vi.fn()
+    fetchAppDataMock
+      .mockResolvedValueOnce({ ...emptyResult, optionalWarnings: [failure, cap] })
+      .mockResolvedValueOnce({ ...emptyResult, optionalWarnings: [failure, cap] })
+      .mockResolvedValueOnce({ ...emptyResult, optionalWarnings: [] })
+      .mockResolvedValueOnce({ ...emptyResult, optionalWarnings: [failure] })
+    const { result } = renderHook(() => useAppData(reportWarnings))
+
+    await act(async () => result.current.refreshData())
+    expect(reportWarnings).toHaveBeenCalledTimes(1)
+    expect(reportWarnings).toHaveBeenLastCalledWith({ warnings: [failure], notices: [cap] })
+    expect(result.current.dataWarnings).toEqual([failure])
+    expect(result.current.dataNotices).toEqual([cap])
+
+    // 5분 폴링·창 복귀처럼 같은 내용이 다시 오면 알리지 않는다.
+    await act(async () => result.current.refreshData({ silent: true }))
+    expect(reportWarnings).toHaveBeenCalledTimes(1)
+
+    await act(async () => result.current.refreshData({ silent: true }))
+    expect(result.current.dataWarnings).toEqual([])
+
+    // 해결됐다가 다시 생기면 새 소식이므로 한 번 더 알린다.
+    await act(async () => result.current.refreshData({ silent: true }))
+    expect(reportWarnings).toHaveBeenCalledTimes(2)
+    expect(reportWarnings).toHaveBeenLastCalledWith({ warnings: [failure], notices: [] })
+  })
+
+  it('never shows an internal code prefix on an unknown warning', () => {
+    expect(splitDataWarnings(['[SQA_SOMETHING_ODD] 일부 데이터를 확인해 주세요.'])).toEqual({
+      warnings: ['일부 데이터를 확인해 주세요.'],
+      notices: [],
+    })
   })
 
   it('ignores a previous session refresh that resolves after reset', async () => {

@@ -42,7 +42,7 @@ export function markProductChangeTaskNotApplicable(
 }
 
 export function reopenProductChangeTask(ctx: RepositoryContext, taskId: string, reason: string) {
-  return ctx.repositories.changeApplications.reopenProductTask(taskId, normalizeTaskReason(reason, '재개 사유'))
+  return ctx.repositories.changeApplications.reopenProductTask(taskId, normalizeTaskReason(reason, '다시 여는 이유'))
 }
 
 export function reassignProductChangeTasks(
@@ -55,7 +55,7 @@ export function reassignProductChangeTasks(
   return ctx.repositories.changeApplications.reassignProductTasks(
     [...new Set(taskIds)],
     assigneeId,
-    normalizeTaskReason(reason, '재배정 사유'),
+    normalizeTaskReason(reason, '담당자를 바꾸는 이유'),
   )
 }
 
@@ -66,12 +66,12 @@ export function cancelProductChangeTask(ctx: RepositoryContext, taskId: string, 
 export function removeProductChangeScope(ctx: RepositoryContext, taskId: string, reason: string) {
   return ctx.repositories.changeApplications.removeProductChangeScope(
     taskId,
-    normalizeTaskReason(reason, '범위 제외 사유'),
+    normalizeTaskReason(reason, '범위에서 빼는 이유'),
   )
 }
 
 export function restoreProductChangeScope(ctx: RepositoryContext, taskId: string, reason: string) {
-  return ctx.repositories.changeApplications.restoreProductChangeScope(taskId, normalizeTaskReason(reason, '범위 복원 사유'))
+  return ctx.repositories.changeApplications.restoreProductChangeScope(taskId, normalizeTaskReason(reason, '범위에 다시 넣는 이유'))
 }
 
 export function cancelChangeApplication(ctx: RepositoryContext, changeApplicationId: string, reason: string) {

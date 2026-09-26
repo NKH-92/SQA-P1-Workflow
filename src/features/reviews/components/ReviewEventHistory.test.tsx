@@ -26,13 +26,16 @@ describe('ReviewEventHistory', () => {
 
     render(<ReviewEventHistory localEvents={[event]} reviewRequestId="review-1" />)
 
+    expect(screen.getByRole('heading', { name: '처리 기록', level: 3 })).toBeInTheDocument()
     expect(await screen.findByText('승인')).toBeInTheDocument()
-    const timestamp = screen.getByText(/2026.*07.*23.*14.*32/)
+    const timestamp = screen.getByText('2026년 7월 23일 오후 2:32')
     expect(timestamp.tagName).toBe('TIME')
     expect(timestamp).toHaveAttribute('datetime', event.occurred_at)
   })
 
-  it('uses a safe fallback for unknown future event codes', () => {
-    expect(reviewEventLabel('future_event')).toBe('기타 검토 이벤트')
+  it('uses the glossary labels and a safe fallback for unknown future event codes', () => {
+    expect(reviewEventLabel('resubmitted')).toBe('재요청')
+    expect(reviewEventLabel('reopened')).toBe('다시 열림')
+    expect(reviewEventLabel('future_event')).toBe('기타 기록')
   })
 })

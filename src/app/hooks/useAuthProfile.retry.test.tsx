@@ -1,5 +1,5 @@
-import { act, renderHook, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppData, Profile } from '../../types'
 
 const user = { id: 'user-1' }
@@ -43,6 +43,8 @@ vi.mock('../../lib/supabase', () => ({
 import { useAuthProfile } from './useAuthProfile'
 
 describe('useAuthProfile retry', () => {
+  afterEach(cleanup)
+
   beforeEach(() => {
     profileState.current = profile
     authMocks.getSession.mockClear()
@@ -88,5 +90,33 @@ describe('useAuthProfile retry', () => {
     await waitFor(() => expect(result.current.profile).toEqual(profileState.current))
     expect(result.current.profileLoadError).toBeNull()
     expect(refreshData).not.toHaveBeenCalled()
+  })
+
+  it('clears stale auth-phase messages once the profile loads', async () => {
+    const setMessage = vi.fn()
+    const { result } = renderHook(() =>
+      useAuthProfile(vi.fn(async () => undefined), vi.fn() as unknown as React.Dispatch<React.SetStateAction<AppData>>, setMessage, vi.fn(), vi.fn()),
+    )
+
+    await waitFor(() => expect(result.current.profile).toEqual(profile))
+    expect(setMessage).toHaveBeenCalledWith(null)
+    expect(setMessage).not.toHaveBeenCalledWith(expect.objectContaining({ tone: 'error' }))
+  })
+
+  it('keeps saved review drafts but clears screen view state on sign-out', async () => {
+    const { result } = renderHook(() =>
+      useAuthProfile(vi.fn(async () => undefined), vi.fn() as unknown as React.Dispatch<React.SetStateAction<AppData>>, vi.fn(), vi.fn(), vi.fn()),
+    )
+    await waitFor(() => expect(result.current.profile).toEqual(profile))
+    const draftKey = `draft:review:v2:${profile.id}`
+    window.localStorage.setItem(draftKey, '{"title":"임시저장한 제목"}')
+    window.sessionStorage.setItem('sqa.view.reviews.member.filters', '"pending"')
+
+    await act(async () => result.current.signOut())
+
+    expect(window.localStorage.getItem(draftKey)).toBe('{"title":"임시저장한 제목"}')
+    expect(window.sessionStorage.getItem('sqa.view.reviews.member.filters')).toBeNull()
+    expect(authMocks.signOut).toHaveBeenCalledTimes(1)
+    window.localStorage.removeItem(draftKey)
   })
 })

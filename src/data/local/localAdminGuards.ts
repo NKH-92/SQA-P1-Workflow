@@ -1,11 +1,11 @@
 import { canReceiveAssignment } from '../../domain/permissions'
-import { assertRecordExists, UserFacingError } from '../../lib/errors'
+import { assertRecordExists, PERMISSION_MESSAGE, UserFacingError } from '../../lib/errors'
 import type { RepositoryDeps } from '../repositories/types'
 import { assertMasterVersion, MASTER_STALE_MESSAGE } from '../validation/masterOcc'
 
 export function assertLocalLeader(profile: RepositoryDeps['profile']) {
   if (profile.role !== 'leader' || profile.is_active === false || profile.must_change_password === true) {
-    throw new UserFacingError('활성 파트장 권한이 필요합니다.')
+    throw new UserFacingError(PERMISSION_MESSAGE)
   }
 }
 
@@ -26,7 +26,7 @@ export function assertLocalAssignmentMembers(data: RepositoryDeps['data'], membe
     const member = data.profiles.find((item) => item.id === memberId)
     assertRecordExists(member)
     if (!canReceiveAssignment(member)) {
-      throw new UserFacingError('활성 상태인 파트원에게만 배정할 수 있습니다.')
+      throw new UserFacingError('활성 상태인 파트원에게만 배정할 수 있어요.')
     }
   }
 }

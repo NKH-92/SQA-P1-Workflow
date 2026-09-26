@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { StrictMode, useRef, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Modal } from './Modal'
+import { DialogActions, Modal, ModalCloseButton } from './Modal'
 
 afterEach(cleanup)
 
@@ -288,8 +288,7 @@ describe('Modal focus return', () => {
     const first = screen.getByRole('button', { name: '첫 번째' })
     const second = screen.getByRole('button', { name: '두 번째' })
 
-    expect(closeButton).toHaveFocus()
-    await user.tab()
+    // 처음 포커스는 닫기(X)가 아니라 창 안의 첫 행동에 간다.
     expect(first).toHaveFocus()
     await user.tab()
     expect(second).toHaveFocus()
@@ -331,5 +330,149 @@ describe('Modal focus return', () => {
     await user.click(screen.getByRole('button', { name: '닫기' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(trigger).toHaveFocus()
+  })
+})
+
+describe('Modal unsaved input guard', () => {
+  function DirtyHarness({ onClose }: { onClose: () => void }) {
+    const [text, setText] = useState('')
+    const [open, setOpen] = useState(true)
+    return (
+      <Modal
+        dirty={text.length > 0}
+        open={open}
+        onClose={() => {
+          onClose()
+          setOpen(false)
+        }}
+        title="새 공지"
+        closeLabel="공지 편집 닫기"
+      >
+        <label>
+          제목
+          <input value={text} onChange={(event) => setText(event.target.value)} />
+        </label>
+      </Modal>
+    )
+  }
+
+  it('focuses the first field instead of the close button', async () => {
+    render(<DirtyHarness onClose={vi.fn()} />)
+    await vi.waitFor(() => expect(screen.getByRole('textbox', { name: '제목' })).toHaveFocus())
+  })
+
+  it('closes immediately when nothing was typed', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    render(<DirtyHarness onClose={onClose} />)
+    await user.keyboard('{Escape}')
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks before discarding typed input and ignores backdrop clicks while dirty', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    render(<DirtyHarness onClose={onClose} />)
+    await user.type(screen.getByRole('textbox', { name: '제목' }), '주간 안내')
+
+    fireEvent.mouseDown(document.querySelector('.modal-backdrop') as Element)
+    expect(onClose).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: '공지 편집 닫기' }))
+    expect(screen.getByText('작성 중인 내용이 있어요. 닫으면 입력한 내용이 사라져요.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '계속 쓰기' })).toHaveFocus()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('button', { name: '계속 쓰기' })).not.toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: '버리고 닫기' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not close while Hangul composition is in progress', () => {
+    const onClose = vi.fn()
+    render(<DirtyHarness onClose={onClose} />)
+    fireEvent.keyDown(window, { key: 'Escape', isComposing: true })
+    fireEvent.keyDown(window, { key: 'Escape', keyCode: 229 })
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('routes the footer 닫기 button through the same unsaved-input check', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    function FooterHarness() {
+      const [text, setText] = useState('')
+      return (
+        <Modal dirty={text.length > 0} open onClose={onClose} title="메모" closeLabel="메모 닫기">
+          <label>
+            메모
+            <textarea value={text} onChange={(event) => setText(event.target.value)} />
+          </label>
+          <DialogActions onClose={onClose}>
+            <button type="button">메모 저장하기</button>
+          </DialogActions>
+        </Modal>
+      )
+    }
+    render(<FooterHarness />)
+    await user.type(screen.getByRole('textbox', { name: '메모' }), '확인 필요')
+    await user.click(screen.getByRole('button', { name: '닫기' }))
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: '계속 쓰기' })).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: '버리고 닫기' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('guards a hand-built footer close button (ModalCloseButton) the same way', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    function StepHarness() {
+      const [text, setText] = useState('')
+      return (
+        <Modal dirty={text.length > 0} open onClose={onClose} title="공통변경 등록" closeLabel="등록 창 닫기">
+          <label>
+            제목
+            <input value={text} onChange={(event) => setText(event.target.value)} />
+          </label>
+          <footer>
+            <ModalCloseButton onClose={onClose} />
+            <button type="button">다음</button>
+          </footer>
+        </Modal>
+      )
+    }
+    render(<StepHarness />)
+    await user.type(screen.getByRole('textbox', { name: '제목' }), '원료 변경')
+    await user.click(screen.getByRole('button', { name: '닫기' }))
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: '계속 쓰기' })).toHaveFocus()
+  })
+
+  it('asks the browser to confirm leaving the page only while there is unsaved input', async () => {
+    const user = userEvent.setup()
+    render(<DirtyHarness onClose={vi.fn()} />)
+    const clean = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(clean)
+    expect(clean.defaultPrevented).toBe(false)
+
+    await user.type(screen.getByRole('textbox', { name: '제목' }), '주간 안내')
+    const dirty = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(dirty)
+    expect(dirty.defaultPrevented).toBe(true)
+  })
+
+  it('treats browser Back as a close request and keeps the dialog while there is unsaved input', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    window.history.replaceState(null, '', window.location.href)
+    render(<DirtyHarness onClose={onClose} />)
+    expect(window.history.state?.__sqaOverlays).toHaveLength(1)
+
+    await user.type(screen.getByRole('textbox', { name: '제목' }), '주간 안내')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: null }))
+    expect(onClose).not.toHaveBeenCalled()
+    expect(await screen.findByRole('button', { name: '계속 쓰기' })).toHaveFocus()
   })
 })

@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createPreviewData, previewLeader, previewMember } from '../../demoData'
+import { PERMISSION_MESSAGE } from '../../lib/errors'
+import { PROFILE_NOTE_TARGET_MESSAGE } from '../local/localTeamRepository'
 import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
 import { addProfileNote } from './team'
 
@@ -12,7 +14,7 @@ describe('local profile-note permission parity', () => {
     const ctx = context(previewMember)
 
     await expect(addProfileNote(ctx, { profileId: previewMember.id, note: 'blocked' })).rejects.toThrow(
-      '활성 파트장 권한이 필요합니다.',
+      PERMISSION_MESSAGE,
     )
     expect(ctx.setData).not.toHaveBeenCalled()
   })
@@ -23,7 +25,7 @@ describe('local profile-note permission parity', () => {
 
     const leaderTarget = context()
     await expect(addProfileNote(leaderTarget, { profileId: previewLeader.id, note: 'blocked' })).rejects.toThrow(
-      '파트원에게만 메모를 남길 수 있습니다.',
+      PROFILE_NOTE_TARGET_MESSAGE,
     )
     expect(missing.setData).not.toHaveBeenCalled()
     expect(leaderTarget.setData).not.toHaveBeenCalled()

@@ -9,10 +9,12 @@ import {
   assertCanReopen,
   assertCanResubmit,
   assertFeedbackComment,
+  assertRejectReason,
+  assertResubmitNote,
   normalizeReviewRequestPayload,
   assertReviewStatusTransition,
 } from '../validation/reviews'
-import { translateReviewOccError } from './reviewOccError'
+import { REVIEW_NOT_FOUND_MESSAGE, translateReviewOccError } from './reviewOccError'
 
 function throwReviewError(error: { message?: string }): never {
   throw translateReviewOccError(error)
@@ -20,21 +22,30 @@ function throwReviewError(error: { message?: string }): never {
 
 export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepository {
   const { profile, data, setData } = ctx
+  /**
+   * 이 저장소 인스턴스가 직접 쓴 뒤 서버가 돌려준 최신 버전(updated_at).
+   * ‘고쳐서 다시 요청하기’처럼 수정 직후 같은 요청에 이어서 쓰는 경우, 화면이 새로고침되기 전의
+   * 스냅샷 값 대신 방금 받은 버전으로 낙관적 잠금(OCC)을 통과한다. RPC 이름·인자는 그대로다.
+   */
+  const knownRevisions = new Map<string, string>()
+  const expectedRevision = (requestId: string, fallback: string | undefined) =>
+    knownRevisions.get(requestId) ?? fallback
 
   return {
     async saveReviewRequest({ editingReviewId, payload }) {
       if (editingReviewId) {
         const previous = data.reviewRequests.find((item) => item.id === editingReviewId)
-        if (!previous) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
+        if (!previous) throw new UserFacingError(REVIEW_NOT_FOUND_MESSAGE)
         const normalized = normalizeReviewRequestPayload(payload, { existingDueDate: previous.due_date })
-        const { error } = await supabase!.rpc('update_review_request', {
+        const { data: nextUpdatedAt, error } = await supabase!.rpc('update_review_request', {
           p_review_request_id: editingReviewId,
-          p_expected_updated_at: previous.updated_at,
+          p_expected_updated_at: expectedRevision(editingReviewId, previous.updated_at),
           p_title: normalized.title,
           p_description: normalized.description,
           p_due_date: normalized.due_date,
         })
         if (error) throwReviewError(error)
+        if (typeof nextUpdatedAt === 'string' && nextUpdatedAt) knownRevisions.set(editingReviewId, nextUpdatedAt)
         return { reviewId: editingReviewId, isUpdate: true }
       }
 
@@ -50,10 +61,11 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
 
     async withdrawReviewRequest(requestId, reason) {
       const request = data.reviewRequests.find((item) => item.id === requestId)
-      if (!request) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
+      if (!request) throw new UserFacingError(REVIEW_NOT_FOUND_MESSAGE)
+      if (reason.trim().length < 2) throw new UserFacingError('회수 사유를 2자 이상 적어 주세요.')
       const { error } = await supabase!.rpc('withdraw_review_request', {
         p_review_request_id: requestId,
-        p_expected_updated_at: request.updated_at,
+        p_expected_updated_at: expectedRevision(requestId, request.updated_at),
         p_reason: reason.trim(),
       })
       if (error) throwReviewError(error)
@@ -61,12 +73,13 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
 
     async rejectReviewRequest(requestId, comment) {
       const request = data.reviewRequests.find((item) => item.id === requestId)
-      if (!request) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
+      if (!request) throw new UserFacingError(REVIEW_NOT_FOUND_MESSAGE)
       assertCanReject(request.status)
-      if (comment.trim().length > 2000) throw new UserFacingError('피드백은 2000자 이내로 입력해 주세요.')
+      // 반려 사유는 필수다. 서버 함수는 빈 사유를 허용하지만 화면·로컬과 같은 규칙을 여기서 지킨다.
+      assertRejectReason(comment)
       const { error } = await supabase!.rpc('reject_review_request', {
         p_review_request_id: requestId,
-        p_expected_updated_at: request.updated_at,
+        p_expected_updated_at: expectedRevision(requestId, request.updated_at),
         p_comment: comment.trim(),
       })
       if (error) throwReviewError(error)
@@ -74,38 +87,38 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
 
     async updateReviewStatus(requestId, status) {
       const request = data.reviewRequests.find((item) => item.id === requestId)
-      if (!request) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
+      if (!request) throw new UserFacingError(REVIEW_NOT_FOUND_MESSAGE)
       assertReviewStatusTransition(request.status, status)
-      if (status !== 'approved') throw new UserFacingError('승인 이외의 상태 변경은 전용 동작을 사용해 주세요.')
+      if (status !== 'approved') throw new UserFacingError('이 상태로는 바꿀 수 없어요. 목록을 새로고침해 주세요.')
       const { error } = await supabase!.rpc('approve_review_request', {
         p_review_request_id: requestId,
-        p_expected_updated_at: request.updated_at,
+        p_expected_updated_at: expectedRevision(requestId, request.updated_at),
       })
       if (error) throwReviewError(error)
     },
 
     async reopenReviewRequest(requestId) {
       const request = data.reviewRequests.find((item) => item.id === requestId)
-      if (!request) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
+      if (!request) throw new UserFacingError(REVIEW_NOT_FOUND_MESSAGE)
       assertCanReopen(request.status)
       const { error } = await supabase!.rpc('reopen_review_request', {
         p_review_request_id: requestId,
-        p_expected_updated_at: request.updated_at,
+        p_expected_updated_at: expectedRevision(requestId, request.updated_at),
       })
       if (error) throwReviewError(error)
     },
 
     async resubmitReviewRequest(requestId, comment) {
       assertActiveMember(profile)
-      assertFeedbackComment(comment)
+      assertResubmitNote(comment)
       const request = data.reviewRequests.find((item) => item.id === requestId)
       if (!request || request.requester_id !== profile.id) {
-        throw new UserFacingError('본인의 요청만 재요청할 수 있습니다.')
+        throw new UserFacingError('내가 보낸 요청만 다시 요청할 수 있어요.')
       }
       assertCanResubmit(request.status)
       const { error } = await supabase!.rpc('resubmit_review_request', {
         p_review_request_id: requestId,
-        p_expected_updated_at: request.updated_at,
+        p_expected_updated_at: expectedRevision(requestId, request.updated_at),
         p_comment: comment.trim(),
       })
       if (error) throwReviewError(error)
@@ -126,7 +139,7 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
       const feedback = data.reviewRequests
         .flatMap((request) => request.review_feedback ?? [])
         .find((item) => item.id === feedbackId)
-      if (!feedback) throw new UserFacingError('피드백을 찾을 수 없습니다.')
+      if (!feedback) throw new UserFacingError('피드백을 찾지 못했어요. 목록을 새로고침해 주세요.')
       const { error } = await supabase!.rpc('update_review_feedback', {
         p_feedback_id: feedbackId,
         p_expected_updated_at: feedback.updated_at ?? feedback.created_at,
@@ -139,7 +152,7 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
       const feedback = data.reviewRequests
         .flatMap((request) => request.review_feedback ?? [])
         .find((item) => item.id === feedbackId)
-      if (!feedback) throw new UserFacingError('피드백을 찾을 수 없습니다.')
+      if (!feedback) throw new UserFacingError('피드백을 찾지 못했어요. 목록을 새로고침해 주세요.')
       const { error } = await supabase!.rpc('void_review_feedback', {
         p_feedback_id: feedbackId,
         p_expected_updated_at: feedback.updated_at ?? feedback.created_at,

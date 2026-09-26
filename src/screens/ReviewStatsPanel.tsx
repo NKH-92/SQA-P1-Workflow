@@ -6,6 +6,7 @@ import {
   Filter,
   ListChecks,
   PieChart,
+  RotateCcw,
   Table2,
   Users,
 } from 'lucide-react'
@@ -32,15 +33,19 @@ import {
 } from '../features/reviews/useReviewStatisticsV2'
 import { ZERO_REVIEW_STATS_V2_KPIS, loadReviewStatsV2View, type ReviewStatsV2View } from '../features/reviews/reviewStatsV2View'
 import { businessDateKey } from '../lib/businessTime'
-import { toUserMessage } from '../lib/errors'
+import { GENERIC_FAILURE_MESSAGE, toUserMessage } from '../lib/errors'
 import { reviewStatusLabels } from '../lib/format'
 import type { AppData } from '../types'
 import './ReviewStatsPanel.css'
 
+/**
+ * 통계 불러오기 상태. 다시 불러오는 동안(refreshing)에는 이전 숫자를 그대로 보여주고
+ * 작은 ‘갱신 중’ 표시만 더한다(읽던 화면이 접혔다 펴지지 않게).
+ */
 type ReviewStatsV2LoadState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
-  | ({ status: 'ready' } & ReviewStatsV2View)
+  | ({ status: 'ready'; refreshing: boolean } & ReviewStatsV2View)
 
 const PRESET_OPTIONS: Array<{ value: ReviewStatsPreset; label: string }> = [
   { value: 'this-month', label: '이번 달' },
@@ -94,7 +99,7 @@ export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
   })
 
   // selectReviewStats는 range/requesterOptions/statusCounts처럼 review_requests(현재 상태
-  // snapshot, bounded)만으로 정확히 계산되는 부분에만 쓴다. 실제 요청·재제출·승인·반려
+  // snapshot, bounded)만으로 정확히 계산되는 부분에만 쓴다. 실제 요청·재요청·승인·반려
   // 건수와 월별 추이는 이제 아래 v2 서버 집계(loadReviewStatsV2View)에서만 가져온다 —
   // review_events는 더 이상 전체 이력을 들고 있지 않으므로 이 값들을
   // stats.kpis/requesterRows/monthlyRows에서 재사용하지 않는다.
@@ -102,6 +107,7 @@ export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
 
   const fetchStatistics = useReviewStatisticsV2(data)
   const [view, setView] = useState<ReviewStatsV2LoadState>({ status: 'loading' })
+  const [retryToken, setRetryToken] = useState(0)
   const requesterOptionsJson = JSON.stringify(stats.requesterOptions)
   const rangeValid = stats.range.valid
   const rangeStartDate = stats.range.startDate
@@ -117,11 +123,12 @@ export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
 
   useEffect(() => {
     if (!rangeValid) {
-      setView({ status: 'ready', kpis: ZERO_REVIEW_STATS_V2_KPIS, requesterRows: [], monthlyRows: [] })
+      setView({ status: 'ready', refreshing: false, kpis: ZERO_REVIEW_STATS_V2_KPIS, requesterRows: [], monthlyRows: [] })
       return
     }
     let cancelled = false
-    setView({ status: 'loading' })
+    // 이미 보여주던 숫자가 있으면 지우지 않고 ‘갱신 중’만 표시한다.
+    setView((current) => (current.status === 'ready' ? { ...current, refreshing: true } : { status: 'loading' }))
     loadReviewStatsV2View({
       fetchStatistics,
       range: { startDate: rangeStartDate, endDate: rangeEndDate },
@@ -129,7 +136,7 @@ export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
       requesterOptions: JSON.parse(requesterOptionsJson),
     }).then(
       (result) => {
-        if (!cancelled) setView({ status: 'ready', ...result })
+        if (!cancelled) setView({ status: 'ready', refreshing: false, ...result })
       },
       (error: unknown) => {
         if (!cancelled) setView({ status: 'error', message: toUserMessage(error) })
@@ -146,6 +153,7 @@ export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
     rangeValid,
     requesterId,
     requesterOptionsJson,
+    retryToken,
     status,
   ])
 
@@ -153,6 +161,7 @@ export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
   const requesterRows = view.status === 'ready' ? view.requesterRows : []
   const monthlyRows = view.status === 'ready' ? view.monthlyRows : []
   const hasResults = requesterRows.length > 0
+  const refreshing = view.status === 'ready' && view.refreshing
 
   // 데이터 갱신으로 선택한 요청자의 모든 행이 범위 밖으로 사라지면 유효한 전체 선택으로 복구한다.
   useEffect(() => {
@@ -165,18 +174,22 @@ export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
 
   const rangeLabel = stats.range.valid
     ? `${formatDateKey(stats.range.startDate)} ~ ${formatDateKey(stats.range.endDate)}`
-    : '기간을 확인해 주세요.'
+    : '기간을 다시 골라 주세요'
 
   const updatePreset = (preset: ReviewStatsPreset) => {
     setFilters((current) => ({ ...current, preset }))
   }
+
+  const errorDetail = view.status === 'error'
+    ? view.message === GENERIC_FAILURE_MESSAGE ? '잠시 후 다시 시도해 주세요.' : view.message
+    : null
 
   return (
     <div className="stack review-stats-page">
       <div className="page-intro">
         <h1>검토 통계</h1>
         <p>
-          이벤트 지표는 발생일, 현재 상태 지표는 요청 생성일 기준 · <strong>{rangeLabel}</strong>
+          <strong>{rangeLabel}</strong> 동안의 검토요청과 처리 결과예요.
         </p>
       </div>
 
@@ -186,14 +199,16 @@ export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
             <Filter aria-hidden="true" size={18} />
             <h2 id="review-stats-filter-title">통계 필터</h2>
           </div>
-          <span aria-live="polite" role="status">
+          <span className="review-stats-status-chip" data-refreshing={refreshing ? 'true' : undefined} role="status">
             {!stats.range.valid
-              ? '기간 오류'
+              ? '기간 확인 필요'
               : view.status === 'loading'
                 ? '집계 중…'
                 : view.status === 'error'
-                  ? '집계 실패'
-                  : `${formatCount(kpis.requestCount)}건 집계`}
+                  ? '집계하지 못했어요'
+                  : refreshing
+                    ? '갱신 중…'
+                    : `${formatCount(kpis.requestCount)}건 집계`}
           </span>
         </div>
 
@@ -246,7 +261,7 @@ export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
               }
               value={filters.status}
             >
-              <option value="all">전체 현재 상태</option>
+              <option value="all">모든 상태</option>
               {STATUS_OPTIONS.map((status) => (
                 <option key={status} value={status}>
                   {reviewStatusLabels[status]}
@@ -289,12 +304,17 @@ export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
           </fieldset>
         )}
 
-        <p className="review-stats-history-note" id="review-stats-history-note">
-          <CalendarDays aria-hidden="true" size={16} />
-          {formatDateKey(stats.range.minDate)}부터 {formatDateKey(stats.range.maxDate)}까지 서버에 기록된 제출·재제출·승인·반려
-          이벤트는 실제 발생 시각으로 집계합니다. 현재 대기와 현재 상태 분포는 같은 기간에 생성된 요청의 현재 상태를
-          사용하며, 이관된 추정 이벤트는 서버 메타데이터에 별도로 표시됩니다.
-        </p>
+        <details className="review-stats-history-note">
+          <summary>
+            <CalendarDays aria-hidden="true" size={16} />
+            집계 기준 보기
+          </summary>
+          <p id="review-stats-history-note">
+            {formatDateKey(stats.range.minDate)}부터 {formatDateKey(stats.range.maxDate)}까지 볼 수 있어요.
+            요청·재요청·승인·반려는 실제로 일어난 시각을 기준으로 셌어요. 대기 중과 상태 분포는 이 기간에
+            들어온 요청의 지금 상태예요.
+          </p>
+        </details>
 
         {!stats.range.valid && (
           <p className="review-stats-validation" role="alert">
@@ -303,12 +323,12 @@ export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
         )}
         {stats.range.wasClamped && (
           <p className="review-stats-validation" role="status">
-            조회 가능한 최근 6개월 범위에 맞춰 기간을 조정했습니다.
+            볼 수 있는 기간이 최근 6개월이라 기간을 그에 맞게 바꿨어요.
           </p>
         )}
       </section>
 
-      <div id="review-stats-results">
+      <div aria-busy={refreshing || view.status === 'loading' ? true : undefined} id="review-stats-results">
         {stats.range.valid && view.status === 'ready' && (
           <div
             aria-label="검토 요약 지표"
@@ -322,36 +342,39 @@ export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
                 <span className="unit">건</span>
               </div>
             </article>
-            <article aria-label={`제출 횟수 ${formatCount(kpis.submissionCount)}회`} className="kpi">
-              <div className="kpi-label">제출 횟수</div>
+            <article aria-label={`요청 횟수 ${formatCount(kpis.submissionCount)}회`} className="kpi">
+              <div className="kpi-label">
+                요청 횟수
+                <small>재요청 포함</small>
+              </div>
               <div className="kpi-value">
                 {formatCount(kpis.submissionCount)}
                 <span className="unit">회</span>
               </div>
             </article>
-            <article aria-label={`재제출 ${formatCount(kpis.resubmissionCount)}회`} className="kpi">
-              <div className="kpi-label">재제출</div>
+            <article aria-label={`재요청 ${formatCount(kpis.resubmissionCount)}회`} className="kpi">
+              <div className="kpi-label">재요청</div>
               <div className="kpi-value">
                 {formatCount(kpis.resubmissionCount)}
                 <span className="unit">회</span>
               </div>
             </article>
-            <article aria-label={`현재 대기 ${formatCount(kpis.pendingCount)}건`} className="kpi" data-tone="pending">
-              <div className="kpi-label">현재 대기</div>
+            <article aria-label={`${reviewStatusLabels.pending} ${formatCount(kpis.pendingCount)}건`} className="kpi" data-tone="pending">
+              <div className="kpi-label">{reviewStatusLabels.pending}</div>
               <div className="kpi-value">
                 {formatCount(kpis.pendingCount)}
                 <span className="unit">건</span>
               </div>
             </article>
-            <article aria-label={`승인 ${formatCount(kpis.approvedCount)}건`} className="kpi" data-tone="approved">
-              <div className="kpi-label">승인</div>
+            <article aria-label={`${reviewStatusLabels.approved} ${formatCount(kpis.approvedCount)}건`} className="kpi" data-tone="approved">
+              <div className="kpi-label">{reviewStatusLabels.approved}</div>
               <div className="kpi-value">
                 {formatCount(kpis.approvedCount)}
                 <span className="unit">건</span>
               </div>
             </article>
-            <article aria-label={`반려 ${formatCount(kpis.rejectedCount)}건`} className="kpi" data-tone="rejected">
-              <div className="kpi-label">반려</div>
+            <article aria-label={`${reviewStatusLabels.rejected} ${formatCount(kpis.rejectedCount)}건`} className="kpi" data-tone="rejected">
+              <div className="kpi-label">{reviewStatusLabels.rejected}</div>
               <div className="kpi-value">
                 {formatCount(kpis.rejectedCount)}
                 <span className="unit">건</span>
@@ -363,26 +386,32 @@ export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
         {stats.range.valid && view.status === 'loading' && (
           <Section title="통계 결과" icon={<ListChecks size={18} />}>
             <EmptyState
-              description="서버에서 통계를 집계하는 중입니다. 잠시만 기다려 주세요."
+              description="잠시만 기다려 주세요."
               icon={<BarChart3 size={22} />}
-              title="통계를 불러오는 중입니다."
+              title="통계를 불러오고 있어요"
             />
           </Section>
         )}
 
         {stats.range.valid && view.status === 'error' && (
-          <p className="review-stats-validation" role="alert">
+          <div className="review-stats-validation review-stats-error" role="alert">
             <AlertTriangle aria-hidden="true" size={16} />
-            통계를 불러오지 못했습니다: {view.message}
-          </p>
+            <p>
+              통계를 불러오지 못했어요. {errorDetail}
+            </p>
+            <button className="ghost compact" onClick={() => setRetryToken((value) => value + 1)} type="button">
+              <RotateCcw aria-hidden="true" size={14} />
+              다시 시도
+            </button>
+          </div>
         )}
 
         {stats.range.valid && view.status === 'ready' && !hasResults && (
           <Section title="통계 결과" icon={<ListChecks size={18} />}>
             <EmptyState
-              description="기간, 요청자 또는 현재 상태 필터를 바꾸어 다시 확인해 보세요."
+              description="기간이나 요청자, 상태를 바꿔 보세요."
               icon={<BarChart3 size={22} />}
-              title="선택한 조건에 해당하는 검토 데이터가 없습니다."
+              title="선택한 조건에 맞는 검토 기록이 없어요"
             />
           </Section>
         )}
@@ -412,9 +441,9 @@ export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
             </Section>
 
             <Section
-              aside="요청 건수와 제출 횟수를 구분"
+              aside="요청 건수와 요청 횟수를 나눠 보여요"
               icon={<Table2 size={18} />}
-              title="요청자별 정확한 수치"
+              title="요청자별 수치"
             >
               <ExactNumbersTable rows={requesterRows} />
             </Section>

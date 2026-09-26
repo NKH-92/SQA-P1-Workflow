@@ -29,7 +29,7 @@ vi.mock('../activityLog', () => ({
   recordActivityLog: activityLogMock,
 }))
 
-import { addProduct, assignDuty, assignProduct, saveProductAssignments } from './master'
+import { addProduct, assignDuty, assignProduct, saveDutyAssignments, saveProductAssignments } from './master'
 
 const leader: Profile = {
   id: 'leader-1',
@@ -196,13 +196,35 @@ describe('single assignment RPC contracts (remote)', () => {
     expect(activityLogMock).not.toHaveBeenCalled()
   })
 
+  it('removes or moves duty owners through the OCC-guarded replace RPC with the operator reason (P0-3)', async () => {
+    const ctx = remoteContext()
+    ctx.data.duties = [{ id: 'duty-1', name: 'Duty', major_category_id: 'category-1', updated_at: '2026-07-01T00:00:00.000Z' }]
+    rpcMock.mockResolvedValueOnce({ data: '2026-07-02T00:00:00.000Z', error: null })
+
+    const result = await saveDutyAssignments(ctx, {
+      dutyId: 'duty-1',
+      nextMemberIds: [],
+      reason: '업무 종료',
+      expectedUpdatedAt: '2026-07-01T00:00:00.000Z',
+    })
+
+    expect(result).toEqual({ noop: false })
+    expect(rpcMock).toHaveBeenCalledWith('replace_duty_assignments_if_current', expect.objectContaining({
+      p_duty_id: 'duty-1',
+      p_member_ids: [],
+      p_expected_updated_at: '2026-07-01T00:00:00.000Z',
+      p_reason: '업무 종료',
+    }))
+    expect(activityLogMock).toHaveBeenCalledOnce()
+  })
+
   it('rejects saving product assignments without a known revision to check against', async () => {
     const ctx = remoteContext()
     ctx.data.products = []
 
     await expect(
       saveProductAssignments(ctx, { productId: 'product-1', nextMemberIds: [], reason: '배정 조정' }),
-    ).rejects.toMatchObject({ message: '다른 사용자가 변경했습니다. 새로고침 후 다시 시도해 주세요.' })
+    ).rejects.toMatchObject({ message: '다른 사람이 먼저 수정했어요. 새로고침한 뒤 다시 시도해 주세요.' })
     expect(rpcMock).not.toHaveBeenCalledWith('replace_product_assignments_if_current', expect.anything())
   })
 

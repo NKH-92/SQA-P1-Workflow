@@ -2,8 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { Archive, RotateCcw, Search } from 'lucide-react'
 import { EmptyState, Modal } from '../../../components/ui'
 import { toUserMessage } from '../../../lib/errors'
-import { formatDate, reviewStatusLabels } from '../../../lib/format'
-import { asReviewHistoryRow } from '../../../lib/reviewHistory'
+import { formatDateTime, formatMonthDay, reviewStatusLabels } from '../../../lib/format'
+import {
+  asReviewHistoryRow,
+  orderReviewHistoryRows as orderHistoryRows,
+  type ReviewHistoryOrder as HistoryOrder,
+} from '../../../lib/reviewHistory'
 import type {
   Profile,
   ReviewEvent,
@@ -24,9 +28,9 @@ const EMPTY_FILTERS: ReviewHistoryFilters = {
 
 const TERMINAL_FILTERS = [
   { value: null, label: '전체' },
-  { value: 'approved' as const, label: '완료' },
-  { value: 'rejected' as const, label: '반려' },
-  { value: 'withdrawn' as const, label: '회수' },
+  { value: 'approved' as const, label: reviewStatusLabels.approved },
+  { value: 'rejected' as const, label: reviewStatusLabels.rejected },
+  { value: 'withdrawn' as const, label: reviewStatusLabels.withdrawn },
 ]
 
 type ReviewHistoryModalProps = {
@@ -39,7 +43,7 @@ type ReviewHistoryModalProps = {
     filters: ReviewHistoryFilters,
     cursor: ReviewHistoryCursor | null,
   ) => Promise<ReviewHistoryPage>
-  onReopen: (requestId: string) => Promise<boolean>
+  onReopen: (request: ReviewRequest) => Promise<boolean>
 }
 
 function mergeRows(seed: ReviewHistoryRow | null, rows: ReviewHistoryRow[]): ReviewHistoryRow[] {
@@ -47,6 +51,12 @@ function mergeRows(seed: ReviewHistoryRow | null, rows: ReviewHistoryRow[]): Rev
   if (seed) byId.set(seed.id, seed)
   for (const row of rows) byId.set(row.id, row)
   return [...byId.values()]
+}
+
+function historyRowLabel(row: ReviewHistoryRow) {
+  const day = formatMonthDay(row.terminal_at)
+  const status = reviewStatusLabels[row.status]
+  return day ? `${day} ${status}` : status
 }
 
 export function ReviewHistoryModal({
@@ -66,6 +76,7 @@ export function ReviewHistoryModal({
   const [hasMore, setHasMore] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [order, setOrder] = useState<HistoryOrder>('newest')
   const searchRef = useRef<HTMLInputElement>(null)
   const rowsRef = useRef<ReviewHistoryRow[]>([])
   const loadRef = useRef(onLoadPage)
@@ -75,7 +86,8 @@ export function ReviewHistoryModal({
     loadRef.current = onLoadPage
   }, [onLoadPage])
 
-  const selectedReview = rows.find((row) => row.id === selectedId) ?? rows[0] ?? null
+  const orderedRows = orderHistoryRows(rows, order)
+  const selectedReview = rows.find((row) => row.id === selectedId) ?? orderedRows[0] ?? null
 
   const loadPage = async (
     filters: ReviewHistoryFilters,
@@ -98,7 +110,7 @@ export function ReviewHistoryModal({
       setHasMore(page.has_more)
       setSelectedId((current) => {
         if (current && nextRows.some((row) => row.id === current)) return current
-        return initialSeed?.id ?? nextRows[0]?.id ?? null
+        return initialSeed?.id ?? orderHistoryRows(nextRows, 'newest')[0]?.id ?? null
       })
     } catch (loadError) {
       if (version !== requestVersionRef.current) return
@@ -141,17 +153,28 @@ export function ReviewHistoryModal({
     searchRef.current?.focus()
   }
 
-  const reopen = async (requestId: string) => {
-    const ok = await onReopen(requestId)
+  const reopen = async (request: ReviewRequest) => {
+    const ok = await onReopen(request)
     if (ok) onClose()
     return ok
   }
 
+  const loadMoreButton = hasMore ? (
+    <button
+      className="ghost review-history-more"
+      disabled={loading || !cursor}
+      onClick={() => void loadPage(applied, cursor, false)}
+      type="button"
+    >
+      {loading ? '불러오는 중…' : '더 오래된 기록 보기'}
+    </button>
+  ) : null
+
   return (
     <Modal
       className="review-history-modal"
-      description="최근 7일 이전에 종결된 검토요청"
-      eyebrow="파트장"
+      description="처리한 지 7일이 지난 검토요청을 찾아볼 수 있어요."
+      eyebrow="검토요청"
       icon={<Archive size={18} />}
       initialFocusRef={searchRef}
       onClose={onClose}
@@ -176,7 +199,7 @@ export function ReviewHistoryModal({
             aria-label="검토 이력 검색"
             maxLength={200}
             onChange={(event) => setDraft((current) => ({ ...current, query: event.target.value }))}
-            placeholder="제목, 본문, 요청자 검색"
+            placeholder="제목, 설명, 요청자로 찾기"
             ref={searchRef}
             type="search"
             value={draft.query}
@@ -229,19 +252,56 @@ export function ReviewHistoryModal({
       <div className="review-history-workspace">
         <aside aria-label="검토 이력 목록" className="review-history-list">
           <header>
-            <strong>검색 결과</strong>
-            <span>{rows.length}{hasMore ? '+' : ''}건</span>
+            <strong>
+              검색 결과 {rows.length}{hasMore ? '+' : ''}건
+            </strong>
+            <div className="review-history-order" role="group" aria-label="처리 시점 정렬">
+              <button
+                aria-pressed={order === 'newest'}
+                className={order === 'newest' ? 'selected' : ''}
+                onClick={() => setOrder('newest')}
+                type="button"
+              >
+                최신순
+              </button>
+              <button
+                aria-pressed={order === 'oldest'}
+                className={order === 'oldest' ? 'selected' : ''}
+                onClick={() => setOrder('oldest')}
+                type="button"
+              >
+                오래된순
+              </button>
+            </div>
           </header>
-          {loading && rows.length === 0 && <p className="empty-copy" role="status">검토 이력을 불러오는 중입니다.</p>}
-          {error && <p className="notice error" role="alert">{error}</p>}
+          <p className="review-history-order-note">
+            {order === 'newest'
+              ? '처리한 시점이 최근인 기록부터 보여요.'
+              : '불러온 기록을 처리한 시점이 오래된 순서로 보여요.'}
+          </p>
+          {loading && rows.length === 0 && <p className="empty-copy" role="status">검토 이력을 불러오고 있어요.</p>}
+          {error && (
+            <div className="notice error review-history-error" role="alert">
+              <span>{error}</span>
+              <button
+                className="ghost compact"
+                disabled={loading}
+                onClick={() => void (rows.length > 0 && cursor ? loadPage(applied, cursor, false) : loadPage(applied, null, true))}
+                type="button"
+              >
+                다시 시도
+              </button>
+            </div>
+          )}
           {!loading && !error && rows.length === 0 && (
             <EmptyState
               icon={<Archive size={22} />}
-              title="조건에 맞는 검토 이력이 없습니다."
-              description="검색어나 기간을 바꿔 다시 확인해 주세요."
+              title="조건에 맞는 검토 이력이 없어요"
+              description="검색어나 기간을 바꿔 보세요."
             />
           )}
-          {rows.map((row) => (
+          {order === 'oldest' && loadMoreButton}
+          {orderedRows.map((row) => (
             <button
               aria-pressed={selectedReview?.id === row.id}
               className={selectedReview?.id === row.id ? 'review-history-row selected' : 'review-history-row'}
@@ -252,40 +312,31 @@ export function ReviewHistoryModal({
             >
               <span className="review-history-row-title">{row.title}</span>
               <span className="review-history-row-meta">
-                <span data-status={row.status}>{reviewStatusLabels[row.status]}</span>
+                <time data-status={row.status} dateTime={row.terminal_at} title={formatDateTime(row.terminal_at)}>
+                  {historyRowLabel(row)}
+                </time>
                 <span>{row.profiles?.name ?? '요청자'}</span>
-                <time dateTime={row.terminal_at}>{formatDate(row.terminal_at)}</time>
               </span>
             </button>
           ))}
-          {hasMore && (
-            <button
-              className="ghost review-history-more"
-              disabled={loading || !cursor}
-              onClick={() => void loadPage(applied, cursor, false)}
-              type="button"
-            >
-              {loading ? '불러오는 중...' : '이전 이력 더 보기'}
-            </button>
-          )}
+          {order === 'newest' && loadMoreButton}
         </aside>
         <div className="review-history-detail">
           <ReviewDetail
             addFeedback={async () => false}
+            inlineConfirm
             localEvents={localEvents}
+            onApprove={async () => false}
             onEdit={() => undefined}
+            onReject={async () => false}
+            onReopen={reopen}
+            onResubmit={() => undefined}
             onWithdraw={() => undefined}
-            pendingWithdrawId={null}
             profile={profile}
             readOnly
-            rejectReview={async () => false}
-            reopenReview={reopen}
-            resubmitReview={async () => false}
             selectedReview={selectedReview}
             updateFeedback={async () => false}
-            updateStatus={async () => false}
             voidFeedback={async () => false}
-            withdrawReview={() => undefined}
           />
         </div>
       </div>

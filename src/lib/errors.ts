@@ -15,7 +15,7 @@ export class UserFacingError extends Error {
 }
 
 export const STALE_WRITE_MESSAGE =
-  '이미 삭제되었거나 변경할 수 없는 항목입니다. 목록을 새로고침해 주세요.'
+  '이미 삭제됐거나 바꿀 수 없는 항목이에요. 목록을 새로고침한 뒤 다시 확인해 주세요.'
 
 export function assertRecordExists<T>(record: T | null | undefined): asserts record is T {
   if (record == null) throw new UserFacingError(STALE_WRITE_MESSAGE)
@@ -40,13 +40,19 @@ function isNetworkError(error: unknown) {
   )
 }
 
+/** 권한 오류: 할 수 없는 이유와 다음 행동을 함께 알린다(UX 라이팅 UW-14). */
+export const PERMISSION_MESSAGE = '이 작업을 할 권한이 없어요. 필요하면 파트장에게 요청해 주세요.'
+
+/** 원인을 분류할 수 없을 때의 기본 안내 */
+export const GENERIC_FAILURE_MESSAGE = '요청을 처리하지 못했어요. 다시 시도해도 안 되면 관리자에게 알려 주세요.'
+
 const codeMessages: Record<string, string> = {
-  '22P02': '입력 형식이 올바르지 않습니다.',
-  '23505': '이미 등록된 항목입니다.',
-  '23503': '연결된 데이터가 있어 처리할 수 없습니다.',
-  '23514': '입력값이 조건을 만족하지 않습니다.',
-  '42501': '권한이 없습니다.',
-  PGRST301: '권한이 없습니다.',
+  '22P02': '입력한 값의 형식을 확인해 주세요.',
+  '23505': '이미 등록된 항목이에요. 목록에서 확인해 주세요.',
+  '23503': '연결된 데이터가 있어서 처리할 수 없어요. 연결을 먼저 정리해 주세요.',
+  '23514': '입력한 값이 조건에 맞지 않아요. 내용을 확인해 주세요.',
+  '42501': PERMISSION_MESSAGE,
+  PGRST301: PERMISSION_MESSAGE,
 }
 
 const safeDetailCodes = new Set([
@@ -79,7 +85,7 @@ export function toUserMessage(error: unknown): string {
   }
 
   if (isNetworkError(error)) {
-    return '서버에 연결하지 못했습니다. 잠시 후 다시 시도하세요.'
+    return '서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.'
   }
 
   if (isPostgrestError(error)) {
@@ -90,26 +96,26 @@ export function toUserMessage(error: unknown): string {
 
     const message = error.message ?? ''
     if (/permission denied|row-level security/i.test(message)) {
-      return '권한이 없습니다.'
+      return PERMISSION_MESSAGE
     }
     if (/duplicate key|unique constraint/i.test(message)) {
-      return '이미 등록된 항목입니다.'
+      return '이미 등록된 항목이에요. 목록에서 확인해 주세요.'
     }
     if (/foreign key|violates foreign key/i.test(message)) {
-      return '연결된 데이터가 있어 처리할 수 없습니다.'
+      return '연결된 데이터가 있어서 처리할 수 없어요. 연결을 먼저 정리해 주세요.'
     }
   }
 
   if (error instanceof Error) {
     const message = error.message
     if (/invalid login credentials/i.test(message)) {
-      return '이메일 또는 비밀번호가 올바르지 않습니다.'
+      return '이메일 또는 비밀번호를 다시 확인해 주세요.'
     }
     if (/email not confirmed/i.test(message)) {
-      return '이메일 인증이 필요합니다. 받은 메일의 링크를 확인해 주세요.'
+      return '이메일 인증이 필요해요. 받은 메일의 링크를 확인해 주세요.'
     }
-    return '작업을 완료하지 못했습니다. 문제가 반복되면 관리자에게 문의하세요.'
+    return GENERIC_FAILURE_MESSAGE
   }
 
-  return '작업을 완료하지 못했습니다. 문제가 반복되면 관리자에게 문의하세요.'
+  return GENERIC_FAILURE_MESSAGE
 }

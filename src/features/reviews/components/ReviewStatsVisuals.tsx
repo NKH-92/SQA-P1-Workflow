@@ -3,9 +3,11 @@ import type { ReviewStatus } from '../../../types'
 import type { ReviewStatsMonthRow, ReviewStatsRequesterRow } from '../reviewStats.selectors'
 import { formatReviewStatsCount, REVIEW_STATS_STATUS_OPTIONS } from '../reviewStatsVisualFormat'
 
-function formatMonth(value: string) {
-  const [year, month] = value.split('-')
-  return `${year}.${month}`
+/** 차트 아래 월 이름. 첫 칸과 1월에는 연도를 붙여 해가 바뀌는 곳을 알 수 있게 한다. */
+function formatMonth(value: string, index: number) {
+  const [year, month] = value.split('-').map(Number)
+  if (!year || !month) return value
+  return index === 0 || month === 1 ? `${year}년 ${month}월` : `${month}월`
 }
 
 function formatMonthAccessible(value: string) {
@@ -37,14 +39,14 @@ export function RequesterComparisonChart({ rows }: { rows: ReviewStatsRequesterR
   return (
     <figure className="review-stats-figure">
       <figcaption className="review-stats-sr-only">
-        요청자별 요청 건수와 재제출을 포함한 제출 횟수 비교
+        요청자별 요청 건수와 재요청을 포함한 요청 횟수 비교
       </figcaption>
       <div className="review-stats-chart-legend" aria-hidden="true">
         <span>
           <i className="review-stats-swatch request" /> 요청 건수
         </span>
         <span>
-          <i className="review-stats-swatch submission" /> 제출 횟수
+          <i className="review-stats-swatch submission" /> 요청 횟수(재요청 포함)
         </span>
       </div>
       <ol className="review-stats-requester-bars">
@@ -55,11 +57,11 @@ export function RequesterComparisonChart({ rows }: { rows: ReviewStatsRequesterR
                 <RequesterName name={row.requesterName} inactive={row.requesterInactive} />
               </strong>
               <span>
-                요청 {formatReviewStatsCount(row.requestCount)}건 · 제출 {formatReviewStatsCount(row.submissionCount)}회
+                {formatReviewStatsCount(row.requestCount)}건 · {formatReviewStatsCount(row.submissionCount)}회
               </span>
             </div>
             <div aria-hidden="true" className="review-stats-bar-line">
-              <span className="review-stats-bar-label">요청</span>
+              <span className="review-stats-bar-label">건수</span>
               <span className="review-stats-bar-track">
                 <span
                   className="review-stats-bar-fill request"
@@ -69,7 +71,7 @@ export function RequesterComparisonChart({ rows }: { rows: ReviewStatsRequesterR
               <strong>{formatReviewStatsCount(row.requestCount)}</strong>
             </div>
             <div aria-hidden="true" className="review-stats-bar-line">
-              <span className="review-stats-bar-label">제출</span>
+              <span className="review-stats-bar-label">횟수</span>
               <span className="review-stats-bar-track">
                 <span
                   className="review-stats-bar-fill submission"
@@ -91,34 +93,34 @@ export function MonthlyTrendChart({ rows }: { rows: ReviewStatsMonthRow[] }) {
   return (
     <figure className="review-stats-figure">
       <figcaption className="review-stats-sr-only">
-        선택 기간의 월별 요청 건수와 재제출을 포함한 제출 횟수 추이
+        선택 기간의 월별 요청 건수와 재요청을 포함한 요청 횟수 추이
       </figcaption>
       <div className="review-stats-chart-legend" aria-hidden="true">
         <span>
           <i className="review-stats-swatch request" /> 요청 건수
         </span>
         <span>
-          <i className="review-stats-swatch submission" /> 제출 횟수
+          <i className="review-stats-swatch submission" /> 요청 횟수(재요청 포함)
         </span>
       </div>
       <div
-        aria-label="월별 검토 추이 그래프. 각 월의 요청 건수와 제출 횟수를 확인할 수 있습니다."
+        aria-label="월별 검토 추이 그래프. 각 월의 요청 건수와 요청 횟수를 확인할 수 있어요."
         className="review-stats-month-scroll"
         role="region"
         tabIndex={0}
       >
         <div className="review-stats-month-chart" role="list">
-          {rows.map((row) => (
+          {rows.map((row, index) => (
             <div
-              aria-label={`${formatMonthAccessible(row.month)} 요청 ${formatReviewStatsCount(row.requestCount)}건, 제출 ${formatReviewStatsCount(row.submissionCount)}회`}
+              aria-label={`${formatMonthAccessible(row.month)} 요청 ${formatReviewStatsCount(row.requestCount)}건, 요청 횟수 ${formatReviewStatsCount(row.submissionCount)}회`}
               className="review-stats-month-column"
               key={row.month}
               role="listitem"
             >
               <div aria-hidden="true" className="review-stats-month-column-visual">
                 <div className="review-stats-month-values">
-                  <span>요청 {formatReviewStatsCount(row.requestCount)}</span>
-                  <span>제출 {formatReviewStatsCount(row.submissionCount)}</span>
+                  <span>건수 {formatReviewStatsCount(row.requestCount)}</span>
+                  <span>횟수 {formatReviewStatsCount(row.submissionCount)}</span>
                 </div>
                 <div className="review-stats-month-bars">
                   <span
@@ -130,7 +132,7 @@ export function MonthlyTrendChart({ rows }: { rows: ReviewStatsMonthRow[] }) {
                     style={{ height: chartPercent(row.submissionCount, maxValue) }}
                   />
                 </div>
-                <strong>{formatMonth(row.month)}</strong>
+                <strong>{formatMonth(row.month, index)}</strong>
               </div>
             </div>
           ))}
@@ -199,25 +201,24 @@ export function ExactNumbersTable({ rows }: { rows: ReviewStatsRequesterRow[] })
 
   return (
     <div
-      aria-label="요청자별 검토 통계 표. 화면이 좁으면 좌우로 스크롤할 수 있습니다."
+      aria-label="요청자별 검토 통계 표. 화면이 좁으면 좌우로 스크롤할 수 있어요."
       className="review-stats-table-scroll"
       role="region"
       tabIndex={0}
     >
       <table className="review-stats-table">
         <caption>
-          요청·재제출·승인·반려는 서버 이벤트 발생 시각, 현재 대기는 선택 기간에 생성된 요청의 현재 상태를 기준으로
-          집계합니다.
+          요청·재요청·승인·반려는 실제로 일어난 시각, 대기 중은 이 기간에 들어온 요청의 지금 상태를 기준으로 셌어요.
         </caption>
         <thead>
           <tr>
             <th scope="col">요청자</th>
             <th scope="col">요청 건수</th>
-            <th scope="col">제출 횟수</th>
-            <th scope="col">재제출</th>
-            <th scope="col">현재 대기</th>
-            <th scope="col">승인</th>
-            <th scope="col">반려</th>
+            <th scope="col">요청 횟수</th>
+            <th scope="col">재요청</th>
+            <th scope="col">{reviewStatusLabels.pending}</th>
+            <th scope="col">{reviewStatusLabels.approved}</th>
+            <th scope="col">{reviewStatusLabels.rejected}</th>
           </tr>
         </thead>
         <tbody>

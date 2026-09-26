@@ -157,6 +157,28 @@ describe('useLeaderReviewOverview', () => {
     await waitFor(() => expect(mocks.fetchReviewStatisticsV2).toHaveBeenCalledTimes(2))
   })
 
+  it('keeps the last numbers on screen while a review change refetches them', async () => {
+    let resolveSecond: ((value: ReturnType<typeof envelope>) => void) | undefined
+    mocks.fetchReviewStatisticsV2
+      .mockResolvedValueOnce(envelope())
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSecond = resolve }))
+    const { result, rerender } = renderHook(({ data }) => useLeaderReviewOverview(data), {
+      initialProps: { data: appData() },
+    })
+    await waitFor(() => expect(result.current).toEqual({ status: 'ready', envelope: envelope() }))
+
+    rerender({
+      data: appData({ reviewRequests: [{ ...request, status: 'approved' }] }),
+    })
+
+    await waitFor(() => expect(mocks.fetchReviewStatisticsV2).toHaveBeenCalledTimes(2))
+    expect(result.current).toEqual({ status: 'ready', envelope: envelope(), refreshing: true })
+
+    const newest = { ...envelope(), approvals: 1, pending_count: 0 }
+    await act(async () => resolveSecond?.(newest))
+    expect(result.current).toEqual({ status: 'ready', envelope: newest })
+  })
+
   it('ignores an older response after a review change starts a new request', async () => {
     let resolveFirst: ((value: ReturnType<typeof envelope>) => void) | undefined
     let resolveSecond: ((value: ReturnType<typeof envelope>) => void) | undefined
@@ -179,5 +201,19 @@ describe('useLeaderReviewOverview', () => {
 
     await act(async () => resolveFirst?.({ ...envelope(), approvals: 0, pending_count: 1 }))
     expect(result.current).toEqual({ status: 'ready', envelope: newest })
+  })
+
+  it('offers a retry when the monthly overview fails to load', async () => {
+    mocks.fetchReviewStatisticsV2.mockReset()
+    mocks.fetchReviewStatisticsV2
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValueOnce(envelope())
+    const { result } = renderHook(() => useLeaderReviewOverview(appData()))
+
+    await waitFor(() => expect(result.current.status).toBe('error'))
+    act(() => {
+      if (result.current.status === 'error') result.current.retry()
+    })
+    await waitFor(() => expect(result.current).toEqual({ status: 'ready', envelope: envelope() }))
   })
 })

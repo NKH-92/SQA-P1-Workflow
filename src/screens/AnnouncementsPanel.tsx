@@ -1,5 +1,17 @@
-import { useEffect, useMemo, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react'
 import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type FormEvent,
+  type KeyboardEvent,
+  type SetStateAction,
+} from 'react'
+import {
+  ArrowLeft,
   CalendarDays,
   Megaphone,
   Pencil,
@@ -10,9 +22,16 @@ import {
   Trash2,
   UserRound,
 } from 'lucide-react'
-import { CopyLinkButton, EmptyState, Modal } from '../components/ui'
+import { CopyLinkButton, DialogActions, EmptyState, Modal, OverflowMenu } from '../components/ui'
 import { sortAnnouncements } from '../data/announcementCollection'
 import { useAnnouncementController } from '../features/announcements/useAnnouncementController'
+import { useMobileDetail } from '../hooks/useMobileDetail'
+import { useViewState } from '../hooks/useViewState'
+import { useComposerIntent } from '../app/hooks/useComposerIntent'
+import { useSelectionHashSync } from '../app/hooks/useHashNavigation'
+import { formatDateTime } from '../lib/format'
+import { quoted, quotedWithJosa } from '../lib/korean'
+import { preferredScrollBehavior } from '../lib/motion'
 import type { MutateFn } from '../app/types'
 import type { AppData, Profile } from '../types'
 import './AnnouncementsPanel.css'
@@ -25,103 +44,239 @@ type AnnouncementForm = {
   isPinned: boolean
 }
 
+type FieldErrors = { title?: string; body?: string }
+
 const emptyForm: AnnouncementForm = {
   title: '',
   body: '',
   isPinned: false,
 }
 
-const dateFormatter = new Intl.DateTimeFormat('ko-KR', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-})
+const TITLE_MAX_LENGTH = 200
+const BODY_MAX_LENGTH = 20000
 
-function timestamp(value: string | null | undefined) {
-  const parsed = value ? Date.parse(value) : Number.NaN
-  return Number.isFinite(parsed) ? parsed : 0
+const isString = (value: unknown): value is string => typeof value === 'string'
+
+function formFromAnnouncement(announcement: Announcement | null): AnnouncementForm {
+  if (!announcement) return emptyForm
+  return { title: announcement.title, body: announcement.body, isPinned: announcement.is_pinned }
 }
 
-function formatAnnouncementDate(value: string | null | undefined) {
-  const parsed = timestamp(value)
-  return parsed > 0 ? dateFormatter.format(new Date(parsed)) : '날짜 없음'
+function sameForm(left: AnnouncementForm, right: AnnouncementForm) {
+  return left.title === right.title && left.body === right.body && left.isPinned === right.isPinned
 }
 
+function announcementDate(value: string | null | undefined) {
+  const text = formatDateTime(value)
+  return text === '-' ? '날짜 없음' : text
+}
+
+/**
+ * 공지 작성·수정 창. 입력이 있으면(dirty) 배경을 눌러도 닫히지 않고, 닫기·X·Esc·뒤로가기는
+ * “작성 중인 내용이 있어요” 확인을 먼저 보여준다(P0-2). 버튼은 늘 누를 수 있고, 빈 칸은 칸 아래에서 알려준다.
+ */
 function AnnouncementEditorModal({
-  open,
   editingAnnouncement,
   form,
   setForm,
   onClose,
   onSubmit,
 }: {
-  open: boolean
   editingAnnouncement: Announcement | null
   form: AnnouncementForm
   setForm: Dispatch<SetStateAction<AnnouncementForm>>
   onClose: () => void
-  onSubmit: () => void
+  onSubmit: () => Promise<boolean>
 }) {
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const [initialForm] = useState(() => formFromAnnouncement(editingAnnouncement))
+  const [errors, setErrors] = useState<FieldErrors>({})
+  const [submitting, setSubmitting] = useState(false)
+  const titleRef = useRef<HTMLInputElement>(null)
+  const bodyRef = useRef<HTMLTextAreaElement>(null)
+  const titleId = useId()
+  const bodyId = useId()
+  const titleErrorId = useId()
+  const bodyErrorId = useId()
+  const dirty = !sameForm(form, initialForm)
+  const editing = Boolean(editingAnnouncement)
+
+  const submit = async () => {
+    if (submitting) return
+    const nextErrors: FieldErrors = {}
+    if (!form.title.trim()) nextErrors.title = '제목을 입력해 주세요'
+    if (!form.body.trim()) nextErrors.body = '내용을 입력해 주세요'
+    setErrors(nextErrors)
+    if (nextErrors.title) {
+      titleRef.current?.focus()
+      return
+    }
+    if (nextErrors.body) {
+      bodyRef.current?.focus()
+      return
+    }
+    setSubmitting(true)
+    try {
+      await onSubmit()
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const onFormSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    onSubmit()
+    void submit()
+  }
+
+  const onFormKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      event.preventDefault()
+      void submit()
+    }
   }
 
   return (
     <Modal
       className="announcement-modal"
       closeLabel="공지 편집 닫기"
-      description="파트원에게 전달할 제목과 내용을 입력하세요."
-      eyebrow="Announcement"
+      description="파트원에게 전할 제목과 내용을 적어 주세요."
+      dirty={dirty}
+      eyebrow="공지"
       icon={<Megaphone size={18} />}
       onClose={onClose}
-      open={open}
-      title={editingAnnouncement ? '공지 수정' : '새 공지 작성'}
+      open
+      title={editing ? '공지 수정' : '새 공지 작성'}
     >
-      <form className="announcement-editor" onSubmit={submit}>
-        <label className="announcement-editor-field">
-          <span>제목</span>
+      <form
+        aria-busy={submitting || undefined}
+        className="announcement-editor"
+        noValidate
+        onKeyDown={onFormKeyDown}
+        onSubmit={onFormSubmit}
+      >
+        <div className="announcement-editor-field">
+          <label htmlFor={titleId}>
+            제목 <span aria-hidden="true">*</span>
+          </label>
           <input
-            autoFocus
-            maxLength={200}
-            onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-            placeholder="공지 제목을 입력하세요"
+            ref={titleRef}
+            aria-describedby={errors.title ? titleErrorId : undefined}
+            aria-invalid={errors.title ? true : undefined}
+            aria-required="true"
+            data-autofocus
+            id={titleId}
+            maxLength={TITLE_MAX_LENGTH}
+            onChange={(event) => {
+              const title = event.target.value
+              setForm((current) => ({ ...current, title }))
+              if (errors.title && title.trim()) setErrors((current) => ({ ...current, title: undefined }))
+            }}
+            placeholder="제목을 입력해 주세요"
             value={form.title}
           />
-        </label>
-        <label className="announcement-editor-field">
-          <span>내용</span>
+          {errors.title && (
+            <p className="field-error" id={titleErrorId}>
+              {errors.title}
+            </p>
+          )}
+        </div>
+        <div className="announcement-editor-field">
+          <label htmlFor={bodyId}>
+            내용 <span aria-hidden="true">*</span>
+          </label>
           <textarea
-            maxLength={20000}
-            onChange={(event) => setForm((current) => ({ ...current, body: event.target.value }))}
-            placeholder="공지 내용을 입력하세요"
-            rows={12}
+            ref={bodyRef}
+            aria-describedby={errors.body ? bodyErrorId : undefined}
+            aria-invalid={errors.body ? true : undefined}
+            aria-required="true"
+            id={bodyId}
+            maxLength={BODY_MAX_LENGTH}
+            onChange={(event) => {
+              const body = event.target.value
+              setForm((current) => ({ ...current, body }))
+              if (errors.body && body.trim()) setErrors((current) => ({ ...current, body: undefined }))
+            }}
+            placeholder="내용을 입력해 주세요"
+            rows={10}
             value={form.body}
           />
-        </label>
+          {errors.body && (
+            <p className="field-error" id={bodyErrorId}>
+              {errors.body}
+            </p>
+          )}
+        </div>
         <label className="announcement-pin-option">
           <input
             checked={form.isPinned}
-            onChange={(event) => setForm((current) => ({ ...current, isPinned: event.target.checked }))}
+            onChange={(event) => {
+              const isPinned = event.target.checked
+              setForm((current) => ({ ...current, isPinned }))
+            }}
             type="checkbox"
           />
           <span>
             <Pin size={15} aria-hidden="true" />
             상단에 고정
-            <small>중요 공지를 일반 공지보다 위에 계속 표시합니다.</small>
+            <small>중요한 공지를 목록 맨 위에 계속 보여 줘요.</small>
           </span>
         </label>
-        <footer className="modal-footer announcement-modal-footer">
-          <span className="modal-shortcut">제목과 내용을 모두 입력해야 저장할 수 있습니다.</span>
-          <div>
-            <button className="ghost" onClick={onClose} type="button">
-              취소
-            </button>
-            <button className="primary" disabled={!form.title.trim() || !form.body.trim()} type="submit">
-              {editingAnnouncement ? '공지 수정' : '공지 등록'}
-            </button>
-          </div>
-        </footer>
+        <DialogActions
+          hint={
+            <span className="modal-shortcut">
+              <kbd>Ctrl</kbd>
+              <kbd>Enter</kbd>
+              {editing ? '저장' : '올리기'}
+            </span>
+          }
+          onClose={onClose}
+        >
+          <button className="primary" disabled={submitting} type="submit">
+            {submitting ? (editing ? '저장하는 중…' : '올리는 중…') : editing ? '저장하기' : '공지 올리기'}
+          </button>
+        </DialogActions>
       </form>
+    </Modal>
+  )
+}
+
+/** 공지 삭제 확인 창. 처음 포커스는 안전한 ‘닫기’에 둔다. */
+function AnnouncementDeleteModal({
+  announcement,
+  onClose,
+  onDelete,
+}: {
+  announcement: Announcement
+  onClose: () => void
+  onDelete: () => Promise<boolean>
+}) {
+  const [deleting, setDeleting] = useState(false)
+  return (
+    <Modal
+      className="announcement-delete-modal"
+      closeLabel="공지 삭제 닫기"
+      description="삭제한 공지는 되돌릴 수 없어요. 파트원 화면에서도 바로 사라져요."
+      icon={<Trash2 size={18} />}
+      onClose={onClose}
+      open
+      title={`${quotedWithJosa(announcement.title, '을/를')} 삭제할까요?`}
+    >
+      <DialogActions onClose={onClose}>
+        <button
+          className="danger"
+          disabled={deleting}
+          onClick={async () => {
+            setDeleting(true)
+            try {
+              await onDelete()
+            } finally {
+              setDeleting(false)
+            }
+          }}
+          type="button"
+        >
+          {deleting ? '삭제하는 중…' : '삭제하기'}
+        </button>
+      </DialogActions>
     </Modal>
   )
 }
@@ -143,12 +298,16 @@ export function AnnouncementsPanel({
 }) {
   const controller = useAnnouncementController(profile, data, setData)
   const leaderMode = profile.role === 'leader' && profile.is_active !== false && profile.must_change_password !== true
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useViewState(`announcements.${leaderMode ? 'leader' : 'member'}.query`, '', isString)
   const [selectedAnnouncementId, setSelectedAnnouncementId] = useState<string | null>(null)
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null)
   const [form, setForm] = useState<AnnouncementForm>(emptyForm)
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Announcement | null>(null)
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
+  // 새 공지를 올리면 목록에 나타나는 즉시 그 공지를 고른다(FLW-11).
+  const [pendingNewSelection, setPendingNewSelection] = useState<{ knownIds: string[]; title: string } | null>(null)
+  const detailRef = useRef<HTMLElement>(null)
 
   const profilesById = useMemo(
     () => new Map(data.profiles.map((candidate) => [candidate.id, candidate])),
@@ -172,17 +331,49 @@ export function AnnouncementsPanel({
 
   const pinnedAnnouncements = filteredAnnouncements.filter((announcement) => announcement.is_pinned)
   const regularAnnouncements = filteredAnnouncements.filter((announcement) => !announcement.is_pinned)
+  const totalPinnedCount = data.announcements.filter((announcement) => announcement.is_pinned).length
   const selectedAnnouncement =
     sortedAnnouncements.find((announcement) => announcement.id === selectedAnnouncementId) ?? null
+
+  const closeMobileDetail = useCallback(() => {
+    setMobileDetailOpen(false)
+    // 목록으로 돌아오면 방금 보던 공지에 포커스를 돌려준다.
+    window.requestAnimationFrame(() => {
+      const current = document.querySelector<HTMLElement>('.announcement-list-item[aria-current="true"]')
+      if (!current) return
+      if (typeof current.scrollIntoView === 'function') {
+        current.scrollIntoView({ behavior: preferredScrollBehavior(), block: 'nearest' })
+      }
+      current.focus({ preventScroll: true })
+    })
+  }, [])
+
+  useMobileDetail({
+    open: mobileDetailOpen && Boolean(selectedAnnouncement),
+    detailRef,
+    onBack: closeMobileDetail,
+    selectionKey: selectedAnnouncementId,
+  })
 
   useEffect(() => {
     if (!initialSelectedId) return
     if (!data.announcements.some((announcement) => announcement.id === initialSelectedId)) return
     setQuery('')
     setSelectedAnnouncementId(initialSelectedId)
-    setPendingDeleteId(null)
     onInitialSelectionApplied?.()
-  }, [data.announcements, initialSelectedId, onInitialSelectionApplied])
+  }, [data.announcements, initialSelectedId, onInitialSelectionApplied, setQuery])
+
+  useEffect(() => {
+    if (!pendingNewSelection) return
+    const created = sortedAnnouncements.find(
+      (announcement) => !pendingNewSelection.knownIds.includes(announcement.id)
+        && announcement.title === pendingNewSelection.title,
+    )
+    if (!created) return
+    setQuery('')
+    setSelectedAnnouncementId(created.id)
+    setPendingNewSelection(null)
+  }, [pendingNewSelection, setQuery, sortedAnnouncements])
 
   useEffect(() => {
     const hasPendingInitialSelection = Boolean(
@@ -196,12 +387,11 @@ export function AnnouncementsPanel({
       return
     }
     setSelectedAnnouncementId(filteredAnnouncements[0]?.id ?? null)
-    setPendingDeleteId(null)
   }, [data.announcements, filteredAnnouncements, initialSelectedId, selectedAnnouncementId])
 
   const selectAnnouncement = (announcementId: string) => {
     setSelectedAnnouncementId(announcementId)
-    setPendingDeleteId(null)
+    setMobileDetailOpen(true)
   }
 
   const openCreate = () => {
@@ -210,13 +400,12 @@ export function AnnouncementsPanel({
     setEditorOpen(true)
   }
 
+  useComposerIntent('announcements', openCreate, leaderMode)
+  useSelectionHashSync('announcements', initialSelectedId ? undefined : selectedAnnouncement?.id ?? null)
+
   const openEdit = (announcement: Announcement) => {
     setEditingAnnouncement(announcement)
-    setForm({
-      title: announcement.title,
-      body: announcement.body,
-      isPinned: announcement.is_pinned,
-    })
+    setForm(formFromAnnouncement(announcement))
     setEditorOpen(true)
   }
 
@@ -227,29 +416,45 @@ export function AnnouncementsPanel({
   }
 
   const saveAnnouncement = async () => {
-    if (!leaderMode || !form.title.trim() || !form.body.trim()) return
+    const title = form.title.trim()
+    const body = form.body.trim()
+    if (!leaderMode || !title || !body) return false
     const editingId = editingAnnouncement?.id ?? null
+    if (!editingId) setPendingNewSelection({ knownIds: data.announcements.map((item) => item.id), title })
     const ok = await mutate(async () => {
       await controller.save(editingId, editingAnnouncement?.updated_at ?? null, {
-        title: form.title.trim(),
-        body: form.body.trim(),
+        title,
+        body,
         is_pinned: form.isPinned,
       })
-    }, editingId ? '공지를 수정했습니다.' : '공지를 등록했습니다.')
-    if (ok) closeEditor()
+    }, editingId ? `${quotedWithJosa(title, '을/를')} 수정했어요.` : `${quotedWithJosa(title, '을/를')} 올렸어요.`)
+    if (ok) {
+      closeEditor()
+      if (!editingId) setMobileDetailOpen(true)
+    } else {
+      setPendingNewSelection(null)
+    }
+    return ok
   }
 
   const togglePin = (announcement: Announcement) =>
     mutate(async () => {
       await controller.togglePin(announcement)
-    }, announcement.is_pinned ? '공지 상단 고정을 해제했습니다.' : '공지를 상단에 고정했습니다.')
+    }, announcement.is_pinned
+      ? `${quoted(announcement.title)} 공지 고정을 풀었어요.`
+      : `${quoted(announcement.title)} 공지를 맨 위에 고정했어요.`)
 
-  const deleteAnnouncement = (announcement: Announcement) =>
-    mutate(async () => {
+  const deleteAnnouncement = async (announcement: Announcement) => {
+    const ok = await mutate(async () => {
       await controller.remove(announcement)
-      setPendingDeleteId(null)
+    }, `${quotedWithJosa(announcement.title, '을/를')} 삭제했어요.`)
+    if (ok) {
+      setDeleteTarget(null)
       setSelectedAnnouncementId(null)
-    }, '공지를 삭제했습니다.')
+      setMobileDetailOpen(false)
+    }
+    return ok
+  }
 
   const renderAnnouncementButton = (announcement: Announcement) => {
     const author = profilesById.get(announcement.created_by)
@@ -278,11 +483,30 @@ export function AnnouncementsPanel({
         <span className="announcement-list-preview">{announcement.body}</span>
         <span className="announcement-list-meta">
           <span>{author?.name ?? '작성자 알 수 없음'}</span>
-          <time dateTime={announcement.created_at}>{formatAnnouncementDate(announcement.created_at)}</time>
+          <time dateTime={announcement.created_at}>{announcementDate(announcement.created_at)}</time>
         </span>
       </button>
     )
   }
+
+  const listEmptyState = query.trim() ? (
+    <EmptyState
+      icon={<Search size={22} />}
+      title="검색 결과가 없어요"
+      description="다른 검색어로 다시 찾아보세요."
+      action={
+        <button className="ghost compact" onClick={() => setQuery('')} type="button">
+          검색어 지우기
+        </button>
+      }
+    />
+  ) : (
+    <EmptyState
+      icon={<Megaphone size={22} />}
+      title="아직 공지가 없어요"
+      description={leaderMode ? '새 공지를 올리면 파트원 모두 여기서 볼 수 있어요.' : '파트장이 공지를 올리면 여기에 보여요.'}
+    />
+  )
 
   return (
     <div className="stack announcements-stack">
@@ -290,8 +514,8 @@ export function AnnouncementsPanel({
         <div>
           <h1>공지</h1>
           <p>
-            파트 공지 <strong>{data.announcements.length}건</strong>
-            {pinnedAnnouncements.length > 0 && <> · 상단 고정 {pinnedAnnouncements.length}건</>}
+            공지 <strong>{data.announcements.length}건</strong>
+            {totalPinnedCount > 0 && <> · 상단 고정 {totalPinnedCount}건</>}
           </p>
         </div>
         {leaderMode && (
@@ -302,7 +526,7 @@ export function AnnouncementsPanel({
         )}
       </div>
 
-      <section className="announcement-board">
+      <section className="announcement-board" data-mobile-detail={mobileDetailOpen ? 'open' : 'closed'}>
         <aside aria-label="공지 목록" className="announcement-list-pane">
           <div className="announcement-list-head">
             <div>
@@ -321,13 +545,7 @@ export function AnnouncementsPanel({
           </div>
 
           <div className="announcement-list-scroll">
-            {filteredAnnouncements.length === 0 && (
-              <EmptyState
-                icon={<Megaphone size={22} />}
-                title={query ? '검색 결과가 없습니다.' : '등록된 공지가 없습니다.'}
-                description={query ? '다른 검색어로 다시 찾아보세요.' : '새 공지가 등록되면 이곳에 표시됩니다.'}
-              />
-            )}
+            {filteredAnnouncements.length === 0 && listEmptyState}
             {pinnedAnnouncements.length > 0 && (
               <div className="announcement-list-group">
                 <div className="announcement-list-group-label">
@@ -348,18 +566,22 @@ export function AnnouncementsPanel({
           </div>
         </aside>
 
-        <article aria-live="polite" className="announcement-detail-pane">
+        <article ref={detailRef} aria-label="공지 내용" className="announcement-detail-pane">
           {selectedAnnouncement ? (
             <div className="announcement-detail" data-announcement-id={selectedAnnouncement.id}>
               <header className="announcement-detail-header">
                 <div className="announcement-detail-heading">
+                  <button className="ghost compact announcement-detail-back" onClick={closeMobileDetail} type="button">
+                    <ArrowLeft aria-hidden="true" size={14} />
+                    공지 목록
+                  </button>
                   {selectedAnnouncement.is_pinned && (
                     <span className="announcement-pin-badge">
                       <Pin size={12} aria-hidden="true" />
                       상단 고정
                     </span>
                   )}
-                  <h2>{selectedAnnouncement.title}</h2>
+                  <h2 data-detail-title>{selectedAnnouncement.title}</h2>
                   <div className="announcement-detail-meta">
                     <span>
                       <UserRound size={14} aria-hidden="true" />
@@ -368,11 +590,11 @@ export function AnnouncementsPanel({
                     <span>
                       <CalendarDays size={14} aria-hidden="true" />
                       <time dateTime={selectedAnnouncement.created_at}>
-                        {formatAnnouncementDate(selectedAnnouncement.created_at)}
+                        {announcementDate(selectedAnnouncement.created_at)}
                       </time>
                     </span>
                     {selectedAnnouncement.updated_at !== selectedAnnouncement.created_at && (
-                      <span>수정 {formatAnnouncementDate(selectedAnnouncement.updated_at)}</span>
+                      <span>수정 {announcementDate(selectedAnnouncement.updated_at)}</span>
                     )}
                   </div>
                 </div>
@@ -381,50 +603,31 @@ export function AnnouncementsPanel({
                   {leaderMode && (
                     <>
                       <button
-                        aria-pressed={selectedAnnouncement.is_pinned}
-                        className="ghost compact"
-                        onClick={() => void togglePin(selectedAnnouncement)}
-                        title={selectedAnnouncement.is_pinned ? '상단 고정 해제' : '상단 고정'}
-                        type="button"
-                      >
-                        {selectedAnnouncement.is_pinned ? <PinOff size={14} /> : <Pin size={14} />}
-                        {selectedAnnouncement.is_pinned ? '고정 해제' : '상단 고정'}
-                      </button>
-                      <button
                         className="ghost compact"
                         onClick={() => openEdit(selectedAnnouncement)}
                         type="button"
                       >
-                        <Pencil size={14} />
+                        <Pencil size={14} aria-hidden="true" />
                         수정
                       </button>
-                      {pendingDeleteId === selectedAnnouncement.id ? (
-                        <div className="delete-confirm announcement-delete-confirm">
-                          <button
-                            className="danger compact"
-                            onClick={() => void deleteAnnouncement(selectedAnnouncement)}
-                            type="button"
-                          >
-                            삭제 확인
-                          </button>
-                          <button
-                            className="ghost compact"
-                            onClick={() => setPendingDeleteId(null)}
-                            type="button"
-                          >
-                            취소
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          className="ghost compact"
-                          onClick={() => setPendingDeleteId(selectedAnnouncement.id)}
-                          type="button"
-                        >
-                          <Trash2 size={14} />
-                          삭제
-                        </button>
-                      )}
+                      <OverflowMenu
+                        label={`${selectedAnnouncement.title} 더보기`}
+                        items={[
+                          {
+                            label: selectedAnnouncement.is_pinned ? '고정 풀기' : '맨 위에 고정',
+                            icon: selectedAnnouncement.is_pinned
+                              ? <PinOff aria-hidden="true" size={15} />
+                              : <Pin aria-hidden="true" size={15} />,
+                            onSelect: () => void togglePin(selectedAnnouncement),
+                          },
+                          {
+                            label: '삭제',
+                            icon: <Trash2 aria-hidden="true" size={15} />,
+                            danger: true,
+                            onSelect: () => setDeleteTarget(selectedAnnouncement),
+                          },
+                        ]}
+                      />
                     </>
                   )}
                 </div>
@@ -434,21 +637,41 @@ export function AnnouncementsPanel({
           ) : (
             <EmptyState
               icon={<Megaphone size={24} />}
-              title="왼쪽 목록에서 공지를 선택하세요."
-              description="공지 제목을 선택하면 상세 내용이 이곳에 표시됩니다."
+              title={filteredAnnouncements.length > 0 ? '목록에서 공지를 선택해 주세요' : '보여 줄 공지가 없어요'}
+              description={
+                filteredAnnouncements.length > 0
+                  ? '공지를 누르면 내용을 여기서 볼 수 있어요.'
+                  : leaderMode
+                    ? '새 공지를 올리면 여기서 내용을 볼 수 있어요.'
+                    : '파트장이 공지를 올리면 여기서 내용을 볼 수 있어요.'
+              }
+              action={
+                leaderMode && filteredAnnouncements.length === 0 && !query.trim() ? (
+                  <button className="ghost compact" onClick={openCreate} type="button">
+                    <Plus size={14} aria-hidden="true" />
+                    첫 공지 쓰기
+                  </button>
+                ) : undefined
+              }
             />
           )}
         </article>
       </section>
 
-      {leaderMode && (
+      {leaderMode && editorOpen && (
         <AnnouncementEditorModal
           editingAnnouncement={editingAnnouncement}
           form={form}
           onClose={closeEditor}
-          onSubmit={() => void saveAnnouncement()}
-          open={editorOpen}
+          onSubmit={saveAnnouncement}
           setForm={setForm}
+        />
+      )}
+      {leaderMode && deleteTarget && (
+        <AnnouncementDeleteModal
+          announcement={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onDelete={() => deleteAnnouncement(deleteTarget)}
         />
       )}
     </div>

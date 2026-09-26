@@ -2,6 +2,7 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPreviewData, previewMember } from '../demoData'
+import { businessDateKey } from '../lib/businessTime'
 import { composerIntentStorageKey } from '../lib/navigation'
 import type { AppData } from '../types'
 import { Dashboard } from './Dashboard'
@@ -15,12 +16,13 @@ afterEach(() => {
   window.sessionStorage.clear()
 })
 
+/**
+ * 업무 시간대(Asia/Seoul)의 오늘에서 offsetDays만큼 떨어진 날짜. 앱의 기한 계산과 같은 기준이어야
+ * 실행 환경의 시간대(CI는 UTC)와 무관하게 ‘n일 지남’이 맞는다.
+ */
 function isoDay(offsetDays: number) {
-  const date = new Date()
-  date.setDate(date.getDate() + offsetDays)
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${date.getFullYear()}-${month}-${day}`
+  const [year, month, day] = businessDateKey(new Date()).split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day + offsetDays)).toISOString().slice(0, 10)
 }
 
 describe('Dashboard', () => {

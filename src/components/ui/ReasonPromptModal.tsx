@@ -1,5 +1,6 @@
 import { useId } from 'react'
 import { Pencil } from 'lucide-react'
+import { withJosa } from '../../lib/korean'
 import { FormGrid } from './FormGrid'
 import { Modal } from './Modal'
 
@@ -18,9 +19,12 @@ export function ReasonPromptModal({
   reason,
   setReason,
   onSubmit,
-  submitLabel = '저장',
+  submitLabel = '저장하기',
   minLength = 1,
   maxLength = 500,
+  label = '변경 사유',
+  placeholder = '예: 담당자와 협의해서 정보를 고쳐요.',
+  submitting = false,
 }: {
   open: boolean
   onClose: () => void
@@ -32,8 +36,13 @@ export function ReasonPromptModal({
   submitLabel?: string
   minLength?: number
   maxLength?: number
+  /** 사유 칸 이름. 예: ‘회수 사유’, ‘해제 사유’ */
+  label?: string
+  placeholder?: string
+  submitting?: boolean
 }) {
   const fieldId = useId()
+  const tooShort = reason.trim().length < minLength
 
   return (
     <Modal
@@ -41,19 +50,20 @@ export function ReasonPromptModal({
       onClose={onClose}
       title={title}
       description={description}
-      eyebrow="변경 사유"
+      eyebrow="사유 입력"
       icon={<Pencil size={18} />}
-      closeLabel="변경 사유 입력 닫기"
+      closeLabel="사유 입력 닫기"
+      dirty={reason.trim().length > 0}
     >
       <FormGrid
         fields={
           <label className="wide" htmlFor={fieldId}>
-            변경 사유
+            {label}
             <textarea
               id={fieldId}
               minLength={minLength}
               maxLength={maxLength}
-              placeholder="예: 담당자 협의에 따라 정보를 수정합니다."
+              placeholder={placeholder}
               value={reason}
               onChange={(event) => setReason(event.target.value)}
             />
@@ -61,8 +71,11 @@ export function ReasonPromptModal({
           </label>
         }
         onSubmit={onSubmit}
-        disabled={reason.trim().length < minLength}
+        onCancel={onClose}
+        disabled={tooShort}
+        disabledReason={`${withJosa(label, '을/를')} 입력해 주세요.`}
         submitLabel={submitLabel}
+        submitting={submitting}
       />
     </Modal>
   )

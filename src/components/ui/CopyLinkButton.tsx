@@ -1,15 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, Link2, X } from 'lucide-react'
+import { Check, Link2 } from 'lucide-react'
 import type { TabId } from '../../lib/navigation'
 import { buildShareUrl } from '../../lib/navigation'
 import { copyTextToClipboard } from '../../lib/clipboard'
 
-type CopyState = 'idle' | 'copied' | 'failed'
+type CopyState = 'idle' | 'copied' | 'manual'
 
-/** 상세 항목의 공유 딥링크를 클립보드에 복사한다. 피드백은 버튼 라벨 전환으로 준다. */
+/**
+ * 상세 항목의 공유 딥링크를 클립보드에 복사한다. 결과는 버튼 글자로 알려준다.
+ * 브라우저 정책으로 복사가 막히면 창을 띄우는 대신 바로 옆에 선택된 링크를 보여줘 직접 복사하게 한다.
+ */
 export function CopyLinkButton({ tab, entityId }: { tab: TabId; entityId: string }) {
   const [state, setState] = useState<CopyState>('idle')
+  const [url, setUrl] = useState('')
   const resetTimerRef = useRef<number | null>(null)
+  const manualRef = useRef<HTMLInputElement>(null)
 
   useEffect(
     () => () => {
@@ -18,28 +23,48 @@ export function CopyLinkButton({ tab, entityId }: { tab: TabId; entityId: string
     [],
   )
 
+  useEffect(() => {
+    if (state !== 'manual') return
+    manualRef.current?.focus()
+    manualRef.current?.select()
+  }, [state])
+
   const copy = async () => {
-    const url = buildShareUrl(tab, entityId)
-    const copied = await copyTextToClipboard(url)
-    if (!copied) {
-      // 클립보드가 정책으로 막힌 환경 — 수동 복사라도 가능하게 링크를 보여준다.
-      window.prompt('자동 복사가 차단되어 있습니다. 아래 링크를 직접 복사하세요.', url)
-    }
-    setState(copied ? 'copied' : 'failed')
+    const nextUrl = buildShareUrl(tab, entityId)
+    setUrl(nextUrl)
+    const copied = await copyTextToClipboard(nextUrl)
     if (resetTimerRef.current != null) window.clearTimeout(resetTimerRef.current)
+    if (!copied) {
+      setState('manual')
+      return
+    }
+    setState('copied')
     resetTimerRef.current = window.setTimeout(() => setState('idle'), 2000)
   }
 
   return (
-    <button
-      className="ghost compact copy-link"
-      data-state={state}
-      onClick={() => void copy()}
-      title="이 항목의 링크를 복사해 메신저에 붙여넣을 수 있습니다."
-      type="button"
-    >
-      {state === 'copied' ? <Check size={14} /> : state === 'failed' ? <X size={14} /> : <Link2 size={14} />}
-      {state === 'copied' ? '복사됨' : state === 'failed' ? '복사 실패' : '링크 복사'}
-    </button>
+    <span className="copy-link-wrap">
+      <button
+        className="ghost compact copy-link"
+        data-state={state}
+        onClick={() => void copy()}
+        type="button"
+      >
+        {state === 'copied' ? <Check aria-hidden="true" size={14} /> : <Link2 aria-hidden="true" size={14} />}
+        {state === 'copied' ? '복사했어요' : '링크 복사'}
+      </button>
+      {state === 'manual' && (
+        <span className="copy-link-manual" role="status">
+          <small>자동 복사가 막혀 있어요. 아래 링크를 직접 복사해 주세요.</small>
+          <input
+            ref={manualRef}
+            aria-label="공유 링크"
+            onBlur={() => setState('idle')}
+            readOnly
+            value={url}
+          />
+        </span>
+      )}
+    </span>
   )
 }

@@ -71,13 +71,13 @@ export function parseProductImportRows(rows: string[][]) {
   }
   if (indexes.name < 0) {
     if (rows.some((cells) => cells.slice(1).some((value) => value.trim().length > 0))) {
-      throw new UserFacingError('헤더 없는 제품 CSV는 제품명 한 열만 사용할 수 있습니다.')
+      throw new UserFacingError('첫 줄에 제목 행이 없으면 제품명 한 열만 쓸 수 있어요. 첫 줄에 “제품명”, “구분” 같은 제목을 넣어 주세요.')
     }
     return rows.map((cells) => ({ name: cells[0]?.trim() ?? '' }))
   }
   if (header.length === 1 && rows.length > 1) {
     throw new UserFacingError(
-      '1열 제품 CSV의 첫 값이 헤더 예약어라서 헤더와 데이터인지 구분할 수 없습니다. 제품명 열을 포함한 다열 헤더 CSV를 사용해 주세요.',
+      '첫 줄이 제목인지 제품명인지 알 수 없어요. 첫 줄에 “제품명”, “구분” 같은 제목을 넣어 다시 가져와 주세요.',
     )
   }
   return body.map((cells) => ({

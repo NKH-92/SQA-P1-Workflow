@@ -2,7 +2,7 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { emptyData } from '../constants'
 import type { Profile } from '../../types'
-import { useDeepLinkEntity } from './useDeepLinkEntity'
+import { MISSING_LINK_TARGET_MESSAGE, useDeepLinkEntity } from './useDeepLinkEntity'
 
 const member: Profile = {
   id: 'member-1',
@@ -38,9 +38,12 @@ describe('useDeepLinkEntity', () => {
     )
     await waitFor(() => expect(input.setEntityId).toHaveBeenCalledWith(null))
     expect(input.setMessage).toHaveBeenCalledWith({
-      text: '링크 대상을 찾을 수 없습니다. 삭제되었거나 접근 권한이 없는 항목일 수 있습니다.',
+      text: MISSING_LINK_TARGET_MESSAGE,
       tone: 'warning',
     })
+    expect(MISSING_LINK_TARGET_MESSAGE).toBe(
+      '링크한 항목을 찾지 못했어요. 삭제됐거나 볼 수 있는 권한이 없는 항목일 수 있어요.',
+    )
   })
 
   it('does not query when the target is already present', () => {
@@ -68,9 +71,14 @@ describe('useDeepLinkEntity', () => {
   })
 
   it('clears unsupported missing entity targets without an on-demand query', () => {
+    window.history.replaceState(null, '', '#/projects?id=missing-project')
     const input = { ...options(), activeTab: 'projects' as const, entityId: 'missing-project' }
 
     renderHook(() => useDeepLinkEntity(input))
+
+    // 새로고침해도 같은 안내가 다시 뜨지 않게 주소에서 사라진 항목의 id를 뺀다.
+    expect(window.location.hash).toBe('#/projects')
+    window.history.replaceState(null, '', '#/dashboard')
 
     expect(input.loadReviewRequest).not.toHaveBeenCalled()
     expect(input.loadAnnouncement).not.toHaveBeenCalled()

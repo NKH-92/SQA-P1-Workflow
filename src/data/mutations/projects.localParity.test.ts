@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createPreviewData, previewLeader, previewMember } from '../../demoData'
+import { PERMISSION_MESSAGE } from '../../lib/errors'
+import { PROJECT_ASSIGNEE_MESSAGE } from '../local/localProjectRepository'
 import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
 import { createProject, saveProjectAssignments } from './projects'
 
@@ -17,7 +19,7 @@ describe('local project permission parity', () => {
         memberIds: [],
         memberOptions: [],
       }),
-    ).rejects.toThrow('활성 파트장 권한이 필요합니다.')
+    ).rejects.toThrow(PERMISSION_MESSAGE)
 
     const leaderContext = context(previewLeader)
     const project = leaderContext.data.projects[0]!
@@ -29,7 +31,7 @@ describe('local project permission parity', () => {
         nextMemberIds: [inactive.id],
         memberOptions: [inactive],
       }),
-    ).rejects.toThrow('활성 파트원 또는 현재 파트장 본인에게만 프로젝트를 배정할 수 있습니다.')
+    ).rejects.toThrow(PROJECT_ASSIGNEE_MESSAGE)
   })
 
   it('allows the current active leader to assign a project to themselves', async () => {

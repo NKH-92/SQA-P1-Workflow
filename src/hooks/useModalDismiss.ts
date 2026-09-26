@@ -1,12 +1,12 @@
 import { useEffect, useRef } from 'react'
 import type { RefObject } from 'react'
-
-const FOCUSABLE =
-  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+import { FOCUSABLE, initialFocusTarget } from './dialogFocus'
+import { useHistoryLayer } from './useHistoryLayer'
 
 /**
  * 직접 마크업으로 만든 모달의 공통 동작: 열려 있는 동안 body 스크롤을 잠그고
- * Escape·focus trap·focus return을 제공한다. onClose는 참조가 안정적이어야 한다.
+ * Escape·focus trap·focus return을 제공한다. 뒤로가기는 화면을 떠나기 전에 창부터 닫는다.
+ * onClose는 참조가 안정적이어야 한다.
  */
 export function useModalDismiss(
   open: boolean,
@@ -17,6 +17,10 @@ export function useModalDismiss(
   useEffect(() => {
     onCloseRef.current = onClose
   }, [onClose])
+  useHistoryLayer(open, () => {
+    onCloseRef.current()
+    return true
+  })
 
   useEffect(() => {
     if (!open || typeof document === 'undefined') return
@@ -28,7 +32,7 @@ export function useModalDismiss(
       ? [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((element) => element.tabIndex !== -1)
       : []
     const focusTimer = window.setTimeout(() => {
-      if (!dialog?.contains(document.activeElement)) focusable()[0]?.focus()
+      if (dialog && !dialog.contains(document.activeElement)) initialFocusTarget(dialog)?.focus()
     }, 0)
     const onKeyDown = (event: KeyboardEvent) => {
       const openDialogs = [...document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]')]

@@ -2,7 +2,6 @@ import { useMemo } from 'react'
 import {
   addProduct,
   assignProduct,
-  createRepositoryContext,
   deleteProduct,
   importProducts,
   saveProductAssignments,
@@ -10,9 +9,11 @@ import {
 } from '../../../data'
 import type { AppData, Profile } from '../../../types'
 import type { AppDataUpdater } from '../../../data/repositories/appDataUpdater'
+import { createSequentialRepositoryContext } from '../../change-applications/sequentialContext'
 
 export function useProductAdminController(profile: Profile, data: AppData, setData: AppDataUpdater) {
-  const context = useMemo(() => createRepositoryContext(profile, data, setData), [data, profile, setData])
+  // 담당자 교체 뒤 같은 저장 안에서 미완료 업무를 넘기므로, 앞선 쓰기를 다음 쓰기가 보게 한다.
+  const context = useMemo(() => createSequentialRepositoryContext(profile, data, setData), [data, profile, setData])
   return {
     importRows: (rows: Parameters<typeof importProducts>[1]) => importProducts(context, rows),
     add: (input: Parameters<typeof addProduct>[1]) => addProduct(context, input),

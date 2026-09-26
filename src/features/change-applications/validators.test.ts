@@ -84,7 +84,7 @@ describe('normalizeChangeApplicationInput', () => {
     expect(() => normalizeChangeApplicationInput(versioned, input({
       changeApplicationId: 'change-1',
       expected_updated_at: '2026-07-17T00:30:00.000Z',
-    }))).toThrow('다른 사용자가 변경건을 수정했습니다. 새로고침 후 다시 시도해 주세요.')
+    }))).toThrow('다른 사람이 먼저 공통변경을 수정했어요. 새로고침한 뒤 다시 시도해 주세요.')
 
     expect(normalizeChangeApplicationInput(versioned, input({
       changeApplicationId: 'change-1',
@@ -115,6 +115,6 @@ describe('normalizeChangeApplicationInput', () => {
     expect(() => normalizeChangeApplicationInput(locked, input({
       changeApplicationId: 'change-1',
       expected_updated_at: '2026-07-17T01:00:00.000Z',
-    }))).toThrow('한 제품이라도 처리된 뒤에는 변경 내용을 수정할 수 없습니다.')
+    }))).toThrow('처리를 시작한 제품이 있어서 변경 내용을 수정할 수 없어요.')
   })
 })

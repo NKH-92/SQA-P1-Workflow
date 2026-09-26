@@ -1,17 +1,22 @@
 import { recordActivityLog } from '../activityLog'
-import { assertRecordExists, UserFacingError } from '../../lib/errors'
+import { assertRecordExists, PERMISSION_MESSAGE, UserFacingError } from '../../lib/errors'
 import { canAssignProjectTo } from '../../domain/permissions'
 import { makeId } from '../../lib/format'
+import { quoted } from '../../lib/korean'
 import type { RepositoryDeps, ProjectRepository } from '../repositories/types'
 import { assertMasterVersion, MASTER_STALE_MESSAGE, normalizeMasterReason } from '../validation/masterOcc'
 import { addProject, removeProject, replaceProjectAssignments, updateProject } from './appDataReducers'
+
+/** 비활성 파트원이나 다른 파트장을 담당자로 고른 경우. 원격 RPC의 거부와 같은 조건이다. */
+export const PROJECT_ASSIGNEE_MESSAGE =
+  '활성 상태인 파트원과 파트장 자신에게만 프로젝트를 배정할 수 있어요. 비활성 파트원을 빼고 다시 저장해 주세요.'
 
 export function createLocalProjectRepository(ctx: RepositoryDeps): ProjectRepository {
   const { profile, data, setData, activityLogs } = ctx
 
   const assertLeader = () => {
     if (profile.role !== 'leader' || profile.is_active === false || profile.must_change_password === true) {
-      throw new UserFacingError('활성 파트장 권한이 필요합니다.')
+      throw new UserFacingError(PERMISSION_MESSAGE)
     }
   }
   const assertMembers = (memberIds: string[]) => {
@@ -19,7 +24,7 @@ export function createLocalProjectRepository(ctx: RepositoryDeps): ProjectReposi
       const member = data.profiles.find((item) => item.id === memberId)
       assertRecordExists(member)
       if (!canAssignProjectTo(member, profile.id)) {
-        throw new UserFacingError('활성 파트원 또는 현재 파트장 본인에게만 프로젝트를 배정할 수 있습니다.')
+        throw new UserFacingError(PROJECT_ASSIGNEE_MESSAGE)
       }
     }
   }
@@ -42,7 +47,7 @@ export function createLocalProjectRepository(ctx: RepositoryDeps): ProjectReposi
         entityType: 'project',
         entityId: projectId,
         action: 'created',
-        summary: `${project.name} 프로젝트를 생성했습니다.`,
+        summary: `${quoted(project.name)} 프로젝트를 만들었어요.`,
         metadata: { deadline: project.deadline, status: project.status, assigned_user_ids: memberIds },
       })
       return projectId
@@ -59,7 +64,7 @@ export function createLocalProjectRepository(ctx: RepositoryDeps): ProjectReposi
         entityType: 'project',
         entityId: projectId,
         action: 'updated',
-        summary: `${updated.name} 프로젝트 정보를 수정했습니다.`,
+        summary: `${quoted(updated.name)} 프로젝트 정보를 수정했어요.`,
         metadata: updated,
       })
     },
@@ -76,7 +81,7 @@ export function createLocalProjectRepository(ctx: RepositoryDeps): ProjectReposi
         entityType: 'project_assignment',
         entityId: project.id,
         action: 'updated',
-        summary: `${project.name} 프로젝트 배정을 ${nextMemberIds.length}명으로 조정했습니다.`,
+        summary: `${quoted(project.name)} 프로젝트 담당자를 ${nextMemberIds.length}명으로 바꿨어요.`,
         metadata: { assigned_user_ids: nextMemberIds },
       })
     },
@@ -95,7 +100,7 @@ export function createLocalProjectRepository(ctx: RepositoryDeps): ProjectReposi
         entityType: 'project',
         entityId: project.id,
         action: 'deleted',
-        summary: `${project.name} 프로젝트를 삭제했습니다.`,
+        summary: `${quoted(project.name)} 프로젝트를 삭제했어요.`,
         metadata: { reason: input.reason.trim() },
       })
     },

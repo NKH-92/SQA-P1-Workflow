@@ -47,10 +47,29 @@ export function asReviewHistoryRow(request: ReviewRequest): ReviewHistoryRow | n
   return { ...request, status: request.status, terminal_at: terminalAt }
 }
 
+function terminalTime(row: ReviewHistoryRow): number {
+  const time = new Date(row.terminal_at).getTime()
+  return Number.isNaN(time) ? 0 : time
+}
+
 function compareHistoryRows(left: ReviewHistoryRow, right: ReviewHistoryRow): number {
-  const timeDifference = new Date(right.terminal_at).getTime() - new Date(left.terminal_at).getTime()
+  const timeDifference = terminalTime(right) - terminalTime(left)
   if (timeDifference !== 0) return timeDifference
   return right.id.localeCompare(left.id)
+}
+
+export type ReviewHistoryOrder = 'newest' | 'oldest'
+
+/**
+ * 검토 이력의 처리 시점(terminal_at) 순서. 서버는 최신순으로 한 페이지씩 내려주므로
+ * ‘오래된순’은 지금까지 불러온 기록 안에서 뒤집는다(더 오래된 기록은 이어서 불러온다).
+ */
+export function orderReviewHistoryRows(
+  rows: ReadonlyArray<ReviewHistoryRow>,
+  order: ReviewHistoryOrder = 'newest',
+): ReviewHistoryRow[] {
+  const sorted = [...rows].sort(compareHistoryRows)
+  return order === 'newest' ? sorted : sorted.reverse()
 }
 
 function isBeforeCursor(row: ReviewHistoryRow, cursor: ReviewHistoryCursor): boolean {

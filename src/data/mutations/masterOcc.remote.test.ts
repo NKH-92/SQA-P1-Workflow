@@ -146,7 +146,7 @@ describe('master OCC RPC contracts (remote)', () => {
   it('rejects an update with no known revision before ever calling the RPC', async () => {
     await expect(
       updateProduct(remoteContext(), 'product-1', { name: 'Product', expectedUpdatedAt: null, reason: '사유' }),
-    ).rejects.toThrow('다른 사용자가 변경했습니다. 새로고침 후 다시 시도해 주세요.')
+    ).rejects.toThrow('다른 사람이 먼저 수정했어요. 새로고침한 뒤 다시 시도해 주세요.')
     expect(rpcMock).not.toHaveBeenCalled()
   })
 
@@ -154,7 +154,7 @@ describe('master OCC RPC contracts (remote)', () => {
     rpcMock.mockImplementation(async () => ({
       data: null, error: { message: 'master record changed since it was opened' },
     }))
-    const staleMessage = '다른 사용자가 변경했습니다. 새로고침 후 다시 시도해 주세요.'
+    const staleMessage = '다른 사람이 먼저 수정했어요. 새로고침한 뒤 다시 시도해 주세요.'
 
     await expect(updateProduct(remoteContext(), 'product-1', {
       name: 'Product', expectedUpdatedAt: EXPECTED, reason: '사유',
@@ -177,7 +177,7 @@ describe('master OCC RPC contracts (remote)', () => {
     rpcMock.mockImplementation(async () => ({ data: null, error: { message: 'master record not found' } }))
     await expect(updateProduct(remoteContext(), 'missing', {
       name: 'Product', expectedUpdatedAt: EXPECTED, reason: '사유',
-    })).rejects.toThrow('다른 사용자가 변경했습니다. 새로고침 후 다시 시도해 주세요.')
+    })).rejects.toThrow('다른 사람이 먼저 수정했어요. 새로고침한 뒤 다시 시도해 주세요.')
   })
 
   it('reports a no-op and skips the activity log when the RPC returns the unchanged revision', async () => {
@@ -206,14 +206,14 @@ describe('master OCC RPC contracts (remote)', () => {
     }))
     await expect(
       toggleProfileActive(remoteContext(), leader.id, false, { expectedUpdatedAt: EXPECTED, reason: '사유' }),
-    ).rejects.toThrow('활성 파트장은 최소 한 명 이상 유지해야 합니다.')
+    ).rejects.toThrow('활성 파트장이 최소 한 명은 있어야 해요. 다른 파트장을 먼저 활성화해 주세요.')
 
     rpcMock.mockImplementation(async () => ({
       data: null, error: { message: 'cannot demote the last active leader' },
     }))
     await expect(
       toggleProfileActive(remoteContext(), leader.id, false, { expectedUpdatedAt: EXPECTED, reason: '사유' }),
-    ).rejects.toThrow('활성 파트장은 최소 한 명 이상 유지해야 합니다.')
+    ).rejects.toThrow('활성 파트장이 최소 한 명은 있어야 해요. 다른 파트장을 먼저 활성화해 주세요.')
   })
 
   it('translates the self-deactivation guard into a user-facing message', async () => {
@@ -222,6 +222,6 @@ describe('master OCC RPC contracts (remote)', () => {
     }))
     await expect(
       toggleProfileActive(remoteContext(), leader.id, false, { expectedUpdatedAt: EXPECTED, reason: '사유' }),
-    ).rejects.toThrow('본인 계정은 비활성화할 수 없습니다.')
+    ).rejects.toThrow('내 계정은 비활성화할 수 없어요. 다른 파트장에게 요청해 주세요.')
   })
 })

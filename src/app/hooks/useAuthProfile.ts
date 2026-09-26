@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { createPreviewData, previewLeader as demoLeader } from '../../demoData'
-import { clearReviewDraftStorage } from '../../features/reviews/useReviewDraft'
 import { emptyData } from '../constants'
 import { toUserMessage } from '../../lib/errors'
 import { hasSupabaseConfig, isPreviewMode, supabase } from '../../lib/supabase'
+import { clearViewState } from '../../hooks/useViewState'
 import type { AppData, Profile } from '../../types'
-import type { ToastMessage } from '../types'
+import type { SetToast } from '../types'
 
 const AUTH_BOOTSTRAP_TIMEOUT_MS = 10_000
 const AUTH_SESSION_TIMEOUT_MS = 8_000
@@ -42,16 +42,27 @@ async function loadProfileForSession(): Promise<{ profile: Profile | null; inact
 export function useAuthProfile(
   refreshData: (options?: { initial?: boolean }) => Promise<void>,
   setData: React.Dispatch<React.SetStateAction<AppData>>,
-  setMessage: React.Dispatch<React.SetStateAction<ToastMessage | null>>,
+  setMessage: SetToast,
   resetNavigation: () => void,
   resetSyncState: () => void,
+  /** 사용자가 닫을 때까지 남기는 안내(임시 비밀번호 등)까지 모두 지운다. 로그아웃·사용자 교체 때 부른다. */
+  clearAllToasts: () => void = () => {},
 ) {
   const previewEnabled = isPreviewMode
+  // 매 렌더 새 함수가 와도 효과를 다시 돌리지 않도록 ref로 최신 값을 읽는다.
+  const clearAllToastsRef = useRef(clearAllToasts)
+  useEffect(() => {
+    clearAllToastsRef.current = clearAllToasts
+  })
+  /** 마지막으로 본 로그인 주체. 바뀌면 앞사람에게 남긴 안내를 지운다. */
+  const lastSessionKeyRef = useRef<string | null>(null)
 
   const [sessionUser, setSessionUser] = useState<User | null | undefined>(hasSupabaseConfig ? undefined : null)
   const [profile, setProfile] = useState<Profile | null>(previewEnabled ? demoLeader : null)
   const [authReady, setAuthReady] = useState(!hasSupabaseConfig)
   const [sessionWithoutProfile, setSessionWithoutProfile] = useState(false)
+  /** 프로필은 있지만 비활성인 계정. 등록되지 않은 계정(sessionWithoutProfile만 true)과 안내가 다르다. */
+  const [profileInactive, setProfileInactive] = useState(false)
   const [profileLoadError, setProfileLoadError] = useState<string | null>(null)
   const [profileRetryTick, setProfileRetryTick] = useState(0)
   const [initialLoading, setInitialLoading] = useState(hasSupabaseConfig)
@@ -87,7 +98,7 @@ export function useAuthProfile(
       completeBootstrap(null)
       setInitialLoading(false)
       setMessage({
-        text: '저장된 로그인 정보를 확인하지 못했습니다. 다시 로그인해 주세요.',
+        text: '로그인 정보를 확인하지 못했어요. 다시 로그인해 주세요.',
         tone: 'warning',
       })
     }, AUTH_BOOTSTRAP_TIMEOUT_MS)
@@ -130,10 +141,17 @@ export function useAuthProfile(
   useEffect(() => {
     if (!supabase || profileEffectKey === 'auth-pending') return
 
+    // 로그인한 사람이 바뀌면(다른 탭의 로그아웃·세션 만료 포함) 앞사람의 계정 안내가 남지 않게 모두 지운다.
+    if (lastSessionKeyRef.current !== null && lastSessionKeyRef.current !== profileEffectKey) {
+      clearAllToastsRef.current()
+    }
+    lastSessionKeyRef.current = profileEffectKey
+
     if (profileEffectKey === 'signed-out') {
       resetSyncState()
       setProfile(null)
       setSessionWithoutProfile(false)
+      setProfileInactive(false)
       setProfileLoadError(null)
       setData(emptyData)
       setInitialLoading(false)
@@ -161,13 +179,18 @@ export function useAuthProfile(
         if (result.inactive) {
           setProfile(null)
           setSessionWithoutProfile(true)
+          setProfileInactive(true)
           setProfileLoadError(null)
           return
         }
 
         if (result.profile) {
+          // 로그인 전에 쌓인 안내(로그인 정보 확인 실패·프로필 오류 등)는 이제 맞지 않으므로 지운다.
+          // 사용자가 닫을 때까지 남기기로 한 안내(persistent)는 그대로 둔다.
+          setMessage(null)
           setProfile(result.profile)
           setSessionWithoutProfile(false)
+          setProfileInactive(false)
           setProfileLoadError(null)
           // Password-pending users must be able to read their own profile so
           // the change-password route can render, but every app-data bootstrap
@@ -178,12 +201,14 @@ export function useAuthProfile(
         } else {
           setProfile(null)
           setSessionWithoutProfile(true)
+          setProfileInactive(false)
           setProfileLoadError(null)
         }
       } catch (error) {
         if (!cancelled && profileLoadGenerationRef.current === generation) {
+          // 프로필 오류 화면이 이 문구와 ‘다시 시도’를 직접 보여 준다. 토스트로도 띄우면
+          // 로그인한 뒤 앱 화면에서 지난 오류가 늦게 뜬다.
           const userMessage = toUserMessage(error)
-          setMessage({ text: userMessage, tone: 'error' })
           setProfileLoadError(userMessage)
           setProfile(null)
           setSessionWithoutProfile(false)
@@ -205,17 +230,21 @@ export function useAuthProfile(
     setProfileRetryTick((value) => value + 1)
   }, [])
 
+  // 로그아웃해도 임시저장한 검토요청은 지우지 않는다(사람별로 따로 저장된다). 다시 로그인하면 이어서 쓸 수 있다.
+  // 화면별 검색어·필터(보기 상태)는 같은 탭을 다음 사람이 쓸 수 있으니 지운다.
   const signOut = useCallback(async () => {
-    const profileId = profile?.id
     if (supabase) await supabase.auth.signOut()
-    if (profileId) clearReviewDraftStorage(profileId)
+    clearViewState()
+    // 같은 탭을 다음 사람이 쓸 수 있으니 임시 비밀번호 같은 안내도 남기지 않는다.
+    clearAllToastsRef.current()
     setSessionUser(null)
     setProfile(previewEnabled ? demoLeader : null)
     setSessionWithoutProfile(false)
+    setProfileInactive(false)
     resetSyncState()
     setData(previewEnabled ? createPreviewData() : emptyData)
     resetNavigation()
-  }, [profile?.id, previewEnabled, resetNavigation, resetSyncState, setData])
+  }, [previewEnabled, resetNavigation, resetSyncState, setData])
 
   return {
     sessionUser,
@@ -223,6 +252,7 @@ export function useAuthProfile(
     setProfile,
     authReady,
     sessionWithoutProfile,
+    profileInactive,
     profileLoadError,
     retryProfileLoad,
     initialLoading,

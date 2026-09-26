@@ -15,8 +15,9 @@ export function safeAuditDelta(delta: Record<string, unknown>) {
 }
 
 export function auditValueText(value: unknown) {
-  if (value === null) return 'null'
+  if (value === null) return '(비어 있음)'
   if (value === undefined) return '—'
+  if (typeof value === 'boolean') return value ? '예' : '아니요'
   if (typeof value === 'string') return value
   return JSON.stringify(value, null, 2)
 }

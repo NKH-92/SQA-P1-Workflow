@@ -72,7 +72,7 @@ describe('local assignment replacement parity', () => {
     const ctx = localContext({ ...leader, is_active: false })
 
     await expect(saveProductAssignments(ctx, { productId: 'product-1', nextMemberIds: ['member-1'], reason: '배정 조정' }))
-      .rejects.toThrow('활성 파트장 권한이 필요합니다.')
+      .rejects.toThrow('이 작업을 할 권한이 없어요. 필요하면 파트장에게 요청해 주세요.')
     expect(ctx.setData).not.toHaveBeenCalled()
   })
 
@@ -80,18 +80,18 @@ describe('local assignment replacement parity', () => {
     const ctx = localContext({ ...leader, must_change_password: true })
 
     await expect(saveDutyAssignments(ctx, { dutyId: 'duty-1', nextMemberIds: ['member-1'], reason: '배정 조정' }))
-      .rejects.toThrow('활성 파트장 권한이 필요합니다.')
+      .rejects.toThrow('이 작업을 할 권한이 없어요. 필요하면 파트장에게 요청해 주세요.')
     expect(ctx.setData).not.toHaveBeenCalled()
   })
 
   it('rejects inactive or missing members in local product assignments', async () => {
     const inactiveCtx = localContext()
     await expect(saveProductAssignments(inactiveCtx, { productId: 'product-1', nextMemberIds: ['member-inactive'], reason: '배정 조정' }))
-      .rejects.toThrow('활성 상태인 파트원에게만 배정할 수 있습니다.')
+      .rejects.toThrow('활성 상태인 파트원에게만 배정할 수 있어요.')
 
     const missingCtx = localContext()
     await expect(saveDutyAssignments(missingCtx, { dutyId: 'duty-1', nextMemberIds: ['missing-member'], reason: '배정 조정' }))
-      .rejects.toThrow('이미 삭제되었거나 변경할 수 없는 항목입니다.')
+      .rejects.toThrow('이미 삭제됐거나 바꿀 수 없는 항목이에요. 목록을 새로고침한 뒤 다시 확인해 주세요.')
     expect(inactiveCtx.setData).not.toHaveBeenCalled()
     expect(missingCtx.setData).not.toHaveBeenCalled()
   })
@@ -128,10 +128,10 @@ describe('local assignment replacement parity', () => {
     const ctx = localContext(member)
 
     await expect(assignProduct(ctx, { productId: 'product-1', userId: 'member-1' })).rejects.toThrow(
-      '활성 파트장 권한이 필요합니다.',
+      '이 작업을 할 권한이 없어요. 필요하면 파트장에게 요청해 주세요.',
     )
     await expect(assignDuty(ctx, { dutyId: 'duty-1', userId: 'member-1' })).rejects.toThrow(
-      '활성 파트장 권한이 필요합니다.',
+      '이 작업을 할 권한이 없어요. 필요하면 파트장에게 요청해 주세요.',
     )
     expect(ctx.setData).not.toHaveBeenCalled()
   })
@@ -170,7 +170,7 @@ describe('local assignment replacement parity', () => {
     ]
 
     for (const operation of guardedOperations) {
-      await expect(operation()).rejects.toThrow('활성 파트장 권한이 필요합니다.')
+      await expect(operation()).rejects.toThrow('이 작업을 할 권한이 없어요. 필요하면 파트장에게 요청해 주세요.')
     }
     expect(ctx.setData).not.toHaveBeenCalled()
     expect(activityLogMock).not.toHaveBeenCalled()
@@ -182,7 +182,7 @@ describe('local assignment replacement parity', () => {
       name: 'Member-side product update',
       expectedUpdatedAt: revision,
       reason: 'test reason',
-    })).rejects.toThrow('활성 파트장 권한이 필요합니다.')
+    })).rejects.toThrow('이 작업을 할 권한이 없어요. 필요하면 파트장에게 요청해 주세요.')
     expect(productCtx.setData).not.toHaveBeenCalled()
 
     activityLogMock.mockClear()
@@ -191,7 +191,7 @@ describe('local assignment replacement parity', () => {
       name: 'Member-side category update',
       expectedUpdatedAt: revision,
       reason: 'test reason',
-    })).rejects.toThrow('활성 파트장 권한이 필요합니다.')
+    })).rejects.toThrow('이 작업을 할 권한이 없어요. 필요하면 파트장에게 요청해 주세요.')
     expect(categoryCtx.setData).not.toHaveBeenCalled()
     expect(activityLogMock).not.toHaveBeenCalled()
   })
@@ -373,12 +373,77 @@ describe('local assignment replacement parity', () => {
     })
   })
 
+  it('removes and moves duty owners locally with the same rules as the replace RPC (P0-3)', async () => {
+    const ctx = localContext()
+    ctx.data.dutyAssignments = [{
+      id: 'duty-assignment-1',
+      user_id: previousMember.id,
+      duty_id: 'duty-1',
+      profiles: { name: previousMember.name, email: previousMember.email },
+      duties: null,
+    }]
+    let nextData = ctx.data
+    ctx.setData = (updater) => {
+      nextData = typeof updater === 'function' ? updater(nextData) : updater
+    }
+
+    // 옮기기: 이전 담당자를 빼고 새 담당자를 넣는다.
+    const moved = await saveDutyAssignments(ctx, {
+      dutyId: 'duty-1',
+      nextMemberIds: [member.id],
+      reason: '담당 제품군 변경',
+      expectedUpdatedAt: revision,
+    })
+    expect(moved).toEqual({ noop: false })
+    expect(nextData.dutyAssignments.map((assignment) => assignment.user_id)).toEqual([member.id])
+    expect(nextData.duties[0]?.updated_at).not.toBe(revision)
+    expect(activityLogMock).toHaveBeenCalledOnce()
+    expect(activityLogMock.mock.calls[0][1]).toMatchObject({
+      entityType: 'duty_assignment',
+      entityId: 'duty-1',
+      metadata: { assigned_user_ids: [member.id] },
+    })
+
+    // 빼기: 담당자를 모두 비운다(다음 저장은 새 revision을 기준으로 한다).
+    ctx.data = nextData
+    const removed = await saveDutyAssignments(ctx, {
+      dutyId: 'duty-1',
+      nextMemberIds: [],
+      reason: '업무 종료',
+      expectedUpdatedAt: nextData.duties[0]!.updated_at,
+    })
+    expect(removed).toEqual({ noop: false })
+    expect(nextData.dutyAssignments).toEqual([])
+  })
+
+  it('keeps an unchanged duty owner set silent and rejects a stale or reasonless duty reassignment', async () => {
+    const ctx = localContext()
+    ctx.data.dutyAssignments = [{
+      id: 'duty-assignment-1', user_id: member.id, duty_id: 'duty-1', profiles: null, duties: null,
+    }]
+
+    await expect(saveDutyAssignments(ctx, {
+      dutyId: 'duty-1', nextMemberIds: [member.id], reason: '재확인', expectedUpdatedAt: revision,
+    })).resolves.toEqual({ noop: true })
+    await expect(saveDutyAssignments(ctx, {
+      dutyId: 'duty-1', nextMemberIds: [], reason: '  ', expectedUpdatedAt: revision,
+    })).rejects.toThrow('변경 사유를 입력해 주세요.')
+    await expect(saveDutyAssignments(ctx, {
+      dutyId: 'duty-1', nextMemberIds: [], reason: '업무 종료', expectedUpdatedAt: '2026-01-01T00:00:00.000Z',
+    })).rejects.toThrow('다른 사람이 먼저 수정했어요. 새로고침한 뒤 다시 시도해 주세요.')
+    await expect(saveDutyAssignments(ctx, {
+      dutyId: 'duty-1', nextMemberIds: [inactiveMember.id], reason: '업무 이관', expectedUpdatedAt: revision,
+    })).rejects.toThrow('활성 상태인 파트원에게만 배정할 수 있어요.')
+    expect(ctx.setData).not.toHaveBeenCalled()
+    expect(activityLogMock).not.toHaveBeenCalled()
+  })
+
   it('does not allow local preview to deactivate the last active leader', async () => {
     const ctx = localContext()
 
     await expect(
       toggleProfileActive(ctx, leader.id, false, { expectedUpdatedAt: revision, reason: 'test reason' }),
-    ).rejects.toThrow('활성 파트장은 최소 한 명 이상 유지해야 합니다.')
+    ).rejects.toThrow('활성 파트장이 최소 한 명은 있어야 해요. 다른 파트장을 먼저 활성화해 주세요.')
     expect(ctx.setData).not.toHaveBeenCalled()
   })
 })

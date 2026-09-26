@@ -38,6 +38,19 @@ type ReviewRequestMerger = (
 
 export const emptyAppData = createEmptyAppData
 
+/** 부가 데이터를 불러오지 못해 이전 내용을 보여 줄 때의 안내. 화면 위 경고 배너에 나온다. */
+export function optionalLoadFailureWarning(label: string) {
+  return `${label}: 새로 불러오지 못해 이전 내용을 보여 주고 있어요.`
+}
+
+/**
+ * 목록이 표시 상한을 넘었다는 안내. 실패가 아니라 평상시 상태라 화면은 경고가 아닌 정보로 보여 준다
+ * (useAppData의 splitDataWarnings가 ‘…건까지만 보여요.’로 끝나는 문구를 안내로 분류한다).
+ */
+export function listCapNotice(label: string, cap: number) {
+  return `${label}: 최근 ${cap.toLocaleString('ko-KR')}건까지만 보여요.`
+}
+
 function optionalDataOrWarning<T>(
   result: SettledQueryResult<T>,
   label: string,
@@ -45,7 +58,7 @@ function optionalDataOrWarning<T>(
   previous: T,
 ): T {
   if (result.status === 'rejected' || result.value.error) {
-    warnings.push(`${label} 조회에 실패해 마지막 정상 데이터를 유지합니다.`)
+    warnings.push(optionalLoadFailureWarning(label))
     return previous
   }
   return (result.value.data ?? []) as T
@@ -60,7 +73,7 @@ function optionalCappedRowsOrWarning<T>(
 ): T[] {
   const rows = optionalDataOrWarning(result, label, warnings, previous)
   if (rows.length > cap) {
-    warnings.push(`${label}: 최신 ${cap}건만 표시합니다.`)
+    warnings.push(listCapNotice(label, cap))
   }
   return rows.slice(0, cap)
 }
@@ -119,8 +132,8 @@ export function assembleAppData(
 
   // Warning order is user-visible and intentionally differs from query order.
   const announcements = optionalCappedRowsOrWarning(optionalResults.announcements, '공지', optionalWarnings, previous.announcements, 200)
-  const allowedUsers = optionalCappedRowsOrWarning(optionalResults.allowedUsers, '초대 목록', optionalWarnings, previous.allowedUsers, 1000)
-  const profileNotes = optionalCappedRowsOrWarning(optionalResults.profileNotes, '프로필 메모', optionalWarnings, previous.profileNotes, 1000)
+  const allowedUsers = optionalCappedRowsOrWarning(optionalResults.allowedUsers, '계정 목록', optionalWarnings, previous.allowedUsers, 1000)
+  const profileNotes = optionalCappedRowsOrWarning(optionalResults.profileNotes, '관리 메모', optionalWarnings, previous.profileNotes, 1000)
   // Activity history is intentionally a recent-100 view. Its persistent cap is
   // explained in ActivityPanel and must not be reported as a retryable outage.
   const activityLogs = optionalDataOrWarning(

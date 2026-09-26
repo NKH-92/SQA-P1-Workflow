@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { ReviewRequest } from '../types'
 import {
+  asReviewHistoryRow,
   buildLocalReviewHistoryPage,
   isLeaderDefaultReviewRequest,
   matchesReviewSearch,
+  orderReviewHistoryRows,
 } from './reviewHistory'
 
 function terminalReview(
@@ -87,5 +89,18 @@ describe('reviewHistory', () => {
     }, null, now)
 
     expect(page.rows.map((row) => row.id)).toEqual(['rejected'])
+  })
+})
+
+describe('orderReviewHistoryRows', () => {
+  it('orders loaded history rows by decision time in either direction with a stable id tie-break', () => {
+    const rows = [
+      terminalReview('b', 'approved', '2026-07-10T00:00:00.000Z'),
+      terminalReview('c', 'rejected', '2026-07-20T00:00:00.000Z'),
+      terminalReview('a', 'approved', '2026-07-10T00:00:00.000Z'),
+    ].map((request) => asReviewHistoryRow(request)!)
+
+    expect(orderReviewHistoryRows(rows).map((row) => row.id)).toEqual(['c', 'b', 'a'])
+    expect(orderReviewHistoryRows(rows, 'oldest').map((row) => row.id)).toEqual(['a', 'b', 'c'])
   })
 })

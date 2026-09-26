@@ -106,7 +106,7 @@ export function createLocalDutyAdminRepository(deps: RepositoryDeps): DutyAdminR
       assertRecordExists(member)
       assertRecordExists(duty)
       if (!canReceiveAssignment(member)) {
-        throw new UserFacingError('활성 상태인 파트원에게만 업무를 배정할 수 있습니다.')
+        throw new UserFacingError('활성 상태인 파트원에게만 업무를 배정할 수 있어요.')
       }
       const dutySnapshot = dutyRelation({
         ...duty,
@@ -227,7 +227,7 @@ export function createLocalDutyAdminRepository(deps: RepositoryDeps): DutyAdminR
       normalizeMasterReason(input.reason)
       assertLocalMasterCurrent(category, input.expectedUpdatedAt)
       if (data.duties.some((item) => item.major_category_id === id)) {
-        throw new UserFacingError('소속된 업무가 있어 대분류를 삭제할 수 없습니다. 먼저 업무를 이동하거나 삭제하세요.')
+        throw new UserFacingError('대분류에 속한 업무를 옮기거나 삭제하면 대분류를 삭제할 수 있어요.')
       }
       setData((current) => removeDutyMajorCategory(current, id))
       return category.name

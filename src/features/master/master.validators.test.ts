@@ -12,7 +12,7 @@ describe('master.validators', () => {
 
   it('rejects invalid email on invite create', () => {
     expect(() => validateInviteCreate(data, { email: 'bad', name: '테스트', role: 'member' })).toThrow(
-      '올바른 이메일 형식을 입력해 주세요.',
+      '이메일 형식을 확인해 주세요.',
     )
   })
 
@@ -23,7 +23,7 @@ describe('master.validators', () => {
         name: '테스트',
         role: 'member',
       }),
-    ).toThrow('이미 초대 목록에 등록된 이메일입니다.')
+    ).toThrow('이미 등록된 이메일이에요. 목록에서 계정을 확인해 주세요.')
   })
 
   it('rejects duplicate product name', () => {
@@ -33,7 +33,7 @@ describe('master.validators', () => {
         category: '자사',
         companyName: '자사',
       }),
-    ).toThrow('이미 등록된 제품명입니다.')
+    ).toThrow('이미 있는 제품명이에요. 다른 이름을 입력해 주세요.')
   })
 
   it('rejects duplicate duty in same major category', () => {
@@ -43,7 +43,7 @@ describe('master.validators', () => {
         majorCategoryId: duty.major_category_id,
         name: duty.name,
       }),
-    ).toThrow('같은 대분류에 이미 등록된 업무명입니다.')
+    ).toThrow('같은 대분류에 이미 있는 업무명이에요. 다른 이름을 입력해 주세요.')
   })
 
   it('rejects duty create without major category', () => {
@@ -60,7 +60,7 @@ describe('master.validators', () => {
 
   it('rejects duplicate major category', () => {
     expect(() => validateMajorCategoryCreate(data, data.dutyMajorCategories[0].name)).toThrow(
-      '이미 등록된 대분류입니다.',
+      '이미 있는 대분류예요. 다른 이름을 입력해 주세요.',
     )
   })
 })

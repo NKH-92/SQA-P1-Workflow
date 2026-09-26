@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { useHashNavigation } from './useHashNavigation'
+import { useHashNavigation, useSelectionHashSync } from './useHashNavigation'
 
 describe('useHashNavigation', () => {
   afterEach(() => {
@@ -83,5 +83,74 @@ describe('useHashNavigation', () => {
     await waitFor(() => expect(result.current.activeTab).toBe('dashboard'))
     expect(result.current.navEntityId).toBeNull()
     expect(window.location.hash).toBe('#/dashboard')
+  })
+
+  it('replaces the current entry instead of pushing when asked (drawer navigation)', () => {
+    window.history.replaceState({ __sqaOverlays: ['drawer'] }, '', '#/dashboard')
+    const { result } = renderHook(() => useHashNavigation(true, true))
+    const length = window.history.length
+
+    act(() => result.current.setActiveTab('announcements', undefined, { replace: true }))
+
+    expect(result.current.activeTab).toBe('announcements')
+    expect(window.location.hash).toBe('#/announcements')
+    expect(window.history.length).toBe(length)
+    expect(window.history.state).toBeNull()
+  })
+})
+
+describe('useHashNavigation with open dialogs and details', () => {
+  afterEach(() => {
+    window.history.replaceState(null, '', '#/dashboard')
+    vi.restoreAllMocks()
+  })
+
+  it('replaces the dialog history entry when navigating from inside it, so one Back returns to the previous screen', () => {
+    window.history.replaceState(null, '', '#/reviews')
+    const { result } = renderHook(() => useHashNavigation(true, true))
+    window.history.pushState({ __sqaOverlays: ['overlay-palette'] }, '', '#/reviews')
+    const pushState = vi.spyOn(window.history, 'pushState')
+
+    act(() => result.current.setActiveTab('announcements'))
+
+    expect(window.location.hash).toBe('#/announcements')
+    expect(window.history.state).toBeNull()
+    expect(pushState).not.toHaveBeenCalled()
+  })
+
+  it('does not treat the selection written back after closing a dialog as a new deep link', () => {
+    window.history.replaceState(null, '', '#/change-applications')
+    const { result } = renderHook(() => useHashNavigation(true, true))
+    const { rerender } = renderHook(({ id }) => useSelectionHashSync('change-applications', id), {
+      initialProps: { id: 'history-1' as string | null },
+    })
+    rerender({ id: 'history-1' })
+
+    act(() => {
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+    })
+
+    expect(result.current.activeTab).toBe('change-applications')
+    expect(result.current.navEntityId).toBeNull()
+  })
+})
+
+describe('useSelectionHashSync', () => {
+  afterEach(() => {
+    window.history.replaceState(null, '', '#/dashboard')
+  })
+
+  it('mirrors the selected item into ?id= and removes it when nothing is selected', () => {
+    window.history.replaceState(null, '', '#/reviews?id=deep-link')
+    const { rerender } = renderHook(({ id }: { id: string | null | undefined }) => useSelectionHashSync('reviews', id), {
+      initialProps: { id: undefined as string | null | undefined },
+    })
+    expect(window.location.hash).toBe('#/reviews?id=deep-link')
+
+    rerender({ id: 'review-2' })
+    expect(window.location.hash).toBe('#/reviews?id=review-2')
+
+    rerender({ id: null })
+    expect(window.location.hash).toBe('#/reviews')
   })
 })

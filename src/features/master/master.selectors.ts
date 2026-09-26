@@ -1,4 +1,6 @@
 import type { AppData, Duty, DutyMajorCategory } from '../../types'
+import { roleLabels } from '../../lib/format'
+import { selectProductChangeTaskContexts } from '../change-applications/selectors'
 
 export type MasterFeatureData = Pick<
   AppData,
@@ -94,8 +96,49 @@ export function selectProductGroups(data: MasterFeatureData, query: string) {
   }
 }
 
+/** 제품 목록 위 칩: 전체 · 담당자 없음 · 비활성 담당. 홈 안내에서 ‘unassigned’로 바로 들어온다. */
+export type ProductAssigneeFilter = 'all' | 'unassigned' | 'inactive'
+
+export function isProductAssigneeFilter(value: unknown): value is ProductAssigneeFilter {
+  return value === 'all' || value === 'unassigned' || value === 'inactive'
+}
+
+export function productAssigneeState(data: MasterFeatureData, productId: string): Exclude<ProductAssigneeFilter, 'all'> | 'assigned' {
+  const assignments = data.productAssignments.filter((assignment) => assignment.product_id === productId)
+  if (assignments.length === 0) return 'unassigned'
+  const hasInactive = assignments.some(
+    (assignment) => data.profiles.find((profile) => profile.id === assignment.user_id)?.is_active === false,
+  )
+  return hasInactive ? 'inactive' : 'assigned'
+}
+
+export function matchesProductAssigneeFilter(
+  data: MasterFeatureData,
+  productId: string,
+  filter: ProductAssigneeFilter,
+) {
+  if (filter === 'all') return true
+  return productAssigneeState(data, productId) === filter
+}
+
+/** 새 담당자에게 넘길 수 있는 미완료 적용 업무(배포된 공통변경의 미적용 업무 중 다른 사람이 맡은 것). */
+export function selectTransferableProductTasks(
+  data: Parameters<typeof selectProductChangeTaskContexts>[0],
+  productId: string,
+  userId: string,
+) {
+  if (!productId || !userId) return []
+  return selectProductChangeTaskContexts(data).filter(
+    ({ task, application }) =>
+      task.product_id === productId
+      && task.status === 'pending'
+      && task.assignee_id !== userId
+      && application.status === 'published',
+  )
+}
+
 export function selectFilteredAllowedUsers(data: MasterFeatureData, query: string) {
   return data.allowedUsers.filter((item) =>
-    selectMasterSearchMatches(query, item.name, item.email, item.role),
+    selectMasterSearchMatches(query, item.name, item.email, item.role, roleLabels[item.role]),
   )
 }

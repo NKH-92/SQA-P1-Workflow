@@ -25,6 +25,15 @@ const historyRow: ReviewHistoryRow = {
   review_feedback: [],
 }
 
+const olderRow: ReviewHistoryRow = {
+  ...historyRow,
+  id: 'history-0',
+  title: '더 오래된 검토',
+  status: 'approved',
+  terminal_at: '2026-07-01T03:00:00.000Z',
+  closed_at: '2026-07-01T03:00:00.000Z',
+}
+
 function page(rows: ReviewHistoryRow[] = [historyRow]): ReviewHistoryPage {
   return {
     schema_version: 1,
@@ -60,7 +69,28 @@ describe('ReviewHistoryModal', () => {
     ))
   })
 
-  it('reopens a terminal review and closes only after success', async () => {
+  it('orders rows by decision time and can flip to oldest first', async () => {
+    const user = userEvent.setup()
+    render(
+      <ReviewHistoryModal
+        onClose={vi.fn()}
+        onLoadPage={vi.fn().mockResolvedValue(page([olderRow, historyRow]))}
+        onReopen={vi.fn()}
+        open
+        profile={previewLeader}
+      />,
+    )
+
+    const list = await screen.findByRole('complementary', { name: '검토 이력 목록' })
+    const rowTitles = () => Array.from(list.querySelectorAll('.review-history-row-title')).map((node) => node.textContent)
+    await waitFor(() => expect(rowTitles()).toEqual(['과거 CAPA 검토', '더 오래된 검토']))
+    expect(within(list).getByText('7월 20일 반려')).toBeInTheDocument()
+
+    await user.click(within(list).getByRole('button', { name: '오래된순' }))
+    expect(rowTitles()).toEqual(['더 오래된 검토', '과거 CAPA 검토'])
+  })
+
+  it('reopens a terminal review with an inline confirmation and closes only after success', async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()
     const onReopen = vi.fn().mockResolvedValue(true)
@@ -77,10 +107,11 @@ describe('ReviewHistoryModal', () => {
 
     const article = await screen.findByRole('article')
     await user.click(within(article).getByRole('button', { name: '다시 열기' }))
-    const confirmation = screen.getByRole('dialog', { name: '검토요청을 다시 열까요?' })
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    const confirmation = within(article).getByRole('group', { name: /다시 열까요\?/ })
     await user.click(within(confirmation).getByRole('button', { name: '다시 열기' }))
 
-    await waitFor(() => expect(onReopen).toHaveBeenCalledWith('history-1'))
+    await waitFor(() => expect(onReopen).toHaveBeenCalledWith(expect.objectContaining({ id: 'history-1' })))
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 })

@@ -143,7 +143,7 @@ describe('ReviewStatsPanel', () => {
 
     expect(screen.getByRole('button', { name: '최근 6개월' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('article', { name: '요청 건수 0건' })).toBeInTheDocument()
-    expect(screen.getByRole('article', { name: '제출 횟수 0회' })).toBeInTheDocument()
+    expect(screen.getByRole('article', { name: '요청 횟수 0회' })).toBeInTheDocument()
     expect(screen.queryByText(/담당자/)).not.toBeInTheDocument()
 
     const customButton = screen.getByRole('button', { name: '사용자 지정' })
@@ -160,7 +160,7 @@ describe('ReviewStatsPanel', () => {
     await renderReviewStatsPanel(emptyData())
 
     expect(screen.getByRole('heading', { name: '통계 필터' })).toBeInTheDocument()
-    expect(screen.getByText('선택한 조건에 해당하는 검토 데이터가 없습니다.')).toBeInTheDocument()
+    expect(screen.getByText('선택한 조건에 맞는 검토 기록이 없어요')).toBeInTheDocument()
     expect(screen.getByLabelText('요청자')).toBeInTheDocument()
     expect(screen.getByLabelText('현재 상태')).toBeInTheDocument()
     expect(screen.queryByText(/NaN|Infinity/)).not.toBeInTheDocument()
@@ -192,10 +192,10 @@ describe('ReviewStatsPanel', () => {
     await renderReviewStatsPanel(withReviewEvents(data))
 
     expect(screen.getByRole('article', { name: '요청 건수 2건' })).toBeInTheDocument()
-    expect(screen.getByRole('article', { name: '제출 횟수 4회' })).toBeInTheDocument()
+    expect(screen.getByRole('article', { name: '요청 횟수 4회' })).toBeInTheDocument()
 
     const table = screen.getByRole('table', {
-      name: '요청·재제출·승인·반려는 서버 이벤트 발생 시각, 현재 대기는 선택 기간에 생성된 요청의 현재 상태를 기준으로 집계합니다.',
+      name: '요청·재요청·승인·반려는 실제로 일어난 시각, 대기 중은 이 기간에 들어온 요청의 지금 상태를 기준으로 셌어요.',
     })
     const requesterRow = within(table).getByRole('row', { name: /한 요청자/ })
     expect(within(requesterRow).getAllByRole('cell').map((cell: HTMLElement) => cell.textContent)).toEqual([
@@ -226,7 +226,7 @@ describe('ReviewStatsPanel', () => {
     await changeAndFlush(screen.getByLabelText('현재 상태'), 'approved')
 
     expect(screen.getByRole('article', { name: '요청 건수 1건' })).toBeInTheDocument()
-    expect(screen.getByRole('article', { name: '제출 횟수 2회' })).toBeInTheDocument()
+    expect(screen.getByRole('article', { name: '요청 횟수 2회' })).toBeInTheDocument()
     expect(screen.getByRole('list', { name: '현재 검토 상태 분포' })).toHaveTextContent(
       new RegExp(`${reviewStatusLabels.approved}\\s*1건\\s*100%`),
     )
@@ -291,7 +291,7 @@ describe('ReviewStatsPanel', () => {
 
     expect(screen.getByRole('article', { name: '요청 건수 0건' })).toBeInTheDocument()
     expect(screen.getByRole('article', { name: '승인 1건' })).toBeInTheDocument()
-    expect(screen.queryByText('선택한 조건에 해당하는 검토 데이터가 없습니다.')).not.toBeInTheDocument()
+    expect(screen.queryByText('선택한 조건에 맞는 검토 기록이 없어요')).not.toBeInTheDocument()
     const requesterRow = screen.getByRole('row', { name: /알 수 없는 요청자\s*비활성/ })
     expect(within(requesterRow).getAllByRole('cell').map((cell: HTMLElement) => cell.textContent)).toEqual([
       '0',
@@ -312,7 +312,7 @@ describe('ReviewStatsPanel', () => {
     await changeAndFlush(screen.getByLabelText('현재 상태'), 'rejected')
 
     expect(screen.getByRole('article', { name: '요청 건수 0건' })).toBeInTheDocument()
-    expect(screen.getByText('선택한 조건에 해당하는 검토 데이터가 없습니다.')).toBeInTheDocument()
+    expect(screen.getByText('선택한 조건에 맞는 검토 기록이 없어요')).toBeInTheDocument()
     expect(screen.queryByText(/NaN|Infinity/)).not.toBeInTheDocument()
     expect(screen.queryByRole('list', { name: '현재 검토 상태 분포' })).not.toBeInTheDocument()
   })
@@ -322,7 +322,7 @@ describe('ReviewStatsPanel', () => {
 
     // Deliberately not flushed: the KPI grid must not render with misleading
     // zeros before the server aggregate actually resolves (fail closed).
-    expect(screen.getByText('통계를 불러오는 중입니다.')).toBeInTheDocument()
+    expect(screen.getByText('통계를 불러오고 있어요')).toBeInTheDocument()
     expect(screen.queryByRole('article', { name: /요청 건수/ })).not.toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('집계 중…')
   })
@@ -333,10 +333,10 @@ describe('ReviewStatsPanel', () => {
 
     await renderReviewStatsPanel(emptyData())
 
-    expect(screen.getByRole('alert')).toHaveTextContent('통계를 불러오지 못했습니다')
-    expect(screen.getByRole('alert')).toHaveTextContent('권한이 없습니다.')
+    expect(screen.getByRole('alert')).toHaveTextContent('통계를 불러오지 못했어요.')
+    expect(screen.getByRole('alert')).toHaveTextContent('이 작업을 할 권한이 없어요.')
     expect(screen.queryByRole('article', { name: /요청 건수/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent('집계 실패')
+    expect(screen.getByRole('status')).toHaveTextContent('집계하지 못했어요')
   })
 
   it('does not refetch remote statistics for an equivalent refreshed AppData snapshot', async () => {
@@ -465,6 +465,65 @@ describe('ReviewStatsPanel', () => {
     await act(async () => resolveFirst?.({ ...remoteEnvelope(), new_requests: 1 }))
     await flushReviewStatsV2()
     expect(screen.getByRole('article', { name: '요청 건수 2건' })).toBeInTheDocument()
+  })
+
+  it('keeps the previous numbers visible with a small refreshing status while review data refreshes', async () => {
+    mocks.hasSupabaseConfig = true
+    let resolveRefresh: ((value: ReturnType<typeof remoteEnvelope>) => void) | undefined
+    mocks.fetchReviewStatisticsV2
+      .mockResolvedValueOnce({ ...remoteEnvelope(), new_requests: 3 })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve }))
+    const data = emptyData()
+    data.profiles = [{ id: 'member-1', email: 'one@example.com', name: '한 요청자', role: 'member' }]
+    data.reviewRequests = [request({ id: 'review-1', requester_id: 'member-1', status: 'pending' })]
+    const now = new Date('2026-07-15T03:00:00.000Z')
+    const { rerender } = render(<ReviewStatsPanel data={data} now={now} />)
+    await flushReviewStatsV2()
+    expect(screen.getByRole('article', { name: '요청 건수 3건' })).toBeInTheDocument()
+
+    rerender(
+      <ReviewStatsPanel
+        data={{ ...data, reviewRequests: data.reviewRequests.map((review) => ({ ...review, status: 'approved' })) }}
+        now={now}
+      />,
+    )
+    await flushReviewStatsV2()
+
+    expect(screen.getByRole('article', { name: '요청 건수 3건' })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('갱신 중…')
+    expect(screen.queryByText('통계를 불러오고 있어요')).not.toBeInTheDocument()
+
+    await act(async () => resolveRefresh?.({ ...remoteEnvelope(), new_requests: 4 }))
+    await flushReviewStatsV2()
+    expect(screen.getByRole('article', { name: '요청 건수 4건' })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('4건 집계')
+  })
+
+  it('offers a retry after the server aggregate fails', async () => {
+    mocks.hasSupabaseConfig = true
+    mocks.fetchReviewStatisticsV2
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce({ ...remoteEnvelope(), new_requests: 2 })
+
+    await renderReviewStatsPanel(emptyData())
+    expect(screen.getByRole('alert')).toHaveTextContent('통계를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')
+
+    await clickAndFlush(screen.getByRole('button', { name: '다시 시도' }))
+
+    expect(mocks.fetchReviewStatisticsV2).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('article', { name: '요청 건수 2건' })).toBeInTheDocument()
+  })
+
+  it('collapses the counting rules behind 집계 기준 보기 and uses 승인 terminology', async () => {
+    await renderReviewStatsPanel(emptyData())
+
+    const summary = screen.getByText('집계 기준 보기')
+    const details = summary.closest('details')
+    expect(details).not.toBeNull()
+    expect(details).not.toHaveAttribute('open')
+    expect(screen.getByRole('article', { name: '승인 0건' })).toBeInTheDocument()
+    expect(screen.getByRole('article', { name: '대기 중 0건' })).toBeInTheDocument()
+    expect(screen.queryByText(/재제출|완료 처리/)).not.toBeInTheDocument()
   })
 
   it('does not refetch remote statistics when unrelated AppData changes', async () => {

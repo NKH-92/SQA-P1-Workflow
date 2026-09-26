@@ -17,7 +17,7 @@ export type DesktopNotificationSettings = {
 }
 
 /** 잠금화면에서도 안전한 알림 body 기본값 — 검토 제목/내용을 노출하지 않는다. */
-export const SAFE_DEFAULT_NOTIFICATION_BODY = '새 검토요청이 접수되었습니다. 앱을 열어 확인하세요.'
+export const SAFE_DEFAULT_NOTIFICATION_BODY = '새 검토요청이 왔어요. 앱에서 확인해 보세요.'
 
 const defaultSettings: DesktopNotificationSettings = {
   schemaVersion: DESKTOP_NOTIFICATION_SETTINGS_SCHEMA_VERSION,
@@ -101,7 +101,7 @@ export function buildNotificationContent(
   alert: PendingReviewAlert,
   prefs: NotificationPrivacyPrefs,
 ): { title: string; body: string } {
-  const kind = alert.isResubmission ? '재검토 요청' : '새 검토요청'
+  const kind = alert.isResubmission ? '재요청' : '새 검토요청'
   const title = prefs.hideRequesterName ? kind : `${kind} · ${alert.requesterName}`
   const body = prefs.revealReviewTitle ? alert.title : SAFE_DEFAULT_NOTIFICATION_BODY
   return { title, body }

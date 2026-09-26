@@ -299,7 +299,7 @@ describe('reviewStats.selectors', () => {
       now,
     )
     expect(invalid.valid).toBe(false)
-    expect(invalid.validationMessage).toBe('시작일은 종료일보다 늦을 수 없습니다.')
+    expect(invalid.validationMessage).toBe('시작일을 종료일과 같거나 더 이른 날짜로 골라 주세요.')
 
     const outside = resolveReviewStatsRange(
       filters({
@@ -314,7 +314,7 @@ describe('reviewStats.selectors', () => {
       endDate: '2026-01-16',
       valid: false,
       wasClamped: true,
-      validationMessage: '선택한 기간이 조회 가능한 최근 6개월 범위와 겹치지 않습니다.',
+      validationMessage: '최근 6개월 안에서 기간을 골라 주세요.',
     })
   })
 

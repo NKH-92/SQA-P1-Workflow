@@ -1,9 +1,12 @@
 import { recordActivityLog } from '../activityLog'
 import { assertAffectedRows, UserFacingError } from '../../lib/errors'
+import { quoted } from '../../lib/korean'
 import { supabase } from '../../lib/supabase'
 import type { RepositoryDeps, ProjectRepository } from '../repositories/types'
 import { translateMasterOccError } from './masterOccError'
 import { assertMasterVersion, MASTER_STALE_MESSAGE, normalizeMasterReason } from '../validation/masterOcc'
+
+const PROJECT_CHANGED_MESSAGE = '다른 사람이 먼저 프로젝트를 수정했어요. 목록을 새로고침한 뒤 다시 저장해 주세요.'
 
 export function createSupabaseProjectRepository(ctx: RepositoryDeps): ProjectRepository {
   const { profile, setData, activityLogs } = ctx
@@ -24,7 +27,7 @@ export function createSupabaseProjectRepository(ctx: RepositoryDeps): ProjectRep
         entityType: 'project',
         entityId: projectId,
         action: 'created',
-        summary: `${project.name} 프로젝트를 생성했습니다.`,
+        summary: `${quoted(project.name)} 프로젝트를 만들었어요.`,
         metadata: { deadline: project.deadline, status: project.status, assigned_user_ids: memberIds },
       })
       return projectId
@@ -40,7 +43,7 @@ export function createSupabaseProjectRepository(ctx: RepositoryDeps): ProjectRep
         .select('id')
       if (error) {
         if (error.message.includes('project changed since it was opened')) {
-          throw new UserFacingError('다른 사용자가 먼저 프로젝트를 수정했습니다. 목록을 새로고침한 뒤 배정을 다시 저장해 주세요.')
+          throw new UserFacingError(PROJECT_CHANGED_MESSAGE)
         }
         throw error
       }
@@ -50,14 +53,14 @@ export function createSupabaseProjectRepository(ctx: RepositoryDeps): ProjectRep
         entityType: 'project',
         entityId: projectId,
         action: 'updated',
-        summary: `${updated.name} 프로젝트 정보를 수정했습니다.`,
+        summary: `${quoted(updated.name)} 프로젝트 정보를 수정했어요.`,
         metadata: updated,
       })
     },
 
     async saveProjectAssignments({ project, nextMemberIds }) {
       if (!project.updated_at) {
-        throw new UserFacingError('프로젝트 버전이 없어 배정을 저장할 수 없습니다. 목록을 새로고침한 뒤 다시 시도해 주세요.')
+        throw new UserFacingError('프로젝트 정보가 최신이 아니라 저장하지 못했어요. 목록을 새로고침한 뒤 다시 시도해 주세요.')
       }
       const { data: updatedAt, error } = await supabase!.rpc('replace_project_assignments_if_current', {
         p_project_id: project.id,
@@ -66,7 +69,7 @@ export function createSupabaseProjectRepository(ctx: RepositoryDeps): ProjectRep
       })
       if (error) {
         if (error.message.includes('project changed since it was opened')) {
-          throw new UserFacingError('다른 사용자가 먼저 프로젝트를 수정했습니다. 목록을 새로고침한 뒤 배정을 다시 저장해 주세요.')
+          throw new UserFacingError(PROJECT_CHANGED_MESSAGE)
         }
         throw error
       }
@@ -83,7 +86,7 @@ export function createSupabaseProjectRepository(ctx: RepositoryDeps): ProjectRep
         entityType: 'project_assignment',
         entityId: project.id,
         action: 'updated',
-        summary: `${project.name} 프로젝트 배정을 ${nextMemberIds.length}명으로 조정했습니다.`,
+        summary: `${quoted(project.name)} 프로젝트 담당자를 ${nextMemberIds.length}명으로 바꿨어요.`,
         metadata: { assigned_user_ids: nextMemberIds },
       })
     },
@@ -101,7 +104,7 @@ export function createSupabaseProjectRepository(ctx: RepositoryDeps): ProjectRep
         entityType: 'project',
         entityId: project.id,
         action: 'deleted',
-        summary: `${project.name} 프로젝트를 삭제했습니다.`,
+        summary: `${quoted(project.name)} 프로젝트를 삭제했어요.`,
         metadata: { reason: input.reason.trim() },
       })
     },

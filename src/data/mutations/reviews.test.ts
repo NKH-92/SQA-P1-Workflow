@@ -7,6 +7,7 @@ import {
   rejectReviewRequest,
   reopenReviewRequest,
   resubmitReviewRequest,
+  resubmitReviewRequestWithEdits,
   saveReviewRequest,
   updateReviewFeedback,
   updateReviewStatus,
@@ -70,6 +71,21 @@ describe('rejectReviewRequest (demo)', () => {
     expect(updated?.status).toBe('rejected')
     expect(updated?.review_feedback?.some((item) => item.comment === '반려 사유')).toBe(true)
   })
+
+  it.each(['', '   '])('requires a rejection reason before changing local data (%j)', async (reason) => {
+    const data = createPreviewData()
+    const reviewId = data.reviewRequests[0]!.id
+    let next = data
+    const ctx: RepositoryContext = createRepositoryContextFromDeps('local', {      profile: previewLeader,
+      data,
+      setData: (updater) => {
+        next = typeof updater === 'function' ? updater(next) : updater
+      },
+    })
+
+    await expect(rejectReviewRequest(ctx, reviewId, reason)).rejects.toThrow('반려 사유를 적어 주세요.')
+    expect(next).toBe(data)
+  })
 })
 
 describe('saveReviewRequest (demo)', () => {
@@ -116,11 +132,11 @@ describe('leader-only review mutations (demo)', () => {
       setData: () => undefined,
     })
 
-    await expect(rejectReviewRequest(ctx, requestId!, 'reason')).rejects.toThrow('활성 파트장 권한이 필요합니다.')
-    await expect(updateReviewStatus(ctx, requestId!, 'approved')).rejects.toThrow('활성 파트장 권한이 필요합니다.')
-    await expect(reopenReviewRequest(ctx, requestId!)).rejects.toThrow('활성 파트장 권한이 필요합니다.')
-    await expect(updateReviewFeedback(ctx, 'missing-feedback', 'updated')).rejects.toThrow('활성 파트장 권한이 필요합니다.')
-    await expect(voidReviewFeedback(ctx, 'missing-feedback', '잘못 작성함')).rejects.toThrow('활성 파트장 권한이 필요합니다.')
+    await expect(rejectReviewRequest(ctx, requestId!, 'reason')).rejects.toThrow('파트장만 할 수 있는 작업이에요.')
+    await expect(updateReviewStatus(ctx, requestId!, 'approved')).rejects.toThrow('파트장만 할 수 있는 작업이에요.')
+    await expect(reopenReviewRequest(ctx, requestId!)).rejects.toThrow('파트장만 할 수 있는 작업이에요.')
+    await expect(updateReviewFeedback(ctx, 'missing-feedback', 'updated')).rejects.toThrow('파트장만 할 수 있는 작업이에요.')
+    await expect(voidReviewFeedback(ctx, 'missing-feedback', '잘못 작성함')).rejects.toThrow('파트장만 할 수 있는 작업이에요.')
   })
 })
 
@@ -255,6 +271,68 @@ describe('resubmitReviewRequest (demo)', () => {
 
     expect(next.reviewRequests.find((item) => item.id === source.id)?.title).toBe('반려 내용 수정')
   })
+
+  it('saves edits and resubmits the same request in one action', async () => {
+    const data = createPreviewData()
+    const source = {
+      ...data.reviewRequests[0]!,
+      status: 'rejected' as const,
+      review_round: 1,
+      rejection_count: 1,
+      review_feedback: [],
+    }
+    let next = { ...data, reviewRequests: [source, ...data.reviewRequests.slice(1)] }
+    const ctx: RepositoryContext = createRepositoryContextFromDeps('local', {      profile: previewMember,
+      data: next,
+      setData: (updater) => {
+        next = typeof updater === 'function' ? updater(next) : updater
+      },
+    })
+
+    const result = await resubmitReviewRequestWithEdits(ctx, source.id, {
+      title: '  고친 제목  ',
+      description: source.description,
+      due_date: null,
+    }, '영향 범위 표를 추가했어요.')
+
+    const updated = next.reviewRequests.find((item) => item.id === source.id)
+    expect(result).toEqual({ edited: true })
+    expect(updated).toEqual(expect.objectContaining({
+      title: '고친 제목',
+      due_date: null,
+      status: 'pending',
+      review_round: 2,
+    }))
+    expect(updated?.review_feedback).toEqual([
+      expect.objectContaining({ author_role: 'member', comment: '영향 범위 표를 추가했어요.' }),
+    ])
+    expect(next.activityLogs.filter((log) => log.entity_id === source.id).map((log) => log.action))
+      .toEqual(expect.arrayContaining(['updated', 'resubmitted']))
+  })
+
+  it('skips the content update when nothing changed and validates before any write', async () => {
+    const data = createPreviewData()
+    const source = { ...data.reviewRequests[0]!, status: 'rejected' as const, review_feedback: [] }
+    let next = { ...data, reviewRequests: [source, ...data.reviewRequests.slice(1)] }
+    let writes = 0
+    const ctx: RepositoryContext = createRepositoryContextFromDeps('local', {      profile: previewMember,
+      data: next,
+      setData: (updater) => {
+        writes += 1
+        next = typeof updater === 'function' ? updater(next) : updater
+      },
+    })
+    const payload = { title: source.title, description: source.description, due_date: source.due_date }
+
+    await expect(resubmitReviewRequestWithEdits(ctx, source.id, { ...payload, title: '고친 제목' }, ' ')).rejects
+      .toThrow('재요청 내용을 2자 이상 적어 주세요.')
+    expect(writes).toBe(0)
+
+    await expect(resubmitReviewRequestWithEdits(ctx, source.id, payload, '다시 봐 주세요')).resolves
+      .toEqual({ edited: false })
+    expect(next.activityLogs.some((log) => log.entity_id === source.id && log.action === 'updated')).toBe(false)
+    expect(next.reviewRequests.find((item) => item.id === source.id)?.status).toBe('pending')
+  })
 })
 
 describe('local review ownership parity', () => {
@@ -272,8 +350,8 @@ describe('local review ownership parity', () => {
         editingReviewId: request.id,
         payload: { title: 'changed', description: request.description, due_date: null },
       }),
-    ).rejects.toThrow('본인의 요청만 수정할 수 있습니다.')
-    await expect(withdrawReviewRequest(ctx, request.id, '회수 사유')).rejects.toThrow('본인의 요청만 회수할 수 있습니다.')
+    ).rejects.toThrow('내가 보낸 요청만 수정할 수 있어요.')
+    await expect(withdrawReviewRequest(ctx, request.id, '회수 사유')).rejects.toThrow('내가 보낸 요청만 회수할 수 있어요.')
   })
 
   it('rejects feedback for a missing request instead of logging a false success', async () => {
@@ -284,5 +362,63 @@ describe('local review ownership parity', () => {
     })
 
     await expect(addReviewFeedback(ctx, 'missing-review', 'comment')).rejects.toBeInstanceOf(UserFacingError)
+  })
+})
+
+describe('resubmitReviewRequestWithEdits partial outcome (demo)', () => {
+  function rejectedContext() {
+    const data = createPreviewData()
+    const source = {
+      ...data.reviewRequests[0]!,
+      status: 'rejected' as const,
+      review_round: 1,
+      rejection_count: 1,
+      review_feedback: [],
+    }
+    let next = { ...data, reviewRequests: [source, ...data.reviewRequests.slice(1)] }
+    const ctx: RepositoryContext = createRepositoryContextFromDeps('local', {
+      profile: previewMember,
+      data: next,
+      setData: (updater) => {
+        next = typeof updater === 'function' ? updater(next) : updater
+        ctx.data = next
+      },
+    })
+    // 저장소 묶음은 접근할 때마다 새 저장소를 만들므로, reviews만 재요청이 실패하는 저장소로 바꿔 끼운다.
+    const repositories = ctx.repositories
+    ctx.repositories = new Proxy(repositories, {
+      get(target, property, receiver) {
+        if (property !== 'reviews') return Reflect.get(target, property, receiver)
+        return {
+          ...target.reviews,
+          resubmitReviewRequest: async () => {
+            throw new UserFacingError('다른 사람이 먼저 바꿨어요.')
+          },
+        }
+      },
+    })
+    return { ctx, source, current: () => next }
+  }
+
+  it('says the edits were saved when only the resubmit fails', async () => {
+    const { ctx, source, current } = rejectedContext()
+
+    await expect(resubmitReviewRequestWithEdits(ctx, source.id, {
+      title: '고친 제목',
+      description: source.description,
+      due_date: null,
+    }, '표를 추가했어요.')).rejects.toThrow('고친 내용은 저장했지만 재요청은 보내지 못했어요. 다른 사람이 먼저 바꿨어요.')
+
+    expect(current().reviewRequests.find((item) => item.id === source.id)?.title).toBe('고친 제목')
+  })
+
+  it('passes the original error through when nothing was edited', async () => {
+    const { ctx, source } = rejectedContext()
+
+    await expect(resubmitReviewRequestWithEdits(ctx, source.id, {
+      title: source.title,
+      description: source.description,
+      due_date: source.due_date,
+    }, '다시 봐 주세요.')).rejects.toThrow(/^다른 사람이 먼저 바꿨어요\.$/)
   })
 })

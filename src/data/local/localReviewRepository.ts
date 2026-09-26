@@ -1,6 +1,6 @@
 import { recordActivityLog } from '../activityLog'
 import { UserFacingError } from '../../lib/errors'
-import { reviewStatusLabels } from '../../lib/format'
+import { quoted, quotedWithJosa } from '../../lib/korean'
 import {
   buildReviewReadReceipts,
   latestRelevantReviewEvent,
@@ -15,6 +15,8 @@ import {
   assertCanReopen,
   assertCanResubmit,
   assertFeedbackComment,
+  assertRejectReason,
+  assertResubmitNote,
   normalizeReviewRequestPayload,
   assertReviewStatusTransition,
 } from '../validation/reviews'
@@ -31,6 +33,9 @@ import {
   updateReviewRequest,
 } from './appDataReducers'
 
+const REVIEW_NOT_FOUND_MESSAGE = '검토요청을 찾지 못했어요. 목록을 새로고침해 주세요.'
+const FEEDBACK_NOT_FOUND_MESSAGE = '피드백을 찾지 못했어요. 목록을 새로고침해 주세요.'
+
 export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewRepository {
   const { profile, data, setData, activityLogs } = ctx
 
@@ -40,13 +45,13 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
         // Parity with remote RLS: a requester may correct a pending or rejected request.
         const target = data.reviewRequests.find((item) => item.id === editingReviewId)
         if (!target) {
-          throw new UserFacingError('검토요청을 찾을 수 없습니다.')
+          throw new UserFacingError(REVIEW_NOT_FOUND_MESSAGE)
         }
         if (target.status !== 'pending' && target.status !== 'rejected') {
-          throw new UserFacingError('완료된 요청은 수정할 수 없습니다. 목록을 새로고침해 주세요.')
+          throw new UserFacingError('이미 처리한 요청이라 수정할 수 없어요. 목록을 새로고침해 주세요.')
         }
         if (target.requester_id !== profile.id) {
-          throw new UserFacingError('본인의 요청만 수정할 수 있습니다.')
+          throw new UserFacingError('내가 보낸 요청만 수정할 수 있어요.')
         }
         const normalized = normalizeReviewRequestPayload(payload, { existingDueDate: target.due_date })
         setData((current) => updateReviewRequest(current, editingReviewId, normalized))
@@ -55,7 +60,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
           entityType: 'review_request',
           entityId: editingReviewId,
           action: 'updated',
-          summary: `${profile.name}님이 ${normalized.title} 검토요청을 수정했습니다.`,
+          summary: `${profile.name}님이 ${quotedWithJosa(normalized.title, '을/를')} 수정했어요.`,
           metadata: { due_date: normalized.due_date },
         })
         return { reviewId: editingReviewId, isUpdate: true }
@@ -69,7 +74,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
         entityType: 'review_request',
         entityId: reviewId,
         action: 'created',
-        summary: `${profile.name}님이 ${normalized.title} 검토를 요청했습니다.`,
+        summary: `${profile.name}님이 ${quoted(normalized.title)} 검토를 요청했어요.`,
         metadata: { due_date: normalized.due_date },
       })
       return { reviewId, isUpdate: false }
@@ -78,22 +83,22 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
     async withdrawReviewRequest(requestId, reason) {
       const request = data.reviewRequests.find((item) => item.id === requestId)
       if (!request) {
-        throw new UserFacingError('검토요청을 찾을 수 없습니다.')
+        throw new UserFacingError(REVIEW_NOT_FOUND_MESSAGE)
       }
       if (request.status !== 'pending') {
-        throw new UserFacingError('이미 처리된 요청이라 회수할 수 없습니다. 목록을 새로고침해 주세요.')
+        throw new UserFacingError('이미 처리한 요청이라 회수할 수 없어요. 목록을 새로고침해 주세요.')
       }
       if (request.requester_id !== profile.id) {
-        throw new UserFacingError('본인의 요청만 회수할 수 있습니다.')
+        throw new UserFacingError('내가 보낸 요청만 회수할 수 있어요.')
       }
-      if (reason.trim().length < 2) throw new UserFacingError('회수 사유를 2자 이상 입력해 주세요.')
+      if (reason.trim().length < 2) throw new UserFacingError('회수 사유를 2자 이상 적어 주세요.')
       setData((current) => withdrawReviewRequest(current, requestId, profile, reason.trim()))
       await recordActivityLog(activityLogs, {
         actor: profile,
         entityType: 'review_request',
         entityId: requestId,
         action: 'withdrawn',
-        summary: `${profile.name}님이 ${request.title} 검토요청을 회수했습니다.`,
+        summary: `${profile.name}님이 ${quotedWithJosa(request.title, '을/를')} 회수했어요.`,
         metadata: { reason: reason.trim() },
       })
     },
@@ -101,36 +106,39 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
     async rejectReviewRequest(requestId, comment) {
       assertActiveLeader(profile)
       const request = data.reviewRequests.find((item) => item.id === requestId)
-      if (!request) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
+      if (!request) throw new UserFacingError(REVIEW_NOT_FOUND_MESSAGE)
       assertCanReject(request.status)
+      // 반려 사유는 필수다(원격 어댑터와 같은 규칙). 사유는 요청자에게 피드백으로 남는다.
+      assertRejectReason(comment)
       const trimmedComment = comment.trim()
-      if (trimmedComment.length > 2000) throw new UserFacingError('피드백은 2000자 이내로 입력해 주세요.')
-      const feedbackId = trimmedComment ? newId('feedback') : null
+      const feedbackId = newId('feedback')
       setData((current) => rejectReviewRequestReducer(current, requestId, profile, trimmedComment, feedbackId))
       await recordActivityLog(activityLogs, {
         actor: profile,
-        targetUserId: request?.requester_id ?? null,
+        targetUserId: request.requester_id ?? null,
         entityType: 'review_request',
         entityId: requestId,
         action: 'status_changed',
-        summary: `${request?.title ?? '검토요청'}을 반려했습니다.`,
-        metadata: { status: 'rejected', comment_provided: Boolean(trimmedComment) },
+        summary: `${quotedWithJosa(request.title, '을/를')} 반려했어요.`,
+        metadata: { status: 'rejected', comment_provided: true },
       })
     },
 
     async updateReviewStatus(requestId, status) {
       assertActiveLeader(profile)
       const request = data.reviewRequests.find((item) => item.id === requestId)
-      if (!request) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
+      if (!request) throw new UserFacingError(REVIEW_NOT_FOUND_MESSAGE)
       assertReviewStatusTransition(request.status, status)
       setData((current) => setReviewStatus(current, requestId, status, profile))
       await recordActivityLog(activityLogs, {
         actor: profile,
-        targetUserId: request?.requester_id ?? null,
+        targetUserId: request.requester_id ?? null,
         entityType: 'review_request',
         entityId: requestId,
         action: 'status_changed',
-        summary: `${request?.title ?? '검토요청'} 상태를 ${reviewStatusLabels[status]}로 변경했습니다.`,
+        summary: status === 'approved'
+          ? `${quotedWithJosa(request.title, '을/를')} 승인했어요.`
+          : `${quoted(request.title)} 상태를 바꿨어요.`,
         metadata: { status },
       })
     },
@@ -138,7 +146,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
     async reopenReviewRequest(requestId) {
       assertActiveLeader(profile)
       const request = data.reviewRequests.find((item) => item.id === requestId)
-      if (!request) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
+      if (!request) throw new UserFacingError(REVIEW_NOT_FOUND_MESSAGE)
       assertCanReopen(request.status)
       setData((current) => setReviewStatus(current, requestId, 'pending', profile))
       await recordActivityLog(activityLogs, {
@@ -147,18 +155,18 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
         entityType: 'review_request',
         entityId: requestId,
         action: 'reopened',
-        summary: `${request.title} 검토요청을 다시 열었습니다.`,
+        summary: `${quotedWithJosa(request.title, '을/를')} 다시 열었어요.`,
         metadata: { from_status: request.status, status: 'pending' },
       })
     },
 
     async resubmitReviewRequest(requestId, comment) {
       assertActiveMember(profile)
-      assertFeedbackComment(comment)
+      assertResubmitNote(comment)
       const request = data.reviewRequests.find((item) => item.id === requestId)
-      if (!request) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
+      if (!request) throw new UserFacingError(REVIEW_NOT_FOUND_MESSAGE)
       if (request.requester_id !== profile.id) {
-        throw new UserFacingError('본인의 요청만 재요청할 수 있습니다.')
+        throw new UserFacingError('내가 보낸 요청만 다시 요청할 수 있어요.')
       }
       assertCanResubmit(request.status)
       const feedbackId = newId('feedback')
@@ -170,7 +178,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
         entityType: 'review_request',
         entityId: requestId,
         action: 'resubmitted',
-        summary: `${request.title} 검토를 다시 요청했습니다.`,
+        summary: `${quoted(request.title)} 검토를 다시 요청했어요.`,
         metadata: {
           from_status: 'rejected',
           status: 'pending',
@@ -183,7 +191,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       assertActiveLeader(profile)
       assertFeedbackComment(comment)
       const request = data.reviewRequests.find((item) => item.id === requestId)
-      if (!request) throw new UserFacingError('검토요청을 찾을 수 없습니다.')
+      if (!request) throw new UserFacingError(REVIEW_NOT_FOUND_MESSAGE)
       const feedbackId = newId('feedback')
       const item: ReviewFeedback = {
         id: feedbackId,
@@ -197,11 +205,11 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       setData((current) => appendReviewFeedback(current, requestId, item, profile))
       await recordActivityLog(activityLogs, {
         actor: profile,
-        targetUserId: request?.requester_id ?? null,
+        targetUserId: request.requester_id ?? null,
         entityType: 'review_feedback',
         entityId: feedbackId,
         action: 'created',
-        summary: `${request?.title ?? '검토요청'}에 피드백을 남겼습니다.`,
+        summary: `${quoted(request.title)}에 피드백을 남겼어요.`,
         metadata: { review_request_id: requestId },
       })
       return feedbackId
@@ -213,9 +221,9 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       const feedback = data.reviewRequests
         .flatMap((request) => request.review_feedback ?? [])
         .find((item) => item.id === feedbackId)
-      if (!feedback) throw new UserFacingError('피드백을 찾을 수 없습니다.')
+      if (!feedback) throw new UserFacingError(FEEDBACK_NOT_FOUND_MESSAGE)
       if ((feedback.author_role ?? 'leader') !== 'leader' || feedback.leader_id !== profile.id) {
-        throw new UserFacingError('본인이 작성한 파트장 피드백만 수정할 수 있습니다.')
+        throw new UserFacingError('내가 남긴 피드백만 수정할 수 있어요.')
       }
       const request = data.reviewRequests.find((item) => item.id === feedback.review_request_id)
       const trimmedComment = comment.trim()
@@ -226,7 +234,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
         entityType: 'review_feedback',
         entityId: feedbackId,
         action: 'updated',
-        summary: `검토 피드백을 수정했습니다.`,
+        summary: '검토 피드백을 수정했어요.',
         metadata: { review_request_id: feedback.review_request_id },
       })
     },
@@ -236,12 +244,12 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       const feedback = data.reviewRequests
         .flatMap((request) => request.review_feedback ?? [])
         .find((item) => item.id === feedbackId)
-      if (!feedback) throw new UserFacingError('피드백을 찾을 수 없습니다.')
+      if (!feedback) throw new UserFacingError(FEEDBACK_NOT_FOUND_MESSAGE)
       if ((feedback.author_role ?? 'leader') !== 'leader' || feedback.leader_id !== profile.id) {
-        throw new UserFacingError('본인이 작성한 파트장 피드백만 무효화할 수 있습니다.')
+        throw new UserFacingError('내가 남긴 피드백만 무효화할 수 있어요.')
       }
-      if (feedback.voided_at) throw new UserFacingError('이미 무효화된 피드백입니다.')
-      if (reason.trim().length < 2) throw new UserFacingError('무효화 사유를 2자 이상 입력해 주세요.')
+      if (feedback.voided_at) throw new UserFacingError('이미 무효화한 피드백이에요.')
+      if (reason.trim().length < 2) throw new UserFacingError('무효화 사유를 2자 이상 적어 주세요.')
       const request = data.reviewRequests.find((item) => item.id === feedback.review_request_id)
       setData((current) => voidReviewFeedback(current, feedbackId, profile, reason.trim()))
       await recordActivityLog(activityLogs, {
@@ -250,7 +258,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
         entityType: 'review_feedback',
         entityId: feedbackId,
         action: 'voided',
-        summary: `검토 피드백을 무효화했습니다.`,
+        summary: '검토 피드백을 무효화했어요.',
         metadata: { review_request_id: feedback.review_request_id, reason: reason.trim() },
       })
     },
@@ -258,7 +266,7 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
     async markReviewSeen(requestId) {
       const request = data.reviewRequests.find((item) => item.id === requestId)
       if (!request || (profile.role !== 'leader' && request.requester_id !== profile.id)) {
-        throw new UserFacingError('검토요청을 찾을 수 없습니다.')
+        throw new UserFacingError(REVIEW_NOT_FOUND_MESSAGE)
       }
       const latest = latestRelevantReviewEvent(request, profile, data)
       if (!latest) return

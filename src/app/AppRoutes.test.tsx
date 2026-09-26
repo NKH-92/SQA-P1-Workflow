@@ -80,7 +80,9 @@ describe('AppRoutes review statistics guard', () => {
     renderRoute({ id: 'leader', email: 'leader@example.com', name: '파트장', role: 'leader', is_active: true })
 
     expect(screen.getByRole('status')).toHaveClass('route-loading')
-    expect(await screen.findByTestId('review-stats-screen', {}, { timeout: 3000 })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('화면을 불러오고 있어요.')
+    // 첫 지연 로딩은 검토 화면 묶음 전체를 변환하므로, 테스트를 함께 돌릴 때는 시간이 더 걸린다.
+    expect(await screen.findByTestId('review-stats-screen', {}, { timeout: 10_000 })).toBeInTheDocument()
   })
 
   it('does not render review statistics for a member', () => {

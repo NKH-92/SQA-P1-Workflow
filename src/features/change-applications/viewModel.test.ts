@@ -3,9 +3,13 @@ import type { ProductChangeTaskContext } from './selectors'
 import {
   buildMemberProductBoardGroups,
   calculateChangeApplicationKpis,
+  changeApplicationWorkflowLabel,
+  changeAttentionLabels,
   filterChangeApplications,
   filterChangeTaskContexts,
   groupChangeTaskContexts,
+  isChangeAttentionFilter,
+  matchesChangeAttention,
   mergeProductChangeTasks,
 } from './viewModel'
 
@@ -169,6 +173,39 @@ describe('change application view model', () => {
       .toEqual([archived])
     expect(calculateChangeApplicationKpis([active, archived], true, 'leader-1').pendingContexts)
       .toEqual([active])
+  })
+
+  it('matches each summary card to exactly the tasks it counts (E-6)', () => {
+    const overdue = context({ id: 'overdue', productName: '가', dueDate: '2026-07-16' })
+    const today = context({ id: 'today', productName: '나', dueDate: '2026-07-17' })
+    const later = context({ id: 'later', productName: '다', dueDate: '2026-07-30' })
+    const unassigned = context({ id: 'none', productName: '라', assigneeId: null, assigneeName: null, dueDate: '2026-07-30' })
+    const done = context({ id: 'done', productName: '마', status: 'completed', dueDate: '2026-07-01' })
+    const draft = context({ id: 'draft', productName: '바', applicationStatus: 'draft', dueDate: '2026-07-01' })
+    const archived = context({ id: 'archived', productName: '사', archived: true, dueDate: '2026-07-01' })
+    const all = [overdue, today, later, unassigned, done, draft, archived]
+    const kpis = calculateChangeApplicationKpis(all, true, 'leader-1', referenceNow)
+
+    const pick = (attention: Parameters<typeof matchesChangeAttention>[1]) =>
+      all.filter((item) => matchesChangeAttention(item, attention, referenceNow)).map(({ task }) => task.id)
+
+    expect(pick('overdue')).toEqual(['task-overdue'])
+    expect(pick('overdue')).toHaveLength(kpis.overdueCount)
+    expect(pick('due_soon')).toEqual(['task-today'])
+    expect(pick('due_soon')).toHaveLength(kpis.dueSoonCount)
+    expect(pick('unassigned')).toEqual(['task-none'])
+    expect(pick('unassigned')).toHaveLength(kpis.unassignedCount)
+    expect(pick('all')).toHaveLength(all.length)
+  })
+
+  it('uses the glossary names for attention filters and workflow states', () => {
+    expect(changeAttentionLabels).toEqual({ overdue: '기한 지남', due_soon: '3일 안에 마감', unassigned: '담당자 없음' })
+    expect(isChangeAttentionFilter('overdue')).toBe(true)
+    expect(isChangeAttentionFilter('late')).toBe(false)
+    expect(changeApplicationWorkflowLabel('completed')).toBe('완료')
+    expect(changeApplicationWorkflowLabel('legacy_completed')).toBe('이전 방식 완료')
+    expect(groupChangeTaskContexts([context({ id: 'x', productName: '가', assigneeId: null, assigneeName: null })], 'assignee')[0])
+      .toMatchObject({ title: '담당자 없음', sub: '담당자 배정 필요' })
   })
 
   it('sorts groups by Korean title while preserving task order inside each group', () => {

@@ -1,13 +1,24 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   APP_TABS,
   buildAppHash,
   buildShareUrl,
+  clearStaleOverlayHistory,
+  COMPOSER_INTENT_EVENT,
+  composerIntentStorageKey,
+  consumeComposerRequest,
+  documentTitleFor,
+  forgetLatestEntityHash,
+  isOverlayHistoryEntry,
   navigationItemsForRole,
   parseAppHash,
+  replaceHashEntityId,
+  requestComposer,
+  restoreLatestEntityHash,
   sanitizeTabForRole,
   TAB_NAVIGATION_METADATA,
   tabHeaderLabel,
+  tabShortLabel,
 } from './navigation'
 
 describe('parseAppHash', () => {
@@ -93,13 +104,13 @@ describe('tab navigation metadata', () => {
       { tab: 'projects', section: '워크스페이스', sidebar: '프로젝트', palette: '프로젝트', header: '워크스페이스 / 프로젝트' },
       { tab: 'team', section: '워크스페이스', sidebar: '파트원', palette: '파트원', header: '워크스페이스 / 파트원' },
       { tab: 'activity', section: '워크스페이스', sidebar: '활동 로그', palette: '활동 로그', header: '워크스페이스 / 활동 로그' },
-      { tab: 'products', section: '마스터', sidebar: '제품', palette: '제품 마스터', header: '마스터 / 제품' },
+      { tab: 'products', section: '마스터', sidebar: '제품', palette: '제품', header: '마스터 / 제품' },
       { tab: 'duties', section: '마스터', sidebar: '업무 카테고리', palette: '업무 카테고리', header: '마스터 / 업무 카테고리' },
       { tab: 'invites', section: '마스터', sidebar: '계정 관리', palette: '계정 관리', header: '마스터 / 계정 관리' },
     ])
   })
 
-  it('preserves member labels and the existing announcements header wording', () => {
+  it('preserves member labels and names the member announcements header after the member section', () => {
     expect(navigationItemsForRole(false).map((item) => [
       item.tab,
       item.section,
@@ -108,7 +119,7 @@ describe('tab navigation metadata', () => {
       item.headerLabel,
     ])).toEqual([
       ['dashboard', '내 업무', '홈', '홈', '홈'],
-      ['announcements', '내 업무', '공지', '공지', '워크스페이스 / 공지'],
+      ['announcements', '내 업무', '공지', '공지', '내 업무 / 공지'],
       ['reviews', '내 업무', '내 검토요청', '내 검토요청', '내 업무 / 검토요청'],
       ['change-applications', '내 업무', '변경 적용', '변경 적용', '내 업무 / 변경 적용'],
       ['projects', '내 업무', '내 프로젝트', '내 프로젝트', '내 업무 / 프로젝트'],
@@ -128,5 +139,97 @@ describe('tab navigation metadata', () => {
       expect(sanitizeTabForRole(tab, true)).toBe(leaderTabs.has(tab) ? tab : 'dashboard')
       expect(sanitizeTabForRole(tab, false)).toBe(memberTabs.has(tab) ? tab : 'dashboard')
     }
+  })
+})
+
+describe('screen names for titles and the tab bar', () => {
+  it('uses the short sidebar name for the browser tab title', () => {
+    expect(tabShortLabel('reviews', true)).toBe('검토요청')
+    expect(tabShortLabel('reviews', false)).toBe('내 검토요청')
+    expect(documentTitleFor('dashboard', true)).toBe('홈 · SQA P1')
+    expect(documentTitleFor('products', true)).toBe('제품 · SQA P1')
+  })
+})
+
+describe('replaceHashEntityId', () => {
+  afterEach(() => {
+    window.history.replaceState(null, '', '#/dashboard')
+  })
+
+  it('keeps ?id= in step with the selection without adding history or dropping overlay state', () => {
+    window.history.replaceState({ __sqaOverlays: ['overlay-1'] }, '', '#/reviews?id=old')
+    const length = window.history.length
+
+    replaceHashEntityId('reviews', 'new')
+    expect(window.location.hash).toBe('#/reviews?id=new')
+    expect(window.history.length).toBe(length)
+    expect(window.history.state).toEqual({ __sqaOverlays: ['overlay-1'] })
+
+    replaceHashEntityId('reviews', null)
+    expect(window.location.hash).toBe('#/reviews')
+  })
+
+  it('does nothing after the user already left that screen', () => {
+    window.history.replaceState(null, '', '#/projects')
+    replaceHashEntityId('reviews', 'late-selection')
+    expect(window.location.hash).toBe('#/projects')
+  })
+})
+
+describe('composer intents', () => {
+  afterEach(() => {
+    window.sessionStorage.clear()
+  })
+
+  it('hands a create request to the target screen exactly once', () => {
+    const listener = vi.fn()
+    window.addEventListener(COMPOSER_INTENT_EVENT, listener)
+    requestComposer('reviews')
+    window.removeEventListener(COMPOSER_INTENT_EVENT, listener)
+
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(window.sessionStorage.getItem('sqa.reviews.openComposer')).not.toBeNull()
+    expect(consumeComposerRequest('announcements')).toBe(false)
+    expect(consumeComposerRequest('reviews')).toBe(true)
+    expect(consumeComposerRequest('reviews')).toBe(false)
+  })
+
+  it('ignores a stale request left behind by an interrupted navigation', () => {
+    window.sessionStorage.setItem(composerIntentStorageKey('change-applications'), String(Date.now() - 60_000))
+    expect(consumeComposerRequest('change-applications')).toBe(false)
+    expect(window.sessionStorage.getItem(composerIntentStorageKey('change-applications'))).toBeNull()
+  })
+})
+
+describe('overlay history helpers', () => {
+  afterEach(() => {
+    forgetLatestEntityHash()
+    window.history.replaceState(null, '', '#/dashboard')
+  })
+
+  it('recognizes entries pushed for an open dialog or detail', () => {
+    window.history.replaceState(null, '', '#/reviews')
+    expect(isOverlayHistoryEntry()).toBe(false)
+    window.history.replaceState({ __sqaOverlays: ['overlay-a'] }, '', '#/reviews')
+    expect(isOverlayHistoryEntry()).toBe(true)
+  })
+
+  it('clears overlay marks left behind by a reload but keeps other state', () => {
+    window.history.replaceState({ __sqaOverlays: ['overlay-a'], scroll: 3 }, '', '#/reviews')
+    clearStaleOverlayHistory()
+    expect(window.history.state).toEqual({ scroll: 3 })
+    expect(window.location.hash).toBe('#/reviews')
+  })
+
+  it('writes the latest selection back only while the same screen is shown', () => {
+    window.history.replaceState(null, '', '#/reviews?id=a')
+    replaceHashEntityId('reviews', 'b')
+    window.history.replaceState(null, '', '#/reviews?id=a')
+    restoreLatestEntityHash()
+    expect(window.location.hash).toBe('#/reviews?id=b')
+
+    window.history.replaceState(null, '', '#/announcements')
+    restoreLatestEntityHash()
+    expect(window.location.hash).toBe('#/announcements')
   })
 })

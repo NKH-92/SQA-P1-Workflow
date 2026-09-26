@@ -59,7 +59,7 @@ export function AppRoutes({
 
   return (
     <ErrorBoundary key={activeTab} role={leaderMode ? 'leader' : 'member'}>
-      <Suspense fallback={<div className="route-loading" role="status">화면을 불러오는 중입니다.</div>}>
+      <Suspense fallback={<div className="route-loading" role="status">화면을 불러오고 있어요.</div>}>
         {activeTab === 'dashboard' &&
           (leaderMode ? (
             <LeaderDashboard profile={profile} data={data} setActiveTab={setActiveTab} />

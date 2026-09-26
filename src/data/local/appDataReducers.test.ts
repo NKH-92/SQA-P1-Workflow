@@ -149,7 +149,7 @@ describe('master delete activity logging (demo)', () => {
       }),
       product.id,
       { expectedUpdatedAt: product.updated_at ?? null, reason: '중복 제품 정리' },
-    )).rejects.toThrow('변경 적용 이력이 있는 제품은 삭제할 수 없습니다')
+    )).rejects.toThrow('변경 적용 이력이 있는 제품은 기록을 지키기 위해 삭제할 수 없어요.')
   })
 
   it('records activity when deleting an allowed user locally', async () => {

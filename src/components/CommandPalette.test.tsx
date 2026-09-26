@@ -4,6 +4,8 @@ import userEvent from '@testing-library/user-event'
 import { useCallback, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPreviewData, previewLeader, previewMember } from '../demoData'
+import { composerIntentStorageKey } from '../lib/navigation'
+import type { Profile } from '../types'
 import { CommandPalette } from './CommandPalette'
 
 function CommandPaletteHarness() {
@@ -51,7 +53,7 @@ describe('CommandPalette review statistics navigation', () => {
     )
 
     const dialog = screen.getByRole('dialog', { name: '빠른 이동' })
-    expect(within(dialog).getByRole('button', { name: /검토 통계\s*review-stats 화면으로 이동/ })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: /검토 통계\s*검토 통계 화면으로 이동/ })).toBeInTheDocument()
   })
 
   it('does not expose review statistics to members', () => {
@@ -86,7 +88,7 @@ describe('CommandPalette review statistics navigation', () => {
     )
 
     const dialog = screen.getByRole('dialog', { name: '빠른 이동' })
-    expect(within(dialog).getByRole('button', { name: /공지\s*announcements 화면으로 이동/ })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: /공지\s*공지 화면으로 이동/ })).toBeInTheDocument()
   })
 
   it('preserves the complete leader navigation order and palette-specific product label', () => {
@@ -112,7 +114,7 @@ describe('CommandPalette review statistics navigation', () => {
       '프로젝트',
       '파트원',
       '활동 로그',
-      '제품 마스터',
+      '제품',
       '업무 카테고리',
       '계정 관리',
     ])
@@ -140,6 +142,78 @@ describe('CommandPalette review statistics navigation', () => {
       '내 프로젝트',
       '내 담당',
     ])
+  })
+
+  it('describes every screen with its human name instead of a route id', () => {
+    render(
+      <CommandPalette
+        data={createPreviewData()}
+        leaderMode
+        onClose={vi.fn()}
+        open
+        profile={previewLeader}
+        setActiveTab={vi.fn()}
+      />,
+    )
+
+    const dialog = screen.getByRole('dialog', { name: '빠른 이동' })
+    const subs = [...dialog.querySelectorAll('.cmd-item-sub')].map((item) => item.textContent ?? '')
+    expect(subs.join(' ')).not.toMatch(/change-applications|review-stats|announcements|dashboard/)
+    expect(within(dialog).getByRole('button', { name: /변경 적용\s*변경 적용 화면으로 이동/ })).toBeInTheDocument()
+  })
+
+  it.each([
+    { label: 'leader', profile: previewLeader, leaderMode: true, actions: ['새 공지 쓰기', '공통변경 등록하기'] },
+    { label: 'member', profile: previewMember, leaderMode: false, actions: ['새 검토요청 쓰기'] },
+    {
+      label: 'read-only team leader',
+      profile: { ...previewLeader, id: 'team-leader', role: 'team_leader' } as Profile,
+      leaderMode: true,
+      actions: [],
+    },
+  ])('offers only the create actions a $label can do', ({ profile, leaderMode, actions }) => {
+    render(
+      <CommandPalette
+        data={createPreviewData()}
+        leaderMode={leaderMode}
+        onClose={vi.fn()}
+        open
+        profile={profile}
+        setActiveTab={vi.fn()}
+      />,
+    )
+
+    const dialog = screen.getByRole('dialog', { name: '빠른 이동' })
+    const actionGroup = [...dialog.querySelectorAll('.cmd-body > div')]
+      .find((group) => group.querySelector('.cmd-group-label')?.textContent === '새로 만들기')
+    expect([...(actionGroup?.querySelectorAll('.cmd-item-title') ?? [])].map((item) => item.textContent)).toEqual(actions)
+  })
+
+  it('keeps the announcements screen as the first match for “공지” and opens the composer from an action', async () => {
+    const user = userEvent.setup()
+    const setActiveTab = vi.fn()
+    const onClose = vi.fn()
+    window.sessionStorage.clear()
+    render(
+      <CommandPalette
+        data={createPreviewData()}
+        leaderMode
+        onClose={onClose}
+        open
+        profile={previewLeader}
+        setActiveTab={setActiveTab}
+      />,
+    )
+
+    const dialog = screen.getByRole('dialog', { name: '빠른 이동' })
+    await user.type(within(dialog).getByRole('textbox'), '공지')
+    expect(dialog.querySelector('.cmd-item.selected .cmd-item-title')).toHaveTextContent(/^공지$/)
+
+    await user.click(within(dialog).getByRole('button', { name: /새 공지 쓰기/ }))
+    expect(setActiveTab).toHaveBeenCalledWith('announcements', undefined)
+    expect(onClose).toHaveBeenCalled()
+    expect(window.sessionStorage.getItem(composerIntentStorageKey('announcements'))).not.toBeNull()
+    window.sessionStorage.clear()
   })
 
   it('traps focus, locks body scrolling, and returns focus to its trigger on Escape', async () => {

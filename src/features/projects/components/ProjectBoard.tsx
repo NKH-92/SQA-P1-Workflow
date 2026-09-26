@@ -1,42 +1,39 @@
-import { FolderKanban } from 'lucide-react'
-import { EmptyState } from '../../../components/ui'
-import type { Project, ProjectAssignment, ProjectStatus } from '../../../types'
+import { useId, type ReactNode } from 'react'
 import { projectStatusLabels } from '../../../lib/format'
-import { ProjectCard } from './ProjectCard'
+import type { ProjectStatus } from '../../../types'
+import type { ProjectGroup } from '../project.selectors'
 
 export type ProjectStatusGroup = {
   status: ProjectStatus
-  projects: Array<{ project: Project; assignments: ProjectAssignment[] }>
+  projects: ProjectGroup[]
 }
 
 type ProjectBoardProps = {
   groups: ProjectStatusGroup[]
+  renderCard: (group: ProjectGroup) => ReactNode
 }
 
-export function ProjectBoard({ groups }: ProjectBoardProps) {
+function ProjectStatusSection({ group, renderCard }: { group: ProjectStatusGroup; renderCard: ProjectBoardProps['renderCard'] }) {
+  const headingId = useId()
+  return (
+    <section aria-labelledby={headingId} className="project-status-section" data-status={group.status}>
+      <header>
+        <h2 id={headingId}>{projectStatusLabels[group.status]}</h2>
+        <span>{group.projects.length}개</span>
+      </header>
+      <div className="project-card-grid">
+        {group.projects.map((item) => renderCard(item))}
+      </div>
+    </section>
+  )
+}
+
+/** 상태별(진행 중 → 예정 → 완료)로 묶은 프로젝트 카드 보드. 카드마다 바로 처리할 수 있다. */
+export function ProjectBoard({ groups, renderCard }: ProjectBoardProps) {
   return (
     <div className="project-status-board">
-      {groups.length === 0 && (
-        <EmptyState
-          icon={<FolderKanban size={22} />}
-          title="조건에 맞는 프로젝트가 없습니다."
-          description="검색어나 상태 필터를 바꿔 보세요."
-        />
-      )}
       {groups.map((group) => (
-        <section className="project-status-section" key={group.status}>
-          <header>
-            <div>
-              <span>{projectStatusLabels[group.status]}</span>
-              <strong>{group.projects.length}개</strong>
-            </div>
-          </header>
-          <div className="project-card-grid">
-            {group.projects.map(({ project, assignments }) => (
-              <ProjectCard assignments={assignments} key={project.id} project={project} />
-            ))}
-          </div>
-        </section>
+        <ProjectStatusSection group={group} key={group.status} renderCard={renderCard} />
       ))}
     </div>
   )

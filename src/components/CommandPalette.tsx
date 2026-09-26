@@ -5,6 +5,7 @@ import type { TabId } from '../app/types'
 import { useModalDismiss } from '../hooks/useModalDismiss'
 import {
   buildCommandItems,
+  commandSearchPlaceholder,
   filterCommandItems,
   groupCommandItems,
   type CommandPaletteData,
@@ -107,16 +108,16 @@ export function CommandPalette({
             <Search size={16} />
           </span>
           <input
-            aria-label="화면, 검토요청, 파트원 검색"
+            aria-label={commandSearchPlaceholder(leaderMode)}
             onChange={(event: React.ChangeEvent<HTMLInputElement>) => setQuery(event.target.value)}
-            placeholder="이동하려는 화면, 검토요청, 파트원을 검색하세요..."
+            placeholder={`${commandSearchPlaceholder(leaderMode)}…`}
             ref={inputRef}
             value={query}
           />
-          <span className="esc">ESC</span>
+          <span className="esc">Esc</span>
         </div>
         <div className="cmd-body" ref={listRef}>
-          {filtered.length === 0 && <p className="cmd-empty">“{query}”에 대한 결과가 없습니다.</p>}
+          {filtered.length === 0 && <p className="cmd-empty">“{query}” 검색 결과가 없어요.</p>}
           {Object.entries(groups).map(([group, groupItems]) => (
             <div key={group}>
               <div className="cmd-group-label">{group}</div>
@@ -156,7 +157,7 @@ export function CommandPalette({
             선택
           </span>
           <span>
-            <span className="kbd">esc</span>
+            <span className="kbd">Esc</span>
             닫기
           </span>
         </div>

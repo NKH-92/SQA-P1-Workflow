@@ -1,13 +1,16 @@
-import { useRef, useState } from 'react'
-import { AlertTriangle, ArchiveRestore, CheckCircle2, RefreshCw, UserRoundCog, XCircle } from 'lucide-react'
-import { Modal } from '../../../components/ui'
+import { useId, useRef, useState, type ReactNode } from 'react'
+import { ArchiveRestore, CheckCheck, CheckCircle2, MinusCircle, RefreshCw, UserRoundCog, XCircle } from 'lucide-react'
+import { DialogActions, Modal } from '../../../components/ui'
+import { withJosa } from '../../../lib/korean'
 import type { AppData, ChangeApplication, ProductChangeTask } from '../../../types'
 
 export type ChangeActionDialog =
   | { kind: 'complete'; task: ProductChangeTask }
+  | { kind: 'complete_all'; productName: string; tasks: ProductChangeTask[] }
   | { kind: 'not_applicable'; task: ProductChangeTask }
   | { kind: 'reopen'; task: ProductChangeTask }
   | { kind: 'reassign'; task: ProductChangeTask }
+  | { kind: 'bulk_reassign'; tasks: ProductChangeTask[] }
   | { kind: 'remove_scope'; task: ProductChangeTask }
   | { kind: 'cancel_application'; application: ChangeApplication }
   | { kind: 'restore_scope'; task: ProductChangeTask }
@@ -18,57 +21,125 @@ export type ChangeActionDialogResult = {
   assigneeId: string | null
 }
 
-const copy = {
-  complete: {
-    eyebrow: '적용 완료',
-    title: '실제로 적용을 완료했습니까?',
-    description: '완료 후 기본 미적용 목록에서 사라지고 완료 이력에 보관됩니다.',
-    submit: '완료 확인',
-    icon: <CheckCircle2 size={18} />,
-  },
-  not_applicable: {
-    eyebrow: '예외 처리',
-    title: '이 제품은 적용 대상이 아닙니까?',
-    description: '해당 없음 사유는 필수이며 처리 이력에 계속 남습니다.',
-    submit: '해당 없음 처리',
-    icon: <AlertTriangle size={18} />,
-  },
-  reopen: {
-    eyebrow: '처리 재개',
-    title: '완료 처리를 다시 열까요?',
-    description: '기존 완료 정보는 활동 이력에 남고 업무 상태는 미적용으로 돌아갑니다.',
-    submit: '다시 열기',
-    icon: <RefreshCw size={18} />,
-  },
-  reassign: {
-    eyebrow: '담당자 변경',
-    title: '적용 책임자를 변경합니다',
-    description: '제품의 현재 담당 배정과 별개로 이 업무에 저장된 책임자만 변경합니다.',
-    submit: '담당자 변경',
-    icon: <UserRoundCog size={18} />,
-  },
-  remove_scope: {
-    eyebrow: '적용범위 제외',
-    title: '이 제품을 적용범위에서 제외할까요?',
-    description: '제품은 삭제되지 않고 범위 제외 상태와 사유가 이력에 남습니다.',
-    submit: '범위 제외',
-    icon: <XCircle size={18} />,
-  },
-  cancel_application: {
-    eyebrow: '변경건 취소',
-    title: '변경건 전체를 취소할까요?',
-    description: '처리되지 않은 제품 업무가 함께 취소되며 완료·해당 없음 이력은 유지됩니다.',
-    submit: '변경건 취소',
-    icon: <XCircle size={18} />,
-  },
-  restore_scope: {
-    eyebrow: '적용범위 복원',
-    title: '이 제품을 적용범위에 복원할까요?',
-    description: '기존 제외 이력은 유지되고 제품 적용업무가 다시 미적용 상태로 돌아갑니다.',
-    submit: '적용범위 복원',
-    icon: <ArchiveRestore size={18} />,
-  },
-} as const
+type DialogCopy = {
+  eyebrow: string
+  title: string
+  description: string
+  submit: string
+  icon: ReactNode
+  /** 사유 칸 이름. 없으면 사유를 받지 않는다. */
+  reasonLabel?: string
+  reasonPlaceholder?: string
+  danger?: boolean
+}
+
+function dialogCopy(dialog: ChangeActionDialog): DialogCopy {
+  switch (dialog.kind) {
+    case 'complete':
+      return {
+        eyebrow: '적용 완료',
+        title: '이 제품에 변경을 적용했나요?',
+        description: '완료로 표시하면 미적용 목록에서 빠지고 처리 이력에 남아요.',
+        submit: '적용 완료하기',
+        icon: <CheckCircle2 size={18} />,
+      }
+    case 'complete_all':
+      return {
+        eyebrow: '모두 적용 완료',
+        title: `이 제품의 적용 업무 ${dialog.tasks.length}건을 모두 완료할까요?`,
+        description: '한 번에 완료로 표시해요. 완료 메모는 모든 업무에 똑같이 남아요.',
+        submit: '모두 적용 완료하기',
+        icon: <CheckCheck size={18} />,
+      }
+    case 'not_applicable':
+      return {
+        eyebrow: '해당 없음',
+        title: '이 제품을 ‘해당 없음’으로 처리할까요?',
+        description: '해당 없음으로 처리하면 미적용 목록에서 빠져요. 사유는 처리 이력에 남고 파트장이 최종 확인할 때 봐요.',
+        submit: '해당 없음으로 처리하기',
+        icon: <MinusCircle size={18} />,
+        reasonLabel: '해당 없음 사유',
+        reasonPlaceholder: '예: 이 제품은 변경한 원료를 쓰지 않아요.',
+      }
+    case 'reopen':
+      return {
+        eyebrow: '다시 열기',
+        title: '완료한 업무를 다시 열까요?',
+        description: '완료 기록은 활동 이력에 남고, 업무는 미적용 상태로 돌아가요.',
+        submit: '다시 열기',
+        icon: <RefreshCw size={18} />,
+        reasonLabel: '다시 여는 이유',
+        reasonPlaceholder: '예: 반영한 내용을 다시 확인해야 해요.',
+      }
+    case 'reassign':
+      return {
+        eyebrow: '담당자 변경',
+        title: '이 업무의 담당자를 바꿀까요?',
+        description: '제품 담당자는 그대로 두고, 이 업무의 담당자만 바꿔요.',
+        submit: '담당자 변경',
+        icon: <UserRoundCog size={18} />,
+        reasonLabel: '담당자를 바꾸는 이유',
+        reasonPlaceholder: '예: 담당 제품군이 바뀌었어요.',
+      }
+    case 'bulk_reassign':
+      return {
+        eyebrow: '담당자 변경',
+        title: `선택한 적용 업무 ${dialog.tasks.length}건의 담당자를 바꿀까요?`,
+        description: '제품 담당자는 그대로 두고, 선택한 업무의 담당자만 한 번에 바꿔요.',
+        submit: '담당자 변경',
+        icon: <UserRoundCog size={18} />,
+        reasonLabel: '담당자를 바꾸는 이유',
+        reasonPlaceholder: '예: 퇴사한 파트원의 업무를 넘겨요.',
+      }
+    case 'remove_scope':
+      return {
+        eyebrow: '적용 범위 제외',
+        title: '이 제품을 적용 범위에서 뺄까요?',
+        description: '제품은 삭제되지 않아요. 범위에서 뺀 사실과 사유는 이력에 남아요.',
+        submit: '범위에서 빼기',
+        icon: <XCircle size={18} />,
+        reasonLabel: '범위에서 빼는 이유',
+        reasonPlaceholder: '예: 이번 변경 대상이 아니에요.',
+        danger: true,
+      }
+    case 'cancel_application':
+      return {
+        eyebrow: '공통변경 취소',
+        title: '공통변경 전체를 취소할까요?',
+        description: '아직 처리하지 않은 적용 업무도 함께 취소돼요. 완료·해당 없음 기록은 그대로 남아요.',
+        submit: '공통변경 취소하기',
+        icon: <XCircle size={18} />,
+        reasonLabel: '취소 사유',
+        reasonPlaceholder: '예: 공식 변경이 철회됐어요.',
+        danger: true,
+      }
+    case 'restore_scope':
+      return {
+        eyebrow: '적용 범위 복원',
+        title: '이 제품을 적용 범위에 다시 넣을까요?',
+        description: '제외했던 기록은 남고, 이 적용 업무는 다시 미적용 상태가 돼요.',
+        submit: '범위에 다시 넣기',
+        icon: <ArchiveRestore size={18} />,
+        reasonLabel: '범위에 다시 넣는 이유',
+        reasonPlaceholder: '예: 적용 대상으로 다시 확인됐어요.',
+      }
+  }
+}
+
+function dialogTasks(dialog: ChangeActionDialog): ProductChangeTask[] {
+  if ('task' in dialog) return [dialog.task]
+  if ('tasks' in dialog) return dialog.tasks
+  return []
+}
+
+function subjectText(dialog: ChangeActionDialog) {
+  if (dialog.kind === 'cancel_application') return `${dialog.application.change_number} · ${dialog.application.title}`
+  if (dialog.kind === 'complete_all') return `${dialog.productName} · 적용 업무 ${dialog.tasks.length}건`
+  const tasks = dialogTasks(dialog)
+  if (tasks.length === 1) return `${tasks[0].product_name} · ${tasks[0].assignee_name ?? '담당자 없음'}`
+  const names = tasks.slice(0, 3).map((task) => task.product_name).join(', ')
+  return tasks.length > 3 ? `${names} 외 ${tasks.length - 3}건` : names
+}
 
 export function ChangeActionModal({
   dialog,
@@ -81,47 +152,54 @@ export function ChangeActionModal({
   onClose: () => void
   onConfirm: (result: ChangeActionDialogResult) => Promise<boolean>
 }) {
+  const noteId = useId()
+  const reasonId = useId()
+  const reasonErrorId = useId()
+  const assigneeId = useId()
+  const assigneeErrorId = useId()
   const [note, setNote] = useState('')
   const [reason, setReason] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [errors, setErrors] = useState<{ reason?: string; assignee?: string }>({})
   const noteRef = useRef<HTMLTextAreaElement>(null)
   const reasonRef = useRef<HTMLTextAreaElement>(null)
   const assigneeRef = useRef<HTMLSelectElement>(null)
-  const [assigneeId, setAssigneeId] = useState<string | null>(() => {
-    if (!('task' in dialog) || !dialog.task.assignee_id) return null
+  const isReassign = dialog.kind === 'reassign' || dialog.kind === 'bulk_reassign'
+  const [initialAssigneeId] = useState<string | null>(() => {
+    if (dialog.kind !== 'reassign' || !dialog.task.assignee_id) return null
     const current = data.profiles.find((item) => item.id === dialog.task.assignee_id)
     return current?.is_active === false ? null : dialog.task.assignee_id
   })
+  const [selectedAssigneeId, setSelectedAssigneeId] = useState<string | null>(initialAssigneeId)
   const activeAssignees = data.changeAssigneeOptions.filter((item) => {
     const assignee = data.profiles.find((profileItem) => profileItem.id === item.id)
     return assignee?.is_active !== false
   })
-  const config = copy[dialog.kind]
-  const task = 'task' in dialog ? dialog.task : null
-  const needsReason = dialog.kind !== 'complete'
-  const reasonLabel = dialog.kind === 'not_applicable'
-    ? '해당 없음 사유'
-    : dialog.kind === 'reopen'
-      ? '재개 사유'
-      : dialog.kind === 'reassign'
-        ? '재배정 사유'
-        : dialog.kind === 'restore_scope'
-          ? '적용범위 복원 사유'
-          : dialog.kind === 'remove_scope'
-            ? '적용범위 제외 사유'
-            : '취소 사유'
-  const canSubmit = dialog.kind === 'complete'
-    ? true
-    : Boolean(reason.trim())
-      && (dialog.kind !== 'reassign' || Boolean(assigneeId))
+  const config = dialogCopy(dialog)
+  const needsReason = Boolean(config.reasonLabel)
+  const takesNote = dialog.kind === 'complete' || dialog.kind === 'complete_all'
+  const dirty = Boolean(note.trim() || reason.trim()) || selectedAssigneeId !== initialAssigneeId
+  const initialFocusRef = takesNote ? noteRef : isReassign ? assigneeRef : reasonRef
 
-  const subject = task
-    ? `${task.product_name} · ${task.assignee_name ?? '담당 미지정'}`
-    : 'application' in dialog ? dialog.application.change_number : ''
-  const initialFocusRef = dialog.kind === 'complete'
-    ? noteRef
-    : dialog.kind === 'reassign'
-      ? assigneeRef
-      : reasonRef
+  const submit = () => {
+    const nextErrors: { reason?: string; assignee?: string } = {}
+    if (isReassign && !selectedAssigneeId) nextErrors.assignee = '새 담당자를 골라 주세요.'
+    if (needsReason && !reason.trim()) nextErrors.reason = `${withJosa(config.reasonLabel!, '을/를')} 적어 주세요.`
+    setErrors(nextErrors)
+    if (nextErrors.assignee) {
+      assigneeRef.current?.focus()
+      return
+    }
+    if (nextErrors.reason) {
+      reasonRef.current?.focus()
+      return
+    }
+    setSubmitting(true)
+    void onConfirm({ note, reason, assigneeId: selectedAssigneeId }).then((ok) => {
+      setSubmitting(false)
+      if (ok) onClose()
+    })
+  }
 
   return (
     <Modal
@@ -133,47 +211,83 @@ export function ChangeActionModal({
       icon={config.icon}
       className="change-action-modal"
       initialFocusRef={initialFocusRef}
+      dirty={dirty && !submitting}
     >
       <form
+        aria-busy={submitting || undefined}
         className="change-action-form"
+        noValidate
         onSubmit={(event) => {
           event.preventDefault()
-          if (!canSubmit) return
-          void onConfirm({ note, reason, assigneeId }).then((ok) => {
-            if (ok) onClose()
-          })
+          if (!submitting) submit()
         }}
       >
-        <div className="change-action-subject">{subject}</div>
+        <div className="change-action-subject">{subjectText(dialog)}</div>
 
-        {dialog.kind === 'complete' && (
-          <label>
-            완료 메모 <small>선택</small>
-            <textarea ref={noteRef} maxLength={2000} placeholder="예: 제품표준서 Rev.12 반영" value={note} onChange={(event) => setNote(event.target.value)} />
+        {takesNote && (
+          <label htmlFor={noteId}>
+            <span className="field-label">완료 메모 <small>선택</small></span>
+            <textarea
+              ref={noteRef}
+              id={noteId}
+              maxLength={2000}
+              placeholder="예: 제품표준서 Rev.12 반영"
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+            />
           </label>
         )}
 
-        {dialog.kind === 'reassign' && (
-          <label>
-            새 적용 책임자
-            <select ref={assigneeRef} aria-label="새 적용 책임자" value={assigneeId ?? ''} onChange={(event) => setAssigneeId(event.target.value || null)}>
-              <option disabled value="">책임자를 선택해 주세요</option>
+        {isReassign && (
+          <label htmlFor={assigneeId}>
+            <span className="field-label">새 담당자 <span aria-hidden="true" className="required">*</span></span>
+            <select
+              ref={assigneeRef}
+              aria-describedby={errors.assignee ? assigneeErrorId : undefined}
+              aria-invalid={errors.assignee ? true : undefined}
+              aria-label="새 담당자"
+              aria-required="true"
+              id={assigneeId}
+              value={selectedAssigneeId ?? ''}
+              onChange={(event) => {
+                setSelectedAssigneeId(event.target.value || null)
+                if (errors.assignee) setErrors((current) => ({ ...current, assignee: undefined }))
+              }}
+            >
+              <option disabled value="">담당자를 선택해 주세요</option>
               {activeAssignees.map((item) => <option key={item.id} value={item.id}>{item.name}{item.role === 'leader' ? ' (파트장)' : ''}</option>)}
             </select>
+            {errors.assignee && <p className="field-error" id={assigneeErrorId}>{errors.assignee}</p>}
           </label>
         )}
 
         {needsReason && (
-          <label>
-            {reasonLabel} <span className="required">*</span>
-            <textarea ref={reasonRef} aria-label={reasonLabel} maxLength={2000} placeholder="처리 사유를 입력해 주세요." value={reason} onChange={(event) => setReason(event.target.value)} />
+          <label htmlFor={reasonId}>
+            <span className="field-label">{config.reasonLabel} <span aria-hidden="true" className="required">*</span></span>
+            <textarea
+              ref={reasonRef}
+              aria-describedby={errors.reason ? reasonErrorId : undefined}
+              aria-invalid={errors.reason ? true : undefined}
+              aria-label={config.reasonLabel}
+              aria-required="true"
+              id={reasonId}
+              maxLength={2000}
+              placeholder={config.reasonPlaceholder}
+              value={reason}
+              onChange={(event) => {
+                setReason(event.target.value)
+                if (errors.reason && event.target.value.trim()) setErrors((current) => ({ ...current, reason: undefined }))
+              }}
+            />
+            {errors.reason && <p className="field-error" id={reasonErrorId}>{errors.reason}</p>}
           </label>
         )}
 
-        <footer className="modal-footer">
-          <button className="ghost" onClick={onClose} type="button">닫기</button>
-          <button className={dialog.kind.startsWith('cancel') || dialog.kind === 'remove_scope' ? 'danger' : 'primary'} disabled={!canSubmit} type="submit">{config.submit}</button>
-        </footer>
+        <DialogActions onClose={onClose}>
+          <button className={config.danger ? 'danger' : 'primary'} disabled={submitting} type="submit">
+            {submitting ? '처리하는 중…' : config.submit}
+          </button>
+        </DialogActions>
       </form>
     </Modal>
   )

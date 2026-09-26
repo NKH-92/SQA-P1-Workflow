@@ -1,4 +1,9 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
+
+/** 미리보기 역할 전환. 메뉴의 ‘파트원’ 항목과 이름이 겹치지 않게 역할 그룹 안에서 찾는다. */
+function switchPreviewRole(page: Page, role: '파트장' | '팀장' | '파트원') {
+  return page.getByRole('group', { name: '미리보기 역할' }).getByRole('button', { name: role, exact: true }).click()
+}
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/')
@@ -8,7 +13,7 @@ test.beforeEach(async ({ page }) => {
 test('01 leader and member navigation scopes remain distinct', async ({ page }) => {
   await expect(page.getByRole('button', { name: '검토 통계', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: /^제품/ })).toBeVisible()
-  await page.getByRole('button', { name: '파트원', exact: true }).click()
+  await switchPreviewRole(page, '파트원')
   await expect(page.getByRole('button', { name: '검토 통계', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /^제품/ })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /^내 검토요청/ })).toBeVisible()
@@ -28,64 +33,80 @@ test('02 command palette preserves keyboard navigation and hash routing', async 
 test('03 review lifecycle updates the request after explicit confirmation', async ({ page }) => {
   await page.goto('/#/reviews')
   const detail = page.getByRole('article').first()
-  await expect(detail.getByRole('button', { name: '완료 처리' })).toBeVisible()
-  await detail.getByRole('button', { name: '완료 처리' }).click()
-  const dialog = page.getByRole('dialog', { name: '검토요청을 완료 처리할까요?' })
+  const approvedTitle = (await detail.locator('.request-title').innerText()).trim()
+  await expect(detail.getByRole('button', { name: '승인하기', exact: true })).toBeVisible()
+  await detail.getByRole('button', { name: '승인하기', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: /승인할까요\?$/ })
   await expect(dialog).toBeVisible()
-  await dialog.getByRole('button', { name: '완료 처리' }).click()
-  await expect(page.getByText('완료 상태로 전환했습니다.')).toBeVisible()
-  await expect(detail.getByRole('button', { name: '다시 열기' })).toBeVisible()
+  await expect(dialog).toContainText('승인하면 요청자에게 결과가 전달돼요.')
+  await dialog.getByRole('button', { name: '승인하기', exact: true }).click()
+  // 토스트는 하나, 대상 이름과 결과를 말한다. 상세는 다음 대기 중 요청으로 넘어간다.
+  await expect(page.locator('.toast').filter({ hasText: `‘${approvedTitle}’` })).toHaveCount(1)
+  await expect(page.locator('.toast').filter({ hasText: '승인했어요.' })).toBeVisible()
+  await expect(page.locator('.review-detail-pane .request-title')).not.toHaveText(approvedTitle)
+  await page.locator('.review-list-item', { hasText: approvedTitle }).click()
+  await expect(page.getByRole('article').first().getByRole('button', { name: '다시 열기' })).toBeVisible()
 })
 
 test('04 project create update and delete remain one local workflow', async ({ page }) => {
   await page.goto('/#/projects')
-  await page.getByRole('button', { name: '프로젝트', exact: true }).click()
+  await page.getByRole('button', { name: '프로젝트 만들기', exact: true }).click()
   const composer = page.getByRole('dialog', { name: '무엇을 함께 만들까요?' })
   await composer.getByLabel('프로젝트 이름').fill('E2E 교정 프로젝트')
   await composer.getByRole('button', { name: /파트원 A/ }).click()
-  await composer.getByRole('button', { name: /^프로젝트 생성 ·/ }).click()
+  await composer.getByRole('button', { name: /^프로젝트 만들기/ }).click()
 
-  let card = page.locator('article[data-project-id]').filter({ hasText: 'E2E 교정 프로젝트' })
-  await expect(card).toBeVisible()
-  const projectId = await card.getAttribute('data-project-id')
-  await card.getByRole('button', { name: '수정' }).click()
-  card = page.locator(`[data-project-id="${projectId}"]`)
-  await card.getByLabel('이름').fill('E2E 교정 프로젝트 수정')
-  await card.getByRole('button', { name: '저장' }).click()
-  card = page.locator('article[data-project-id]').filter({ hasText: 'E2E 교정 프로젝트 수정' })
-  await expect(card).toBeVisible()
-  await card.getByRole('button', { name: '삭제' }).click()
-  await card.getByRole('textbox', { name: '삭제 사유' }).fill('E2E 프로젝트 정리')
-  await card.getByRole('button', { name: '삭제 확인' }).click()
-  await expect(page.getByText('E2E 교정 프로젝트 수정')).toHaveCount(0)
+  const created = page.locator('article[data-project-id]').filter({ hasText: 'E2E 교정 프로젝트' })
+  await expect(created).toBeVisible()
+  const projectId = await created.getAttribute('data-project-id')
+  const card = page.locator(`article[data-project-id="${projectId}"]`)
+  // 보드와 목록을 합친 카드: 카드 본문(투명 버튼)을 누르면 정보 수정 창이 열린다.
+  await card.getByRole('button', { name: 'E2E 교정 프로젝트 수정' }).click()
+  const editor = page.getByRole('dialog', { name: '프로젝트 정보 수정' })
+  await editor.getByLabel('프로젝트 이름').fill('E2E 교정 프로젝트 수정')
+  await editor.getByRole('button', { name: '저장하기' }).click()
+  await expect(editor).toHaveCount(0)
+  await expect(card.getByRole('heading', { name: 'E2E 교정 프로젝트 수정' })).toBeVisible()
+  // 드문 행동(링크 복사·삭제)은 카드의 더보기(⋯) 메뉴에 있다.
+  await card.getByRole('button', { name: 'E2E 교정 프로젝트 수정 더보기' }).click()
+  await page.getByRole('menuitem', { name: '삭제' }).click()
+  const deleteDialog = page.getByRole('dialog', { name: '‘E2E 교정 프로젝트 수정’을 삭제할까요?' })
+  await deleteDialog.getByRole('textbox', { name: '삭제 사유' }).fill('E2E 프로젝트 정리')
+  await deleteDialog.getByRole('button', { name: '삭제하기' }).click()
+  await expect(card).toHaveCount(0)
 })
 
 test('05 product assignment exposes pending change-task transfer', async ({ page }) => {
   await page.goto('/#/products')
   await expect(page.getByRole('button', { name: '제품 배정', exact: true })).toHaveCount(0)
   const card = page.getByRole('article').filter({ has: page.getByRole('heading', { name: '자사제품 B', exact: true }) })
-  await card.getByRole('button', { name: '수정', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: '제품 담당자 수정' })
+  // 카드의 행동은 하나(담당자 변경)뿐이고, 정보 수정·삭제는 더보기(⋯)에 있다.
+  await card.getByRole('button', { name: '자사제품 B 담당자 변경', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '제품 담당자 변경' })
   await expect(dialog.getByText('자사제품 B', { exact: true })).toBeVisible()
   await expect(dialog.getByRole('combobox')).toHaveCount(1)
-  const assignee = dialog.getByLabel('담당 상태')
-  await assignee.selectOption({ label: '담당 · 파트원 B' })
-  await dialog.getByRole('button', { name: '담당자 저장' }).click()
-  await card.getByRole('button', { name: '수정', exact: true }).click()
-  const transfer = dialog.getByRole('checkbox', { name: /미완료 적용업무도 새 담당자에게 이관/ })
+  const assignee = dialog.getByLabel('담당자', { exact: true })
+  await assignee.selectOption({ label: '파트원 B' })
+  // 새 담당자를 고르면 미완료 적용 업무 넘기기가 같은 창에서 바로 보인다(다시 열 필요 없음).
+  const transfer = dialog.getByRole('checkbox', { name: /미완료 적용 업무도 새 담당자에게 넘기기/ })
   await expect(transfer).toBeVisible()
+  await expect(dialog.getByRole('combobox')).toHaveCount(1)
   await transfer.check()
   await expect(transfer).toBeChecked()
+  await dialog.getByRole('button', { name: '담당자 저장하기' }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(card.getByText('파트원 B', { exact: true })).toBeVisible()
 })
 
 test('06 member can complete an assigned change task', async ({ page }) => {
-  await page.getByRole('button', { name: '파트원', exact: true }).click()
+  await switchPreviewRole(page, '파트원')
   await page.getByRole('button', { name: /^변경 적용/ }).click()
   await page.getByRole('button', { name: '적용 완료' }).first().click()
-  const dialog = page.getByRole('dialog', { name: '실제로 적용을 완료했습니까?' })
+  const dialog = page.getByRole('dialog', { name: '이 제품에 변경을 적용했나요?' })
+  await expect(dialog).toContainText('완료로 표시하면 미적용 목록에서 빠지고 처리 이력에 남아요.')
   await dialog.getByPlaceholder('예: 제품표준서 Rev.12 반영').fill('E2E 완료 증빙')
-  await dialog.getByRole('button', { name: '완료 확인' }).click()
-  await expect(page.getByText('자사제품 B 적용을 완료했습니다.')).toBeVisible()
+  await dialog.getByRole('button', { name: '적용 완료하기' }).click()
+  await expect(page.getByText('자사제품 B 적용을 완료했어요.')).toBeVisible()
   await expect(page.getByRole('tab', { name: /^내 미적용/ })).toHaveAttribute('aria-selected', 'true')
   await page.getByRole('tab', { name: '처리 이력' }).click()
   await expect(page.getByText('E2E 완료 증빙')).toBeVisible()
@@ -101,7 +122,7 @@ test('07 deep links select the intended major workspaces', async ({ page }) => {
 })
 
 test('08 density preference remains persistent across reloads', async ({ page }) => {
-  await page.getByRole('button', { name: '간격 압축해서 보기' }).click()
+  await page.getByRole('button', { name: '촘촘하게 보기' }).click()
   await expect(page.locator('html')).toHaveAttribute('data-density', 'compact')
   await page.reload()
   await expect(page.locator('html')).toHaveAttribute('data-density', 'compact')
@@ -121,14 +142,14 @@ test('09 mobile sidebar opens navigates and closes', async ({ page }) => {
 })
 
 test('10 notification panel supports read acknowledgement and navigation', async ({ page }) => {
-  await page.getByRole('button', { name: /^알림/ }).click()
+  await page.getByRole('button', { name: /^알림( \d+건)?$/ }).click()
   const panel = page.getByRole('dialog', { name: '알림' })
   await expect(panel).toBeVisible()
   const markAllRead = panel.getByRole('button', { name: '모두 읽음' })
   if (await markAllRead.count()) {
     await markAllRead.click()
-    await expect(page.getByText('검토 알림을 모두 읽음 처리했습니다.')).toBeVisible()
-    await page.getByRole('button', { name: /^알림/ }).click()
+    await expect(page.getByText('검토 알림을 모두 읽음으로 표시했어요.')).toBeVisible()
+    await page.getByRole('button', { name: /^알림( \d+건)?$/ }).click()
   }
   await page.getByRole('dialog', { name: '알림' }).getByRole('button', { name: /검토요청 전체 보기/ }).click()
   await expect(page).toHaveURL(/#\/reviews/)
@@ -143,8 +164,8 @@ test('11 review stats requester filter keeps KPIs and the exact table aligned', 
   await expect(requesterFilter).toHaveValue('member-01')
   await expect(page.getByRole('combobox', { name: '현재 상태', exact: true })).toHaveValue('all')
   await expect(page.getByRole('article', { name: '요청 건수 1건' })).toBeVisible()
-  await expect(page.getByRole('article', { name: '제출 횟수 1회' })).toBeVisible()
-  await expect(page.getByRole('article', { name: '현재 대기 1건' })).toBeVisible()
+  await expect(page.getByRole('article', { name: '요청 횟수 1회' })).toBeVisible()
+  await expect(page.getByRole('article', { name: '대기 중 1건' })).toBeVisible()
 
   const table = page.getByRole('table')
   await expect(table.getByRole('row', { name: /파트원 A/ })).toBeVisible()
@@ -155,13 +176,13 @@ test('11 review stats requester filter keeps KPIs and the exact table aligned', 
 
 test('12 a11y: closing a conditionally-unmounted modal returns focus to its trigger', async ({ page }) => {
   await page.goto('/#/change-applications')
-  await page.getByRole('button', { name: '파트원', exact: true }).click()
+  await switchPreviewRole(page, '파트원')
   await page.getByRole('button', { name: /^변경 적용/ }).click()
   const trigger = page.getByRole('button', { name: '적용 완료' }).first()
   await trigger.focus()
   await trigger.click()
 
-  const dialog = page.getByRole('dialog', { name: '실제로 적용을 완료했습니까?' })
+  const dialog = page.getByRole('dialog', { name: '이 제품에 변경을 적용했나요?' })
   await expect(dialog).toBeVisible()
 
   await page.keyboard.press('Escape')
@@ -180,37 +201,37 @@ test('13 leader finalizes a common change only after every assignee has processe
 
   for (const productName of ['위탁제품 D', '위탁제품 E']) {
     await page.getByRole('button', { name: `${productName} 담당자 변경` }).click()
-    const reassignDialog = page.getByRole('dialog', { name: '적용 책임자를 변경합니다' })
-    await reassignDialog.getByRole('combobox', { name: '새 적용 책임자' }).selectOption({ label: '파트원 A' })
-    await reassignDialog.getByLabel('재배정 사유').fill('공통변경 완료 점검 E2E')
-    await reassignDialog.getByRole('button', { name: '담당자 변경' }).click()
-    await expect(page.getByText(`${productName} 책임자를 변경했습니다.`)).toBeVisible()
+    const reassignDialog = page.getByRole('dialog', { name: '이 업무의 담당자를 바꿀까요?' })
+    await reassignDialog.getByRole('combobox', { name: '새 담당자' }).selectOption({ label: '파트원 A' })
+    await reassignDialog.getByLabel('담당자를 바꾸는 이유').fill('공통변경 완료 점검 E2E')
+    await reassignDialog.getByRole('button', { name: '담당자 변경', exact: true }).click()
+    await expect(page.getByText(`${productName} 담당자를 바꿨어요.`)).toBeVisible()
   }
 
-  await page.getByRole('button', { name: '파트원', exact: true }).click()
+  await switchPreviewRole(page, '파트원')
   await page.getByRole('button', { name: /^변경 적용/ }).click()
   for (const productName of ['자사제품 B', '위탁제품 D', '위탁제품 E']) {
     await page.getByRole('tab', { name: /^내 미적용/ }).click()
     const productList = page.getByRole('navigation', { name: '적용대상 제품 목록' })
     await productList.getByRole('button', { name: new RegExp(productName) }).click()
     const detail = page.getByRole('region', { name: `${productName} 변경관리 내용` })
-    await detail.getByRole('button', { name: '적용 완료' }).click()
-    const completeDialog = page.getByRole('dialog', { name: '실제로 적용을 완료했습니까?' })
+    await detail.getByRole('button', { name: '적용 완료', exact: true }).click()
+    const completeDialog = page.getByRole('dialog', { name: '이 제품에 변경을 적용했나요?' })
     await completeDialog.getByPlaceholder('예: 제품표준서 Rev.12 반영').fill(`${productName} E2E 반영`)
-    await completeDialog.getByRole('button', { name: '완료 확인' }).click()
-    await expect(page.getByText(`${productName} 적용을 완료했습니다.`)).toBeVisible()
+    await completeDialog.getByRole('button', { name: '적용 완료하기' }).click()
+    await expect(page.getByText(`${productName} 적용을 완료했어요.`)).toBeVisible()
   }
 
-  await page.getByRole('button', { name: '파트장', exact: true }).click()
+  await switchPreviewRole(page, '파트장')
   await page.getByRole('button', { name: /^변경 적용/ }).click()
   await page.getByRole('tab', { name: /^최종 확인 대기/ }).click()
-  await expect(page.getByText('모든 제품 처리가 끝났습니다. 예외 사유를 확인하고 변경을 완료하세요.')).toBeVisible()
-  await page.getByRole('button', { name: '변경 완료', exact: true }).click()
+  await expect(page.getByText('모든 제품 처리가 끝났어요. 처리 결과를 확인하고 공통변경을 완료해 주세요.')).toBeVisible()
+  await page.getByRole('button', { name: '공통변경 완료하기', exact: true }).click()
   const finalizationDialog = page.getByRole('dialog', { name: '공통변경을 최종 완료할까요?' })
   await finalizationDialog.getByLabel('최종 확인 메모').fill('해당 없음 사유와 전 제품 처리 결과 확인')
-  await finalizationDialog.getByRole('button', { name: '변경 완료' }).click()
+  await finalizationDialog.getByRole('button', { name: '공통변경 완료하기' }).click()
 
-  await expect(page.getByText('CC-2026-014 공통변경을 완료했습니다.')).toBeVisible()
+  await expect(page.getByText('CC-2026-014 공통변경을 완료했어요.')).toBeVisible()
   await expect(page.getByRole('tab', { name: '완료 이력' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByText('해당 없음 사유와 전 제품 처리 결과 확인')).toBeVisible()
 })
@@ -218,17 +239,22 @@ test('13 leader finalizes a common change only after every assignee has processe
 test('18 leader reviews an Excel product list before applying it to the composer', async ({ page }) => {
   await page.goto('/#/change-applications')
   await page.getByRole('button', { name: '공통변경 등록' }).click()
-  const dialog = page.getByRole('dialog', { name: '변경 적용업무 등록' })
+  const dialog = page.getByRole('dialog', { name: '공통변경 등록' })
   await dialog.getByLabel('변경번호').fill('CC-2026-E2E')
   await dialog.getByLabel('변경 제목').fill('Excel 일괄등록 확인')
   await dialog.getByLabel('변경 요약').fill('Excel 제품 매칭 검토 흐름을 확인합니다.')
   await dialog.getByLabel('시행일').fill('2026-09-01')
   await dialog.getByLabel('적용 내용').fill('제품표준서의 공통 내용을 개정합니다.')
-  await dialog.getByLabel('적용기한').fill('2026-08-31')
+  await dialog.getByLabel('적용 기한', { exact: true }).fill('2026-08-31')
   await dialog.getByRole('button', { name: /다음/ }).click()
 
   await expect(dialog.getByRole('link', { name: '양식 받기' })).toHaveAttribute('href', '/change-application-products-template.xlsx')
-  await dialog.getByLabel('적용제품 Excel 파일 선택').setInputFiles({
+  // 제품명 검색에서 Enter를 눌러도 마지막 단계로 넘어가지 않는다(D-3).
+  await dialog.getByRole('textbox', { name: '제품명 검색' }).fill('자사')
+  await dialog.getByRole('textbox', { name: '제품명 검색' }).press('Enter')
+  await expect(dialog.getByRole('link', { name: '양식 받기' })).toBeVisible()
+  await dialog.getByRole('textbox', { name: '제품명 검색' }).fill('')
+  await dialog.getByLabel('적용 제품 Excel 파일 선택').setInputFiles({
     name: '적용제품.csv',
     mimeType: 'text/csv',
     buffer: Buffer.from('제품명\n자사제품 B\n일치하지 않는 제품'),
@@ -239,7 +265,7 @@ test('18 leader reviews an Excel product list before applying it to the composer
   await expect(applyImport).toBeDisabled()
   await review.getByRole('button', { name: '제외' }).click()
   await expect(applyImport).toBeEnabled()
-  await review.getByText('제외한 행 1개 · 다시 포함할 수 있습니다.').click()
+  await review.getByText('제외한 행 1개 · 다시 포함할 수 있어요').click()
   await review.getByRole('button', { name: '다시 포함' }).click()
   await expect(applyImport).toBeDisabled()
   await review.getByRole('button', { name: '제외' }).click()
@@ -300,8 +326,9 @@ test('16 leader history and member withdrawal archive keep distinct entry points
   await historyDialog.locator('.modal-close').click()
   await expect(historyDialog).toHaveCount(0)
 
-  await page.getByRole('button', { name: '파트원', exact: true }).click()
-  await page.getByRole('button', { name: /^내 검토요청/ }).click()
+  await switchPreviewRole(page, '파트원')
+  // 홈의 할 일 행도 ‘내 검토요청 …’으로 시작하므로 주 메뉴 안에서 찾는다.
+  await page.getByRole('navigation', { name: '주 메뉴 항목' }).getByRole('button', { name: /^내 검토요청/ }).click()
   await expect(page.getByRole('button', { name: '검토 이력', exact: true })).toHaveCount(0)
   const memberArchive = page.getByRole('button', { name: /^회수 보관함/ })
   await expect(memberArchive).toHaveCount(1)
@@ -337,7 +364,7 @@ test('17 responsive boundary widths keep production-like topbar actions inside t
     const layout = await page.evaluate(() => {
       const topbar = document.querySelector<HTMLElement>('.topbar')
       const actions = document.querySelector<HTMLElement>('.topbar-actions')
-      const title = document.querySelector<HTMLElement>('.topbar h1')
+      const title = document.querySelector<HTMLElement>('.topbar .topbar-title')
       if (!topbar || !actions || !title) throw new Error('topbar layout nodes not found')
       const topbarRect = topbar.getBoundingClientRect()
       const actionsRect = actions.getBoundingClientRect()
@@ -407,7 +434,8 @@ test('19 mobile operations surfaces prioritize work and keep topbar targets usab
       return box ? box.y < viewport.height : false
     }).toBe(true)
 
-    const targetSizes = await page.locator('.topbar-actions .icon-button').evaluateAll((buttons) =>
+    // 휴대폰에서는 새로고침이 서랍 메뉴로 옮겨 가므로, 화면에 보이는 상단 버튼만 잰다.
+    const targetSizes = await page.locator('.topbar-actions .icon-button:visible').evaluateAll((buttons) =>
       buttons.map((button) => {
         const rect = button.getBoundingClientRect()
         return { width: rect.width, height: rect.height }
@@ -418,11 +446,35 @@ test('19 mobile operations surfaces prioritize work and keep topbar targets usab
   }
 })
 
+test('21 mobile bottom tab bar reaches frequent screens and the full menu, and Back closes the drawer', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  const tabBar = page.getByRole('navigation', { name: '주요 메뉴 바로가기' })
+  await expect(tabBar).toBeVisible()
+  await expect(tabBar.getByRole('link', { name: /^홈/ })).toHaveAttribute('aria-current', 'page')
+
+  await tabBar.getByRole('link', { name: /^검토요청/ }).click()
+  await expect(page).toHaveURL(/#\/reviews/)
+  await expect(page).toHaveTitle('검토요청 · SQA P1')
+  await expect(tabBar.getByRole('link', { name: /^검토요청/ })).toHaveAttribute('aria-current', 'page')
+
+  const fullMenu = tabBar.getByRole('button', { name: '전체 메뉴' })
+  await fullMenu.click()
+  await expect(page.locator('aside.sidebar')).toHaveClass(/open/)
+  await expect(tabBar).toBeHidden()
+  await page.goBack()
+  await expect(page.locator('aside.sidebar')).not.toHaveClass(/open/)
+  await expect(page).toHaveURL(/#\/reviews/)
+  await expect(tabBar).toBeVisible()
+
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await expect(tabBar).toBeHidden()
+})
+
 test('20 mobile member product board moves from list to detail without horizontal overflow', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.reload()
   await page.locator('.hamburger').click()
-  await page.getByRole('button', { name: '파트원', exact: true }).click()
+  await switchPreviewRole(page, '파트원')
   await page.getByRole('button', { name: /^변경 적용/ }).click()
 
   const productList = page.getByRole('navigation', { name: '적용대상 제품 목록' })

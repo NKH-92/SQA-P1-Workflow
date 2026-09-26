@@ -8,6 +8,7 @@ import {
   runMasterOccRpc,
   throwMasterOccError,
 } from './supabaseMasterShared'
+import { PRODUCT_HAS_CHANGE_HISTORY_MESSAGE } from '../validation/masterOcc'
 
 export function createSupabaseProductAdminRepository(ctx: RepositoryDeps): ProductAdminRepository {
   const { data, setData } = ctx
@@ -117,7 +118,7 @@ export function createSupabaseProductAdminRepository(ctx: RepositoryDeps): Produ
         p_correlation_id: makeMasterCorrelationId(),
       })
       if (error?.code === '23503') {
-        throw new UserFacingError('변경 적용 이력이 있는 제품은 삭제할 수 없습니다. 제품 이력을 유지해 주세요.')
+        throw new UserFacingError(PRODUCT_HAS_CHANGE_HISTORY_MESSAGE)
       }
       throwMasterOccError(error)
       return product?.name ?? null

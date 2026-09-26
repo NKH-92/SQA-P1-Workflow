@@ -16,6 +16,7 @@ import {
   rejectReviewRequest,
   reopenReviewRequest,
   resubmitReviewRequest,
+  resubmitReviewRequestWithEdits,
   saveReviewRequest,
   updateReviewFeedback,
   updateReviewStatus,
@@ -54,6 +55,47 @@ describe('review mutation contracts (remote)', () => {
     })
     expect(mocks.rpc).toHaveBeenNthCalledWith(2, 'reject_review_request', {
       p_review_request_id: review.id, p_expected_updated_at: updatedAt, p_comment: 'needs changes',
+    })
+  })
+
+  it('blocks a blank rejection reason before calling the RPC', async () => {
+    await expect(rejectReviewRequest(remoteContext(leader), review.id, '   ')).rejects.toThrow('반려 사유를 적어 주세요.')
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it('resubmits with edits using the revision returned by the update RPC', async () => {
+    const rejected = { ...review, status: 'rejected' as const }
+    const ctx = remoteContext(member)
+    ctx.data.reviewRequests = [rejected]
+    mocks.rpc.mockResolvedValueOnce({ data: '2026-07-02T00:00:00.123456+00:00', error: null })
+
+    await resubmitReviewRequestWithEdits(ctx, rejected.id, {
+      title: 'Edited', description: 'Description', due_date: null,
+    }, '  fixed the table  ')
+
+    expect(mocks.rpc).toHaveBeenNthCalledWith(1, 'update_review_request', {
+      p_review_request_id: rejected.id, p_expected_updated_at: updatedAt,
+      p_title: 'Edited', p_description: 'Description', p_due_date: null,
+    })
+    expect(mocks.rpc).toHaveBeenNthCalledWith(2, 'resubmit_review_request', {
+      p_review_request_id: rejected.id,
+      p_expected_updated_at: '2026-07-02T00:00:00.123456+00:00',
+      p_comment: 'fixed the table',
+    })
+  })
+
+  it('resubmits without an update RPC when the content is unchanged', async () => {
+    const rejected = { ...review, status: 'rejected' as const }
+    const ctx = remoteContext(member)
+    ctx.data.reviewRequests = [rejected]
+
+    await resubmitReviewRequestWithEdits(ctx, rejected.id, {
+      title: rejected.title, description: rejected.description, due_date: null,
+    }, 'please re-check')
+
+    expect(mocks.rpc).toHaveBeenCalledTimes(1)
+    expect(mocks.rpc).toHaveBeenCalledWith('resubmit_review_request', {
+      p_review_request_id: rejected.id, p_expected_updated_at: updatedAt, p_comment: 'please re-check',
     })
   })
 

@@ -49,7 +49,8 @@
 
 .announcement-list-head > div > span {
   color: var(--paper-faint);
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: 11px;
 }
 
@@ -112,7 +113,7 @@
   color: var(--paper-dim);
   font-size: 11px;
   font-weight: 650;
-  letter-spacing: 0.045em;
+  letter-spacing: 0;
 }
 
 .announcement-list-item {
@@ -178,7 +179,7 @@
   border-radius: var(--radius-full);
   background: var(--paper-accent-bg);
   color: var(--paper-accent-deep);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1.3;
 }
@@ -212,8 +213,9 @@
 
 .announcement-list-meta time {
   flex: 0 0 auto;
-  font-family: var(--font-mono);
-  font-size: 10px;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
 }
 
 .announcement-detail-pane {
@@ -286,11 +288,6 @@
   gap: 6px;
 }
 
-.announcement-delete-confirm {
-  display: inline-flex;
-  gap: 4px;
-}
-
 .announcement-detail-body {
   max-width: 840px;
   padding: 34px 34px 56px;
@@ -317,17 +314,23 @@
   gap: 7px;
 }
 
-.announcement-editor-field > span {
+.announcement-editor-field > label {
+  /* 전역 label은 grid라 필수 표시(*)가 다음 줄로 떨어진다(B-6). 한 줄로 둔다. */
+  display: block;
   color: var(--paper-text);
   font-size: 12px;
   font-weight: 650;
+}
+
+.announcement-editor-field > label span {
+  color: var(--paper-reject);
 }
 
 .announcement-editor-field input,
 .announcement-editor-field textarea {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid var(--paper-border);
+  border: 1px solid var(--paper-field-border);
   border-radius: var(--radius-md);
   outline: none;
   background: var(--paper-panel);
@@ -375,8 +378,18 @@
   font-weight: 400;
 }
 
-.announcement-modal-footer {
+/* 창 아래 버튼 줄은 폼 여백 밖까지 채우고, 본문이 길면 창 안에서 스크롤돼도 늘 보인다(P0-1). */
+.announcement-editor > .dialog-actions {
   margin: 2px -24px 0;
+}
+
+.announcement-delete-modal {
+  width: min(480px, calc(100vw - 32px));
+}
+
+/* 좁은 화면에서 상세를 보다가 목록으로 돌아가는 버튼. 넓은 화면에서는 목록이 옆에 있어 숨긴다. */
+.announcement-detail-back {
+  display: none;
 }
 
 @media (max-width: 1080px) {
@@ -409,6 +422,11 @@
   .announcement-detail-header {
     position: static;
   }
+
+  .announcement-detail-back {
+    display: inline-flex;
+    justify-self: start;
+  }
 }
 
 @media (max-width: 640px) {
@@ -430,17 +448,13 @@
   }
 
   .announcement-detail-actions > button,
-  .announcement-detail-actions > .copy-link {
+  .announcement-detail-actions > .copy-link-wrap {
     flex: 1 1 auto;
     justify-content: center;
   }
 
-  .announcement-delete-confirm {
+  .announcement-detail-actions > .copy-link-wrap > .copy-link {
     width: 100%;
-  }
-
-  .announcement-delete-confirm button {
-    flex: 1;
   }
 
   .announcement-detail-body {
@@ -452,7 +466,7 @@
     padding: 18px 18px 0;
   }
 
-  .announcement-modal-footer {
+  .announcement-editor > .dialog-actions {
     margin-right: -18px;
     margin-left: -18px;
   }

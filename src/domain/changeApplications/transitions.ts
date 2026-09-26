@@ -76,8 +76,8 @@ export function resolveProductTaskTransition(
     entityId: task.id,
     action,
     summary: input.status === 'completed'
-      ? `${actor.name}님이 ${task.product_name} 변경 적용을 완료했습니다.`
-      : `${actor.name}님이 ${task.product_name} 변경 적용을 해당 없음으로 처리했습니다.`,
+      ? `${actor.name}님이 ${task.product_name} 변경 적용을 완료했어요.`
+      : `${actor.name}님이 ${task.product_name} 변경 적용을 해당 없음으로 처리했어요.`,
     metadata: input.status === 'completed'
       ? { completion_note: input.completionNote, proxy_reason: input.proxyReason }
       : { reason: input.resolutionReason, proxy_reason: input.proxyReason },
@@ -128,7 +128,7 @@ export function reopenProductTaskTransition(
     entityType: 'product_change_task',
     entityId: task.id,
     action: 'reopened',
-    summary: `${actor.name}님이 ${task.product_name} 변경 적용업무를 다시 열었습니다.`,
+    summary: `${actor.name}님이 ${task.product_name} 적용 업무를 다시 열었어요.`,
     metadata: { ...previous, reason },
   }]
   if (input.wasArchived) {
@@ -137,7 +137,7 @@ export function reopenProductTaskTransition(
       entityType: 'change_application',
       entityId: application.id,
       action: 'archive_restored_automatically',
-      summary: `${actor.name}님이 제품 업무를 다시 열어 ${application.change_number} 변경건의 보관을 자동 해제했습니다.`,
+      summary: `${actor.name}님이 적용 업무를 다시 열어 ${application.change_number} 공통변경 보관을 자동으로 풀었어요.`,
       metadata: { task_id: task.id, reason },
     })
   }
@@ -171,7 +171,7 @@ export function reassignProductTasksTransition(input: {
       entityType: 'product_change_task' as const,
       entityId: task.id,
       action: 'reassigned',
-      summary: `${input.actor.name}님이 ${task.product_name} 변경 적용 담당자를 변경했습니다.`,
+      summary: `${input.actor.name}님이 ${task.product_name} 적용 업무 담당자를 바꿨어요.`,
       metadata: { from_assignee_id: task.assignee_id, to_assignee_id: input.assigneeId, reason: input.reason },
     })),
   }
@@ -199,7 +199,7 @@ export function cancelProductTaskTransition(
       entityType: 'product_change_task',
       entityId: input.task.id,
       action: 'cancelled',
-      summary: `${input.actor.name}님이 ${input.task.product_name} 변경 적용업무를 취소했습니다.`,
+      summary: `${input.actor.name}님이 ${input.task.product_name} 적용 업무를 취소했어요.`,
       metadata: { reason: input.reason },
     }],
   }
@@ -229,7 +229,7 @@ export function restoreProductScopeTransition(
       entityType: 'product_change_task',
       entityId: input.task.id,
       action: 'scope_restored',
-      summary: `${input.actor.name}님이 ${input.task.product_name} 제품을 변경 적용범위에 복원했습니다.`,
+      summary: `${input.actor.name}님이 ${input.task.product_name} 제품을 적용 범위에 다시 넣었어요.`,
       metadata: { reason: input.reason },
     }],
   }
@@ -272,7 +272,7 @@ export function cancelChangeApplicationTransition(input: {
       entityType: 'change_application',
       entityId: input.application.id,
       action: 'cancelled',
-      summary: `${input.actor.name}님이 ${input.application.change_number} 변경건을 취소했습니다.`,
+      summary: `${input.actor.name}님이 ${input.application.change_number} 공통변경을 취소했어요.`,
       metadata: { reason: input.reason },
     }],
   }
@@ -302,7 +302,7 @@ export function archiveChangeApplicationTransition(input: {
       entityType: 'change_application',
       entityId: input.application.id,
       action: 'archived',
-      summary: `${input.actor.name}님이 ${input.application.change_number} 변경건을 보관했습니다.`,
+      summary: `${input.actor.name}님이 ${input.application.change_number} 공통변경을 보관했어요.`,
       metadata: { reason: input.reason },
     }],
   }
@@ -332,7 +332,7 @@ export function restoreChangeApplicationTransition(input: {
       entityType: 'change_application',
       entityId: input.application.id,
       action: 'restored',
-      summary: `${input.actor.name}님이 ${input.application.change_number} 변경건을 보관함에서 복원했습니다.`,
+      summary: `${input.actor.name}님이 ${input.application.change_number} 공통변경을 보관함에서 복원했어요.`,
       metadata: {
         reason: input.reason,
         previous_archive_reason: input.application.archive_reason ?? null,

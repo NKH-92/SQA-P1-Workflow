@@ -1,8 +1,13 @@
-import type { AppData, Profile } from '../types'
+import type { AppData, Profile, ReviewEvent } from '../types'
 import type { TabId } from '../app/types'
-import { daysUntil, dueUrgency, eventTime, relativeDateLabel, relativeDaysAgo } from './dates'
+import { canManageTeamData } from '../domain/permissions'
+import { daysUntil, dueState, dueUrgency, eventTime, relativeDateLabel, relativeDaysAgo } from './dates'
+import { quoted, quotedWithJosa, withJosa } from './korean'
 import { isReviewUnread, latestRelevantReviewEvent } from './readState'
 import { selectProductChangeTaskContexts } from '../domain/changeApplications/taskContexts'
+
+/** 새 소식(검토 진행)과 확인할 일(기한·미적용 안내)을 나눠 보여 준다. */
+export type NotificationSection = 'news' | 'reminder'
 
 export type AppNotification = {
   id: string
@@ -17,7 +22,11 @@ export type AppNotification = {
   entityId?: string
   /** 정렬용 epoch ms */
   at: number
+  section: NotificationSection
 }
+
+/** 프로젝트 기한 안내는 이 일수 안에 마감되거나 이미 지난 것만 만든다. */
+const PROJECT_REMINDER_DAYS = 3
 
 /**
  * 오늘 발생분은 "방금"/"n분 전"/"n시간 전", 그 이전은 달력 자정 기준(dates.ts와 동일)
@@ -36,9 +45,36 @@ function relativeTime(at: number, now: number) {
   return `${Math.floor(diffMinutes / 60)}시간 전`
 }
 
+/** 파트원에게 보여 줄 검토 진행 소식. 누가 무엇을 했는지 능동형으로 말한다. */
+function memberReviewNews(eventType: ReviewEvent['event_type'], title: string): { title: string; kind: string } {
+  switch (eventType) {
+    case 'feedback_voided':
+      return { title: `파트장이 ${quoted(title)}의 피드백을 무효화했어요.`, kind: '피드백' }
+    case 'feedback_updated':
+      return { title: `파트장이 ${quoted(title)}의 피드백을 수정했어요.`, kind: '피드백' }
+    case 'feedback_added':
+      return { title: `파트장이 ${quoted(title)}에 피드백을 남겼어요.`, kind: '피드백' }
+    case 'approved':
+      return { title: `파트장이 ${quotedWithJosa(title, '을/를')} 승인했어요.`, kind: '승인' }
+    case 'rejected':
+      return { title: `파트장이 ${quotedWithJosa(title, '을/를')} 반려했어요.`, kind: '반려' }
+    default:
+      return { title: `파트장이 ${quotedWithJosa(title, '을/를')} 다시 열었어요.`, kind: '다시 열기' }
+  }
+}
+
+function projectReminderTitle(name: string, days: number) {
+  if (days < 0) return `${quoted(name)} 프로젝트 마감일이 ${Math.abs(days)}일 지났어요.`
+  if (days === 0) return `${quoted(name)} 프로젝트 마감일이 오늘이에요.`
+  if (days === 1) return `${quoted(name)} 프로젝트 마감일이 내일이에요.`
+  return `${quoted(name)} 프로젝트 마감까지 ${days}일 남았어요.`
+}
+
 /**
  * 검토 알림은 불변 review_events와 서버 영수증에서 파생한다.
  * 행 updated_at이나 브라우저 저장소를 쓰지 않아 기기 간 판정이 일치한다.
+ * 알림은 행동할 수 있는 사람에게만 만든다 — 읽기 전용(팀장)에게는 처리할 수 없는
+ * 검토요청·미적용 안내를 보내지 않는다(토스 UP-1).
  */
 export function buildNotifications(
   profile: Profile,
@@ -46,7 +82,9 @@ export function buildNotifications(
   leaderMode: boolean,
   now = Date.now(),
 ): AppNotification[] {
+  if (leaderMode && !canManageTeamData(profile)) return []
   const items: AppNotification[] = []
+  const today = new Date(now)
 
   if (leaderMode) {
     data.reviewRequests
@@ -55,17 +93,20 @@ export function buildNotifications(
         const latest = latestRelevantReviewEvent(request, profile, data)
         if (!latest) return
         const at = eventTime(latest.occurred_at)
+        const actorName = latest.actor_name_snapshot.trim() || request.profiles?.name || '파트원'
+        const resubmitted = latest.event_type === 'resubmitted'
         items.push({
           id: `review-event-${latest.id}`,
-          actor: latest.actor_name_snapshot.trim().charAt(0) || '?',
-          title: `${latest.actor_name_snapshot || request.profiles?.name || '파트원'}님이 “${request.title}” ${latest.event_type === 'resubmitted' ? '재검토를' : '검토를'} 요청했습니다.`,
+          actor: actorName.charAt(0) || '?',
+          title: `${withJosa(actorName, '이/가')} ${quoted(request.title)} 검토를 ${resubmitted ? '다시 ' : ''}요청했어요.`,
           when: relativeTime(at, now),
-          kind: '검토요청',
-          urgency: dueUrgency(request.due_date),
+          kind: resubmitted ? '재요청' : '검토요청',
+          urgency: dueUrgency(request.due_date, today),
           unread: isReviewUnread(request, profile, data),
           tab: 'reviews',
           entityId: request.id,
           at,
+          section: 'news',
         })
       })
   } else {
@@ -75,38 +116,29 @@ export function buildNotifications(
         const latest = latestRelevantReviewEvent(request, profile, data)
         if (!latest) return
         const at = eventTime(latest.occurred_at)
-        const feedbackEvent = latest.event_type.startsWith('feedback_')
-        const actionLabel = feedbackEvent
-          ? latest.event_type === 'feedback_voided'
-            ? '파트장 피드백이 무효화되었습니다.'
-            : latest.event_type === 'feedback_updated'
-              ? '파트장 피드백이 수정되었습니다.'
-              : '파트장 피드백이 달렸습니다.'
-          : latest.event_type === 'approved'
-            ? '검토요청이 완료되었습니다.'
-            : latest.event_type === 'rejected'
-              ? '검토요청이 반려되었습니다.'
-              : '검토요청이 다시 열렸습니다.'
+        const news = memberReviewNews(latest.event_type, request.title)
         items.push({
           id: `review-event-${latest.id}`,
           actor: latest.actor_name_snapshot.trim().charAt(0) || '파',
-          title: `“${request.title}” ${actionLabel}`,
+          title: news.title,
           when: relativeTime(at, now),
-          kind: feedbackEvent ? '피드백' : '상태 변경',
+          kind: news.kind,
           urgency: latest.event_type === 'rejected' ? 'warning' : 'normal',
           unread: isReviewUnread(request, profile, data),
           tab: 'reviews',
           entityId: request.id,
           at,
+          section: 'news',
         })
       })
   }
 
-  // 변경 적용은 제품 행 단위로 알리지 않는다. 한 변경건에 담당 제품이 15개여도
-  // 사용자에게는 변경건별 요약 한 건만 보여줘 알림 폭주를 막는다.
+  // 변경 적용은 제품 행 단위로 알리지 않는다. 한 공통변경에 담당 제품이 15개여도
+  // 공통변경별 요약 한 건만 보여줘 알림 폭주를 막는다.
   const changeGroups = new Map<string, ReturnType<typeof selectProductChangeTaskContexts>>()
   for (const context of selectProductChangeTaskContexts(data)) {
     if (context.application.status !== 'published' || context.task.status !== 'pending') continue
+    if (context.application.final_completed_at || context.application.archived_at) continue
     if (!leaderMode && context.task.assignee_id !== profile.id) continue
     const group = changeGroups.get(context.application.id) ?? []
     group.push(context)
@@ -117,27 +149,29 @@ export function buildNotifications(
     const earliest = contexts.reduce((left, right) =>
       right.actionItem.due_date < left.actionItem.due_date ? right : left,
     )
-    const days = daysUntil(earliest.actionItem.due_date)
+    const due = dueState(earliest.actionItem.due_date, { now: today })
     const unassigned = contexts.filter(({ task }) => !task.assignee_id).length
-    if (leaderMode && (days == null || days > 3) && unassigned === 0) continue
+    if (leaderMode && (due.days == null || due.days > PROJECT_REMINDER_DAYS) && unassigned === 0) continue
     items.push({
       id: `change-${application.id}`,
       actor: application.change_number.trim().charAt(0) || '변',
       title: leaderMode
-        ? `“${application.title}” 미적용 ${contexts.length}건${unassigned > 0 ? ` · 담당 미지정 ${unassigned}건` : ''}`
-        : `“${application.title}” 변경 적용업무 ${contexts.length}건`,
-      when: days == null ? '기한 확인' : days < 0 ? `D+${Math.abs(days)}` : days === 0 ? '오늘 마감' : `D-${days}`,
+        ? `${quoted(application.title)} 미적용 ${contexts.length}건${unassigned > 0 ? ` · 담당자 없음 ${unassigned}건` : ''}`
+        : `${quoted(application.title)} 적용 업무 ${contexts.length}건`,
+      when: due.shortLabel,
       kind: '변경 적용',
-      urgency: dueUrgency(earliest.actionItem.due_date),
+      urgency: dueUrgency(earliest.actionItem.due_date, today),
       unread: false,
       tab: 'change-applications',
       entityId: application.id,
       at: eventTime(application.published_at ?? application.created_at),
+      section: 'reminder',
     })
   }
 
-  // 마감 임박 프로젝트 — 프로젝트 단위로 만든다. 배정 행 단위로 만들면 담당자 수만큼
-  // 부풀고 무배정 프로젝트는 누락된다(LeaderDashboard의 우선순위 큐와 같은 기준).
+  // 프로젝트 기한 — 프로젝트 단위로 만든다. 배정 행 단위로 만들면 담당자 수만큼
+  // 부풀고 무배정 프로젝트는 누락된다(파트장 홈의 할 일 목록과 같은 기준).
+  // 이미 지난 프로젝트가 여러 개면 한 줄로 묶어 새 소식이 기한 안내에 묻히지 않게 한다.
   const myProjectIds = leaderMode
     ? null
     : new Set(
@@ -145,29 +179,68 @@ export function buildNotifications(
           .filter((assignment) => assignment.user_id === profile.id)
           .map((assignment) => assignment.project_id),
       )
+  const overdueProjects: Array<{ project: AppData['projects'][number]; days: number }> = []
   data.projects.forEach((project) => {
     if (myProjectIds && !myProjectIds.has(project.id)) return
     if (!project.deadline || project.status === 'done') return
-    const days = daysUntil(project.deadline)
-    if (days == null || days > 3) return
+    const days = daysUntil(project.deadline, today)
+    if (days == null || days > PROJECT_REMINDER_DAYS) return
+    if (days < 0) {
+      overdueProjects.push({ project, days })
+      return
+    }
     items.push({
       id: `project-${project.id}`,
       actor: project.name.trim().charAt(0) || 'P',
-      title:
-        days < 0
-          ? `“${project.name}” 프로젝트 마감이 ${Math.abs(days)}일 지났습니다.`
-          : `“${project.name}” 프로젝트 마감이 ${days === 0 ? '오늘' : `${days}일 남았습니다`}.`,
-      when: `D${days < 0 ? '+' : '-'}${Math.abs(days)}`,
+      title: projectReminderTitle(project.name, days),
+      when: dueState(project.deadline, { now: today }).shortLabel,
       kind: '프로젝트',
-      urgency: dueUrgency(project.deadline),
+      urgency: dueUrgency(project.deadline, today),
       unread: false,
       tab: 'projects',
+      entityId: project.id,
       at: eventTime(project.deadline),
+      section: 'reminder',
     })
   })
+  if (overdueProjects.length === 1) {
+    const [{ project, days }] = overdueProjects
+    items.push({
+      id: `project-${project.id}`,
+      actor: project.name.trim().charAt(0) || 'P',
+      title: projectReminderTitle(project.name, days),
+      when: `${Math.abs(days)}일 지남`,
+      kind: '프로젝트',
+      urgency: 'urgent',
+      unread: false,
+      tab: 'projects',
+      entityId: project.id,
+      at: eventTime(project.deadline),
+      section: 'reminder',
+    })
+  } else if (overdueProjects.length > 1) {
+    const oldest = overdueProjects.reduce((left, right) => (right.days < left.days ? right : left))
+    items.push({
+      id: 'projects-overdue',
+      actor: 'P',
+      title: `기한이 지난 프로젝트 ${overdueProjects.length}개`,
+      when: '기한 지남',
+      kind: '프로젝트',
+      urgency: 'urgent',
+      unread: false,
+      tab: 'projects',
+      at: eventTime(oldest.project.deadline),
+      section: 'reminder',
+    })
+  }
 
+  const urgencyRank = { urgent: 0, warning: 1, normal: 2 } as const
   return items.sort((left, right) => {
-    if (left.unread !== right.unread) return left.unread ? -1 : 1
-    return right.at - left.at
+    if (left.section !== right.section) return left.section === 'news' ? -1 : 1
+    if (left.section === 'news') {
+      if (left.unread !== right.unread) return left.unread ? -1 : 1
+      return right.at - left.at
+    }
+    return urgencyRank[left.urgency] - urgencyRank[right.urgency] || left.at - right.at
   })
 }

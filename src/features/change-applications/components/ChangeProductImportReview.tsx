@@ -41,6 +41,10 @@ function ProductResolutionPicker({
           placeholder="제품명 검색"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            // Enter는 검색에만 쓴다. 등록 창의 단계가 넘어가지 않게 막는다.
+            if (event.key === 'Enter') event.preventDefault()
+          }}
         />
       </label>
       <select
@@ -48,7 +52,7 @@ function ProductResolutionPicker({
         value={match.productId ?? ''}
         onChange={(event) => onSelect(event.target.value || null)}
       >
-        <option value="">제품을 선택하세요</option>
+        <option value="">제품을 선택해 주세요</option>
         {visibleProducts.map((product) => (
           <option key={product.id} value={product.id}>
             {product.name}{product.companyName ? ` · ${product.companyName}` : ''}
@@ -112,7 +116,7 @@ export function ChangeProductImportReview({
         <div>
           <span>Excel 검토</span>
           <strong>{fileName}</strong>
-          <small>{sheetName ? `${sheetName} 시트 · ` : ''}${matches.length.toLocaleString('ko-KR')}개 행</small>
+          <small>{sheetName ? `${sheetName} 시트 · ` : ''}{matches.length.toLocaleString('ko-KR')}개 행</small>
         </div>
         <button aria-label="Excel 검토 닫기" className="icon-button" onClick={onCancel} type="button"><X size={16} /></button>
       </header>
@@ -129,17 +133,17 @@ export function ChangeProductImportReview({
         <div className="change-import-issues">
           <div className="change-import-message">
             <AlertTriangle size={17} />
-            <span><strong>자동으로 확정하지 못한 제품이 있습니다.</strong><small>제품을 검색해 연결하거나 이번 등록에서 제외해 주세요.</small></span>
+            <span><strong>자동으로 찾지 못한 제품이 있어요.</strong><small>제품을 검색해 연결하거나 이번 등록에서 제외해 주세요.</small></span>
           </div>
           {unresolvedMatches.map((match) => (
             <article key={match.rowNumber}>
               <div>
                 <Badge>{match.rowNumber}행</Badge>
                 <strong>{match.name}</strong>
-                <small>{match.status === 'ambiguous' ? '보정 결과가 여러 제품과 일치합니다.' : '제품 마스터에서 일치 항목을 찾지 못했습니다.'}</small>
+                <small>{match.status === 'ambiguous' ? '비슷한 제품이 여러 개 있어요. 맞는 제품을 골라 주세요.' : '같은 이름의 제품을 찾지 못했어요. 검색해서 연결해 주세요.'}</small>
               </div>
               <ProductResolutionPicker match={match} products={products} onSelect={(productId) => onResolve(match.rowNumber, productId)} />
-              <button className="ghost" onClick={() => onExclude(match.rowNumber)} type="button">제외</button>
+              <button aria-label={`${match.rowNumber}행 ${match.name} 제외`} className="ghost" onClick={() => onExclude(match.rowNumber)} type="button">제외</button>
             </article>
           ))}
         </div>
@@ -162,33 +166,37 @@ export function ChangeProductImportReview({
 
       {duplicateMatches.length > 0 && (
         <p className="change-import-duplicate-note">
-          중복 {duplicateMatches.length}개는 한 제품으로 합쳐집니다. ({duplicateMatches.map((match) => `${match.rowNumber}행`).join(', ')})
+          중복된 {duplicateMatches.length}개는 한 제품으로 합쳤어요. ({duplicateMatches.map((match) => `${match.rowNumber}행`).join(', ')})
         </p>
       )}
 
       <fieldset className="change-import-mode">
         <legend>현재 선택에 반영하는 방법</legend>
         <label><input checked={mode === 'add'} name="change-import-mode" onChange={() => onModeChange('add')} type="radio" /> 기존 선택에 추가</label>
-        <label><input checked={mode === 'replace'} name="change-import-mode" onChange={() => onModeChange('replace')} type="radio" /> Excel 목록으로 대체</label>
+        <label><input checked={mode === 'replace'} name="change-import-mode" onChange={() => onModeChange('replace')} type="radio" /> Excel 목록으로 바꾸기</label>
       </fieldset>
 
       {excludedMatches.length > 0 && (
         <details className="change-import-excluded">
-          <summary>제외한 행 {excludedMatches.length}개 · 다시 포함할 수 있습니다.</summary>
+          <summary>제외한 행 {excludedMatches.length}개 · 다시 포함할 수 있어요</summary>
           <div>
             {excludedMatches.map((match) => (
               <span key={match.rowNumber}>
                 <small>{match.rowNumber}행 · {match.name}</small>
-                <button className="ghost compact" onClick={() => onRestore(match.rowNumber)} type="button">다시 포함</button>
+                <button aria-label={`${match.rowNumber}행 ${match.name} 다시 포함`} className="ghost compact" onClick={() => onRestore(match.rowNumber)} type="button">다시 포함</button>
               </span>
             ))}
           </div>
         </details>
       )}
       <footer>
-        <span>{resolvedIds.size.toLocaleString('ko-KR')}개 제품을 반영합니다.</span>
+        <span>{canApply
+          ? `${resolvedIds.size.toLocaleString('ko-KR')}개 제품을 선택에 넣어요.`
+          : unresolvedMatches.length > 0
+            ? `확인이 필요한 행 ${unresolvedMatches.length}개를 연결하거나 제외하면 반영할 수 있어요.`
+            : '반영할 제품이 없어요.'}</span>
         <div>
-          <button className="ghost" onClick={onCancel} type="button">취소</button>
+          <button className="ghost" onClick={onCancel} type="button">닫기</button>
           <button className="primary" disabled={!canApply} onClick={onApply} type="button">선택 제품에 반영</button>
         </div>
       </footer>

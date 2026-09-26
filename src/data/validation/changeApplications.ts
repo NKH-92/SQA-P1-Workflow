@@ -1,28 +1,37 @@
 import { UserFacingError } from '../../lib/errors'
+import { withJosa } from '../../lib/korean'
 import type { AppData } from '../../types'
 import type { ChangeApplicationInput, ChangeTaskDraft } from '../contracts'
 import { selectProductChangeTaskContexts } from '../selectors/changeTaskContexts'
 
 export const CHANGE_APPLICATION_STALE_MESSAGE =
-  '다른 사용자가 변경건을 수정했습니다. 새로고침 후 다시 시도해 주세요.'
+  '다른 사람이 먼저 공통변경을 수정했어요. 새로고침한 뒤 다시 시도해 주세요.'
 
-function required(value: string, message: string, maxLength: number) {
+export const CHANGE_CONTENT_LOCKED_MESSAGE =
+  '처리를 시작한 제품이 있어서 변경 내용을 수정할 수 없어요.'
+
+function tooLongMessage(label: string, maxLength: number) {
+  return `${withJosa(label, '은/는')} ${maxLength.toLocaleString('ko-KR')}자 이하로 입력해 주세요.`
+}
+
+/** 라벨 뒤 조사는 받침에 맞춰 붙인다(‘완료 메모를’, ‘해당 없음 사유를’). */
+function required(value: string, label: string, maxLength: number) {
   const normalized = value.trim()
-  if (!normalized) throw new UserFacingError(message)
-  if (normalized.length > maxLength) throw new UserFacingError(`${message.replace('입력해 주세요.', '')}${maxLength}자 이하로 입력해 주세요.`)
+  if (!normalized) throw new UserFacingError(`${withJosa(label, '을/를')} 입력해 주세요.`)
+  if (normalized.length > maxLength) throw new UserFacingError(tooLongMessage(label, maxLength))
   return normalized
 }
 
 function optional(value: string | null, maxLength: number, label: string) {
   const normalized = value?.trim() || null
   if (normalized && normalized.length > maxLength) {
-    throw new UserFacingError(`${label}은 ${maxLength}자 이하로 입력해 주세요.`)
+    throw new UserFacingError(tooLongMessage(label, maxLength))
   }
   return normalized
 }
 
 function normalizeTasks(data: AppData, tasks: ChangeTaskDraft[]): ChangeTaskDraft[] {
-  if (tasks.length === 0) throw new UserFacingError('적용제품을 한 개 이상 선택해 주세요.')
+  if (tasks.length === 0) throw new UserFacingError('적용 제품을 한 개 이상 선택해 주세요.')
   const seen = new Set<string>()
   const productIds = new Set(data.changeProductScope.map((row) => row.product_id))
   for (const product of data.products) productIds.add(product.id)
@@ -35,10 +44,10 @@ function normalizeTasks(data: AppData, tasks: ChangeTaskDraft[]): ChangeTaskDraf
     if (!task.product_id || !productIds.has(task.product_id)) {
       throw new UserFacingError('선택한 제품 정보를 다시 확인해 주세요.')
     }
-    if (seen.has(task.product_id)) throw new UserFacingError('같은 제품이 두 번 선택되었습니다.')
+    if (seen.has(task.product_id)) throw new UserFacingError('같은 제품을 두 번 선택했어요. 하나를 빼 주세요.')
     seen.add(task.product_id)
     if (task.assignee_id && !activeAssigneeIds.has(task.assignee_id)) {
-      throw new UserFacingError('활성 사용자만 적용 책임자로 지정할 수 있습니다.')
+      throw new UserFacingError('활성 상태인 사람만 담당자로 정할 수 있어요. 다른 담당자를 골라 주세요.')
     }
     const currentAssigneeIds = new Set(
       data.changeProductScope
@@ -46,7 +55,7 @@ function normalizeTasks(data: AppData, tasks: ChangeTaskDraft[]): ChangeTaskDraf
         .map((row) => row.assignee_id as string),
     )
     if (task.assignee_id && currentAssigneeIds.size > 0 && !currentAssigneeIds.has(task.assignee_id)) {
-      throw new UserFacingError('현재 제품 담당자 중 한 명을 적용 책임자로 선택해 주세요.')
+      throw new UserFacingError('현재 제품 담당자 중 한 명을 이 업무 담당자로 선택해 주세요.')
     }
     return {
       product_id: task.product_id,
@@ -75,7 +84,7 @@ export function normalizeChangeApplicationInput(
       (context) => context.application.id === input.changeApplicationId,
     )
     if (contexts.some(({ task }) => task.status === 'cancelled')) {
-      throw new UserFacingError('한 제품이라도 처리된 뒤에는 변경 내용을 수정할 수 없습니다.')
+      throw new UserFacingError(CHANGE_CONTENT_LOCKED_MESSAGE)
     }
   }
 
@@ -88,7 +97,7 @@ export function normalizeChangeApplicationInput(
     (item) => item.id !== input.changeApplicationId && item.change_number.trim().toUpperCase() === changeNumber,
   )
   if (changeNumber && duplicate) {
-    throw new UserFacingError(`${duplicate.change_number}는 이미 등록되어 있습니다. 기존 변경건을 확인해 주세요.`)
+    throw new UserFacingError(`이미 등록된 변경번호예요(${duplicate.change_number}). 기존 공통변경을 확인해 주세요.`)
   }
 
   const sourceUrl = optional(input.source_url, 2000, '공식 문서 링크')
@@ -101,25 +110,25 @@ export function normalizeChangeApplicationInput(
     }
   }
   if (!input.effective_date) throw new UserFacingError('시행일을 선택해 주세요.')
-  if (!input.due_date) throw new UserFacingError('적용기한을 선택해 주세요.')
+  if (!input.due_date) throw new UserFacingError('적용 기한을 선택해 주세요.')
   const customKindName = input.action_kind === 'other'
-    ? required(input.custom_kind_name ?? '', '기타 항목명을 입력해 주세요.', 100)
+    ? required(input.custom_kind_name ?? '', '기타 항목명', 100)
     : null
 
   return {
     ...input,
     change_number: changeNumber,
-    title: required(input.title, '변경 제목을 입력해 주세요.', 200),
-    summary: required(input.summary, '변경 요약을 입력해 주세요.', 5000),
+    title: required(input.title, '변경 제목', 200),
+    summary: required(input.summary, '변경 요약', 5000),
     source_url: sourceUrl,
     custom_kind_name: customKindName,
-    action_content: required(input.action_content, '적용 내용을 입력해 주세요.', 5000),
+    action_content: required(input.action_content, '적용 내용', 5000),
     tasks: normalizeTasks(data, input.tasks),
   }
 }
 
 export function normalizeTaskReason(value: string, label: string) {
-  return required(value, `${label}을 입력해 주세요.`, 2000)
+  return required(value, label, 2000)
 }
 
 export function normalizeOptionalTaskNote(value: string, label: string) {

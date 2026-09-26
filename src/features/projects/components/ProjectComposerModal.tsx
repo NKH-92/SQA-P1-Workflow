@@ -1,15 +1,9 @@
-import { Check, FolderKanban, Plus, X } from 'lucide-react'
-import { Badge } from '../../../components/ui'
-import { useModalDismiss } from '../../../hooks/useModalDismiss'
-import { projectStatusLabels } from '../../../lib/format'
-import type { AppData, Profile, ProjectStatus } from '../../../types'
-
-export type ProjectFormState = {
-  name: string
-  description: string
-  deadline: string
-  status: ProjectStatus
-}
+import { useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { Check, FolderKanban, Plus } from 'lucide-react'
+import { DialogActions, Modal } from '../../../components/ui'
+import type { AppData, Profile } from '../../../types'
+import { PROJECT_NAME_REQUIRED_MESSAGE, type ProjectFormState } from '../projectForm'
+import { ProjectFormFields } from './ProjectFormFields'
 
 type ProjectComposerModalProps = {
   open: boolean
@@ -18,13 +12,20 @@ type ProjectComposerModalProps = {
   memberOptions: Profile[]
   selectedMemberIds: string[]
   onToggleMember: (memberId: string) => void
-  /** 배정 건수 미리보기 계산용 */
-  data: AppData
+  /** 지금 로그인한 사람. 담당자 목록에서 ‘(나)’로 표시한다. */
+  currentUserId: string
+  /** 담당자별로 이미 맡은 항목 수를 보여주기 위한 데이터 */
+  data: Pick<AppData, 'projectAssignments' | 'productAssignments'>
   onClose: () => void
-  onSubmit: () => void
+  /** 만들기에 성공하면 true. 창을 닫고 입력을 비우는 일은 부모가 한다. */
+  onSubmit: () => Promise<boolean>
 }
 
-/** 프로젝트 생성 모달. 상태·뮤테이션은 ProjectsPanel이 소유하고 여기는 표현만 담당한다. */
+/**
+ * 프로젝트 만들기 창. 입력은 부모(ProjectsPanel)가 세션 동안 보관하므로 창을 닫거나 다른 메뉴에
+ * 다녀와도 사라지지 않는다(자동 보관) — 그래서 닫을 때 확인을 묻지 않는다.
+ * 담당자 목록의 숫자는 ‘이미 맡은 항목 수’일 뿐 업무량 판단으로 쓰지 않는다(DESIGN.md §2).
+ */
 export function ProjectComposerModal({
   open,
   form,
@@ -32,208 +33,134 @@ export function ProjectComposerModal({
   memberOptions,
   selectedMemberIds,
   onToggleMember,
+  currentUserId,
   data,
   onClose,
   onSubmit,
 }: ProjectComposerModalProps) {
-  useModalDismiss(open, onClose)
+  const [nameError, setNameError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const nameInputRef = useRef<HTMLInputElement>(null)
+  const assigneeLabelId = useId()
+  const assigneeHintId = useId()
 
   if (!open) return null
 
-  const projectLoad = (memberId: string) =>
+  const projectCount = (memberId: string) =>
     data.projectAssignments.filter((assignment) => assignment.user_id === memberId).length
+  const productCount = (memberId: string) =>
+    data.productAssignments.filter((assignment) => assignment.user_id === memberId).length
+  const selectedCount = memberOptions.filter((member) => selectedMemberIds.includes(member.id)).length
+
+  const submit = async () => {
+    if (submitting) return
+    if (!form.name.trim()) {
+      setNameError(PROJECT_NAME_REQUIRED_MESSAGE)
+      nameInputRef.current?.focus()
+      return
+    }
+    setSubmitting(true)
+    try {
+      await onSubmit()
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const onFormSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    void submit()
+  }
+
+  const onFormKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      event.preventDefault()
+      void submit()
+    }
+  }
 
   return (
-    <div className="modal-backdrop" onMouseDown={() => onClose()} role="presentation">
-      <section
-        aria-labelledby="project-composer-title"
-        aria-modal="true"
-        className="modal-card project-modal"
-        onMouseDown={(event) => event.stopPropagation()}
-        role="dialog"
+    <Modal
+      className="project-dialog project-composer-dialog"
+      closeLabel="새 프로젝트 닫기"
+      eyebrow="새 프로젝트"
+      icon={<FolderKanban size={18} />}
+      onClose={onClose}
+      open={open}
+      title="무엇을 함께 만들까요?"
+    >
+      <form
+        aria-busy={submitting || undefined}
+        className="project-dialog-form"
+        noValidate
+        onKeyDown={onFormKeyDown}
+        onSubmit={onFormSubmit}
       >
-        <header className="modal-header">
-          <div className="modal-mark" aria-hidden="true">
-            <FolderKanban size={18} />
-          </div>
-          <div>
-            <span>새 프로젝트</span>
-            <h2 id="project-composer-title">무엇을 함께 만들까요?</h2>
-          </div>
-          <button
-            aria-label="프로젝트 생성 닫기"
-            className="icon-button modal-close"
-            onClick={() => onClose()}
-            type="button"
-          >
-            <X size={18} />
-          </button>
-        </header>
-        <form
-          className="project-compose-grid"
-          onKeyDown={(event) => {
-            if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-              event.preventDefault()
-              if (form.name.trim()) onSubmit()
-            }
-          }}
-          onSubmit={(event) => {
-            event.preventDefault()
-            if (!form.name.trim()) return
-            onSubmit()
-          }}
-        >
-          <div className="project-compose-main">
-            <div className="modal-field-stack">
-              <label htmlFor="project-title-v2">
-                프로젝트 이름 <span>*</span>
-              </label>
-              <input
-                autoFocus
-                id="project-title-v2"
-                placeholder="예: 모바일 알림 v2"
-                value={form.name}
-                onChange={(event) => setForm({ ...form, name: event.target.value })}
-              />
-            </div>
-            <div className="modal-field-stack">
-              <label htmlFor="project-description-v2">설명</label>
-              <textarea
-                id="project-description-v2"
-                placeholder="목표와 범위를 적어주세요."
-                value={form.description}
-                onChange={(event) => setForm({ ...form, description: event.target.value })}
-              />
-              <p>목표, 산출물, 포함 범위를 짧게 적으면 배정 받은 담당자가 바로 움직일 수 있습니다.</p>
-            </div>
-            <div className="project-form-row">
-              <div className="modal-field-stack">
-                <label htmlFor="project-deadline-v2">마감일</label>
-                <input
-                  id="project-deadline-v2"
-                  type="date"
-                  value={form.deadline}
-                  onChange={(event) => setForm({ ...form, deadline: event.target.value })}
-                />
-              </div>
-              <div className="modal-field-stack">
-                <label>상태</label>
-                <div className="status-segmented" role="group" aria-label="프로젝트 상태">
-                  {(Object.entries(projectStatusLabels) as Array<[ProjectStatus, string]>).map(([value, label]) => (
-                    <button
-                      aria-pressed={form.status === value}
-                      className={form.status === value ? 'selected' : ''}
-                      key={value}
-                      onClick={() => setForm({ ...form, status: value })}
-                      type="button"
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="modal-field-stack">
-              <label>담당자 배정</label>
-              <div className="assignee-chip-box">
-                {memberOptions
-                  .filter((member) => selectedMemberIds.includes(member.id))
-                  .map((member) => (
-                    <button key={member.id} onClick={() => onToggleMember(member.id)} type="button">
-                      {member.name}{member.role === 'leader' ? ' (파트장 본인)' : ''}
-                      <X size={13} />
-                    </button>
-                  ))}
-                {selectedMemberIds.length === 0 && <span>배정 인원을 선택하세요</span>}
-              </div>
-              <div className="assignee-picker">
-                {memberOptions.map((member) => {
-                  const selected = selectedMemberIds.includes(member.id)
-                  const currentLoad = projectLoad(member.id)
-                  return (
-                    <button
-                      aria-pressed={selected}
-                      className={selected ? 'selected' : ''}
-                      key={member.id}
-                      onClick={() => onToggleMember(member.id)}
-                      type="button"
-                    >
-                      <span className="check-mark">{selected && <Check size={13} />}</span>
-                      <span>
-                        <strong>{member.name}{member.role === 'leader' ? ' (파트장 본인)' : ''}</strong>
-                        <small>현재 과제 {currentLoad}개 · 담당 제품 {data.productAssignments.filter((assignment) => assignment.user_id === member.id).length}개</small>
-                      </span>
-                      {currentLoad >= 3 && <Badge status="due_soon">부하</Badge>}
-                    </button>
-                  )
-                })}
-              </div>
+        <div className="project-dialog-body">
+          <ProjectFormFields
+            form={form}
+            nameError={nameError}
+            nameInputRef={nameInputRef}
+            onChange={(next) => {
+              setForm(next)
+              if (nameError && next.name.trim()) setNameError(null)
+            }}
+          />
+          <div aria-describedby={assigneeHintId} aria-labelledby={assigneeLabelId} className="modal-field-stack" role="group">
+            <span className="modal-field-label" id={assigneeLabelId}>
+              담당자
+            </span>
+            <p id={assigneeHintId}>만들면 선택한 담당자에게 바로 배정해요. 나중에 바꿀 수도 있어요.</p>
+            <div className="assignee-picker">
+              {memberOptions.map((member) => {
+                const selected = selectedMemberIds.includes(member.id)
+                return (
+                  <button
+                    aria-pressed={selected}
+                    className={selected ? 'selected' : ''}
+                    key={member.id}
+                    onClick={() => onToggleMember(member.id)}
+                    type="button"
+                  >
+                    <span className="check-mark" aria-hidden="true">
+                      {selected && <Check size={13} />}
+                    </span>
+                    <span>
+                      <strong>
+                        {member.name}
+                        {member.id === currentUserId ? ' (나)' : ''}
+                      </strong>
+                      <small>
+                        맡은 프로젝트 {projectCount(member.id)}개 · 담당 제품 {productCount(member.id)}개
+                      </small>
+                    </span>
+                  </button>
+                )
+              })}
+              {memberOptions.length === 0 && <p className="empty">배정할 수 있는 파트원이 없어요.</p>}
             </div>
           </div>
-          <aside className="workload-preview">
-            <span>워크로드 미리보기</span>
-            <h3>이 프로젝트를 배정하면</h3>
-            <div className="workload-preview-list">
-              {memberOptions
-                .filter((member) => selectedMemberIds.includes(member.id))
-                .map((member) => {
-                  const currentLoad = projectLoad(member.id)
-                  const nextLoad = currentLoad + 1
-                  const overloaded = nextLoad >= 3
-                  return (
-                    <article key={member.id}>
-                      <header>
-                        <strong>{member.name}{member.role === 'leader' ? ' (파트장 본인)' : ''}</strong>
-                        <Badge status={overloaded ? 'due_soon' : 'approved'}>{overloaded ? '부하 주의' : '여유'}</Badge>
-                      </header>
-                      <div className={overloaded ? 'load-transition warning' : 'load-transition'}>
-                        <span>{currentLoad}<small>과제</small></span>
-                        <span className="arrow">→</span>
-                        <span className={overloaded ? 'warning' : 'good'}>{nextLoad}<small>과제</small></span>
-                        <strong>+1</strong>
-                      </div>
-                      <div className="load-bar">
-                        <span className="current" style={{ width: `${Math.min(100, (currentLoad / 5) * 100)}%` }} />
-                        <span
-                          className={overloaded ? 'next warning' : 'next'}
-                          style={{
-                            left: `${Math.min(100, (currentLoad / 5) * 100)}%`,
-                            width: `${Math.min(100 - Math.min(100, (currentLoad / 5) * 100), 20)}%`,
-                          }}
-                        />
-                      </div>
-                    </article>
-                  )
-                })}
-              {selectedMemberIds.length === 0 && <p className="empty">배정할 담당자를 선택하세요.</p>}
-            </div>
-            <div className="workload-total">
-              <span>팀 총 배정</span>
-              <strong>{selectedMemberIds.length}명</strong>
-              <p>생성과 동시에 선택한 담당자에게 프로젝트가 배정됩니다.</p>
-            </div>
-          </aside>
-          <footer className="modal-footer project-modal-footer">
+        </div>
+        <DialogActions
+          hint={
             <span className="modal-shortcut">
               <kbd>Ctrl</kbd>
               <kbd>Enter</kbd>
-              생성
-              <span>·</span>
-              <kbd>Esc</kbd>
-              닫기
+              만들기
             </span>
-            <div>
-              <button className="ghost" onClick={() => onClose()} type="button">
-                닫기
-              </button>
-              <button className="primary" disabled={!form.name.trim()} type="submit">
-                <Plus size={16} />
-                프로젝트 생성 · {selectedMemberIds.length}명 배정
-              </button>
-            </div>
-          </footer>
-        </form>
-      </section>
-    </div>
+          }
+          onClose={onClose}
+        >
+          <button className="primary" disabled={submitting} type="submit">
+            <Plus size={16} />
+            {submitting
+              ? '만드는 중…'
+              : selectedCount > 0
+                ? `프로젝트 만들기 · 담당자 ${selectedCount}명`
+                : '프로젝트 만들기'}
+          </button>
+        </DialogActions>
+      </form>
+    </Modal>
   )
 }

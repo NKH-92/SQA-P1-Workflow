@@ -1,8 +1,12 @@
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 
+const screensDir = new URL('../src/screens/', import.meta.url)
+const screenStylesheets = (await readdir(screensDir))
+  .filter((name) => name.endsWith('.css'))
+  .map((name) => new URL(name, screensDir))
 const stylesheets = [
   new URL('../src/styles.css', import.meta.url),
-  new URL('../src/styles.final-hardening.css', import.meta.url),
+  ...screenStylesheets,
 ]
 const stylesheet = (await Promise.all(
   stylesheets.map((stylesheetUrl) => readFile(stylesheetUrl, 'utf8')),

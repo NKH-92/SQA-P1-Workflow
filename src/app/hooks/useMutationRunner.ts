@@ -70,6 +70,14 @@ export function useMutationRunner(
     setToasts((current) => current.filter((toast) => toast.id !== id))
   }, [])
 
+  /**
+   * 사용자가 닫을 때까지 남기는 안내(임시 비밀번호 등)까지 모두 지운다. 로그아웃하거나 로그인한 사람이 바뀔 때 부른다
+   * — 같은 브라우저 탭을 다음 사람이 쓰면 앞사람의 계정 안내가 보이면 안 된다.
+   */
+  const clearAllToasts = useCallback(() => {
+    setToasts([])
+  }, [])
+
   const mutate = useCallback<MutationRunner>(
     async (operation: () => Promise<void>, success: MutationSuccess): Promise<boolean> => {
       // Re-entrancy guard: a second submit (double-click / Ctrl+Enter + click) while one
@@ -91,6 +99,9 @@ export function useMutationRunner(
           setMessage({ text: toUserMessage(error), tone: 'error' })
           const { role, route } = getReportContextRef.current()
           reportError({ error, role, route, operation: text })
+          // 실패했어도 서버에는 일부가 반영됐을 수 있다(여러 건을 차례로 저장하다 중간에 실패, 동시 수정 충돌 등).
+          // 화면이 서버와 어긋난 채 다시 시도하지 않도록 목록을 새로 불러온다. 이 새로고침의 실패는 따로 알리지 않는다.
+          if (supabase) await refreshData().catch(() => undefined)
           return false
         }
         // The operation succeeded — only now is it safe to resolve a success() closure,
@@ -121,5 +132,5 @@ export function useMutationRunner(
 
   const message = toasts.length > 0 ? toasts[toasts.length - 1] : null
 
-  return { saving, message, toasts, setMessage, dismissToast, mutate }
+  return { saving, message, toasts, setMessage, dismissToast, clearAllToasts, mutate }
 }

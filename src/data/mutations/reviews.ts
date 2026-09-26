@@ -1,4 +1,4 @@
-import { UserFacingError } from '../../lib/errors'
+import { toUserMessage, UserFacingError } from '../../lib/errors'
 import type { ReviewRequest, ReviewStatus } from '../../types'
 import type { ReviewRequestPayload } from '../contracts'
 import type { RepositoryContext } from '../repositoryContext'
@@ -82,7 +82,16 @@ export async function resubmitReviewRequestWithEdits(
   if (edited) {
     await reviews.saveReviewRequest({ editingReviewId: requestId, payload: normalized })
   }
-  await reviews.resubmitReviewRequest(requestId, comment)
+  try {
+    await reviews.resubmitReviewRequest(requestId, comment)
+  } catch (error) {
+    // 두 쓰기를 한 트랜잭션으로 묶는 RPC가 없다. 수정은 이미 저장됐으므로 무엇이 반영됐고 무엇을 다시 해야 하는지 알린다.
+    // 목록은 저장 실행기가 실패 뒤에 새로 불러오고, 같은 내용으로 다시 시도하면 수정 없이 재요청만 보낸다.
+    if (!edited) throw error
+    throw new UserFacingError(
+      `‘고쳐서 다시 요청하기’를 한 번 더 눌러 주세요. 고친 내용은 저장했지만 재요청은 보내지 못했어요. ${toUserMessage(error)}`,
+    )
+  }
   return { edited }
 }
 

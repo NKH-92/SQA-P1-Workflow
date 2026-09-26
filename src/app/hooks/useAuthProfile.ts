@@ -45,8 +45,17 @@ export function useAuthProfile(
   setMessage: SetToast,
   resetNavigation: () => void,
   resetSyncState: () => void,
+  /** 사용자가 닫을 때까지 남기는 안내(임시 비밀번호 등)까지 모두 지운다. 로그아웃·사용자 교체 때 부른다. */
+  clearAllToasts: () => void = () => {},
 ) {
   const previewEnabled = isPreviewMode
+  // 매 렌더 새 함수가 와도 효과를 다시 돌리지 않도록 ref로 최신 값을 읽는다.
+  const clearAllToastsRef = useRef(clearAllToasts)
+  useEffect(() => {
+    clearAllToastsRef.current = clearAllToasts
+  })
+  /** 마지막으로 본 로그인 주체. 바뀌면 앞사람에게 남긴 안내를 지운다. */
+  const lastSessionKeyRef = useRef<string | null>(null)
 
   const [sessionUser, setSessionUser] = useState<User | null | undefined>(hasSupabaseConfig ? undefined : null)
   const [profile, setProfile] = useState<Profile | null>(previewEnabled ? demoLeader : null)
@@ -131,6 +140,12 @@ export function useAuthProfile(
 
   useEffect(() => {
     if (!supabase || profileEffectKey === 'auth-pending') return
+
+    // 로그인한 사람이 바뀌면(다른 탭의 로그아웃·세션 만료 포함) 앞사람의 계정 안내가 남지 않게 모두 지운다.
+    if (lastSessionKeyRef.current !== null && lastSessionKeyRef.current !== profileEffectKey) {
+      clearAllToastsRef.current()
+    }
+    lastSessionKeyRef.current = profileEffectKey
 
     if (profileEffectKey === 'signed-out') {
       resetSyncState()
@@ -220,6 +235,8 @@ export function useAuthProfile(
   const signOut = useCallback(async () => {
     if (supabase) await supabase.auth.signOut()
     clearViewState()
+    // 같은 탭을 다음 사람이 쓸 수 있으니 임시 비밀번호 같은 안내도 남기지 않는다.
+    clearAllToastsRef.current()
     setSessionUser(null)
     setProfile(previewEnabled ? demoLeader : null)
     setSessionWithoutProfile(false)

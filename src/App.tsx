@@ -65,7 +65,7 @@ function App() {
   )
   // profile/leaderMode/route는 이 아래에서 정해지므로(이 훅보다 뒤) getter로 최신 값을 넘긴다.
   const mutationReportContextRef = useRef<MutationErrorReportContext>({ role: 'unknown', route: 'unknown' })
-  const { saving, toasts, setMessage, dismissToast, mutate } = useMutationRunner(
+  const { saving, toasts, setMessage, dismissToast, clearAllToasts, mutate } = useMutationRunner(
     refreshData,
     () => mutationReportContextRef.current,
   )
@@ -84,6 +84,7 @@ function App() {
     setMessage,
     () => resetNavigationRef.current(),
     resetSyncState,
+    clearAllToasts,
   )
   const {
     profile,

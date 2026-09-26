@@ -119,4 +119,23 @@ describe('useAuthProfile retry', () => {
     expect(authMocks.signOut).toHaveBeenCalledTimes(1)
     window.localStorage.removeItem(draftKey)
   })
+
+  it('clears every notice, including persistent temporary-password toasts, on sign-out', async () => {
+    const refreshData = vi.fn<(options?: { initial?: boolean }) => Promise<void>>().mockResolvedValue(undefined)
+    const setData = vi.fn() as unknown as React.Dispatch<React.SetStateAction<AppData>>
+    const clearAllToasts = vi.fn()
+
+    const { result } = renderHook(() =>
+      useAuthProfile(refreshData, setData, vi.fn(), vi.fn(), vi.fn(), clearAllToasts),
+    )
+    await waitFor(() => expect(result.current.profile).toEqual(profile))
+    expect(clearAllToasts).not.toHaveBeenCalled()
+
+    await act(async () => {
+      await result.current.signOut()
+    })
+
+    expect(authMocks.signOut).toHaveBeenCalled()
+    expect(clearAllToasts).toHaveBeenCalled()
+  })
 })

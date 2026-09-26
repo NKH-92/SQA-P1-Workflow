@@ -151,4 +151,19 @@ describe('useMutationRunner', () => {
     })
     expect(result.current.toasts).toEqual([])
   })
+
+  it('clears persistent credential notices too when asked to clear everything (sign-out)', () => {
+    const { result } = renderHook(() => useMutationRunner(refreshData))
+
+    act(() => {
+      result.current.setMessage({ text: '임시 비밀번호를 전달해 주세요.', tone: 'info', persistent: true })
+      result.current.setMessage({ text: '저장했어요.', tone: 'success' })
+    })
+    expect(result.current.toasts).toHaveLength(2)
+
+    act(() => {
+      result.current.clearAllToasts()
+    })
+    expect(result.current.toasts).toEqual([])
+  })
 })

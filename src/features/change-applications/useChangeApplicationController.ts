@@ -12,6 +12,7 @@ import {
   saveChangeApplication,
   undoFinalizeChangeApplication,
 } from '../../data'
+import { toUserMessage, UserFacingError } from '../../lib/errors'
 import type { AppData, Profile } from '../../types'
 import type { AppDataUpdater } from '../../data/repositories/appDataUpdater'
 import { createSequentialRepositoryContext } from './sequentialContext'
@@ -39,12 +40,23 @@ export function useChangeApplicationController(
     completeTask: (taskId: string, note: string, proxyReason: string) =>
       completeProductChangeTask(context, taskId, note, proxyReason),
     /**
-     * 한 제품의 적용 업무를 메모 하나로 모두 완료한다. 서버에는 한 건씩 차례로 보낸다.
-     * 중간에 실패하면 그때까지 완료한 업무는 그대로 두고 오류를 알린다(목록을 새로 불러오면 남은 업무가 보인다).
+     * 한 제품의 적용 업무를 메모 하나로 모두 완료한다. 서버에는 한 건씩 차례로 보낸다(한 번에 처리하는 RPC가 없다).
+     * 중간에 실패하면 앞서 완료한 업무는 서버에 남으므로, 몇 건까지 됐는지와 남은 일을 알린다.
+     * 실패한 뒤에는 저장 실행기가 목록을 새로 불러와 완료된 업무가 목록에서 빠진다.
      */
     completeTasks: async (taskIds: string[], note: string) => {
-      for (const taskId of [...new Set(taskIds)]) {
-        await completeProductChangeTask(context, taskId, note, '')
+      const ids = [...new Set(taskIds)]
+      let done = 0
+      for (const taskId of ids) {
+        try {
+          await completeProductChangeTask(context, taskId, note, '')
+        } catch (error) {
+          if (done === 0) throw error
+          throw new UserFacingError(
+            `남은 ${ids.length - done}건을 다시 처리해 주세요. ${ids.length}건 중 ${done}건은 완료했어요. ${toUserMessage(error)}`,
+          )
+        }
+        done += 1
       }
     },
     markNotApplicable: (taskId: string, reason: string, proxyReason: string) =>

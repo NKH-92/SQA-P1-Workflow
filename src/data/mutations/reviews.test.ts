@@ -364,3 +364,61 @@ describe('local review ownership parity', () => {
     await expect(addReviewFeedback(ctx, 'missing-review', 'comment')).rejects.toBeInstanceOf(UserFacingError)
   })
 })
+
+describe('resubmitReviewRequestWithEdits partial outcome (demo)', () => {
+  function rejectedContext() {
+    const data = createPreviewData()
+    const source = {
+      ...data.reviewRequests[0]!,
+      status: 'rejected' as const,
+      review_round: 1,
+      rejection_count: 1,
+      review_feedback: [],
+    }
+    let next = { ...data, reviewRequests: [source, ...data.reviewRequests.slice(1)] }
+    const ctx: RepositoryContext = createRepositoryContextFromDeps('local', {
+      profile: previewMember,
+      data: next,
+      setData: (updater) => {
+        next = typeof updater === 'function' ? updater(next) : updater
+        ctx.data = next
+      },
+    })
+    // 저장소 묶음은 접근할 때마다 새 저장소를 만들므로, reviews만 재요청이 실패하는 저장소로 바꿔 끼운다.
+    const repositories = ctx.repositories
+    ctx.repositories = new Proxy(repositories, {
+      get(target, property, receiver) {
+        if (property !== 'reviews') return Reflect.get(target, property, receiver)
+        return {
+          ...target.reviews,
+          resubmitReviewRequest: async () => {
+            throw new UserFacingError('다른 사람이 먼저 바꿨어요.')
+          },
+        }
+      },
+    })
+    return { ctx, source, current: () => next }
+  }
+
+  it('says the edits were saved when only the resubmit fails', async () => {
+    const { ctx, source, current } = rejectedContext()
+
+    await expect(resubmitReviewRequestWithEdits(ctx, source.id, {
+      title: '고친 제목',
+      description: source.description,
+      due_date: null,
+    }, '표를 추가했어요.')).rejects.toThrow('고친 내용은 저장했지만 재요청은 보내지 못했어요. 다른 사람이 먼저 바꿨어요.')
+
+    expect(current().reviewRequests.find((item) => item.id === source.id)?.title).toBe('고친 제목')
+  })
+
+  it('passes the original error through when nothing was edited', async () => {
+    const { ctx, source } = rejectedContext()
+
+    await expect(resubmitReviewRequestWithEdits(ctx, source.id, {
+      title: source.title,
+      description: source.description,
+      due_date: source.due_date,
+    }, '다시 봐 주세요.')).rejects.toThrow(/^다른 사람이 먼저 바꿨어요\.$/)
+  })
+})

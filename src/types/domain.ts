@@ -379,6 +379,94 @@ export interface Announcement {
   updated_at: string
 }
 
+/** 홈 도트 사무실 캐릭터의 성별. 파트장이 자리마다 고른다. */
+export type OfficeGender = 'male' | 'female'
+
+/** public.get_office_seats가 돌려주는 자리 한 칸. 활성 계정만 들어 있다. */
+export interface OfficeSeat {
+  /** 1~4는 창가 쪽 줄, 5~8은 통로 쪽 줄 */
+  seat_index: number
+  profile_id: string
+  name: string
+  gender: OfficeGender
+  /** 스타일과 개성을 정하는 0 이상 2^31 미만 정수 */
+  style_seed: number
+}
+
+export interface OfficeLayout {
+  /** 배치 전체의 내용 revision. 저장할 때 그대로 돌려보내 동시 수정을 막는다. 아직 모르면 null */
+  revision: string | null
+  seats: OfficeSeat[]
+}
+
+export interface OfficeMeetingParticipant {
+  user_id: string
+  /** 초대할 때의 이름(파트원은 다른 사람 프로필을 못 읽어 이름을 함께 둔다) */
+  name: string
+  /** 확인한 때. 아직이면 null. 회의를 연 사람은 열 때 확인한 것으로 친다. */
+  acknowledged_at: string | null
+}
+
+/** 홈 사무실 회의실에 열린 인스턴트 회의(public.get_office_meeting). 한 번에 하나이고, 끝나면 지워진다. */
+export interface OfficeMeeting {
+  id: string
+  title: string
+  organizer_id: string
+  organizer_name: string
+  /** 회의를 연(예약한) 때 */
+  created_at: string
+  /** 회의 시작 시각. 지금 바로 연 회의는 연 때와 같고, 그 밖에는 오늘 안의 시각이다. */
+  starts_at: string
+  /** 회의 장소. 빈 문자열이면 사무실 회의실이다. */
+  location: string
+  /** 아무도 끝내지 않으면 이때 저절로 끝난다(시작 3시간 뒤). */
+  expires_at: string
+  participants: OfficeMeetingParticipant[]
+}
+
+/** 하루 중 잠깐 자리를 비운 상태(해제할 때까지 유지). 기본 상태(자리에 있음)는 행이 없다. */
+export type MemberStatusKind = 'meeting' | 'field' | 'lab' | 'away'
+/** 기간을 정해 두는 부재 */
+export type MemberLeaveKind = 'vacation' | 'trip'
+
+/** public.get_member_presence의 짧은 상태 한 줄 */
+export interface MemberStatus {
+  profile_id: string
+  /** 조회 때의 이름(파트원은 다른 사람 프로필을 못 읽어 이름을 함께 둔다) */
+  name: string
+  status: MemberStatusKind
+  updated_at: string
+}
+
+/** public.get_member_presence의 휴가·출장 한 건(오늘 이후에 끝나는 것만) */
+export interface MemberLeave {
+  id: string
+  profile_id: string
+  name: string
+  kind: MemberLeaveKind
+  /** 서울 날짜 YYYY-MM-DD(첫날·마지막 날 포함) */
+  starts_on: string
+  ends_on: string
+  note: string
+}
+
+export interface MemberPresence {
+  statuses: MemberStatus[]
+  leaves: MemberLeave[]
+}
+
+/** ‘마지막으로 확인한 항목’을 사람별로 기록하는 화면. 검토요청은 review_read_receipts가 맡는다. */
+export type ReadMarkSection = 'announcements' | 'projects' | 'change-applications'
+
+/** public.get_section_read_marks가 돌려주는 내 확인 기록 한 줄 */
+export interface SectionReadMark {
+  user_id: string
+  section: ReadMarkSection
+  /** 마지막으로 이 화면을 열었을 때 있던 항목 id. 여기에 없는 항목이 새 소식이다. */
+  seen_keys: string[]
+  seen_at: string
+}
+
 export interface ChangeApplication {
   id: string
   change_number: string

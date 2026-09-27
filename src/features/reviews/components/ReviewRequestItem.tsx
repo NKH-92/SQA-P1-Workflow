@@ -17,6 +17,7 @@ import { relativeDateLabel } from '../../../lib/dates'
 import { REVIEW_REQUEST_LIMITS, rejectReasonError } from '../../../data/validation/reviews'
 import { buildReviewRequestItemModel } from '../reviewRequestItemModel'
 import { reviewRequestedAt } from '../reviewOrdering'
+import { PersonFace } from '../../office/components/PersonFace'
 
 export type ReviewRequestItemHandlers = {
   onApprove: (request: ReviewRequest) => Promise<boolean>
@@ -294,6 +295,7 @@ export function ReviewRequestItem({
         <Badge status={request.status}>{model.statusLabel}</Badge>
         {model.showRejectionCount && <span className="review-history-chip">반려 {model.rejectionCount}회</span>}
         <span className="request-meta-inline">
+          <PersonFace name={requesterName} profileId={request.requester_id} size="xs" />
           {requesterName} · <time dateTime={requestedAt ?? undefined} title={formatDate(requestedAt)}>
             {relativeDateLabel(requestedAt)}
           </time> {(request.review_round ?? 1) > 1 ? '재요청' : '요청'}
@@ -362,7 +364,10 @@ export function ReviewRequestItem({
       <div className="request-meta-grid">
         <div>
           <span>요청자</span>
-          <strong>{requesterName}</strong>
+          <strong className="person-inline">
+            <PersonFace name={requesterName} profileId={request.requester_id} size="md" />
+            {requesterName}
+          </strong>
         </div>
         <div>
           <span>{(request.review_round ?? 1) > 1 ? '마지막 재요청' : '요청일'}</span>
@@ -399,7 +404,8 @@ export function ReviewRequestItem({
                 && !item.voided_at
               return (
                 <div className="feedback" data-author={item.author_role ?? 'leader'} key={item.id}>
-                  <span>
+                  <span className="person-inline">
+                    <PersonFace name={item.profiles?.name} profileId={item.leader_id} size="xs" />
                     {item.profiles?.name ?? authorRole}
                     {' · '}{authorRole}
                     {' · '}{formatDate(item.created_at)}

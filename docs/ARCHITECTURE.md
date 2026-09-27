@@ -57,7 +57,7 @@ type BootstrapEnvelope<T> = {
 - `fetchAppData()`가 노출하는 `snapshotAt`은 세 `snapshot_at` 중 **가장 이른 시각**이다 — "이 시각 기준으로는 확실히 최신"이라는 가장 보수적인 주장만 하기 위함이며, `useAppData`의 `lastSyncedAt`이 이 값을 그대로 사용한다.
 - 이 skew를 없애려면 세 도메인을 하나의 RPC/transaction으로 합쳐야 하는데, 그러면 한 도메인의 optional 실패가 다른 모든 도메인의 초기 로드를 막게 되므로(D-05와 상충하지 않지만 가용성을 낮춤) 채택하지 않았다. 세 bootstrap을 독립 RPC로 유지하는 것이 의도된 절충이다.
 
-세 bootstrap 중 하나라도 에러거나 응답이 `null`이면 `fetchAppData()`는 fail-closed로 throw한다(기존 required-query 실패 의미 보존). `schema_version`이 기대값과 다르면 알려지지 않은 형태를 읽지 않고 즉시 실패한다. core schema v2의 `leader_profiles`는 현재 active leader ID의 authoritative required snapshot이다. 파트장 이름 optional 조회가 실패하면 직전 이름 snapshot을 이 ID 집합으로 제한하므로 강등·비활성화된 파트장을 되살리지 않는다. 공지·초대·메모·활동 로그는 기존 partial-failure/직전 snapshot 유지 정책을 따른다.
+세 bootstrap 중 하나라도 에러거나 응답이 `null`이면 `fetchAppData()`는 fail-closed로 throw한다(기존 required-query 실패 의미 보존). `schema_version`이 기대값과 다르면 알려지지 않은 형태를 읽지 않고 즉시 실패한다. core schema v2의 `leader_profiles`는 현재 active leader ID의 authoritative required snapshot이다. 파트장 이름 optional 조회가 실패하면 직전 이름 snapshot을 이 ID 집합으로 제한하므로 강등·비활성화된 파트장을 되살리지 않는다. 공지·초대·메모·활동 로그와 홈 사무실 자리(`get_office_seats`)·확인 기록(`get_section_read_marks`)·회의실(`get_office_meeting`)은 기존 partial-failure/직전 snapshot 유지 정책을 따른다.
 
 ## 검토 통계 계약
 
@@ -72,6 +72,11 @@ type BootstrapEnvelope<T> = {
 - Product/Duty/Invite Master는 각 controller와 repository가 책임별로 분리되어 있다.
 - CommandPalette는 `commandPaletteModel.ts`의 순수 결과 모델과 UI keyboard controller로 분리된다.
 - Shell의 파생 count는 `shellModel.ts`, 밀도 저장은 `useDensityPreference.ts`에 있다.
+- 홈 도트 사무실은 순수 모델(`src/features/office`: 캐릭터·앉은/선 스프라이트·장면·행동·걷기 경로(`officeWalk`)·배율·이동 규칙(`officeNavigation`))과 캔버스 렌더러를 `OfficeScene`이 조립하고, 카드·자리 배치 창·화면 이동 연결은 `src/screens/HomeOffice.tsx`가 맡는다. 렌더러는 초당 10장 그리면서 사람 위치(`anchors()`)를 알려 주고, `OfficeScene`은 React 상태를 거치지 않고 이름표·누르는 영역의 transform만 옮긴다. 기물(칸반·공지 화면·문서함·프로젝트 보드)과 사람은 `setActiveTab`으로만 화면을 옮기며, 파트원 동료는 RLS상 담당을 볼 수 없어 누를 수 없다. 기물 알림(`officeAlerts`)은 검토요청이면 기존 `review_read_receipts`, 공지·프로젝트 배정·변경 적용이면 `section_read_marks`(마지막으로 그 화면을 열 때 본 id, 본인 전용 `get_section_read_marks`·`mark_section_seen` RPC)와 지금 보이는 항목을 비교해 새 소식을 가린다. 판정은 `src/lib/sectionNews.ts`, 기록은 `useSectionReadMarker`가 해당 화면을 열 때 조용히 남긴다. 기록을 불러오지 못하면 이전 기록을 쓰고, 그것도 없으면 새 소식을 띄우지 않는다.
+- 홈 화면 방식은 `useHomeMode`(사람별 localStorage, 기본값은 폭: 휴대폰 기존 화면·그 밖 전체 화면 사무실)가 정한다. 전체 화면이면 `AppRoutes`가 홈에 `OfficeHome`을 그리고, `Shell`은 홈에서만 왼쪽 메뉴·상단바 대신 위 메뉴(HUD)를 그리며 왼쪽 메뉴는 서랍으로 연다. 사무실 좌표는 원래 장면을 그대로 두고 월드로 넓혔고(`officeGeometry`), 렌더러는 월드 전체를 한 장에 그린 뒤 카메라 영역(기존 화면 카드=원래 장면, 전체 화면=월드)만 옮긴다.
+- 인스턴트 회의는 `office_meetings`·`office_meeting_participants`(한 번에 하나, 지금 또는 오늘 안의 시작 시각·장소, 끝나면 삭제, 시작 3시간 뒤 만료)와 시작·확인·완료·조회 RPC로 저장한다. 자리 상태는 `member_statuses`(잠깐 비움)·`member_leaves`(휴가·출장 기간)와 조회·상태 바꾸기·기간 등록·취소 RPC로 저장한다. 앱 사용자는 RLS로 네 테이블을 읽을 수 있어 `useOfficeLiveSync`가 Realtime으로 바뀜을 받고(회의 테이블이면 회의실만, 상태 테이블이면 상태만 다시 읽는다), 웹소켓이 막혀도 화면이 보이는 동안 30초마다 둘 다 다시 읽는다. 안내 띠(`OfficeMeetingBanner`)와 내 상태 창(`MemberPresenceDialog`, 열 때만 받는다)은 `App`이 모든 화면에 붙이고, 캐릭터 이동은 렌더러가 확인한 사람 자리 번호(`setMeeting`)와 자리를 비운 사람(`setAbsences`)으로 맞춘다.
+- 통창 하늘은 `officeSky`가 서울 시각으로 기준 색을 섞어 분마다 한 번 그리고(구름·별·경고등만 장마다), 렌더러가 하늘 → 창틀·창가 소품 → 바닥 햇빛 → 사람·기물 → 저녁·밤 실내 조명(창밖 제외) 순서로 얹는다.
+- 업무 화면 도트 디자인은 홈 방식이 사무실일 때만 켠다. `App`이 `PixelUiProvider`로 켜짐 여부와 자리 배치를 알리고, 화면은 `PersonFace`(이름 옆 얼굴)·`OfficePlace`(머리말 장소 그림)·`PresenceIcon`(도트/선 아이콘)을 쓴다. 꺼져 있으면 이 부품들은 예전 모양(또는 아무것도)만 그리므로 기존 화면 사용자의 화면은 바뀌지 않는다. 첫 화면 번들을 가볍게 두려고 컨텍스트는 값만 나르고, 캐릭터 도트는 쓰는 화면에서 만든다. 자리 배치는 `replace_office_seats` 전체 교체 CAS로만 바뀐다.
 - feature 입력은 전체 AppData 대신 필요한 `Pick<AppData, ...>` 계약을 우선한다.
 
 ## 강제되는 경계
@@ -104,7 +109,7 @@ type BootstrapEnvelope<T> = {
 
 - 정적: typecheck, ESLint, dependency boundary checker
 - 도메인/데이터/UI: Vitest
-- 브라우저 계약: Playwright preview 21개 + 실제 local Supabase remote workflow 15개 시나리오
+- 브라우저 계약: Playwright preview 23개 + 실제 local Supabase remote workflow 15개 시나리오
 - DB 권한: pinned Supabase CLI + Docker의 full RLS gate
 - 산출물: production build + bundle budget + security header render
 

@@ -35,9 +35,12 @@ export async function signIn(page: Page, email: string, password: string) {
   const emailField = page.getByLabel(/이메일|email/i).first()
   const passwordField = page.getByLabel(/비밀번호|password/i).first()
   const logoutButton = page.getByRole('button', { name: /로그아웃|sign out/i }).first()
-  await expect(emailField.or(logoutButton)).toBeVisible({ timeout: 30_000 })
+  // 전체 화면 사무실 홈에서는 로그아웃이 위 메뉴의 프로필 안에 있다.
+  const officeProfile = page.locator('.office-hud-avatar')
+  await expect(emailField.or(logoutButton).or(officeProfile)).toBeVisible({ timeout: 30_000 })
   if (!(await emailField.isVisible())) {
-    await logoutButton.click()
+    if (!(await logoutButton.isVisible()) && (await officeProfile.isVisible())) await officeProfile.click()
+    await page.getByRole('button', { name: /로그아웃|sign out/i }).first().click()
   }
   await expect(emailField).toBeVisible({ timeout: 30_000 })
   await emailField.fill(email)
@@ -46,9 +49,12 @@ export async function signIn(page: Page, email: string, password: string) {
 }
 
 export async function expectAppShell(page: Page) {
-  await expect(page.getByRole('button', { name: '홈', exact: true })).toBeVisible({
-    timeout: 45_000,
-  })
+  const home = page.getByRole('button', { name: '홈', exact: true })
+  const classicHome = page.getByRole('button', { name: '기존 화면' })
+  await expect(home.or(classicHome)).toBeVisible({ timeout: 45_000 })
+  // 데스크톱 기본 홈은 전체 화면 사무실이다. 기존 화면 흐름을 확인하는 테스트는 사람이 하듯 기존 화면으로 바꿔 둔다.
+  if (await classicHome.isVisible()) await classicHome.click()
+  await expect(home).toBeVisible({ timeout: 45_000 })
 }
 
 export async function expectAccessBlocked(page: Page) {

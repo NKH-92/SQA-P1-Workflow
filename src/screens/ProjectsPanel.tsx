@@ -30,6 +30,8 @@ import {
 } from '../features/projects/project.selectors'
 import { useProjectController } from '../features/projects/useProjectController'
 import { useProjectLinkCopy } from '../features/projects/useProjectLinkCopy'
+import { OfficePlace } from '../features/office/components/OfficePlace'
+import { PersonFace } from '../features/office/components/PersonFace'
 
 type ViewMode = 'project' | 'member'
 
@@ -364,6 +366,17 @@ export function ProjectsPanel({
   return (
     <div className="stack projects-stack">
       <div className="page-intro projects-intro">
+        <OfficePlace
+          people={[
+            { profileId: profile.id, name: profile.name },
+            (() => {
+              const active = data.projects.find((project) => project.status === 'in_progress')
+              const assignee = active ? data.projectAssignments.find((assignment) => assignment.project_id === active.id && assignment.user_id !== profile.id) : undefined
+              return { profileId: assignee?.user_id, name: assignee?.profiles?.name }
+            })(),
+          ]}
+          place="projects"
+        />
         <div>
           <h1 ref={headingRef} tabIndex={-1}>
             프로젝트
@@ -443,9 +456,12 @@ export function ProjectsPanel({
           {memberGroups.map(({ member, assignments }) => (
             <article className="group-card" key={member.id}>
               <div className="group-header">
-                <div>
-                  <h2 className="group-title">{member.name}{member.id === profile.id ? ' (나)' : ''}</h2>
-                  <span>{member.email}</span>
+                <div className="person-heading">
+                  <PersonFace name={member.name} profileId={member.id} size="md" />
+                  <div>
+                    <h2 className="group-title">{member.name}{member.id === profile.id ? ' (나)' : ''}</h2>
+                    <span>{member.email}</span>
+                  </div>
                 </div>
                 <Badge>프로젝트 {assignments.length}개</Badge>
               </div>

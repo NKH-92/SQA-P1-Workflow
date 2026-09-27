@@ -142,6 +142,10 @@ describe('fetchAppData orchestration and optional data', () => {
     for (const name of ['get_core_bootstrap_v2', 'get_change_bootstrap_v3', 'get_review_bootstrap_v2']) {
       mocks.rpcResults[name] = defaultRpcResult(name)
     }
+    mocks.rpcResults.get_office_seats = { data: { revision: 'office-r1', seats: [] }, error: null }
+    mocks.rpcResults.get_section_read_marks = { data: [], error: null }
+    mocks.rpcResults.get_office_meeting = { data: null, error: null }
+    mocks.rpcResults.get_member_presence = { data: { statuses: [], leaves: [] }, error: null }
   })
 
   it('reports the first required-bootstrap error and never creates optional queries after it', async () => {
@@ -168,6 +172,10 @@ describe('fetchAppData orchestration and optional data', () => {
       'from:profile_notes',
       'from:activity_logs',
       'from:announcements',
+      'rpc:get_office_seats',
+      'rpc:get_section_read_marks',
+      'rpc:get_office_meeting',
+      'rpc:get_member_presence',
     ])
   })
 
@@ -497,6 +505,140 @@ describe('fetchAppData orchestration and optional data', () => {
 
     expect(result.announcements).toEqual([])
     expect(result.optionalWarnings).toHaveLength(1)
+  })
+
+  it('loads the shared office layout from its RPC envelope', async () => {
+    mocks.rpcResults.get_office_seats = {
+      data: {
+        revision: 'office-r2',
+        seats: [{ seat_index: 3, profile_id: 'member-1', name: '파트원', gender: 'female', style_seed: 12 }],
+      },
+      error: null,
+    }
+
+    const result = await fetchAppData()
+
+    expect(result.officeLayout).toEqual({
+      revision: 'office-r2',
+      seats: [{ seat_index: 3, profile_id: 'member-1', name: '파트원', gender: 'female', style_seed: 12 }],
+    })
+    expect(result.optionalWarnings).toEqual([])
+  })
+
+  it('keeps the previous office layout and warns when the office RPC fails or answers malformed data', async () => {
+    const previous = {
+      ...previousWithLeader({ id: 'leader-1', name: 'Leader' }),
+      officeLayout: {
+        revision: 'office-r1',
+        seats: [{ seat_index: 1, profile_id: 'leader-1', name: 'Leader', gender: 'male' as const, style_seed: 1 }],
+      },
+    }
+    for (const failure of [
+      { data: null, error: { message: 'office unavailable' } },
+      { data: { seats: [] }, error: null },
+    ]) {
+      mocks.rpcResults.get_office_seats = failure
+      const result = await fetchAppData(previous)
+      expect(result.officeLayout).toEqual(previous.officeLayout)
+      expect(result.optionalWarnings).toContain('사무실 자리: 새로 불러오지 못해 이전 내용을 보여 주고 있어요.')
+    }
+  })
+
+  it('loads my section read marks for the office alerts', async () => {
+    const mark = {
+      user_id: 'member-1',
+      section: 'announcements',
+      seen_keys: ['00000000-0000-4000-8000-000000000001'],
+      seen_at: '2026-09-27T01:00:00.000Z',
+    }
+    mocks.rpcResults.get_section_read_marks = { data: [mark], error: null }
+
+    const result = await fetchAppData()
+
+    expect(result.sectionReadMarks).toEqual([mark])
+    expect(result.optionalWarnings).toEqual([])
+  })
+
+  it('keeps the previous read marks, or leaves them unknown, when the read-mark RPC fails or answers malformed data', async () => {
+    const previousMarks = [{
+      user_id: 'leader-1',
+      section: 'projects' as const,
+      seen_keys: [],
+      seen_at: '2026-09-27T01:00:00.000Z',
+    }]
+    const previous = { ...previousWithLeader({ id: 'leader-1', name: 'Leader' }), sectionReadMarks: previousMarks }
+    for (const failure of [
+      { data: null, error: { message: 'read marks unavailable' } },
+      { data: [{ section: 'unknown', seen_keys: [] }], error: null },
+    ]) {
+      mocks.rpcResults.get_section_read_marks = failure
+      const kept = await fetchAppData(previous)
+      expect(kept.sectionReadMarks).toEqual(previousMarks)
+      expect(kept.optionalWarnings).toContain('새 소식 표시: 새로 불러오지 못해 이전 내용을 보여 주고 있어요.')
+
+      // 이전 기록도 없으면 모르는 상태로 둬 ‘새 소식’을 잘못 띄우지 않는다.
+      const unknown = await fetchAppData()
+      expect(unknown.sectionReadMarks).toBeUndefined()
+    }
+  })
+
+  it('loads the open office meeting, or none', async () => {
+    const meeting = {
+      id: 'meeting-1',
+      title: '일탈 건 5분 논의',
+      organizer_id: 'member-1',
+      organizer_name: '파트원',
+      created_at: '2026-09-27T01:00:00.000Z',
+      starts_at: '2026-09-27T01:00:00.000Z',
+      location: '',
+      expires_at: '2026-09-27T04:00:00.000Z',
+      participants: [
+        { user_id: 'member-1', name: '파트원', acknowledged_at: '2026-09-27T01:00:00.000Z' },
+        { user_id: 'member-2', name: '동료', acknowledged_at: null },
+      ],
+    }
+    mocks.rpcResults.get_office_meeting = { data: meeting, error: null }
+    expect((await fetchAppData()).officeMeeting).toEqual(meeting)
+
+    mocks.rpcResults.get_office_meeting = { data: null, error: null }
+    const none = await fetchAppData()
+    expect(none.officeMeeting).toBeNull()
+    expect(none.optionalWarnings).toEqual([])
+  })
+
+  it('keeps the previous meeting state and warns when the meeting RPC fails or answers malformed data', async () => {
+    const previous = { ...previousWithLeader({ id: 'leader-1', name: 'Leader' }), officeMeeting: null }
+    for (const failure of [
+      { data: null, error: { message: 'meeting unavailable' } },
+      { data: { id: 'meeting-1' }, error: null },
+    ]) {
+      mocks.rpcResults.get_office_meeting = failure
+      const result = await fetchAppData(previous)
+      expect(result.officeMeeting).toBeNull()
+      expect(result.optionalWarnings).toContain('사무실 회의: 새로 불러오지 못해 이전 내용을 보여 주고 있어요.')
+      expect((await fetchAppData()).officeMeeting).toBeUndefined()
+    }
+  })
+
+  it('loads everyone’s presence and keeps the previous presence when it fails', async () => {
+    const presence = {
+      statuses: [{ profile_id: 'member-1', name: '파트원', status: 'lab', updated_at: '2026-09-27T01:00:00.000Z' }],
+      leaves: [{ id: 'leave-1', profile_id: 'member-2', name: '동료', kind: 'trip', starts_on: '2026-09-27', ends_on: '2026-09-29', note: '오송' }],
+    }
+    mocks.rpcResults.get_member_presence = { data: presence, error: null }
+    const loaded = await fetchAppData()
+    expect(loaded.memberPresence).toEqual(presence)
+    expect(loaded.optionalWarnings).toEqual([])
+
+    for (const failure of [
+      { data: null, error: { message: 'presence unavailable' } },
+      { data: { statuses: [{ profile_id: 'x' }], leaves: [] }, error: null },
+    ]) {
+      mocks.rpcResults.get_member_presence = failure
+      const result = await fetchAppData(loaded)
+      expect(result.memberPresence).toEqual(presence)
+      expect(result.optionalWarnings).toContain('자리 상태: 새로 불러오지 못해 이전 내용을 보여 주고 있어요.')
+    }
   })
 
   it('loads a selected change task history on demand without duplicate action ids', async () => {

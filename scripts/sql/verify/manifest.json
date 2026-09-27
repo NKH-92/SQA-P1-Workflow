@@ -15,7 +15,11 @@
     "92_full_code_review_hardening.sql",
     "93_review_history_retention.sql",
     "94_change_application_final_approval.sql",
-    "95_account_admin_team_leader.sql"
+    "95_account_admin_team_leader.sql",
+    "96_office_seats.sql",
+    "97_section_read_marks.sql",
+    "98_office_meetings.sql",
+    "99_member_presence.sql"
   ],
   "migrationVersions": [
     "202607020001",
@@ -96,6 +100,10 @@
     "20260731230646",
     "20260820150507",
     "20260820150511",
-    "20260820161242"
+    "20260820161242",
+    "20260927120000",
+    "20260927130000",
+    "20260927135000",
+    "20260927140000"
   ]
 }

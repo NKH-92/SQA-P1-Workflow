@@ -15,7 +15,15 @@ const defined = new Set([...stylesheet.matchAll(/(--[a-zA-Z0-9-]+)\s*:/g)].map((
 const used = new Set([...stylesheet.matchAll(/var\((--[a-zA-Z0-9-]+)/g)].map((match) => match[1]))
 
 // These values are supplied as component-level inline custom properties.
-const dynamic = new Set(['--allocation-percent', '--dashboard-progress'])
+const dynamic = new Set([
+  '--allocation-percent',
+  '--dashboard-progress',
+  '--office-bubble-shift',
+  '--office-hit-h',
+  '--office-hit-w',
+  '--office-label-y',
+  '--office-seat-gap',
+])
 const missing = [...used].filter((token) => !defined.has(token) && !dynamic.has(token)).sort()
 
 if (missing.length > 0) {

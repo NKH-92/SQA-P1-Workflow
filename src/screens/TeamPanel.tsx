@@ -17,6 +17,10 @@ import { useSelectionHashSync } from '../app/hooks/useHashNavigation'
 import { useTeamController } from '../features/team/useTeamController'
 import { dueBadgeStatus, projectDueState } from '../features/projects/project.selectors'
 import { canManageTeamData } from '../domain/permissions'
+import { businessDateKey } from '../lib/businessTime'
+import { presenceOf, presenceSummary } from '../data/validation/memberPresence'
+import { PersonFace } from '../features/office/components/PersonFace'
+import { PresenceIcon } from '../features/office/components/PresenceIcon'
 
 /** 제품 화면의 담당 필터(products 도메인 소유). 파트원 화면에서는 이 세 값만 쓴다. */
 type ProductsLeaderFilter = 'all' | 'unassigned' | 'inactive'
@@ -130,6 +134,7 @@ export function TeamPanel({
   setActiveTab,
   initialSelectedId,
   onInitialSelectionApplied,
+  onOpenPresence,
 }: {
   profile: Profile
   data: AppData
@@ -138,8 +143,11 @@ export function TeamPanel({
   setActiveTab: (tab: TabId, entityId?: string) => void
   initialSelectedId?: string | null
   onInitialSelectionApplied?: () => void
+  /** 파트원 상태(휴가·출장 등) 창을 연다. 파트장만 넘긴다. */
+  onOpenPresence?: (profileId: string) => void
 }) {
   const canManage = canManageTeamData(profile)
+  const today = businessDateKey(new Date())
   const controller = useTeamController(profile, data, setData)
   const { teamMembers, teamSummaries } = useTeamSummaries(data)
   // 검색어·비활성 포함·선택한 파트원은 다른 메뉴에 다녀와도 그대로 둔다.
@@ -298,6 +306,7 @@ export function TeamPanel({
                   type="button"
                 >
                   <div className="v2-team-head">
+                    <PersonFace name={summary.member.name} profileId={summary.member.id} size="md" />
                     <span>
                       <strong>{summary.member.name}</strong>
                       <small>{summary.member.email}</small>
@@ -305,6 +314,15 @@ export function TeamPanel({
                     <Badge>{roleLabels[summary.member.role]}</Badge>
                     {summary.member.is_active === false && <Badge status="withdrawn">비활성</Badge>}
                   </div>
+                  {(() => {
+                    const status = presenceOf(data.memberPresence, summary.member.id, today)
+                    return status ? (
+                      <span className="team-presence" data-kind={status.kind}>
+                        <PresenceIcon id={status.kind} />
+                        {presenceSummary(status, today)}
+                      </span>
+                    ) : null
+                  })()}
                   <div className="metric-strip">
                     <span>제품 <strong>{summary.products.length}</strong></span>
                     <span>업무 <strong>{summary.duties.length}</strong></span>
@@ -364,6 +382,24 @@ export function TeamPanel({
                   )}
                 </div>
                 <p>{selectedSummary.member.email}</p>
+                {(() => {
+                  const status = presenceOf(data.memberPresence, selectedSummary.member.id, today)
+                  const hasOwnPresence = selectedSummary.member.role === 'leader' || selectedSummary.member.role === 'member'
+                  if (!status && !(onOpenPresence && hasOwnPresence && selectedSummary.member.is_active !== false)) return null
+                  return (
+                    <p className="team-presence-line">
+                      <span className="team-presence" data-kind={status?.kind ?? 'present'}>
+                        <PresenceIcon id={status?.kind ?? 'present'} />
+                        {status ? presenceSummary(status, today) : '자리에 있음'}
+                      </span>
+                      {onOpenPresence && hasOwnPresence && selectedSummary.member.is_active !== false && (
+                        <button className="ghost compact" onClick={() => onOpenPresence(selectedSummary.member.id)} type="button">
+                          상태 바꾸기
+                        </button>
+                      )}
+                    </p>
+                  )
+                })()}
               </div>
               <div className="detail-header-actions">
                 <label className="sort-select">

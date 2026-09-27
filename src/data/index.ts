@@ -71,6 +71,19 @@ export {
 
 export { addProfileNote } from './mutations/team'
 
+export { replaceOfficeSeats } from './mutations/office'
+export type { OfficeSeatInput } from './validation/officeSeats'
+
+export { markSectionSeen } from './mutations/readMarks'
+
+export { acknowledgeOfficeMeeting, endOfficeMeeting, startOfficeMeeting } from './mutations/meetings'
+export { fetchOfficeMeeting } from './fetch/officeMeetingQuery'
+export type { OfficeMeetingStartInput } from './validation/officeMeeting'
+
+export { addMemberLeave, deleteMemberLeave, setMemberStatus } from './mutations/presence'
+export { fetchMemberPresence } from './fetch/memberPresenceQuery'
+export type { MemberLeaveInput } from './validation/memberPresence'
+
 export {
   saveChangeApplication,
   completeProductChangeTask,

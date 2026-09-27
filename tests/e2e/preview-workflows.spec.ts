@@ -5,10 +5,27 @@ function switchPreviewRole(page: Page, role: '파트장' | '팀장' | '파트원
   return page.getByRole('group', { name: '미리보기 역할' }).getByRole('button', { name: role, exact: true }).click()
 }
 
+/** 미리보기 계정. 데스크톱 기본 홈은 전체 화면 사무실이라, 기존 화면을 다루는 테스트는 기존 화면을 고른 사람으로 시작한다. */
+const PREVIEW_PROFILE_IDS = ['demo-leader', 'member-01', 'demo-team-leader']
+
 test.beforeEach(async ({ page }) => {
+  await page.addInitScript((ids) => {
+    // 테스트마다 한 번만 기존 화면을 골라 둔다(테스트 안에서 바꾼 방식은 새로고침해도 유지된다).
+    if (window.localStorage.getItem('e2e-home-mode-set')) return
+    for (const id of ids) window.localStorage.setItem(`sqa.home-mode.${id}`, 'classic')
+    window.localStorage.setItem('e2e-home-mode-set', '1')
+  }, PREVIEW_PROFILE_IDS)
   await page.goto('/')
   await expect(page.getByRole('button', { name: '홈', exact: true })).toBeVisible()
 })
+
+/** 기본값(데스크톱: 전체 화면 사무실)으로 다시 시작한다. */
+async function startWithDefaultHome(page: Page) {
+  await page.evaluate((ids) => {
+    for (const id of ids) window.localStorage.removeItem(`sqa.home-mode.${id}`)
+  }, PREVIEW_PROFILE_IDS)
+  await page.reload()
+}
 
 test('01 leader and member navigation scopes remain distinct', async ({ page }) => {
   await expect(page.getByRole('button', { name: '검토 통계', exact: true })).toBeVisible()
@@ -131,10 +148,11 @@ test('08 density preference remains persistent across reloads', async ({ page })
 test('09 mobile sidebar opens navigates and closes', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.locator('.hamburger').click()
-  await expect(page.locator('aside.sidebar')).toHaveClass(/open/)
-  await page.getByRole('button', { name: /^공지/ }).click()
-  await expect(page).toHaveURL(/#\/announcements/)
   const sidebar = page.locator('aside.sidebar')
+  await expect(sidebar).toHaveClass(/open/)
+  // 홈 사무실의 ‘공지 화면’ 기물과 겹치지 않게 서랍 메뉴 안에서 찾는다.
+  await sidebar.getByRole('button', { name: /^공지/ }).click()
+  await expect(page).toHaveURL(/#\/announcements/)
   await expect(sidebar).not.toHaveClass(/open/)
   await expect(sidebar).toHaveAttribute('aria-hidden', 'true')
   await expect(sidebar).toHaveAttribute('inert', '')
@@ -497,4 +515,241 @@ test('20 mobile member product board moves from list to detail without horizonta
   await page.getByRole('button', { name: '제품 목록' }).click()
   await expect(productList).toBeVisible()
   await expect(page.locator('.member-product-detail')).toBeHidden()
+})
+
+test('22 home office shows one shared layout and only the leader rearranges seats', async ({ page }) => {
+  const office = page.getByRole('region', { name: '우리 파트 사무실' })
+  await expect(office).toBeVisible()
+  const seats = office.getByRole('list', { name: '자리 배치' })
+  await expect(seats.getByRole('listitem')).toHaveCount(4)
+  await expect(seats).toContainText('파트원 A, 2번 자리 · 창가 쪽 줄')
+  // 캔버스에 실제로 도트가 그려진다(빈 캔버스가 아니다).
+  await expect.poll(async () => office.locator('canvas.office-canvas').evaluate((canvas: HTMLCanvasElement) => {
+    const ctx = canvas.getContext('2d')
+    if (!ctx || canvas.width === 0 || canvas.height === 0) return false
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    return data.some((value, index) => index % 4 === 3 && value > 0)
+  })).toBe(true)
+
+  await office.getByRole('button', { name: '자리 배치', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '사무실 자리 배치' })
+  await dialog.getByLabel('1번 자리').selectOption({ label: '파트원 B · 지금 6번 자리' })
+  await expect(dialog.getByText('6번 자리에서 옮겨 왔어요.')).toBeVisible()
+  await dialog.getByRole('button', { name: '저장하기' }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(page.locator('.toast').filter({ hasText: '사무실 자리 배치를 저장했어요.' })).toBeVisible()
+  await expect(seats).toContainText('파트원 B, 1번 자리 · 창가 쪽 줄')
+  await expect(seats).not.toContainText('6번 자리')
+
+  await switchPreviewRole(page, '파트원')
+  const memberOffice = page.getByRole('region', { name: '우리 파트 사무실' })
+  await expect(memberOffice.getByRole('list', { name: '자리 배치' })).toContainText('파트원 B, 1번 자리 · 창가 쪽 줄')
+  await expect(memberOffice.getByRole('button', { name: '자리 배치', exact: true })).toHaveCount(0)
+})
+
+test('23 home office objects and people open their screens', async ({ page }) => {
+  // 돌아다니는 사람이 기물을 가리지 않도록 동작 줄이기로 모두 자리에 앉힌다.
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto('/')
+  const home = page.getByRole('button', { name: '홈', exact: true })
+  const office = page.getByRole('region', { name: '우리 파트 사무실' })
+  const shortcuts = office.getByRole('group', { name: '사무실 바로가기' })
+
+  // 알림이 있으면 이름 가운데에 ‘새 검토요청 3건’ 같은 설명이 들어간다.
+  for (const [name, hash] of [
+    [/^검토요청 보드, (.+, )?검토요청으로 이동$/, /#\/reviews/],
+    [/^공지 화면, (.+, )?공지로 이동$/, /#\/announcements/],
+    [/^변경관리 문서함, (.+, )?변경 적용으로 이동$/, /#\/change-applications/],
+    [/^프로젝트 보드, (.+, )?프로젝트로 이동$/, /#\/projects/],
+  ] as const) {
+    await shortcuts.getByRole('button', { name }).click()
+    await expect(page).toHaveURL(hash)
+    await home.click()
+    await expect(office).toBeVisible()
+  }
+
+  // 파트장은 파트원을 누르면 그 사람의 팀 현황을 연다.
+  const seats = office.getByRole('list', { name: '자리 배치' })
+  await seats.getByRole('button', { name: '파트원 A 담당 보기' }).click()
+  await expect(page).toHaveURL(/#\/team\?id=/)
+
+  // 파트원은 자기 자리만 누를 수 있고, 누르면 내 담당으로 간다.
+  await home.click()
+  await switchPreviewRole(page, '파트원')
+  await expect(seats.getByRole('button')).toHaveCount(1)
+  await seats.getByRole('button', { name: '파트원 A(나) 담당 보기' }).click()
+  await expect(page).toHaveURL(/#\/work/)
+})
+
+test('24 home office objects light up for new items and settle once checked', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto('/')
+  const home = page.getByRole('button', { name: '홈', exact: true })
+  const shortcuts = page.getByRole('region', { name: '우리 파트 사무실' }).getByRole('group', { name: '사무실 바로가기' })
+
+  // 파트장: 새로 온 검토요청이 칸반 알림으로 뜨고, 누르면 그 요청을 바로 연다.
+  const kanban = shortcuts.getByRole('button', { name: /^검토요청 보드, 새 검토요청 \d+건 · 피드백 대기 \d+건, 검토요청으로 이동$/ })
+  await expect(kanban).toHaveAttribute('data-alert', 'new')
+  await kanban.click()
+  await expect(page).toHaveURL(/#\/reviews\?id=/)
+  await home.click()
+
+  // 파트원: 새 공지·새로 배정된 프로젝트가 알림으로 뜨고, 확인하면 알림이 꺼진다.
+  await switchPreviewRole(page, '파트원')
+  const notice = shortcuts.getByRole('button', { name: '공지 화면, 새 공지 1건, 공지로 이동' })
+  await expect(notice).toHaveAttribute('data-alert', 'new')
+  await expect(shortcuts.getByRole('button', { name: /^프로젝트 보드, 새로 배정된 프로젝트 1건/ })).toHaveAttribute('data-alert', 'new')
+  await notice.click()
+  await expect(page).toHaveURL(/#\/announcements\?id=announcement-01/)
+  await home.click()
+  await expect(shortcuts.getByRole('button', { name: '공지 화면, 공지로 이동' })).not.toHaveAttribute('data-alert')
+  await expect(shortcuts.getByRole('button', { name: /^프로젝트 보드, 새로 배정된 프로젝트 1건/ })).toHaveAttribute('data-alert', 'new')
+})
+
+test('25 desktop home opens the full-screen office and remembers the classic view per person', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await startWithDefaultHome(page)
+  await expect(page.getByRole('heading', { level: 1, name: '우리 파트 사무실' })).toBeAttached()
+  // 왼쪽 메뉴 대신 위 메뉴(HUD)가 있고, 모든 메뉴는 ‘전체 메뉴’ 서랍으로 연다.
+  await expect(page.getByRole('button', { name: '홈', exact: true })).toBeHidden()
+  const objects = page.getByRole('group', { name: '사무실 바로가기' })
+  await objects.getByRole('button', { name: '출입 기록부, 활동 로그로 이동' }).click()
+  await expect(page).toHaveURL(/#\/activity/)
+  await page.getByRole('button', { name: '홈', exact: true }).click()
+  await expect(page.getByRole('heading', { level: 1, name: '우리 파트 사무실' })).toBeAttached()
+  await page.getByRole('button', { name: '전체 메뉴' }).click()
+  await page.getByRole('navigation', { name: '주 메뉴 항목' }).getByRole('button', { name: /^검토 통계/ }).click()
+  await expect(page).toHaveURL(/#\/review-stats/)
+  await page.getByRole('button', { name: '홈', exact: true }).click()
+
+  // 기존 화면으로 바꾸면 이 사람에게는 새로고침해도 기존 화면이다.
+  await page.getByRole('button', { name: '기존 화면' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: /오늘 처리할 일/ })).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('heading', { level: 1, name: /오늘 처리할 일/ })).toBeVisible()
+  await page.getByRole('button', { name: '크게 보기' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: '우리 파트 사무실' })).toBeAttached()
+  await expect(page.getByRole('complementary', { name: /오늘 처리할 일 \d+건/ })).toBeVisible()
+})
+
+test('26 anyone opens an instant meeting for seated people who confirm, and it disappears when done', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await startWithDefaultHome(page)
+  const objects = page.getByRole('group', { name: '사무실 바로가기' })
+
+  // 파트장이 파트원 A를 불러 회의를 연다.
+  await objects.getByRole('button', { name: '회의실, 회의 열기' }).click()
+  const dialog = page.getByRole('dialog', { name: '회의 열기' })
+  await dialog.getByRole('textbox', { name: '회의 주제(선택)' }).fill('일탈 건 5분 논의')
+  await dialog.getByRole('checkbox', { name: /파트원 A/ }).check()
+  await dialog.getByRole('button', { name: '회의 시작' }).click()
+  await expect(page.locator('.toast').filter({ hasText: '회의를 열었어요.' })).toBeVisible()
+  await page.getByRole('dialog', { name: '일탈 건 5분 논의' }).getByRole('button', { name: '닫기', exact: true }).click()
+  await expect(objects.getByRole('button', { name: '회의실, 회의 중 확인 1/2명, 회의 보기' })).toBeVisible()
+
+  // 파트원 A는 어느 화면에서든 확인할 수 있다.
+  await switchPreviewRole(page, '파트원')
+  const banner = page.locator('.office-meeting-banner')
+  await expect(banner).toContainText('미리보기 파트장님이 회의를 요청했어요')
+  await banner.getByRole('button', { name: '확인했어요' }).click()
+  await expect(banner).toContainText('확인 2/2명')
+  await expect(banner.getByRole('button', { name: '회의 완료' })).toHaveCount(0)
+
+  // 연 사람이 회의 완료를 누르면 회의실이 빈다.
+  await switchPreviewRole(page, '파트장')
+  await banner.getByRole('button', { name: '회의 완료' }).click()
+  await expect(banner).toHaveCount(0)
+  await expect(objects.getByRole('button', { name: '회의실, 회의 열기' })).toBeVisible()
+})
+
+test('27 people set their own status and the office shows it on their seat', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await startWithDefaultHome(page)
+  const seats = page.getByRole('list', { name: '자리 배치' })
+  // 미리보기: 파트원 B는 오늘부터 출장, 파트원 C는 실험실에 가 있다.
+  await expect(seats.getByRole('listitem').filter({ hasText: /^파트원 B, / })).toContainText(/출장 · .+까지/)
+  await expect(page.getByRole('group', { name: '자리 현황' })).toContainText('자리 비움 2명 · 출장 1 · 실험실 1')
+
+  // 위 메뉴의 내 상태 단추로 현장에 간다고 표시하고, 다시 자리에 있음으로 돌린다.
+  await page.getByRole('button', { name: '내 상태: 자리에 있음. 바꾸기' }).click()
+  const dialog = page.getByRole('dialog', { name: '내 상태' })
+  await dialog.getByRole('group', { name: '지금 상태 고르기' }).getByRole('button', { name: /현장/ }).click()
+  await expect(page.locator('.toast').filter({ hasText: '내 상태를 ‘현장’으로 바꿨어요.' })).toBeVisible()
+  await expect(seats.getByRole('listitem').filter({ hasText: /^미리보기 파트장/ })).toContainText('· 현장')
+
+  // 내일 하루 출장을 등록했다가 취소한다.
+  const tomorrow = await page.evaluate(() => {
+    const date = new Date(Date.now() + 86_400_000)
+    return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' })
+  })
+  await dialog.getByRole('group', { name: '종류' }).getByRole('button', { name: '출장' }).click()
+  await dialog.getByLabel('시작일').fill(tomorrow)
+  await dialog.getByLabel('마지막 날').fill(tomorrow)
+  await dialog.getByRole('textbox', { name: '메모(선택)' }).fill('오송 공장 실사')
+  await dialog.getByRole('button', { name: '등록', exact: true }).click()
+  await expect(page.locator('.toast').filter({ hasText: '내 출장을 등록했어요.' })).toBeVisible()
+  const leaves = dialog.getByRole('list', { name: '등록한 휴가·출장' })
+  await expect(leaves).toContainText('오송 공장 실사')
+  await leaves.getByRole('button', { name: /출장 .* 취소/ }).click()
+  await expect(dialog.getByText('등록한 휴가·출장이 없어요.')).toBeVisible()
+
+  await dialog.getByRole('group', { name: '지금 상태 고르기' }).getByRole('button', { name: /자리에 있음/ }).click()
+  await expect(page.getByRole('button', { name: '내 상태: 자리에 있음. 바꾸기' })).toBeVisible()
+  await dialog.getByRole('button', { name: '닫기', exact: true }).click()
+  await expect(seats.getByRole('listitem').filter({ hasText: /^미리보기 파트장/ })).not.toContainText('· 현장')
+})
+
+test('28 work screens follow the pixel office only for people who use the office home', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await startWithDefaultHome(page)
+  // 사무실 화면을 쓰면 공지 머리말에 사무실 장면이, 작성자 이름 옆에 캐릭터 얼굴이 붙는다.
+  await page.goto('/#/announcements')
+  await expect(page.locator('.office-place[data-place="notice"] canvas')).toBeVisible()
+  await expect(page.locator('.announcement-list-item .person-face').first()).toBeVisible()
+  await page.goto('/#/reviews')
+  await expect(page.locator('.office-place[data-place="kanban"]')).toBeVisible()
+
+  // 기존 화면을 고르면 업무 화면도 예전 디자인 그대로다.
+  await page.goto('/')
+  await page.getByRole('button', { name: '기존 화면' }).click()
+  await page.goto('/#/announcements')
+  await expect(page.getByRole('heading', { level: 1, name: '공지' })).toBeVisible()
+  await expect(page.locator('.office-place')).toHaveCount(0)
+  await expect(page.locator('.person-face')).toHaveCount(0)
+  // 상태 기능은 그대로 쓴다(왼쪽 메뉴 아래 내 상태 단추).
+  await expect(page.getByRole('button', { name: '내 상태: 자리에 있음. 바꾸기' })).toBeVisible()
+})
+
+test('29 a meeting can be scheduled later today somewhere else and cancelled before it starts', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await startWithDefaultHome(page)
+  const objects = page.getByRole('group', { name: '사무실 바로가기' })
+  await objects.getByRole('button', { name: '회의실, 회의 열기' }).click()
+  const dialog = page.getByRole('dialog', { name: '회의 열기' })
+  // 출장 중인 파트원 B는 고를 수 없다.
+  await expect(dialog.getByRole('checkbox', { name: /파트원 B/ })).toBeDisabled()
+  const later = dialog.getByRole('radio', { name: '오늘 시간 정하기' })
+  test.skip(await later.isDisabled(), '자정 직전에는 오늘 안에 고를 시각이 없다.')
+  await later.check()
+  await dialog.getByRole('radio', { name: '다른 곳' }).check()
+  await dialog.getByRole('combobox', { name: '장소 이름' }).fill('3층 대회의실')
+  await dialog.getByRole('checkbox', { name: /파트원 A/ }).check()
+  await dialog.getByRole('button', { name: '회의 잡기' }).click()
+  await expect(page.locator('.toast').filter({ hasText: '회의를 잡았어요.' })).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: '닫기', exact: true }).click()
+
+  const banner = page.locator('.office-meeting-banner')
+  await expect(banner).toContainText('회의 예정')
+  await expect(banner).toContainText('3층 대회의실')
+  await expect(objects.getByRole('button', { name: /^회의실, 오후|^회의실, 오전/ })).toBeVisible()
+
+  await switchPreviewRole(page, '파트원')
+  await expect(banner).toContainText('미리보기 파트장님이 회의를 요청했어요')
+  await banner.getByRole('button', { name: '확인했어요' }).click()
+  await expect(page.locator('.toast').filter({ hasText: '3층 대회의실에서 만나요.' })).toBeVisible()
+
+  await switchPreviewRole(page, '파트장')
+  await banner.getByRole('button', { name: '회의 취소' }).click()
+  await expect(page.locator('.toast').filter({ hasText: '회의를 취소했어요.' })).toBeVisible()
+  await expect(banner).toHaveCount(0)
 })

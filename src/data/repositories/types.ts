@@ -2,10 +2,12 @@ import type {
   Announcement,
   AppData,
   DutyMajorCategory,
+  MemberStatusKind,
   Product,
   ProductCategory,
   Profile,
   Project,
+  ReadMarkSection,
   ReviewStatus,
   Role,
 } from '../../types'
@@ -18,6 +20,9 @@ import type {
   UndoFinalizeChangeApplicationInput,
   ReviewRequestPayload,
 } from '../contracts'
+import type { OfficeSeatInput } from '../validation/officeSeats'
+import type { MemberLeaveInput } from '../validation/memberPresence'
+import type { OfficeMeetingStartInput } from '../validation/officeMeeting'
 import type { AppDataUpdater } from './appDataUpdater'
 import type { ActivityLogWriter } from './activityLogWriter'
 
@@ -214,6 +219,34 @@ export type ChangeApplicationRepository = {
   restoreChangeApplication(changeApplicationId: string, reason: string): Promise<void>
 }
 
+export type OfficeRepository = {
+  /** 자리 배치 전체를 revision 비교 후 교체한다. 바뀐 게 없으면 changed가 false다. */
+  replaceOfficeSeats(input: { seats: OfficeSeatInput[]; expectedRevision: string | null }): Promise<{ changed: boolean }>
+}
+
+export type OfficeMeetingRepository = {
+  /** 회의실을 열고 사무실에 앉은 사람을 부른다. 회의실이 사용 중이면 실패한다. */
+  startMeeting(input: OfficeMeetingStartInput): Promise<void>
+  /** 부름을 받은 내가 확인했다고 체크한다. */
+  acknowledgeMeeting(meetingId: string): Promise<void>
+  /** 회의를 끝내고 지운다(연 사람·파트장). 이미 끝났으면 ended가 false다. */
+  endMeeting(meetingId: string): Promise<{ ended: boolean }>
+}
+
+export type PresenceRepository = {
+  /** 잠깐 비운 상태를 바꾸거나(status) 지운다(null). 내 상태, 또는 파트장이 파트장·파트원 상태를 바꾼다. */
+  setStatus(profileId: string, status: MemberStatusKind | null): Promise<void>
+  /** 휴가·출장 기간을 등록한다. 같은 사람의 다른 기간과 겹치면 실패한다. */
+  addLeave(input: MemberLeaveInput): Promise<void>
+  /** 휴가·출장을 취소한다. 이미 없으면 removed가 false다. */
+  deleteLeave(leaveId: string): Promise<{ removed: boolean }>
+}
+
+export type ReadMarkRepository = {
+  /** 이 화면에서 지금 보이는 항목을 ‘확인함’으로 기록한다. 내 기록만 바뀐다. */
+  markSectionSeen(section: ReadMarkSection, keys: readonly string[]): Promise<void>
+}
+
 export type RepositorySet = {
   reviews: ReviewRepository
   projects: ProjectRepository
@@ -223,6 +256,10 @@ export type RepositorySet = {
   duties: DutyAdminRepository
   invites: InviteAdminRepository
   team: TeamRepository
+  office: OfficeRepository
+  readMarks: ReadMarkRepository
+  meetings: OfficeMeetingRepository
+  presence: PresenceRepository
   activityLogs: ActivityLogWriter
 }
 

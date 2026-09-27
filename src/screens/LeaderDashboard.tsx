@@ -3,7 +3,8 @@ import { formatDateWithWeekday } from '../lib/format'
 import { ChevronRight, ListTodo, Megaphone, UserPlus } from 'lucide-react'
 import { EmptyState } from '../components/ui'
 import type { AppData, Profile } from '../types'
-import type { TabId } from '../app/types'
+import type { MutateFn, TabId } from '../app/types'
+import type { AppDataUpdater } from '../data/repositories/appDataUpdater'
 import { canManageTeamData } from '../domain/permissions'
 import { dueState } from '../lib/dates'
 import { quoted } from '../lib/korean'
@@ -22,20 +23,11 @@ import {
 import { selectActiveProjects } from '../features/dashboard/dashboardModels'
 import { useLeaderReviewOverview } from '../features/dashboard/useLeaderReviewOverview'
 import { useTeamSummaries } from '../hooks/useTeamSummaries'
+import { HomeOffice } from './HomeOffice'
+import { openUnassignedProducts } from './homeLinks'
 
 const PRIORITY_PREVIEW_COUNT = 8
 const PROJECT_PREVIEW_COUNT = 3
-/** 제품 화면의 ‘담당자 없음’ 필터(useViewState 'products.leader.filter')를 미리 골라 둔다. */
-const PRODUCT_FILTER_STORAGE_KEY = 'sqa.view.products.leader.filter'
-
-function openUnassignedProducts(setActiveTab: (tab: TabId) => void) {
-  try {
-    window.sessionStorage.setItem(PRODUCT_FILTER_STORAGE_KEY, JSON.stringify('unassigned'))
-  } catch {
-    // 저장소를 쓸 수 없으면 필터 없이 제품 화면만 연다.
-  }
-  setActiveTab('products')
-}
 
 function PriorityRow({
   item,
@@ -75,10 +67,18 @@ export function LeaderDashboard({
   profile,
   data,
   setActiveTab,
+  mutate,
+  setData,
+  onEnterOfficeMode,
 }: {
   profile: Profile
   data: AppData
   setActiveTab: (tab: TabId, entityId?: string) => void
+  /** 사무실 자리 배치 저장용. 팀장처럼 바꿀 수 없는 사람에게도 넘기지만 버튼은 파트장에게만 보인다. */
+  mutate: MutateFn
+  setData: AppDataUpdater
+  /** 홈을 전체 화면 사무실로 바꾼다. */
+  onEnterOfficeMode?: () => void
 }) {
   const canManage = canManageTeamData(profile)
   const [showAllPriorities, setShowAllPriorities] = useState(false)
@@ -145,6 +145,15 @@ export function LeaderDashboard({
           </div>
         )}
       </header>
+
+      <HomeOffice
+        data={data}
+        mutate={mutate}
+        onEnterOfficeMode={onEnterOfficeMode}
+        profile={profile}
+        setActiveTab={setActiveTab}
+        setData={setData}
+      />
 
       <div aria-label="할 일 종류로 거르기" className="home-chips" role="group">
         {PRIORITY_FILTERS.map((option) => (

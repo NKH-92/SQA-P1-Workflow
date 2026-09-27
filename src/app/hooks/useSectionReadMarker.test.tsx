@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react'
+import { renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPreviewData, previewLeader, previewMember } from '../../demoData'
 import type { AppData, Profile } from '../../types'
@@ -69,5 +69,19 @@ describe('useSectionReadMarker', () => {
     rerender({ profile: previewMember, data: arrived, tab: 'projects' })
     expect(mocks.markSectionSeen).toHaveBeenCalledTimes(2)
     expect(sentKeys(1).keys).toContain('project-assignment-new')
+  })
+
+  it('tries the same items again when the section is opened after a failed write', async () => {
+    const data = createPreviewData()
+    mocks.markSectionSeen.mockRejectedValueOnce(new Error('network down'))
+    const { rerender } = renderMarker({ profile: previewMember, data, tab: 'announcements' })
+    expect(mocks.markSectionSeen).toHaveBeenCalledTimes(1)
+    // 실패가 처리될 때까지 기다린다.
+    await (mocks.markSectionSeen.mock.results[0]?.value as Promise<unknown>).catch(() => undefined)
+    // 홈에 다녀와 같은 공지 화면을 다시 연다.
+    rerender({ profile: previewMember, data, tab: 'dashboard' })
+    rerender({ profile: previewMember, data, tab: 'announcements' })
+    await waitFor(() => expect(mocks.markSectionSeen).toHaveBeenCalledTimes(2))
+    expect(sentKeys(1)).toEqual(sentKeys(0))
   })
 })

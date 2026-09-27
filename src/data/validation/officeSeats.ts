@@ -79,7 +79,7 @@ export function parseOfficeLayout(value: unknown): OfficeLayout | null {
   const seen = new Set<number>()
   for (const item of value.seats) {
     if (!isRecord(item)) continue
-    const { seat_index: seatIndex, profile_id: profileId, name, gender, style_seed: styleSeed } = item
+    const { seat_index: seatIndex, profile_id: profileId, name, gender, style_seed: styleSeed, role } = item
     if (
       !isSeatIndex(seatIndex)
       || seen.has(seatIndex)
@@ -91,7 +91,9 @@ export function parseOfficeLayout(value: unknown): OfficeLayout | null {
       continue
     }
     seen.add(seatIndex)
-    seats.push({ seat_index: seatIndex, profile_id: profileId, name, gender, style_seed: styleSeed })
+    const seat: OfficeSeat = { seat_index: seatIndex, profile_id: profileId, name, gender, style_seed: styleSeed }
+    if (role === 'leader' || role === 'member' || role === 'team_leader') seat.role = role
+    seats.push(seat)
   }
   seats.sort((left, right) => left.seat_index - right.seat_index)
   return { revision: value.revision, seats }

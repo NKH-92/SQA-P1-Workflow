@@ -38,7 +38,7 @@ describe('local office seat parity', () => {
     expect(ctx.setData).not.toHaveBeenCalled()
   })
 
-  it('replaces the whole layout with display names and a new revision', async () => {
+  it('replaces the whole layout with display names, roles and a new revision', async () => {
     const ctx = context()
     const before = ctx.data.officeLayout!
     const result = await replaceOfficeSeats(ctx, {
@@ -52,8 +52,8 @@ describe('local office seat parity', () => {
     const after = ctx.applied().officeLayout!
     expect(after.revision).not.toBe(before.revision)
     expect(after.seats).toEqual([
-      { seat_index: 1, profile_id: previewLeader.id, name: previewLeader.name, gender: 'female', style_seed: 4 },
-      { seat_index: 8, profile_id: previewMember.id, name: previewMember.name, gender: 'male', style_seed: 3 },
+      { seat_index: 1, profile_id: previewLeader.id, name: previewLeader.name, role: 'leader', gender: 'female', style_seed: 4 },
+      { seat_index: 8, profile_id: previewMember.id, name: previewMember.name, role: 'member', gender: 'male', style_seed: 3 },
     ])
   })
 

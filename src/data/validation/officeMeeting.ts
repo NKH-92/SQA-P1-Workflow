@@ -17,6 +17,7 @@ export const OFFICE_MEETING_BUSY_MESSAGE = '회의실이 사용 중이에요. �
 export const OFFICE_MEETING_INVALID_MESSAGE = `회의 주제는 ${OFFICE_MEETING_TITLE_MAX}자, 장소는 ${OFFICE_MEETING_LOCATION_MAX}자까지 쓰고, 부를 사람은 1~${OFFICE_MEETING_MAX_INVITEES}명까지 고를 수 있어요.`
 export const OFFICE_MEETING_PARTICIPANT_MESSAGE = '사무실에 앉은 사람만 회의에 부를 수 있어요. 자리 배치를 확인해 주세요.'
 export const OFFICE_MEETING_AWAY_MESSAGE = '휴가·출장 중인 사람은 회의에 부를 수 없어요.'
+export const OFFICE_MEETING_TEAM_LEADER_MESSAGE = '팀장은 읽기 전용이라 회의에 부를 수 없어요.'
 export const OFFICE_MEETING_TIME_MESSAGE = '회의는 지금 바로 열거나 오늘 안의 시각으로 정해 주세요.'
 export const OFFICE_MEETING_GONE_MESSAGE = '이미 끝난 회의예요.'
 export const OFFICE_MEETING_FORBIDDEN_MESSAGE = '회의를 연 사람이나 파트장만 회의를 끝낼 수 있어요.'
@@ -111,8 +112,9 @@ export function validateOfficeMeetingStart(
     }
     startsAt = start <= now ? null : new Date(start).toISOString()
   }
-  const seated = new Set((layout?.seats ?? []).map((seat) => seat.profile_id))
-  if (invitees.some((id) => !seated.has(id))) throw new UserFacingError(OFFICE_MEETING_PARTICIPANT_MESSAGE)
+  const seats = new Map((layout?.seats ?? []).map((seat) => [seat.profile_id, seat]))
+  if (invitees.some((id) => !seats.has(id))) throw new UserFacingError(OFFICE_MEETING_PARTICIPANT_MESSAGE)
+  if (invitees.some((id) => seats.get(id)?.role === 'team_leader')) throw new UserFacingError(OFFICE_MEETING_TEAM_LEADER_MESSAGE)
   const meetingDay = businessDateKey(new Date(startsAt ? Date.parse(startsAt) : now))
   if (invitees.some((id) => leaveOn(presence, id, meetingDay))) throw new UserFacingError(OFFICE_MEETING_AWAY_MESSAGE)
   return { title, invitees, startsAt, location }

@@ -453,10 +453,10 @@ export function createPreviewData(): AppData {
   const officeLayout: OfficeLayout = {
     revision: 'preview-office-1',
     seats: [
-      { seat_index: 2, profile_id: memberA.id, name: memberA.name, gender: 'female', style_seed: 20260927 },
-      { seat_index: 3, profile_id: previewLeader.id, name: previewLeader.name, gender: 'male', style_seed: 1204 },
-      { seat_index: 6, profile_id: memberB.id, name: memberB.name, gender: 'male', style_seed: 777 },
-      { seat_index: 7, profile_id: memberC.id, name: memberC.name, gender: 'female', style_seed: 31337 },
+      { seat_index: 2, profile_id: memberA.id, name: memberA.name, role: memberA.role, gender: 'female', style_seed: 20260927 },
+      { seat_index: 3, profile_id: previewLeader.id, name: previewLeader.name, role: previewLeader.role, gender: 'male', style_seed: 1204 },
+      { seat_index: 6, profile_id: memberB.id, name: memberB.name, role: memberB.role, gender: 'male', style_seed: 777 },
+      { seat_index: 7, profile_id: memberC.id, name: memberC.name, role: memberC.role, gender: 'female', style_seed: 31337 },
     ],
   }
 

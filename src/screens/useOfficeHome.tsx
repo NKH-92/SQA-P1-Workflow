@@ -214,6 +214,7 @@ export function useOfficeHome({
           onAcknowledge={meetingActions.onAcknowledge}
           onClose={() => setMeetingOpen(false)}
           onEnd={meetingActions.onEnd}
+          now={now}
           onStart={meetingActions.onStart}
           presence={data.memberPresence}
           profile={profile}

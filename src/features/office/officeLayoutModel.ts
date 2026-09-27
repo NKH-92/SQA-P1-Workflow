@@ -1,6 +1,6 @@
 import type { OfficeSeatInput } from '../../data/validation/officeSeats'
 import { OFFICE_SEAT_COUNT } from '../../data/validation/officeSeats'
-import type { OfficeGender, OfficeLayout, Profile } from '../../types'
+import type { OfficeGender, OfficeLayout, Profile, Role } from '../../types'
 import { resolveOfficeCharacter, type OfficeCharacter } from './officeCharacter'
 
 /** 자리 배치 창에서 고치는 자리 한 칸. 빈자리는 profileId가 null이다. */
@@ -17,6 +17,8 @@ export type SceneOccupant = {
   seatIndex: number
   profileId: string
   name: string
+  /** 모르면(예전 응답) 비어 있다 */
+  role?: Role
   character: OfficeCharacter
 }
 
@@ -37,6 +39,7 @@ export function sceneOccupants(layout: OfficeLayout | undefined): SceneOccupant[
     seatIndex: seat.seat_index,
     profileId: seat.profile_id,
     name: seat.name,
+    ...(seat.role ? { role: seat.role } : {}),
     character: resolveOfficeCharacter(seat.gender, seat.style_seed),
   }))
 }

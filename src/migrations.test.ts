@@ -1214,6 +1214,7 @@ describe('Supabase migrations', () => {
     expect(read).toContain('public.can_use_app()')
     expect(read).toContain('and profile.is_active')
     expect(read).toContain("'name', profile.name")
+    expect(read).toContain("'role', profile.role")
     expect(read).not.toContain('profile.email')
 
     expect(write).toContain('security definer')

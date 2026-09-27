@@ -3,8 +3,9 @@
 -- derive on the client from a stored random seed.
 --
 -- Every app user reads the same layout through get_office_seats(), which returns
--- only seat, profile id, display name and look fields (members cannot read other
--- profiles directly). The only write path is replace_office_seats(), a leader-only
+-- only seat, profile id, display name, role and look fields (members cannot read
+-- other profiles directly; the role lets the office keep read-only team leaders
+-- out of meeting invitations). The only write path is replace_office_seats(), a leader-only
 -- compare-and-swap of the whole layout. The table itself grants nothing to
 -- authenticated and has no policies.
 --
@@ -83,6 +84,7 @@ begin
           'seat_index', seat.seat_index,
           'profile_id', seat.profile_id,
           'name', profile.name,
+          'role', profile.role,
           'gender', seat.gender,
           'style_seed', seat.style_seed
         ) order by seat.seat_index

@@ -74,6 +74,20 @@ describe('OfficeMeetingDialog', () => {
     }))
   })
 
+  it('shows a seated team leader but never lets anyone invite them', async () => {
+    const teamLeader = { ...occupants[0], seatIndex: 8, profileId: 'team-1', name: '팀장 김', role: 'team_leader' as const }
+    const { onStart } = renderDialog({ occupants: [...occupants, teamLeader] })
+    const dialog = screen.getByRole('dialog', { name: '회의 열기' })
+    const leader = within(dialog).getByRole('checkbox', { name: /팀장 김/ })
+    expect(leader).toBeDisabled()
+    expect(leader.closest('label')).toHaveTextContent('팀장(읽기 전용)은 부를 수 없어요')
+    fireEvent.click(leader)
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /파트원 C/ }))
+    fireEvent.click(within(dialog).getByRole('button', { name: '회의 시작' }))
+    const memberC = occupants.find((item) => item.name === '파트원 C')!
+    await waitFor(() => expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ participantIds: [memberC.profileId] })))
+  })
+
   it('shows each person’s status and keeps people on a trip out', () => {
     renderDialog()
     const dialog = screen.getByRole('dialog', { name: '회의 열기' })
@@ -124,6 +138,18 @@ describe('OfficeMeetingDialog', () => {
     renderDialog({ meeting: openMeeting({ starts_at: new Date(Date.now() + 30 * 60 * 1000).toISOString() }), profile: previewLeader })
     expect(screen.getByRole('button', { name: '회의 취소' })).toBeEnabled()
     expect(screen.getByText(/시작 예정/, { selector: '.office-meeting-when' })).toBeInTheDocument()
+  })
+
+  it('follows the office clock, so a scheduled meeting turns from cancel to done when it starts', () => {
+    const startsAt = Date.now() + 30 * 60 * 1000
+    const meeting = openMeeting({ starts_at: new Date(startsAt).toISOString() })
+    const props = { meeting, occupants, onClose: vi.fn(), presence, profile: previewLeader, onStart: vi.fn(async () => true), onAcknowledge: vi.fn(async () => true), onEnd: vi.fn(async () => true) }
+    const { rerender } = render(<OfficeMeetingDialog {...props} now={Date.now()} />)
+    expect(screen.getByRole('button', { name: '회의 취소' })).toBeEnabled()
+
+    rerender(<OfficeMeetingDialog {...props} now={startsAt + 60 * 1000} />)
+    expect(screen.getByRole('button', { name: '회의 완료' })).toBeEnabled()
+    expect(screen.queryByText(/시작 예정/, { selector: '.office-meeting-when' })).not.toBeInTheDocument()
   })
 
   it('lets team leaders look but not open a meeting', () => {

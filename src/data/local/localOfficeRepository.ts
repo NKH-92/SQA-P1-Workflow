@@ -25,10 +25,10 @@ export function createLocalOfficeRepository(ctx: RepositoryDeps): OfficeReposito
 
       const nextSeats: OfficeSeat[] = [...seats]
         .sort((left, right) => left.seat_index - right.seat_index)
-        .map((seat) => ({
-          ...seat,
-          name: data.profiles.find((item) => item.id === seat.profile_id)?.name ?? '',
-        }))
+        .map((seat) => {
+          const person = data.profiles.find((item) => item.id === seat.profile_id)
+          return { ...seat, name: person?.name ?? '', ...(person ? { role: person.role } : {}) }
+        })
       setData((currentData) => ({ ...currentData, officeLayout: { revision, seats: nextSeats } }))
       return { changed: true }
     },

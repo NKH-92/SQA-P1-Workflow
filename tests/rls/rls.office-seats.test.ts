@@ -12,7 +12,7 @@ function requiredEnv(name: string) {
 
 type OfficeEnvelope = {
   revision: string
-  seats: Array<{ seat_index: number; profile_id: string; name: string; gender: string; style_seed: number }>
+  seats: Array<{ seat_index: number; profile_id: string; name: string; role: string; gender: string; style_seed: number }>
 }
 
 suite(`RLS office seats (${RLS_SKIP_NOTE})`, () => {
@@ -78,9 +78,9 @@ suite(`RLS office seats (${RLS_SKIP_NOTE})`, () => {
 
     const after = await layout(leader)
     expect(after.revision).not.toBe(before.revision)
-    expect(after.seats.map((seat) => [seat.seat_index, seat.profile_id, seat.gender, seat.style_seed])).toEqual([
-      [1, requiredEnv('RLS_MEMBER_A_USER_ID'), 'female', 11],
-      [5, requiredEnv('RLS_MEMBER_B_USER_ID'), 'male', 22],
+    expect(after.seats.map((seat) => [seat.seat_index, seat.profile_id, seat.role, seat.gender, seat.style_seed])).toEqual([
+      [1, requiredEnv('RLS_MEMBER_A_USER_ID'), 'member', 'female', 11],
+      [5, requiredEnv('RLS_MEMBER_B_USER_ID'), 'member', 'male', 22],
     ])
 
     const repeated = await leader.rpc('replace_office_seats', {

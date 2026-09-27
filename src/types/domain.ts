@@ -388,6 +388,8 @@ export interface OfficeSeat {
   seat_index: number
   profile_id: string
   name: string
+  /** 앉은 사람의 역할. 팀장(읽기 전용)은 회의에 부를 수 없다. 예전 응답에는 없을 수 있다. */
+  role?: Role
   gender: OfficeGender
   /** 스타일과 개성을 정하는 0 이상 2^31 미만 정수 */
   style_seed: number

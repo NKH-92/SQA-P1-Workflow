@@ -40,6 +40,7 @@ export function OfficeMeetingDialog({
   meeting,
   occupants,
   presence,
+  now: liveNow,
   onStart,
   onAcknowledge,
   onEnd,
@@ -51,14 +52,18 @@ export function OfficeMeetingDialog({
   occupants: readonly SceneOccupant[]
   /** 자리 상태(휴가·출장 중인 사람은 부를 수 없다) */
   presence?: MemberPresence
+  /** 지금 시각(사무실 화면 시계). 창을 연 채로 예약 시각이 지나면 ‘예정’이 ‘진행 중’으로 바뀐다. */
+  now?: number
   /** 성공하면 true */
   onStart: (input: OfficeMeetingStartInput) => Promise<boolean>
   onAcknowledge: (meetingId: string) => Promise<boolean>
   onEnd: (meetingId: string) => Promise<boolean>
   onClose: () => void
 }) {
-  const [now] = useState(() => Date.now())
-  const slots = useMemo(() => meetingTimeSlots(now), [now])
+  // 고를 수 있는 시각은 창을 연 때 기준으로 정해 두고(고르는 중에 목록이 바뀌지 않게), 회의 상태는 지금 시각을 따른다.
+  const [openedAt] = useState(() => Date.now())
+  const now = Math.max(liveNow ?? openedAt, openedAt)
+  const slots = useMemo(() => meetingTimeSlots(openedAt), [openedAt])
   const [title, setTitle] = useState('')
   const [selected, setSelected] = useState<string[]>([])
   const [when, setWhen] = useState<'now' | 'later'>('now')
@@ -70,6 +75,7 @@ export function OfficeMeetingDialog({
   const canOpen = canOpenOfficeMeeting(profile)
   const today = businessDateKey(new Date(now))
   const candidates = occupants.filter((occupant) => occupant.profileId !== profile.id)
+  const teamLeaderIds = new Set(candidates.filter((candidate) => candidate.role === 'team_leader').map((candidate) => candidate.profileId))
   const tooMany = selected.length > OFFICE_MEETING_MAX_INVITEES
   const chosenSlot = slots.find((item) => item.value === slot)
   const placeMissing = placeKind === 'other' && place.trim().length === 0
@@ -261,20 +267,23 @@ export function OfficeMeetingDialog({
               <legend>부를 사람</legend>
               <ul>
                 {candidates.map((candidate) => {
-                  const onLeave = leaveOn(presence, candidate.profileId, meetingDay)
-                  const status = presenceOf(presence, candidate.profileId, today)
-                  const checked = selected.includes(candidate.profileId) && !onLeave
+                  const readOnly = candidate.role === 'team_leader'
+                  const onLeave = !readOnly && leaveOn(presence, candidate.profileId, meetingDay)
+                  const status = readOnly ? null : presenceOf(presence, candidate.profileId, today)
+                  const blocked = readOnly || Boolean(onLeave)
+                  const checked = selected.includes(candidate.profileId) && !blocked
                   return (
-                    <li data-away={onLeave ? 'true' : undefined} key={candidate.profileId}>
+                    <li data-away={blocked ? 'true' : undefined} key={candidate.profileId}>
                       <label>
                         <input
                           checked={checked}
-                          disabled={Boolean(onLeave)}
+                          disabled={blocked}
                           onChange={() => toggle(candidate.profileId)}
                           type="checkbox"
                         />
                         <span>{candidate.name}</span>
                         <small>{candidate.seatIndex}번 자리</small>
+                        {readOnly && <span className="office-meeting-presence">팀장(읽기 전용)은 부를 수 없어요</span>}
                         {status && (
                           <span className="office-meeting-presence" data-kind={status.kind}>
                             <PresenceIcon id={status.kind} />
@@ -309,7 +318,7 @@ export function OfficeMeetingDialog({
             disabled={busy || selected.length === 0 || tooMany || placeMissing || (when === 'later' && !chosenSlot)}
             onClick={() => void run(() => onStart({
               title,
-              participantIds: selected.filter((id) => !leaveOn(presence, id, meetingDay)),
+              participantIds: selected.filter((id) => !leaveOn(presence, id, meetingDay) && !teamLeaderIds.has(id)),
               startsAt: when === 'later' && chosenSlot ? chosenSlot.startsAt : null,
               location: placeKind === 'other' ? place : '',
             }))}

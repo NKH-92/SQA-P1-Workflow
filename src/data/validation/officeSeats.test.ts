@@ -78,6 +78,18 @@ describe('office layout parsing', () => {
     })
   })
 
+  it('keeps a known role and ignores an unknown one', () => {
+    const parsed = parseOfficeLayout({
+      revision: 'r',
+      seats: [
+        { seat_index: 1, profile_id: A, name: '가', role: 'team_leader', gender: 'female', style_seed: 1 },
+        { seat_index: 2, profile_id: B, name: '나', role: 'admin', gender: 'male', style_seed: 2 },
+      ],
+    })
+    expect(parsed?.seats[0].role).toBe('team_leader')
+    expect(parsed?.seats[1]).not.toHaveProperty('role')
+  })
+
   it('treats a malformed envelope as a failed load', () => {
     for (const value of [null, [], {}, { revision: 1, seats: [] }, { revision: 'a', seats: {} }]) {
       expect(parseOfficeLayout(value)).toBeNull()

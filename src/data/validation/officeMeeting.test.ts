@@ -12,6 +12,7 @@ import {
   OFFICE_MEETING_BUSY_MESSAGE,
   OFFICE_MEETING_INVALID_MESSAGE,
   OFFICE_MEETING_PARTICIPANT_MESSAGE,
+  OFFICE_MEETING_TEAM_LEADER_MESSAGE,
   OFFICE_MEETING_TIME_MESSAGE,
   officeMeetingPlace,
   parseOfficeMeeting,
@@ -41,6 +42,7 @@ const layout = {
     { seat_index: 2, profile_id: previewMember.id, name: previewMember.name, gender: 'female' as const, style_seed: 1 },
     { seat_index: 6, profile_id: 'member-02', name: '파트원 B', gender: 'male' as const, style_seed: 2 },
     { seat_index: 7, profile_id: 'member-03', name: '파트원 C', gender: 'female' as const, style_seed: 3 },
+    { seat_index: 8, profile_id: 'team-1', name: '팀장', role: 'team_leader' as const, gender: 'male' as const, style_seed: 4 },
   ],
 }
 
@@ -101,6 +103,8 @@ describe('office meeting rules', () => {
       [{ title: '가'.repeat(61) }, OFFICE_MEETING_INVALID_MESSAGE],
       [{ location: '가'.repeat(31) }, OFFICE_MEETING_INVALID_MESSAGE],
       [{ participantIds: ['not-seated'] }, OFFICE_MEETING_PARTICIPANT_MESSAGE],
+      // 팀장은 읽기 전용이라 자리에 앉아 있어도 부를 수 없다(서버도 막는다).
+      [{ participantIds: ['member-02', 'team-1'] }, OFFICE_MEETING_TEAM_LEADER_MESSAGE],
     ]
     for (const [overrides, message] of invalid) {
       expect(() => validateOfficeMeetingStart(input(overrides), previewMember, layout, presence, NOW)).toThrow(message)

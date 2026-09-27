@@ -121,6 +121,7 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
     await expect(page.locator('.toast').filter({ hasText: /‘Member A pending’[을를] 반려했어요\./ })).toBeVisible({ timeout: 30_000 })
 
     await signIn(page, fixtureEnv('REMOTE_E2E_MEMBER_A_EMAIL'), fixtureEnv('REMOTE_E2E_MEMBER_A_PASSWORD'))
+    await expectAppShell(page)
     await page.getByRole('navigation', { name: '주 메뉴 항목' }).getByRole('button', { name: /^내 검토요청/ }).click()
     await expect(page.getByText(reviewTitle, { exact: true }).first()).toBeVisible({ timeout: 45_000 })
     await page.getByText(reviewTitle, { exact: true }).first().click()
@@ -283,6 +284,7 @@ describeRemote(`remote Supabase browser E2E (${REMOTE_E2E_SKIP_NOTE})`, () => {
     })
 
     await signIn(page, fixtureEnv('REMOTE_E2E_MEMBER_B_EMAIL'), fixtureEnv('REMOTE_E2E_MEMBER_B_PASSWORD'))
+    await expectAppShell(page)
     await page.getByRole('button', { name: /^변경 적용/ }).click()
     await page.getByRole('textbox', { name: '변경 적용 검색' }).fill(ownedProduct.data!.name)
     await expect(page

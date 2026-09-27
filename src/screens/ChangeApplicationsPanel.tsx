@@ -69,6 +69,8 @@ import type {
   ProductChangeTask,
   Profile,
 } from '../types'
+import { OfficePlace } from '../features/office/components/OfficePlace'
+import { PersonFace } from '../features/office/components/PersonFace'
 
 type FinalizationDialog = {
   mode: 'finalize' | 'undo'
@@ -521,7 +523,7 @@ export function ChangeApplicationsPanel({
             />
           </label>
         )}
-        <div className="change-task-product"><strong>{task.product_name}</strong><span>{changeActionLabel(actionItem)} · {task.assignee_name ?? '담당자 없음'}{needsRecoveryReassignment ? ' (비활성)' : ''}</span></div>
+        <div className="change-task-product"><strong>{task.product_name}</strong><span className="person-inline">{changeActionLabel(actionItem)} · {task.assignee_name && <PersonFace name={task.assignee_name} profileId={task.assignee_id} size="xs" />}{task.assignee_name ?? '담당자 없음'}{needsRecoveryReassignment ? ' (비활성)' : ''}</span></div>
         <div className="change-task-source"><strong>{application.change_number}</strong><span>{application.title}</span></div>
         <div className={overdue ? 'change-task-due overdue' : 'change-task-due'}>
           <strong>{pending ? dueDateLabel(actionItem.due_date) : formatDate(actionItem.due_date)}</strong>
@@ -610,7 +612,7 @@ export function ChangeApplicationsPanel({
             )}
           </div>
         </header>
-        <div className="change-detail-meta"><span>등록 <strong>{applicationCreatorName(data, selectedApplication)}</strong></span><span>시행일 <strong>{formatDate(selectedApplication.effective_date)}</strong></span><span>상태 <strong>{changeApplicationWorkflowLabel(selectedSummary.workflow_status)}</strong></span>{selectedApplication.source_url && <a href={selectedApplication.source_url} rel="noreferrer" target="_blank">공식 문서 열기</a>}</div>
+        <div className="change-detail-meta"><span className="person-inline">등록 <PersonFace name={applicationCreatorName(data, selectedApplication)} profileId={selectedApplication.created_by} size="xs" /><strong>{applicationCreatorName(data, selectedApplication)}</strong></span><span>시행일 <strong>{formatDate(selectedApplication.effective_date)}</strong></span><span>상태 <strong>{changeApplicationWorkflowLabel(selectedSummary.workflow_status)}</strong></span>{selectedApplication.source_url && <a href={selectedApplication.source_url} rel="noreferrer" target="_blank">공식 문서 열기</a>}</div>
         {data.changeActionItems.filter((item) => item.change_application_id === selectedApplication.id).map((item) => <div className="change-action-summary" key={item.id}><Badge>{changeActionLabel(item)}</Badge><strong>{item.content}</strong><span>적용 기한 {formatDate(item.due_date)}</span></div>)}
         <div className="change-detail-progress"><div><strong>{selectedSummary.percent}%</strong><span>{selectedSummary.total_count}개 중 {selectedSummary.processed_count}개 처리</span></div><span className="change-progress"><i style={{ width: `${selectedSummary.percent}%` }} /></span><p>완료 {selectedSummary.completed_count} · 해당 없음 {selectedSummary.not_applicable_count} · 범위 제외 {selectedSummary.scope_removed_count} · 미적용 {selectedSummary.pending_count}</p></div>
         {attentionActive && <p className="change-detail-filter-note">{changeAttentionLabels[attention as Exclude<ChangeAttentionFilter, 'all'>]} 업무 {visibleSelectedContexts.length}건만 보여요.</p>}
@@ -664,6 +666,21 @@ export function ChangeApplicationsPanel({
   return (
     <div className="stack change-applications-page">
       <div className="page-intro change-page-intro">
+        <OfficePlace
+          people={[
+            { profileId: profile.id, name: profile.name },
+            (() => {
+              // 파트장 화면에는 아직 처리하지 않은 담당자, 파트원 화면에는 공통변경을 올린 파트장이 문서함 앞에 선다.
+              if (!leaderMode) {
+                const leader = data.profiles.find((person) => person.role === 'leader' && person.is_active !== false)
+                return { profileId: leader?.id, name: leader?.name }
+              }
+              const task = data.productChangeTasks.find((item) => item.status === 'pending' && item.assignee_id && item.assignee_id !== profile.id)
+              return { profileId: task?.assignee_id, name: task?.assignee_name }
+            })(),
+          ]}
+          place="cabinet"
+        />
         <div><h1>변경 적용</h1><p>{leaderMode ? '제품별 처리 결과를 확인하고 공통변경을 최종 완료해요.' : '내 제품에 적용할 공통변경을 처리하고 이력을 확인해요.'}</p></div>
         {canManageTeam && <button className="primary" onClick={() => setComposer({ editingId: null })} type="button"><Plus size={16} />공통변경 등록</button>}
       </div>
@@ -895,7 +912,7 @@ export function ChangeApplicationsPanel({
                     >
                       <span className="change-application-card-top"><Badge status={summary.workflow_status}>{changeApplicationWorkflowLabel(summary.workflow_status)}</Badge><span>{application.change_number}</span></span>
                       <strong>{application.title}</strong>
-                      <small>{applicationCreatorName(data, application)} · 시행 {formatDate(application.effective_date)}</small>
+                      <small className="person-inline"><PersonFace name={applicationCreatorName(data, application)} profileId={application.created_by} size="xs" />{applicationCreatorName(data, application)} · 시행 {formatDate(application.effective_date)}</small>
                       <span className="change-progress-copy">{summary.total_count}개 중 {summary.processed_count}개 처리 · {summary.percent}%</span>
                       <span className="change-progress"><i style={{ width: `${summary.percent}%` }} /></span>
                       <span className="change-card-counts">미적용 {summary.pending_count} · 해당 없음 {summary.not_applicable_count} · 범위 제외 {summary.scope_removed_count}</span>

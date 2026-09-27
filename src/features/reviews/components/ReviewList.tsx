@@ -15,6 +15,7 @@ import {
   reviewStatusText,
   type ReviewSortMode,
 } from '../reviewOrdering'
+import { PersonFace } from '../../office/components/PersonFace'
 
 type ReviewListProps = {
   profile: Profile
@@ -154,7 +155,10 @@ export const ReviewList = memo(function ReviewList({
                 </span>
               )}
               <span className="dot-sep" aria-hidden="true" />
-              {request.profiles?.name ?? '요청자'}
+              <span className="person-inline">
+                <PersonFace name={request.profiles?.name} profileId={request.requester_id} size="xs" />
+                {request.profiles?.name ?? '요청자'}
+              </span>
               {!decisionLabel && (
                 <>
                   <span className="dot-sep" aria-hidden="true" />

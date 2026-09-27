@@ -34,6 +34,8 @@ import { quoted, quotedWithJosa } from '../lib/korean'
 import { preferredScrollBehavior } from '../lib/motion'
 import type { MutateFn } from '../app/types'
 import type { AppData, Profile } from '../types'
+import { OfficePlace } from '../features/office/components/OfficePlace'
+import { PersonFace } from '../features/office/components/PersonFace'
 import './AnnouncementsPanel.css'
 
 type Announcement = AppData['announcements'][number]
@@ -482,7 +484,10 @@ export function AnnouncementsPanel({
         </span>
         <span className="announcement-list-preview">{announcement.body}</span>
         <span className="announcement-list-meta">
-          <span>{author?.name ?? '작성자 알 수 없음'}</span>
+          <span className="person-inline">
+            <PersonFace name={author?.name} profileId={announcement.created_by} size="xs" />
+            {author?.name ?? '작성자 알 수 없음'}
+          </span>
           <time dateTime={announcement.created_at}>{announcementDate(announcement.created_at)}</time>
         </span>
       </button>
@@ -511,6 +516,13 @@ export function AnnouncementsPanel({
   return (
     <div className="stack announcements-stack">
       <div className="page-intro announcements-intro">
+        <OfficePlace
+          people={[
+            { profileId: profile.id, name: profile.name },
+            { profileId: data.announcements[0]?.created_by, name: profilesById.get(data.announcements[0]?.created_by ?? '')?.name },
+          ]}
+          place="notice"
+        />
         <div>
           <h1>공지</h1>
           <p>
@@ -583,8 +595,13 @@ export function AnnouncementsPanel({
                   )}
                   <h2 data-detail-title>{selectedAnnouncement.title}</h2>
                   <div className="announcement-detail-meta">
-                    <span>
-                      <UserRound size={14} aria-hidden="true" />
+                    <span className="person-inline">
+                      <PersonFace
+                        fallback={<UserRound size={14} aria-hidden="true" />}
+                        name={profilesById.get(selectedAnnouncement.created_by)?.name}
+                        profileId={selectedAnnouncement.created_by}
+                        size="sm"
+                      />
                       {profilesById.get(selectedAnnouncement.created_by)?.name ?? '작성자 알 수 없음'}
                     </span>
                     <span>

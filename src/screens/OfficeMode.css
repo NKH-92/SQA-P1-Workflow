@@ -1,0 +1,630 @@
+/* 전체 화면 사무실 홈(DESIGN.md §9): 왼쪽 메뉴는 ‘전체 메뉴’로 여는 서랍이 되고,
+   상단바 대신 게임 화면 같은 위 메뉴(HUD)를 둔다. 사무실 회의 안내 띠는 모든 화면에 쓴다. */
+
+.app-shell[data-layout='office'] .sidebar {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 100;
+  transform: translateX(-100%);
+  transition: transform var(--dur-normal) var(--ease-out);
+  box-shadow: none;
+}
+
+.app-shell[data-layout='office'] .sidebar.open {
+  transform: translateX(0);
+  box-shadow: var(--shadow-lg);
+}
+
+.app-shell[data-layout='office'] .sidebar-close {
+  display: inline-grid;
+}
+
+.app-shell[data-layout='office'] .sidebar-command {
+  display: flex;
+}
+
+.app-shell[data-layout='office'] .content {
+  background: var(--brand-navy-deep);
+}
+
+.office-hud-bar {
+  position: relative; /* 알림 패널(.notif-panel)의 기준점 */
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: var(--topbar-h);
+  padding: 0 16px;
+  border-bottom: 1px solid var(--brand-sidebar-border);
+  background: var(--brand-navy);
+  color: var(--brand-on-dark);
+}
+
+.office-hud-left,
+.office-hud-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.office-hud-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 4px;
+}
+
+.office-hud-mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  background: var(--brand-yellow);
+  color: var(--brand-on-yellow);
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.office-hud-brand strong {
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.office-hud-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--brand-sidebar-border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--brand-on-dark);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.office-hud-button:hover {
+  background: color-mix(in srgb, var(--brand-on-dark) 10%, transparent);
+}
+
+.office-hud-button .k {
+  padding: 1px 5px;
+  border: 1px solid var(--brand-sidebar-border);
+  border-radius: var(--radius-sm);
+  color: var(--brand-sidebar-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.office-hud-icon {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--brand-on-dark);
+  cursor: pointer;
+}
+
+.office-hud-icon:hover {
+  background: color-mix(in srgb, var(--brand-on-dark) 10%, transparent);
+}
+
+.office-hud-icon:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.office-hud-icon .dot {
+  position: absolute;
+  top: 8px;
+  right: 9px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--brand-yellow);
+}
+
+.office-hud-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--brand-sidebar-muted);
+  font-size: 12px;
+}
+
+.office-hud-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--brand-yellow);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.office-hud-profile {
+  position: relative;
+}
+
+.office-hud-avatar {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--brand-yellow) 20%, transparent);
+  color: var(--brand-yellow);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.office-hud-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 95;
+  display: grid;
+  gap: 4px;
+  min-width: 180px;
+  padding: 12px;
+  border: 1px solid var(--paper-border);
+  border-radius: var(--radius-lg);
+  background: var(--paper-panel);
+  box-shadow: var(--shadow-lg);
+  color: var(--paper-ink);
+}
+
+.office-hud-popover small {
+  margin-bottom: 6px;
+  color: var(--paper-dim);
+  font-size: 12px;
+}
+
+/* 미리보기 역할 전환(미리보기에서만 보인다): 위 메뉴 한 줄에 세 칸으로 둔다. */
+.office-hud-bar .office-hud-roles {
+  grid-template-columns: repeat(3, auto);
+  margin-top: 0;
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
+/* 사무실 회의 안내 띠: 부름을 받았으면 노란 띠로 눈에 띄게, 회의 중이면 차분하게 */
+.office-meeting-banner {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--paper-border);
+  background: var(--paper-accent-bg);
+  color: var(--paper-ink);
+}
+
+.office-meeting-banner[data-waiting='true'] {
+  background: var(--brand-yellow);
+  color: var(--brand-on-yellow);
+}
+
+.office-meeting-banner p {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+}
+
+.office-meeting-banner-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+/* ── 도트 아이콘·얼굴(사무실 자리 표지와 같은 그림) ───────────── */
+.pixel-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+
+.person-face {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  overflow: hidden;
+  border: 1.5px solid var(--brand-navy-deep);
+  border-radius: var(--radius-sm);
+  background: var(--pixel-face-tile);
+  vertical-align: middle;
+}
+
+.person-face svg {
+  width: 100%;
+  height: 100%;
+}
+
+.person-face[data-size='xs'] {
+  width: 18px;
+  height: 18px;
+  border-width: 1px;
+}
+
+.person-face[data-size='md'] {
+  width: 32px;
+  height: 32px;
+  border-width: 2px;
+}
+
+.person-face[data-size='lg'] {
+  width: 44px;
+  height: 44px;
+  border-width: 2px;
+}
+
+.person-face-plate {
+  background: var(--pixel-plate);
+  color: var(--brand-on-dark);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.person-face-plate[data-size='xs'] {
+  font-size: 9px;
+}
+
+.person-face-plate[data-size='md'],
+.person-face-plate[data-size='lg'] {
+  font-size: 14px;
+}
+
+/* 기존 화면의 상태 아이콘(선 아이콘). 상태마다 색을 달리한다. */
+.presence-line-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--paper-done);
+}
+
+.presence-line-icon:is([data-kind='vacation'], [data-kind='trip']) {
+  color: var(--paper-pending);
+}
+
+.presence-line-icon:is([data-kind='meeting'], [data-kind='field'], [data-kind='lab'], [data-kind='away']) {
+  color: var(--paper-accent);
+}
+
+.presence-choice .presence-line-icon {
+  width: 24px;
+  height: 24px;
+}
+
+/* ── 내 상태 단추(왼쪽 메뉴 아래·사무실 위 메뉴) ─────────────── */
+.presence-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 4px 10px 4px 6px;
+  border: 1px solid var(--brand-sidebar-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--brand-on-dark) 6%, transparent);
+  color: var(--brand-on-dark);
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.presence-button:hover {
+  background: color-mix(in srgb, var(--brand-on-dark) 12%, transparent);
+}
+
+.presence-button:focus-visible {
+  outline: 2px solid var(--brand-yellow);
+  outline-offset: 2px;
+}
+
+/* 기존 화면의 상태 점: 자리에 있음 초록, 휴가·출장 노랑, 잠깐 비움 파랑 */
+.presence-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-inline: 4px 2px;
+  border-radius: var(--radius-full);
+  background: var(--paper-done);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--paper-done) 28%, transparent);
+}
+
+.presence-button:is([data-kind='vacation'], [data-kind='trip']) .presence-dot {
+  background: var(--brand-yellow);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-yellow) 28%, transparent);
+}
+
+.presence-button:is([data-kind='meeting'], [data-kind='field'], [data-kind='lab'], [data-kind='away']) .presence-dot {
+  background: var(--paper-accent-soft);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--paper-accent-soft) 32%, transparent);
+}
+
+.presence-button-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.presence-button-sidebar {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.presence-button[data-kind='vacation'],
+.presence-button[data-kind='trip'] {
+  border-color: color-mix(in srgb, var(--brand-yellow) 55%, transparent);
+}
+
+/* 파트원 화면의 자리 상태 칩 */
+.team-presence {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  padding: 2px 9px 2px 6px;
+  border-radius: var(--radius-full);
+  background: var(--paper-accent-bg);
+  color: var(--paper-accent-deep);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.team-presence:is([data-kind='vacation'], [data-kind='trip']) {
+  background: var(--paper-pending-bg);
+  color: var(--paper-pending-deep);
+}
+
+.team-presence[data-kind='present'] {
+  background: var(--paper-done-bg);
+  color: var(--paper-done);
+}
+
+.team-presence :is(.pixel-icon, .presence-line-icon) {
+  width: 14px;
+  height: 14px;
+  color: currentColor;
+}
+
+.v2-team-card .team-presence {
+  margin-top: 8px;
+}
+
+.team-presence-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+[data-ui='pixel'] .team-presence {
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 32%, transparent);
+}
+
+/* ── 내 상태 창 ─────────────────────────────────────────── */
+.modal-card.presence-dialog {
+  width: min(560px, 100%);
+}
+
+.presence-body {
+  display: grid;
+  gap: 18px;
+  padding: 20px 24px;
+}
+
+.presence-section {
+  display: grid;
+  gap: 10px;
+}
+
+.presence-section h3 {
+  margin: 0;
+  color: var(--paper-ink);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.presence-field {
+  display: grid;
+  gap: 6px;
+  color: var(--paper-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.presence-choices {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.presence-choice {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  min-height: 84px;
+  padding: 10px 4px 8px;
+  border: 2px solid var(--paper-border);
+  border-radius: var(--radius-md);
+  background: var(--paper-panel);
+  color: var(--paper-ink);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.presence-choice .pixel-icon {
+  width: 30px;
+  height: 30px;
+}
+
+.presence-choice small {
+  color: var(--paper-dim);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.presence-choice:hover {
+  border-color: var(--paper-border-strong);
+  background: var(--paper-hover);
+}
+
+.presence-choice[aria-pressed='true'] {
+  border-color: var(--brand-navy);
+  background: var(--brand-yellow);
+  box-shadow: 0 3px 0 var(--brand-navy);
+  color: var(--brand-on-yellow);
+}
+
+.presence-choice[aria-pressed='true'] small {
+  color: var(--brand-on-yellow);
+}
+
+.presence-note,
+.presence-empty {
+  margin: 0;
+  color: var(--paper-dim);
+  font-size: 13px;
+}
+
+.presence-leaves {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.presence-leaves li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--paper-border);
+  border-radius: var(--radius-md);
+  background: var(--paper-panel-warm);
+}
+
+.presence-leave-text {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.presence-leave-text small {
+  flex-basis: 100%;
+  color: var(--paper-dim);
+}
+
+.presence-leave-form {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed var(--paper-border-strong);
+  border-radius: var(--radius-md);
+}
+
+.presence-leave-form legend {
+  padding: 0 4px;
+  color: var(--paper-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.presence-kind button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.presence-dates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.presence-leave-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.presence-hint {
+  color: var(--paper-dim);
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .presence-body {
+    padding: 16px 18px;
+  }
+
+  .presence-choices {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .presence-dates {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .office-hud-bar {
+    gap: 6px;
+    padding-inline: 10px;
+  }
+
+  .office-hud-label,
+  .office-hud-button .k,
+  .office-hud-brand strong,
+  .office-hud-bar .office-hud-roles,
+  .presence-button-hud .presence-button-label {
+    display: none;
+  }
+
+  .presence-button-hud {
+    padding-inline: 8px;
+  }
+
+  .office-meeting-banner {
+    flex-wrap: wrap;
+    padding: 10px 12px;
+  }
+}

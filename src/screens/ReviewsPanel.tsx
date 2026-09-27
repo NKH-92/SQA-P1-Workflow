@@ -40,6 +40,7 @@ import { useComposerIntent } from '../app/hooks/useComposerIntent'
 import { useSelectionHashSync } from '../app/hooks/useHashNavigation'
 import { Archive, LayoutGrid, List, Search, Send } from 'lucide-react'
 import { canViewTeamData } from '../domain/permissions'
+import { OfficePlace } from '../features/office/components/OfficePlace'
 
 type ReviewsPanelProps = {
   profile: Profile
@@ -537,6 +538,21 @@ function ReviewsWorkspace({
         />
       )}
       <div className="workspace-header">
+        <OfficePlace
+          people={[
+            { profileId: profile.id, name: profile.name },
+            (() => {
+              // 파트장 화면에는 기다리는 요청자, 파트원 화면에는 검토해 주는 파트장이 칸반 앞에 선다.
+              if (!leaderMode) {
+                const leader = data.profiles.find((person) => person.role === 'leader' && person.is_active !== false)
+                return { profileId: leader?.id, name: leader?.name }
+              }
+              const waiting = data.reviewRequests.find((request) => request.status === 'pending' && request.requester_id !== profile.id)
+              return { profileId: waiting?.requester_id, name: waiting?.profiles?.name }
+            })(),
+          ]}
+          place="kanban"
+        />
         <h1 className="workspace-title">{leaderMode ? '검토요청' : '내 검토요청'}</h1>
         {leaderMode ? (
           <label className="search-field review-workspace-search">

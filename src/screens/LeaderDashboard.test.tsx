@@ -24,7 +24,7 @@ describe('LeaderDashboard', () => {
     const data = createPreviewData()
     const total = selectLeaderPriorityQueue(data, data.profiles.filter((item) => item.role === 'member')).length
 
-    render(<LeaderDashboard profile={previewLeader} data={data} setActiveTab={vi.fn()} />)
+    render(<LeaderDashboard profile={previewLeader} data={data} setActiveTab={vi.fn()} mutate={vi.fn()} setData={vi.fn()} />)
 
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(`오늘 처리할 일이 ${total}건 있어요`)
     expect(screen.getByText(new RegExp(`안녕하세요, ${previewLeader.name}님`))).toBeInTheDocument()
@@ -34,7 +34,7 @@ describe('LeaderDashboard', () => {
   })
 
   it('filters the list with one row of chips whose numbers match the rows', () => {
-    render(<LeaderDashboard profile={previewLeader} data={createPreviewData()} setActiveTab={vi.fn()} />)
+    render(<LeaderDashboard profile={previewLeader} data={createPreviewData()} setActiveTab={vi.fn()} mutate={vi.fn()} setData={vi.fn()} />)
 
     const chips = screen.getByRole('group', { name: '할 일 종류로 거르기' })
     expect(within(chips).getAllByRole('button').map((chip) => chip.textContent?.replace(/\s*\d+$/, ''))).toEqual([
@@ -56,7 +56,7 @@ describe('LeaderDashboard', () => {
 
   it('gives every row a type chip, a due state and a next action without nesting buttons', () => {
     const setActiveTab = vi.fn()
-    render(<LeaderDashboard profile={previewLeader} data={createPreviewData()} setActiveTab={setActiveTab} />)
+    render(<LeaderDashboard profile={previewLeader} data={createPreviewData()} setActiveTab={setActiveTab} mutate={vi.fn()} setData={vi.fn()} />)
 
     const rows = [...todoList().querySelectorAll('.priority-row')]
     expect(rows.length).toBeGreaterThan(0)
@@ -74,7 +74,7 @@ describe('LeaderDashboard', () => {
 
   it('moves the owner assignment call to the top rail and opens products filtered to missing owners', () => {
     const setActiveTab = vi.fn()
-    render(<LeaderDashboard profile={previewLeader} data={createPreviewData()} setActiveTab={setActiveTab} />)
+    render(<LeaderDashboard profile={previewLeader} data={createPreviewData()} setActiveTab={setActiveTab} mutate={vi.fn()} setData={vi.fn()} />)
 
     expect(screen.getByText(/담당자가 없는 제품이 \d+개 있어요/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '담당자 배정하기' }))
@@ -85,7 +85,7 @@ describe('LeaderDashboard', () => {
 
   it('links the monthly review line to review statistics', () => {
     const setActiveTab = vi.fn()
-    render(<LeaderDashboard profile={previewLeader} data={createPreviewData()} setActiveTab={setActiveTab} />)
+    render(<LeaderDashboard profile={previewLeader} data={createPreviewData()} setActiveTab={setActiveTab} mutate={vi.fn()} setData={vi.fn()} />)
 
     expect(screen.getByRole('heading', { name: '이번 달 검토' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '검토 통계 보기' }))
@@ -120,7 +120,7 @@ describe('LeaderDashboard', () => {
       }],
     }
 
-    render(<LeaderDashboard profile={previewLeader} data={data} setActiveTab={setActiveTab} />)
+    render(<LeaderDashboard profile={previewLeader} data={data} setActiveTab={setActiveTab} mutate={vi.fn()} setData={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: /전체 \d+/ }))
     const showAll = screen.queryByRole('button', { name: /^나머지 \d+건 보기$/ })
     if (showAll) fireEvent.click(showAll)
@@ -135,7 +135,7 @@ describe('LeaderDashboard', () => {
   it('shows a read-only team leader the same list without action buttons', () => {
     const teamLeader: Profile = { ...previewLeader, id: 'team-leader', name: '미리보기 팀장', role: 'team_leader' }
     const setActiveTab = vi.fn()
-    render(<LeaderDashboard profile={teamLeader} data={createPreviewData()} setActiveTab={setActiveTab} />)
+    render(<LeaderDashboard profile={teamLeader} data={createPreviewData()} setActiveTab={setActiveTab} mutate={vi.fn()} setData={vi.fn()} />)
 
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/파트에서 처리할 일이 \d+건 있어요/)
     expect(todoList().querySelector('.priority-action')).toBeNull()

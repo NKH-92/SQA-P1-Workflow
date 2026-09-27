@@ -6,6 +6,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     include: ['src/**/*.test.{ts,tsx}', 'tests/**/*.test.ts'],
+    setupFiles: ['src/test/setupCanvas.ts'],
     env: {
       VITE_SUPABASE_URL: 'https://your-project-ref.supabase.co',
       VITE_SUPABASE_ANON_KEY: 'your-public-anon-key',

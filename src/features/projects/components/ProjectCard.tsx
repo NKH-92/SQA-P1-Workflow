@@ -5,6 +5,8 @@ import { formatDate, projectStatusLabels } from '../../../lib/format'
 import type { Profile, Project, ProjectAssignment, ProjectStatus } from '../../../types'
 import { dueBadgeStatus, projectAssigneeNames, projectDueState } from '../project.selectors'
 import { ProjectStatusMenu } from './ProjectStatusMenu'
+import { PersonFace } from '../../office/components/PersonFace'
+import { usePixelUi } from '../../office/pixelUiContext'
 
 const VISIBLE_ASSIGNEES = 3
 
@@ -42,6 +44,7 @@ export function ProjectCard({
   onDelete,
 }: ProjectCardProps) {
   const titleId = useId()
+  const pixel = usePixelUi()
   const due = projectDueState(project)
   const names = projectAssigneeNames(assignments, profiles)
   const shownNames = names.slice(0, VISIBLE_ASSIGNEES).join(', ')
@@ -92,7 +95,13 @@ export function ProjectCard({
       </p>
       <div className="project-card-foot">
         <p className="project-card-assignees">
-          <Users aria-hidden="true" size={14} />
+          {pixel.enabled && names.length > 0 ? (
+            <span aria-hidden="true" className="person-face-stack">
+              {names.slice(0, VISIBLE_ASSIGNEES).map((name) => <PersonFace key={name} name={name} size="xs" />)}
+            </span>
+          ) : (
+            <Users aria-hidden="true" size={14} />
+          )}
           {names.length === 0 ? (
             <span className="project-card-unassigned">담당자 없음</span>
           ) : (

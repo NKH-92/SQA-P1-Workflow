@@ -1,6 +1,14 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { AppRoutes } from './app/AppRoutes'
 import { useAppData } from './app/hooks/useAppData'
+import { useSectionReadMarker } from './app/hooks/useSectionReadMarker'
+import { useOfficeLiveSync } from './app/hooks/useOfficeLiveSync'
+import { useOfficeMeetingActions } from './app/hooks/useOfficeMeetingActions'
+import { usePresenceActions } from './app/hooks/usePresenceActions'
+import { useHomeMode } from './app/hooks/useHomeMode'
+import { OfficeMeetingBanner } from './components/OfficeMeetingBanner'
+import { presenceOf } from './data/validation/memberPresence'
+import { PixelUiProvider } from './features/office/components/PixelUiProvider'
 import { useBackgroundRefresh } from './app/hooks/useBackgroundRefresh'
 import { useDesktopNotifications } from './app/hooks/useDesktopNotifications'
 import { usePreviewRoleChange } from './app/hooks/usePreviewRoleChange'
@@ -31,6 +39,8 @@ import { Shell } from './screens/Shell'
  */
 const loadCommandPalette = () => import('./components/CommandPalette')
 const CommandPalette = lazy(() => loadCommandPalette().then((module) => ({ default: module.CommandPalette })))
+/** 내 상태 창은 열 때만 받는다. */
+const MemberPresenceDialog = lazy(() => import('./features/office/components/MemberPresenceDialog').then((module) => ({ default: module.MemberPresenceDialog })))
 
 /**
  * 로그인·비밀번호 변경·계정 안내·설정 오류 화면은 로그인한 사용자가 매일 여는 첫 화면에 필요 없다.
@@ -132,6 +142,8 @@ function App() {
   useRealtimeReviewInserts(backgroundSyncEnabled && canManage, () => {
     refreshData({ silent: true }).catch(() => {})
   })
+  // 사무실 회의실(인스턴트 회의)은 모두가 바로 봐야 해서 역할과 관계없이 구독한다.
+  useOfficeLiveSync(backgroundSyncEnabled, setData)
   const desktopNotifications = useDesktopNotifications(
     profile?.id ?? null,
     canManage,
@@ -177,6 +189,14 @@ function App() {
   const commandPalette = useCommandPalette(commandPaletteAvailable)
   useEffect(() => (commandPaletteAvailable ? prefetchWhenIdle(loadCommandPalette) : undefined), [commandPaletteAvailable])
   const markAllNotificationsRead = useReviewNotificationController(profile, data, setData, mutate)
+  // 공지·프로젝트·변경 적용 화면을 열면 홈 사무실 기물의 ‘새 소식’ 알림이 꺼지도록 확인 기록을 남긴다.
+  useSectionReadMarker(commandPaletteAvailable ? profile : null, data, setData, navigation.activeTab)
+  // 홈 화면 방식(전체 화면 사무실 / 기존 화면)은 사람마다 기억한다.
+  const homeMode = useHomeMode(profile?.id ?? null)
+  const meetingActions = useOfficeMeetingActions(profile, data, setData, mutate)
+  // 개인 상태(잠깐 비움·휴가·출장)는 어느 화면에서든 연다. 기존 화면·사무실 화면 모두 같은 기능이다.
+  const presenceActions = usePresenceActions(profile, data, setData, mutate)
+  const myPresence = useMemo(() => (profile ? presenceOf(data.memberPresence, profile.id) : null), [data.memberPresence, profile])
 
   // signOut이 resetNavigation까지 수행한다(useAuthProfile → useHashNavigation).
   const handleSignOut = async () => {
@@ -247,7 +267,7 @@ function App() {
   }
 
   return (
-    <>
+    <PixelUiProvider enabled={homeMode.mode === 'office'} layout={data.officeLayout}>
       <Shell
         activeTab={navigation.activeTab}
         setActiveTab={setActiveTab}
@@ -272,6 +292,17 @@ function App() {
         }}
         onSignOut={() => void handleSignOut()}
         onPreviewRoleChange={previewRoleChange}
+        homeMode={homeMode.mode}
+        onHomeModeChange={homeMode.setMode}
+        presence={presenceActions.canEdit ? { current: myPresence, onOpen: () => presenceActions.open() } : undefined}
+        meetingBanner={(
+          <OfficeMeetingBanner
+            meeting={data.officeMeeting}
+            onAcknowledge={meetingActions.acknowledge}
+            onEnd={meetingActions.end}
+            profile={profile}
+          />
+        )}
       >
         <AppRoutes
           activeTab={navigation.activeTab}
@@ -282,8 +313,24 @@ function App() {
           mutate={mutate}
           setData={setData}
           setActiveTab={setActiveTab}
+          homeMode={homeMode.mode}
+          onHomeModeChange={homeMode.setMode}
+          onOpenPresence={presenceActions.canEdit ? presenceActions.open : undefined}
         />
       </Shell>
+      {presenceActions.openFor && (
+        <Suspense fallback={null}>
+          <MemberPresenceDialog
+            initialProfileId={presenceActions.openFor}
+            onAddLeave={presenceActions.addLeave}
+            onClose={presenceActions.close}
+            onDeleteLeave={presenceActions.deleteLeave}
+            onSetStatus={presenceActions.setStatus}
+            people={presenceActions.people}
+            presence={data.memberPresence}
+          />
+        </Suspense>
+      )}
       {commandPalette.open && (
         <Suspense fallback={null}>
           <CommandPalette
@@ -296,7 +343,7 @@ function App() {
           />
         </Suspense>
       )}
-    </>
+    </PixelUiProvider>
   )
 }
 

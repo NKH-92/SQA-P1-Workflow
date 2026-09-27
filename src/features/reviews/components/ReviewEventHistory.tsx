@@ -6,6 +6,7 @@ import { formatDateTime } from '../../../lib/format'
 import type { ReviewEvent } from '../../../types'
 import { compareDecimalIds } from '../../../lib/decimalId'
 import { reviewEventLabel } from '../reviewEventPresentation'
+import { PersonFace } from '../../office/components/PersonFace'
 
 type ReviewEventHistoryProps = {
   reviewRequestId: string
@@ -77,7 +78,12 @@ export function ReviewEventHistory({ reviewRequestId, localEvents = [] }: Review
                 <li key={String(event.id)}>
                   <strong>{reviewEventLabel(event.event_type)}</strong>
                   <time dateTime={event.occurred_at}>{formatDateTime(event.occurred_at)}</time>
-                  {event.actor_name_snapshot ? <span>{event.actor_name_snapshot}</span> : null}
+                  {event.actor_name_snapshot ? (
+                    <span className="person-inline">
+                      <PersonFace name={event.actor_name_snapshot} profileId={event.actor_id} size="xs" />
+                      {event.actor_name_snapshot}
+                    </span>
+                  ) : null}
                 </li>
               ))}
             </ol>

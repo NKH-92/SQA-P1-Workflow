@@ -19,6 +19,10 @@ import type {
   ReviewRequest,
 } from '../../types'
 import { createEmptyAppData } from '../appData'
+import { parseOfficeLayout } from '../validation/officeSeats'
+import { parseSectionReadMarks } from '../validation/sectionReadMarks'
+import { parseOfficeMeeting } from '../validation/officeMeeting'
+import { parseMemberPresence } from '../validation/memberPresence'
 import type { ChangeQueryResults } from './changeQueries'
 import type { CoreQueryResults } from './coreQueries'
 import type { OptionalQueryResults, SettledQueryResult } from './optionalQueries'
@@ -142,6 +146,34 @@ export function assembleAppData(
     optionalWarnings,
     previous.activityLogs,
   ).slice(0, 100)
+  // 사무실 자리는 홈 장식이라 실패해도 이전 배치를 그대로 보여 준다(모양이 다른 응답도 실패로 본다).
+  const officeResult = optionalResults.officeLayout
+  const parsedOffice = officeResult?.status === 'fulfilled' && officeResult.value && !officeResult.value.error
+    ? parseOfficeLayout(officeResult.value.data)
+    : null
+  if (!parsedOffice) optionalWarnings.push(optionalLoadFailureWarning('사무실 자리'))
+  const officeLayout = parsedOffice ?? previous.officeLayout ?? { revision: null, seats: [] }
+  // 확인 기록을 못 불러오면 이전 기록을 쓰고, 그것도 없으면 모르는 상태로 둬 ‘새 소식’을 잘못 띄우지 않는다.
+  const readMarksResult = optionalResults.sectionReadMarks
+  const parsedReadMarks = readMarksResult?.status === 'fulfilled' && readMarksResult.value && !readMarksResult.value.error
+    ? parseSectionReadMarks(readMarksResult.value.data)
+    : null
+  if (!parsedReadMarks) optionalWarnings.push(optionalLoadFailureWarning('새 소식 표시'))
+  const sectionReadMarks = parsedReadMarks ?? previous.sectionReadMarks
+  // 회의실도 못 불러오면 이전 상태를 쓴다(없으면 모르는 상태로 둬 회의를 잘못 보여 주지 않는다).
+  const meetingResult = optionalResults.officeMeeting
+  const parsedMeeting = meetingResult?.status === 'fulfilled' && meetingResult.value && !meetingResult.value.error
+    ? parseOfficeMeeting(meetingResult.value.data)
+    : null
+  if (!parsedMeeting) optionalWarnings.push(optionalLoadFailureWarning('사무실 회의'))
+  const officeMeeting = parsedMeeting ? parsedMeeting.meeting : previous.officeMeeting
+  // 자리 상태도 못 불러오면 이전 상태를 쓴다(없으면 모두 자리에 있는 것으로 보인다).
+  const presenceResult = optionalResults.memberPresence
+  const parsedPresence = presenceResult?.status === 'fulfilled' && presenceResult.value && !presenceResult.value.error
+    ? parseMemberPresence(presenceResult.value.data)
+    : null
+  if (!parsedPresence) optionalWarnings.push(optionalLoadFailureWarning('자리 상태'))
+  const memberPresence = parsedPresence ?? previous.memberPresence
 
   return {
     announcements,
@@ -166,6 +198,10 @@ export function assembleAppData(
     projectAssignments: (projectAssignmentsResult.data ?? []) as ProjectAssignment[],
     profileNotes,
     activityLogs,
+    officeLayout,
+    sectionReadMarks,
+    officeMeeting,
+    memberPresence,
     optionalWarnings,
   }
 }

@@ -13,6 +13,7 @@ import type {
   ProductAssignment,
   ProductChangeTask,
   Profile,
+  OfficeLayout,
   ProfileNote,
   Project,
   ProjectAssignment,
@@ -20,8 +21,12 @@ import type {
   ReviewRequest,
   ReviewEvent,
   ActivityLog,
+  SectionReadMark,
+  MemberPresence,
 } from './types'
+import { businessDateKey } from './lib/businessTime'
 import { demoProductAllocationRows } from './demo/anonymousProductAllocation'
+import { selectLeaderChangeActions, selectMemberPendingTasks } from './domain/changeApplications/attention'
 import {
   demoDutyAllocationRows,
   isDirectDutyAssignee,
@@ -443,6 +448,34 @@ export function createPreviewData(): AppData {
 
   const profileNotes: ProfileNote[] = []
 
+  // 홈 도트 사무실: 미리보기 계정 넷을 앉히고 나머지는 빈자리로 둔다.
+  const [memberA, memberB, memberC] = previewProfiles
+  const officeLayout: OfficeLayout = {
+    revision: 'preview-office-1',
+    seats: [
+      { seat_index: 2, profile_id: memberA.id, name: memberA.name, role: memberA.role, gender: 'female', style_seed: 20260927 },
+      { seat_index: 3, profile_id: previewLeader.id, name: previewLeader.name, role: previewLeader.role, gender: 'male', style_seed: 1204 },
+      { seat_index: 6, profile_id: memberB.id, name: memberB.name, role: memberB.role, gender: 'male', style_seed: 777 },
+      { seat_index: 7, profile_id: memberC.id, name: memberC.name, role: memberC.role, gender: 'female', style_seed: 31337 },
+    ],
+  }
+
+  // 자리 상태 예시: 파트원 B는 오늘부터 사흘 출장, 파트원 C는 실험실에 가 있다(자리에 도트 표지가 보인다).
+  const today = businessDateKey(new Date())
+  const inDays = (days: number) => {
+    const date = new Date(`${today}T00:00:00.000Z`)
+    date.setUTCDate(date.getUTCDate() + days)
+    return date.toISOString().slice(0, 10)
+  }
+  const memberPresence: MemberPresence = {
+    statuses: [
+      { profile_id: memberC.id, name: memberC.name, status: 'lab', updated_at: new Date().toISOString() },
+    ],
+    leaves: [
+      { id: 'preview-leave-trip', profile_id: memberB.id, name: memberB.name, kind: 'trip', starts_on: today, ends_on: inDays(2), note: '오송 공장 실사' },
+    ],
+  }
+
   const announcements: Announcement[] = [
     {
       id: 'announcement-01',
@@ -502,6 +535,39 @@ export function createPreviewData(): AppData {
     },
   ]
 
+  // 홈 사무실 기물 알림 미리보기. 파트원 A는 새 공지 1건·새로 배정된 프로젝트 1건이 보이고,
+  // 적용 업무는 확인했지만 아직 남아 있다(처리할 일). 파트장은 공통변경을 확인한 상태다.
+  const changeData = { changeApplications, changeActionItems, productChangeTasks }
+  const memberAssignmentIds = projectAssignments
+    .filter((assignment) => assignment.user_id === previewMember.id)
+    .map((assignment) => assignment.id)
+  const sectionReadMarks: SectionReadMark[] = [
+    {
+      user_id: previewMember.id,
+      section: 'announcements',
+      seen_keys: announcements.filter((announcement) => announcement.id !== 'announcement-01').map((announcement) => announcement.id),
+      seen_at: createdAt,
+    },
+    {
+      user_id: previewMember.id,
+      section: 'projects',
+      seen_keys: memberAssignmentIds.slice(1),
+      seen_at: createdAt,
+    },
+    {
+      user_id: previewMember.id,
+      section: 'change-applications',
+      seen_keys: selectMemberPendingTasks(changeData, previewMember.id).map(({ task }) => task.id),
+      seen_at: createdAt,
+    },
+    {
+      user_id: previewLeader.id,
+      section: 'change-applications',
+      seen_keys: selectLeaderChangeActions(changeData).map((application) => application.id),
+      seen_at: createdAt,
+    },
+  ]
+
   return {
     announcements,
     changeApplications,
@@ -524,5 +590,10 @@ export function createPreviewData(): AppData {
     projectAssignments,
     profileNotes,
     activityLogs,
+    officeLayout,
+    sectionReadMarks,
+    // 미리보기 회의실은 비어 있는 채로 시작한다.
+    officeMeeting: null,
+    memberPresence,
   }
 }

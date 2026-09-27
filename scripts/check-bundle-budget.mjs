@@ -12,7 +12,16 @@ const MAX_CHUNK_BYTES = 560 * 1024
 // mobile tab bar, stacked toasts, history-aware overlays and the profile area; the
 // command palette, notification panel and sign-in/password/error gate screens moved to
 // lazy chunks to compensate. Measured 147,034 B afterwards, so the cap moves to 146 KiB.
-const MAX_INITIAL_GZIP_BYTES = 146 * 1024
+// 2026-09 full-screen office home: 149,246 B → 152,591 B measured. The always-on shell now carries the
+// office top menu (HUD) and drawer layout, the app-wide instant-meeting banner, its Realtime/30-second sync
+// and the meeting/home-mode data adapters, so every screen can confirm a meeting. Lazy-loading the top menu
+// was measured to save only ~150 B, so the cap moves to 150 KiB instead.
+// 2026-09 office round 6: 152,591 B → 158,469 B measured. Personal presence is shown on every screen (sidebar
+// and top-menu status button) and kept live with the meeting room: presence parsing/validation, its local and
+// remote repositories, the combined office Realtime/30-second sync, the scheduled-meeting banner model and the
+// pixel-mode context now ship with the shell. The status dialog itself, the pixel faces and screen vignettes stay
+// lazy, and the classic status button uses a CSS dot instead of line icons (−0.7 KiB). The cap moves to 156 KiB.
+const MAX_INITIAL_GZIP_BYTES = 156 * 1024
 // The change-application route lazy-loads the browser-only XLSX reader when a
 // leader selects a file. This raises the all-routes sum while keeping initial
 // navigation unchanged, so retain a narrow cap around the measured surface.
@@ -21,7 +30,24 @@ const MAX_INITIAL_GZIP_BYTES = 146 * 1024
 // master; bulk actions, drafts and attention filters in change applications; resubmit
 // with edits, decision-time sorting and inline validation in reviews; project edit/delete
 // dialogs) plus chunk overhead from the new lazy gate screens.
-const MAX_TOTAL_GZIP_BYTES = 272 * 1024
+// 2026-09 home pixel office: 275,271 B → 293,480 B measured. The requested office scene (sprite maps,
+// scene painter, behaviour loop and the leader seat editor) lives in the lazy dashboard chunk
+// (6,700 → 23,311 B); initial navigation grew only by the office data adapters (146,940 → 148,425 B).
+// 2026-09 office round 2: 293,480 B → 299,529 B measured. Walking trips (standing/walking sprites,
+// path finding), the pharma-QA scene objects, clickable objects/people and the full-width scene sizing
+// all stay in the lazy dashboard chunk (23,311 → 29,356 B); initial navigation is unchanged (148,437 B).
+// Office object alerts then measured 300,955 B total: the alert model in the dashboard chunk (→ 30,000 B)
+// and the per-person read marks (fetch, repositories, section-visit marker) in initial navigation
+// (148,437 → 149,246 B, still under the 146 KiB cap).
+// Full-screen office home and instant meetings then measured 311,263 B total: the expanded office world
+// (new objects, meeting room, lower-floor walking), the full-screen home with its quest panel and the meeting
+// dialog in the lazy dashboard chunk (30,000 → 36,942 B), plus the initial-shell additions noted above.
+// Office round 6 then measured 330,985 B total: the time-of-day window sky and the re-zoned office world,
+// seat status signs, the scheduled/elsewhere meeting dialog, the lazy status dialog, and the pixel design for
+// work screens (character faces, office vignettes) now shared by the dashboard and the announcement, review,
+// change, project and team routes through common office chunks (no module is duplicated), plus the initial
+// additions noted above.
+const MAX_TOTAL_GZIP_BYTES = 326 * 1024
 // 빠른 이동(Ctrl K)과 알림 패널은 열 때만 쓰므로 첫 화면에서 빼고 지연 로딩한다(한가할 때 미리 받음).
 const EXPECTED_ROUTE_DYNAMIC_IMPORTS = new Set([
   'src/components/CommandPalette.tsx',
@@ -32,6 +58,8 @@ const EXPECTED_ROUTE_DYNAMIC_IMPORTS = new Set([
   'src/screens/ConfigErrorScreen.tsx',
   'src/screens/PasswordChangePanel.tsx',
   'src/screens/ProfileLoadErrorScreen.tsx',
+  // 내 상태(잠깐 비움·휴가·출장) 창은 열 때만 받는다.
+  'src/features/office/components/MemberPresenceDialog.tsx',
   'src/screens/AnnouncementsPanel.tsx',
   'src/screens/ChangeApplicationsPanel.tsx',
   'src/screens/DashboardPanels.ts',

@@ -542,3 +542,48 @@ describe('Shell sync health warning', () => {
     expect(screen.getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
   })
 })
+
+describe('Shell full-screen office home', () => {
+  afterEach(cleanup)
+
+  function renderOffice(options: { activeTab?: TabId; onHomeModeChange?: (mode: 'office' | 'classic') => void; setActiveTab?: RenderOptions['setActiveTab'] } = {}) {
+    const element = shellElement(leader, true, { activeTab: options.activeTab, setActiveTab: options.setActiveTab, onPreviewRoleChange: vi.fn() })
+    return render(
+      <Shell
+        {...element.props}
+        homeMode="office"
+        meetingBanner={<div role="status">회의 안내</div>}
+        onHomeModeChange={options.onHomeModeChange ?? vi.fn()}
+      />,
+    )
+  }
+
+  it('replaces the side menu and top bar with the game-like top menu on the home', () => {
+    const onHomeModeChange = vi.fn()
+    renderOffice({ onHomeModeChange })
+    expect(document.querySelector('.topbar')).toBeNull()
+    expect(screen.getByRole('status')).toHaveTextContent('회의 안내')
+    expect(screen.queryByRole('navigation', { name: '주 메뉴 항목' })).not.toBeInTheDocument()
+    for (const name of ['알림', '새로고침', '전체 메뉴']) expect(screen.getByRole('button', { name })).toBeInTheDocument()
+    expect(within(screen.getByRole('group', { name: '미리보기 역할' })).getAllByRole('button')).toHaveLength(3)
+    fireEvent.click(screen.getByRole('button', { name: '기존 화면' }))
+    expect(onHomeModeChange).toHaveBeenCalledWith('classic')
+  })
+
+  it('opens every menu from the top menu as a drawer', () => {
+    const setActiveTab = vi.fn()
+    renderOffice({ setActiveTab })
+    const menu = screen.getByRole('button', { name: '전체 메뉴' })
+    fireEvent.click(menu)
+    expect(menu).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(within(sidebarNav()).getByRole('button', { name: /^제품/ }))
+    expect(setActiveTab).toHaveBeenCalledWith('products', undefined, { replace: true })
+  })
+
+  it('keeps the usual side menu and top bar on other screens', () => {
+    renderOffice({ activeTab: 'reviews' })
+    expect(document.querySelector('.topbar')).not.toBeNull()
+    expect(sidebarNav()).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '기존 화면' })).not.toBeInTheDocument()
+  })
+})

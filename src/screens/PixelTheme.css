@@ -1,0 +1,162 @@
+/* ==========================================================================
+   Pixel UI — 홈을 전체 화면 사무실로 쓰는 사람에게만 적용되는 업무 화면 도트 디자인.
+   Shell 뿌리에 data-ui="pixel"이 있을 때만 켜진다. 기존 화면을 고른 사람은 예전 디자인 그대로다(DESIGN.md §9).
+   - 머리말 왼쪽: 사무실에서 그 화면으로 오는 기물 앞 장면(OfficePlace)
+   - 사람 이름 옆: 사무실 캐릭터 얼굴(PersonFace)
+   - 큰 판: 게임 창처럼 두꺼운 테두리와 단단한(번지지 않는) 그림자, 칩·버튼도 각지게
+   ========================================================================== */
+
+/* 이름 옆 얼굴 줄맞춤(기존 화면에서는 이 규칙이 없어 모양이 그대로다) */
+[data-ui='pixel'] .person-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  vertical-align: middle;
+}
+
+[data-ui='pixel'] .person-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* 여러 사람 얼굴을 겹쳐 놓는다(프로젝트 담당자). */
+.person-face-stack {
+  display: inline-flex;
+  flex: none;
+}
+
+.person-face-stack .person-face + .person-face {
+  margin-left: -5px;
+}
+
+/* 파트원 카드: 얼굴이 이름 앞에 오면 이름 칸이 남는 폭을 채운다(기존 화면의 첫 칸 규칙과 같은 모양). */
+[data-ui='pixel'] .v2-team-head > .person-face {
+  display: inline-grid;
+  flex: none;
+  gap: 0;
+}
+
+[data-ui='pixel'] .v2-team-head > .person-face + span {
+  display: grid;
+  flex: 1;
+  gap: 1px;
+  min-width: 0;
+}
+
+/* ── 머리말 장소 그림 ──────────────────────────────────── */
+.office-place {
+  display: block;
+  flex: none;
+  overflow: hidden;
+  border: 2px solid var(--pixel-ink);
+  border-radius: 6px;
+  background: var(--brand-navy-deep);
+  box-shadow: 0 3px 0 var(--pixel-shadow);
+}
+
+.office-place canvas {
+  display: block;
+  width: 176px;
+  height: 100px;
+  image-rendering: pixelated;
+}
+
+[data-ui='pixel'] :is(.announcements-intro, .projects-intro, .change-page-intro) {
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px;
+}
+
+[data-ui='pixel'] :is(.announcements-intro, .projects-intro, .change-page-intro) > .office-place + div {
+  flex: 1;
+  min-width: 0;
+}
+
+[data-ui='pixel'] .workspace-header > .office-place {
+  margin-right: 4px;
+}
+
+[data-ui='pixel'] .workspace-header > .office-place + .workspace-title {
+  margin-right: auto;
+  font-size: 24px;
+}
+
+/* ── 큰 판: 게임 창 테두리 ─────────────────────────────── */
+[data-ui='pixel'] :is(
+  .announcement-board,
+  .review-workspace:not(.kanban-mode),
+  .kanban-col,
+  .project-card,
+  .group-card,
+  .change-group,
+  .member-change-detail-card,
+  .change-kpis .kpi-stat,
+  .projects-toolbar
+) {
+  border: 2px solid var(--pixel-frame);
+  border-radius: 6px;
+  box-shadow: 0 3px 0 var(--pixel-shadow);
+}
+
+[data-ui='pixel'] :is(.project-card, .change-kpis .kpi-stat):hover {
+  border-color: var(--pixel-ink);
+}
+
+[data-ui='pixel'] .kanban-card {
+  border: 1.5px solid var(--pixel-frame);
+  border-radius: 5px;
+  box-shadow: 0 2px 0 var(--pixel-shadow);
+}
+
+/* 판 제목 앞 노란 도트 표시 */
+[data-ui='pixel'] :is(.announcement-list-head h2, .group-title, .kanban-col-head strong)::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 7px;
+  background: var(--brand-yellow);
+  box-shadow: 0 0 0 1.5px var(--pixel-ink);
+  vertical-align: 0.2em;
+}
+
+/* ── 칩·버튼 ───────────────────────────────────────────── */
+[data-ui='pixel'] :is(.announcements-stack, .review-stack, .change-applications-page, .projects-stack) :is(.badge, .due-chip, .announcement-pin-badge) {
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 32%, transparent);
+}
+
+[data-ui='pixel'] :is(.announcements-stack, .review-stack, .change-applications-page, .projects-stack) button.primary:not(.compact) {
+  border-radius: 6px;
+  box-shadow: 0 3px 0 var(--pixel-yellow-edge);
+}
+
+[data-ui='pixel'] :is(.announcements-stack, .review-stack, .change-applications-page, .projects-stack) button.primary:not(.compact):active {
+  box-shadow: 0 1px 0 var(--pixel-yellow-edge);
+  transform: translateY(2px);
+}
+
+/* 선택한 목록 줄: 노란 막대(게임 메뉴의 커서처럼) */
+[data-ui='pixel'] :is(.announcement-list-item, .review-list-item).selected {
+  box-shadow: inset 4px 0 0 var(--brand-yellow);
+}
+
+@media (max-width: 640px) {
+  /* 휴대폰에서는 장소 그림을 작게(논리 픽셀 한 배 반) 둔다. */
+  .office-place canvas {
+    width: 132px;
+    height: 75px;
+  }
+
+  [data-ui='pixel'] :is(.announcements-intro, .projects-intro, .change-page-intro) {
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-ui='pixel'] :is(.announcements-stack, .review-stack, .change-applications-page, .projects-stack) button.primary:not(.compact):active {
+    transform: none;
+  }
+}

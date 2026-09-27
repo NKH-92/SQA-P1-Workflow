@@ -41,7 +41,15 @@ vi.mock('../lib/supabase', () => ({
     return supabaseFlags.isProductionMode
   },
   get supabase() {
-    return supabaseFlags.hasSupabaseConfig ? { auth: { signOut: vi.fn() } } : null
+    if (!supabaseFlags.hasSupabaseConfig) return null
+    // 사무실 회의실·자리 상태 실시간 구독(useOfficeLiveSync)이 여는 채널만 흉내 낸다.
+    const channel = { on: () => channel, subscribe: () => channel }
+    return {
+      auth: { signOut: vi.fn() },
+      channel: () => channel,
+      removeChannel: vi.fn(async () => 'ok'),
+      rpc: vi.fn(async () => ({ data: null, error: null })),
+    }
   },
 }))
 
@@ -114,7 +122,13 @@ describe('auth route guards', () => {
 
   afterEach(() => {
     cleanup()
+    window.localStorage.clear()
   })
+
+  /** 기존 화면 홈을 보는 테스트: 데스크톱 기본값(전체 화면 사무실) 대신 기존 화면을 고른 사람으로 둔다. */
+  function preferClassicHome(profileId: string) {
+    window.localStorage.setItem(`sqa.home-mode.${profileId}`, 'classic')
+  }
 
   it('shows config error in production without Supabase env', async () => {
     render(<App />)
@@ -128,6 +142,7 @@ describe('auth route guards', () => {
     supabaseFlags.isPreviewMode = true
     supabaseFlags.isProductionMode = false
     authState.profile = previewLeader
+    preferClassicHome(previewLeader.id)
 
     render(<App />)
 
@@ -135,6 +150,22 @@ describe('auth route guards', () => {
     expect(await screen.findByText(new RegExp(`안녕하세요, ${previewLeader.name}님`), {}, { timeout: 5000 })).toBeInTheDocument()
     expect(document.title).toBe('홈 · SQA P1')
     expect(screen.queryByText(/로그인 설정/)).not.toBeInTheDocument()
+  })
+
+  it('opens the full-screen office as the desktop home and switches back to the classic home', async () => {
+    supabaseFlags.isPreviewMode = true
+    supabaseFlags.isProductionMode = false
+    authState.profile = previewLeader
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { level: 1, name: '우리 파트 사무실' }, { timeout: 5000 })).toBeInTheDocument()
+    // 왼쪽 메뉴는 위 메뉴의 ‘전체 메뉴’로 여는 서랍이 된다(닫혀 있으면 보조기기에도 숨는다).
+    expect(screen.queryByRole('navigation', { name: '주 메뉴 항목' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '전체 메뉴' })).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(screen.getByRole('button', { name: '기존 화면' }))
+    expect(await screen.findByText(new RegExp(`안녕하세요, ${previewLeader.name}님`), {}, { timeout: 5000 })).toBeInTheDocument()
+    expect(window.localStorage.getItem(`sqa.home-mode.${previewLeader.id}`)).toBe('classic')
   })
 
   it('shows login panel when Supabase is configured without a session', async () => {
@@ -202,6 +233,7 @@ describe('auth route guards', () => {
     supabaseFlags.isPreviewMode = true
     supabaseFlags.isProductionMode = false
     authState.profile = previewMember
+    preferClassicHome(previewMember.id)
     window.location.hash = '#/products'
 
     render(<App />)

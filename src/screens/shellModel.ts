@@ -1,8 +1,7 @@
 import type { AppData, Profile } from '../types'
 import type { TabId } from '../app/types'
 import type { AppNotification } from '../lib/notifications'
-import { selectOrBuildChangeApplicationSummary } from '../domain/changeApplications/completion'
-import { selectProductChangeTaskContexts } from '../domain/changeApplications/taskContexts'
+import { selectLeaderChangeActions, selectMemberPendingTasks } from '../domain/changeApplications/attention'
 
 /**
  * 메뉴 배지는 ‘내가 처리할 것’만 숫자 하나로 보여 준다(토스 GR-5·GR-9).
@@ -43,44 +42,6 @@ export type ShellFeatureData = Pick<
   | 'allowedUsers'
 >
 
-/** 파트장이 직접 손대야 하는 공통변경: 최종 확인을 기다리거나, 담당자 없는 적용 업무가 남은 것. */
-function countLeaderChangeActions(data: ShellFeatureData) {
-  const actionApplicationIds = new Map(
-    data.changeActionItems.map((item) => [item.id, item.change_application_id]),
-  )
-  const tasksByApplication = new Map<string, typeof data.productChangeTasks>()
-  for (const task of data.productChangeTasks) {
-    const applicationId = actionApplicationIds.get(task.action_item_id)
-    if (!applicationId) continue
-    const current = tasksByApplication.get(applicationId) ?? []
-    current.push(task)
-    tasksByApplication.set(applicationId, current)
-  }
-  return data.changeApplications.filter((application) => {
-    const tasks = tasksByApplication.get(application.id) ?? []
-    const summary = selectOrBuildChangeApplicationSummary(
-      application,
-      tasks,
-      data.changeApplicationSummaries ?? [],
-    )
-    if (summary.workflow_status === 'final_review_ready') return true
-    return summary.workflow_status === 'in_progress'
-      && tasks.some((task) => task.status === 'pending' && !task.assignee_id)
-  }).length
-}
-
-/** 파트원이 처리할 적용 업무: 배포된 공통변경의 내 미적용 업무. */
-function countMemberPendingTasks(data: ShellFeatureData, profile: Profile) {
-  return selectProductChangeTaskContexts(data).filter(
-    ({ task, application }) =>
-      application.status === 'published'
-      && !application.archived_at
-      && !application.final_completed_at
-      && task.status === 'pending'
-      && task.assignee_id === profile.id,
-  ).length
-}
-
 export function buildShellModel({
   data,
   profile,
@@ -106,7 +67,7 @@ export function buildShellModel({
   }
 
   if (leaderMode) {
-    const changeActionCount = countLeaderChangeActions(data)
+    const changeActionCount = selectLeaderChangeActions(data).length
     const assignedProductIds = new Set(data.productAssignments.map((assignment) => assignment.product_id))
     const hasUnassignedProduct = data.products.some((product) => !assignedProductIds.has(product.id))
     return {
@@ -126,7 +87,7 @@ export function buildShellModel({
     }
   }
 
-  const pendingTaskCount = countMemberPendingTasks(data, profile)
+  const pendingTaskCount = selectMemberPendingTasks(data, profile.id).length
   return {
     unreadNotifications,
     tabs: {

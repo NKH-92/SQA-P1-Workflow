@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react'
 import { ChevronRight, ListTodo, Send } from 'lucide-react'
 import { EmptyState } from '../components/ui'
+import { HomeOffice } from './HomeOffice'
 import type { AppData, Profile } from '../types'
-import type { TabId } from '../app/types'
+import type { MutateFn, TabId } from '../app/types'
+import type { AppDataUpdater } from '../data/repositories/appDataUpdater'
 import { formatDate, formatDateWithWeekday } from '../lib/format'
 import { requestComposer } from '../lib/navigation'
 import { productCategory, productCompanyName, productName } from '../lib/products'
@@ -23,10 +25,18 @@ export function Dashboard({
   profile,
   data,
   setActiveTab,
+  mutate,
+  setData,
+  onEnterOfficeMode,
 }: {
   profile: Profile
   data: AppData
   setActiveTab: (tab: TabId, entityId?: string) => void
+  /** 사무실 회의를 열고 확인하는 데 쓴다. 없으면 사무실은 보기만 한다. */
+  mutate?: MutateFn
+  setData?: AppDataUpdater
+  /** 홈을 전체 화면 사무실로 바꾼다. */
+  onEnterOfficeMode?: () => void
 }) {
   const [filter, setFilter] = useViewState<MemberHomeFilter>('dashboard.member.filter', 'all', isMemberHomeFilter)
   const [showAll, setShowAll] = useState(false)
@@ -78,6 +88,15 @@ export function Dashboard({
           </button>
         </div>
       </header>
+
+      <HomeOffice
+        data={data}
+        mutate={mutate}
+        onEnterOfficeMode={onEnterOfficeMode}
+        profile={profile}
+        setActiveTab={setActiveTab}
+        setData={setData}
+      />
 
       <div aria-label="할 일 종류로 거르기" className="home-chips" role="group">
         {MEMBER_HOME_FILTERS.map((option) => (

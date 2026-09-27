@@ -3,6 +3,7 @@ import type { ReviewRequest, ReviewStatus } from '../../../types'
 import { dueState } from '../../../lib/dates'
 import { formatMonthDay, reviewStatusLabels } from '../../../lib/format'
 import { reviewDecisionLabel } from '../reviewOrdering'
+import { PersonFace } from '../../office/components/PersonFace'
 
 const COLUMNS: ReviewStatus[] = ['pending', 'approved', 'rejected', 'withdrawn']
 
@@ -86,9 +87,16 @@ export const ReviewKanban = memo(function ReviewKanban({
                   <div className="kanban-card-title">{request.title}</div>
                   <div className="kanban-card-meta">
                     <span className="kanban-card-req">
-                      <span className="kanban-card-avatar" aria-hidden="true">
-                        {request.profiles?.name?.trim().charAt(0) || '?'}
-                      </span>
+                      <PersonFace
+                        fallback={(
+                          <span className="kanban-card-avatar" aria-hidden="true">
+                            {request.profiles?.name?.trim().charAt(0) || '?'}
+                          </span>
+                        )}
+                        name={request.profiles?.name}
+                        profileId={request.requester_id}
+                        size="xs"
+                      />
                       <span>{request.profiles?.name ?? '요청자'}</span>
                     </span>
                     {request.status === 'pending' && (request.review_round ?? 1) > 1 && (

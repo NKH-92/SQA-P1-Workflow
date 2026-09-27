@@ -15,6 +15,7 @@ import {
   type NavigateOptions,
 } from '../lib/navigation'
 import { preferredScrollBehavior } from '../lib/motion'
+import type { HomeMode } from '../lib/homeMode'
 import type { AppNotification } from '../lib/notifications'
 import type { DesktopNotificationControls } from '../app/hooks/useDesktopNotifications'
 import { commandSearchPlaceholder } from '../components/commandPaletteModel'
@@ -23,6 +24,11 @@ import { prefetchWhenIdle } from '../lib/prefetch'
 import { useHistoryLayer } from '../hooks/useHistoryLayer'
 import { buildShellModel, shellTabAccessibleName, type ShellFeatureData, type ShellTabState } from './shellModel'
 import { useDensityPreference } from './useDensityPreference'
+import { OfficeHudBar } from './OfficeHudBar'
+import type { EffectivePresence } from '../data/validation/memberPresence'
+import { PresenceButton } from '../features/office/components/PresenceButton'
+import './OfficeMode.css'
+import './PixelTheme.css'
 import {
   AlertTriangle,
   BarChart3,
@@ -148,6 +154,10 @@ export function Shell({
   onRefresh,
   onSignOut,
   onPreviewRoleChange,
+  homeMode = 'classic',
+  onHomeModeChange,
+  meetingBanner,
+  presence,
   children,
 }: {
   activeTab: TabId
@@ -175,6 +185,13 @@ export function Shell({
   onRefresh: () => void
   onSignOut: () => void
   onPreviewRoleChange?: (role: Role) => void
+  /** 홈 화면 방식. office면 홈에서 왼쪽 메뉴·상단바 대신 게임 화면 같은 위 메뉴(HUD)를 그린다. */
+  homeMode?: HomeMode
+  onHomeModeChange?: (mode: HomeMode) => void
+  /** 어느 화면에서든 보이는 사무실 회의 안내 띠 */
+  meetingBanner?: React.ReactNode
+  /** 내 상태(잠깐 비움·휴가·출장)와 상태 창 열기. 팀장처럼 상태가 없는 사람은 넘기지 않는다. */
+  presence?: { current: EffectivePresence | null; onOpen: () => void }
   children: React.ReactNode
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -183,6 +200,9 @@ export function Shell({
   const [syncDetailOpen, setSyncDetailOpen] = useState(false)
   const [mobileSidebar, setMobileSidebar] = useState(false)
   const [actionBarShown, setActionBarShown] = useState(false)
+  /** 전체 화면 사무실 홈: 왼쪽 메뉴는 위 메뉴의 ‘전체 메뉴’로 여는 서랍이 된다. */
+  const officeLayout = homeMode === 'office' && activeTab === 'dashboard'
+  const drawerMode = mobileSidebar || officeLayout
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const drawerOpenerRef = useRef<HTMLElement | null>(null)
   const sidebarRef = useRef<HTMLElement>(null)
@@ -242,7 +262,7 @@ export function Shell({
   }, [])
 
   // 좁은 화면·터치 기기에서 뒤로가기를 누르면 서랍 메뉴부터 닫는다.
-  useHistoryLayer(mobileSidebar && sidebarOpen, () => closeSidebar())
+  useHistoryLayer(drawerMode && sidebarOpen, () => closeSidebar())
 
   useEffect(() => {
     if (!showSyncWarning) setSyncDetailOpen(false)
@@ -263,12 +283,12 @@ export function Shell({
   useEffect(() => {
     const sidebar = sidebarRef.current
     if (!sidebar) return
-    if (mobileSidebar && !sidebarOpen) sidebar.setAttribute('inert', '')
+    if (drawerMode && !sidebarOpen) sidebar.setAttribute('inert', '')
     else sidebar.removeAttribute('inert')
-  }, [mobileSidebar, sidebarOpen])
+  }, [drawerMode, sidebarOpen])
 
   useEffect(() => {
-    if (!mobileSidebar || !sidebarOpen) return
+    if (!drawerMode || !sidebarOpen) return
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     const focusTimer = window.setTimeout(() => {
@@ -301,7 +321,7 @@ export function Shell({
       document.body.style.overflow = previousOverflow
       document.removeEventListener('keydown', onKeyDown)
     }
-  }, [closeSidebar, mobileSidebar, sidebarOpen])
+  }, [closeSidebar, drawerMode, sidebarOpen])
 
   // 브라우저 탭 제목에 지금 화면을 적는다. 예: ‘검토요청 · SQA P1’
   useEffect(() => {
@@ -397,11 +417,11 @@ export function Shell({
   }, [activeTab])
 
   const navigateFromSidebar = (tab: TabId) => {
-    const inDrawer = mobileSidebar && sidebarOpen
+    const inDrawer = drawerMode && sidebarOpen
     // 서랍에서 고르면 햄버거로 포커스를 돌려준다(서랍이 닫히며 inert가 되기 때문). 데스크톱은 새 화면 제목으로.
     focusHeadingOnNavigateRef.current = !inDrawer && tab !== activeTab
     setActiveTab(tab, undefined, inDrawer ? { replace: true } : undefined)
-    closeSidebar(mobileSidebar)
+    closeSidebar(drawerMode && !officeLayout)
   }
 
   const navigateFromTabBar = (event: React.MouseEvent<HTMLAnchorElement>, tab: TabId) => {
@@ -419,6 +439,8 @@ export function Shell({
     <div
       className="app-shell brand-shell"
       data-bottom-bar={actionBarShown ? 'action' : 'tabs'}
+      data-layout={officeLayout ? 'office' : undefined}
+      data-ui={homeMode === 'office' ? 'pixel' : undefined}
       data-visual-theme="brand-shell"
     >
       <a
@@ -436,7 +458,7 @@ export function Shell({
       />
       <aside
         ref={sidebarRef}
-        aria-hidden={mobileSidebar && !sidebarOpen ? true : undefined}
+        aria-hidden={drawerMode && !sidebarOpen ? true : undefined}
         aria-label="주 메뉴"
         className={`sidebar${sidebarOpen ? ' open' : ''}`}
         id="primary-navigation"
@@ -495,6 +517,16 @@ export function Shell({
               <small>{roleLabels[profile.role]}{readOnly ? ' · 읽기 전용' : ''}</small>
             </div>
           </div>
+          {presence && (
+            <PresenceButton
+              current={presence.current}
+              onOpen={() => {
+                closeSidebar(false)
+                presence.onOpen()
+              }}
+              variant="sidebar"
+            />
+          )}
           <div className="sidebar-footer-actions">
             <button
               aria-pressed={density === 'compact'}
@@ -541,6 +573,46 @@ export function Shell({
         </div>
       </aside>
       <main className="content" id="main-content" ref={mainRef} tabIndex={-1}>
+        {officeLayout ? (
+          <OfficeHudBar
+              busyLabel={busyLabel}
+              menuButtonRef={menuButtonRef}
+              menuOpen={sidebarOpen}
+              notificationButtonRef={notificationButtonRef}
+              notificationsOpen={notifOpen}
+              onClassicHome={onHomeModeChange ? () => onHomeModeChange('classic') : undefined}
+              onOpenCommandPalette={onOpenCommandPalette}
+              onOpenMenu={openSidebar}
+              onPreviewRoleChange={onPreviewRoleChange}
+              onRefresh={onRefresh}
+              onSignOut={onSignOut}
+              onToggleNotifications={() => setNotifOpen((value) => !value)}
+              presence={presence}
+              previewRoles={PREVIEW_ROLES}
+              profile={profile}
+              readOnly={readOnly}
+              refreshing={refreshing}
+              saving={saving}
+              shortcut={shortcutHint()}
+              syncWarning={showSyncWarning ? syncWarning : null}
+              unreadNotifications={unreadNotifications}
+            >
+              {notifOpen && (
+                <Suspense fallback={null}>
+                  <NotificationPanel
+                    notifications={notifications}
+                    desktopNotifications={desktopNotifications}
+                    onClose={closeNotifications}
+                    onMarkAllRead={() => {
+                      onMarkAllRead()
+                      closeNotifications()
+                    }}
+                    onSelect={setActiveTab}
+                  />
+                </Suspense>
+              )}
+          </OfficeHudBar>
+        ) : (
         <header className="topbar">
           <div className="topbar-left">
             <button
@@ -645,6 +717,8 @@ export function Shell({
             </Suspense>
           )}
         </header>
+        )}
+        {meetingBanner}
         {dataWarnings.length > 0 && (
           <div className="data-stale-banner" role="status" aria-live="polite">
             <AlertTriangle aria-hidden="true" size={16} />
@@ -659,7 +733,7 @@ export function Shell({
         )}
         {children}
       </main>
-      <nav aria-label="주요 메뉴 바로가기" className="mobile-tabbar" hidden={sidebarOpen || actionBarShown}>
+      <nav aria-label="주요 메뉴 바로가기" className="mobile-tabbar" hidden={sidebarOpen || actionBarShown || officeLayout}>
         {TAB_BAR_TABS.map((tab) => {
           const label = tab === 'reviews' ? '검토요청' : tabShortLabel(tab, leaderMode)
           const state = tabs[tab]

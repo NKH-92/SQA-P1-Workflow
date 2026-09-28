@@ -80,7 +80,36 @@ export function selectDutyTableGroups(data: MasterFeatureData, query: string) {
   }))
 }
 
-export function selectProductGroups(data: MasterFeatureData, query: string) {
+type ProductAssignmentRow = AppData['productAssignments'][number]
+
+/** 제품별 담당 배정 목록. 제품 화면이 한 번만 만들어 카드·칩 계산마다 전체 배정을 다시 훑지 않게 한다. */
+export type ProductAssignmentsByProduct = ReadonlyMap<string, ProductAssignmentRow[]>
+
+export function groupProductAssignments(assignments: readonly ProductAssignmentRow[]): ProductAssignmentsByProduct {
+  const grouped = new Map<string, ProductAssignmentRow[]>()
+  for (const assignment of assignments) {
+    const list = grouped.get(assignment.product_id)
+    if (list) list.push(assignment)
+    else grouped.set(assignment.product_id, [assignment])
+  }
+  return grouped
+}
+
+function productAssignmentsOf(
+  data: MasterFeatureData,
+  productId: string,
+  assignmentsByProduct?: ProductAssignmentsByProduct,
+) {
+  if (assignmentsByProduct) return assignmentsByProduct.get(productId) ?? []
+  return data.productAssignments.filter((assignment) => assignment.product_id === productId)
+}
+
+/** assignmentsByProduct를 넘기면 제품마다 전체 배정을 훑지 않는다(결과는 같다). */
+export function selectProductGroups(
+  data: MasterFeatureData,
+  query: string,
+  assignmentsByProduct?: ProductAssignmentsByProduct,
+) {
   const filteredProducts = selectFilteredProducts(data, query)
   return {
     ownCompanyProducts: filteredProducts
@@ -88,7 +117,7 @@ export function selectProductGroups(data: MasterFeatureData, query: string) {
       .sort(compareMasterProducts),
     consignedProducts: filteredProducts.filter((product) => product.category === '위탁').sort(compareMasterProducts),
     unassignedProducts: data.products.filter(
-      (product) => !data.productAssignments.some((assignment) => assignment.product_id === product.id),
+      (product) => productAssignmentsOf(data, product.id, assignmentsByProduct).length === 0,
     ),
     unassignedDuties: data.duties.filter(
       (duty) => !duty.assignee_label && !data.dutyAssignments.some((assignment) => assignment.duty_id === duty.id),
@@ -103,8 +132,12 @@ export function isProductAssigneeFilter(value: unknown): value is ProductAssigne
   return value === 'all' || value === 'unassigned' || value === 'inactive'
 }
 
-export function productAssigneeState(data: MasterFeatureData, productId: string): Exclude<ProductAssigneeFilter, 'all'> | 'assigned' {
-  const assignments = data.productAssignments.filter((assignment) => assignment.product_id === productId)
+export function productAssigneeState(
+  data: MasterFeatureData,
+  productId: string,
+  assignmentsByProduct?: ProductAssignmentsByProduct,
+): Exclude<ProductAssigneeFilter, 'all'> | 'assigned' {
+  const assignments = productAssignmentsOf(data, productId, assignmentsByProduct)
   if (assignments.length === 0) return 'unassigned'
   const hasInactive = assignments.some(
     (assignment) => data.profiles.find((profile) => profile.id === assignment.user_id)?.is_active === false,
@@ -116,9 +149,10 @@ export function matchesProductAssigneeFilter(
   data: MasterFeatureData,
   productId: string,
   filter: ProductAssigneeFilter,
+  assignmentsByProduct?: ProductAssignmentsByProduct,
 ) {
   if (filter === 'all') return true
-  return productAssigneeState(data, productId) === filter
+  return productAssigneeState(data, productId, assignmentsByProduct) === filter
 }
 
 /** 새 담당자에게 넘길 수 있는 미완료 적용 업무(배포된 공통변경의 미적용 업무 중 다른 사람이 맡은 것). */

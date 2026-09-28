@@ -385,7 +385,44 @@ describe('ReviewsPanel', () => {
 
     await user.type(within(dialog).getByRole('textbox', { name: /반려 사유/ }), '표를 추가해 주세요')
     await user.click(within(dialog).getByRole('button', { name: '반려하기' }))
-    await waitFor(() => expect(rejectSpy).toHaveBeenCalledWith(expect.anything(), 'review-01', '표를 추가해 주세요'))
+    await waitFor(() => expect(rejectSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      'review-01',
+      '표를 추가해 주세요',
+      '2026-07-03T09:20:00.000Z',
+    ))
+  })
+
+  it('approves against the version shown when the confirmation opened', async () => {
+    const user = userEvent.setup()
+    const approveSpy = vi.spyOn(dataModule, 'updateReviewStatus').mockResolvedValue(undefined)
+    const data = createPreviewData()
+    const { rerender } = render(
+      <ReviewsPanel profile={previewLeader} data={data} mutate={passthroughMutate()} setData={() => undefined} />,
+    )
+
+    await user.click(within(screen.getByRole('article')).getByRole('button', { name: '승인하기' }))
+    // 확인 창이 떠 있는 동안 요청자가 설명을 고쳐 새 버전이 들어온다.
+    const edited = {
+      ...data,
+      reviewRequests: data.reviewRequests.map((request) => (
+        request.id === 'review-01'
+          ? { ...request, description: '고친 설명', updated_at: '2026-07-03T10:00:00.000Z' }
+          : request
+      )),
+    }
+    rerender(
+      <ReviewsPanel profile={previewLeader} data={edited} mutate={passthroughMutate()} setData={() => undefined} />,
+    )
+    const dialog = screen.getByRole('dialog', { name: '‘파트너 API 전환 검토’를 승인할까요?' })
+    await user.click(within(dialog).getByRole('button', { name: '승인하기' }))
+
+    await waitFor(() => expect(approveSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      'review-01',
+      'approved',
+      '2026-07-03T09:20:00.000Z',
+    ))
   })
 
   it('approves with one toast and moves to the next pending request', async () => {
@@ -471,6 +508,51 @@ describe('ReviewsPanel', () => {
 
     expect(feedbackSpy).toHaveBeenCalledWith(expect.anything(), expect.any(String), '정확한 피드백')
     expect(textarea).toHaveValue('')
+  })
+
+  it('keeps a feedback draft when the selected request leaves the list and restores it on return', async () => {
+    const user = userEvent.setup()
+    const data = createPreviewData()
+    const withoutSelected = { ...data, reviewRequests: data.reviewRequests.filter((request) => request.id !== 'review-01') }
+    const panel = (current: AppData) => (
+      <ReviewsPanel profile={previewLeader} data={current} mutate={passthroughMutate()} setData={() => undefined} />
+    )
+    const { rerender } = render(panel(data))
+
+    await user.type(
+      within(screen.getByRole('article')).getByPlaceholderText('요청자에게 전할 피드백을 적어 주세요'),
+      '길게 쓰던 피드백',
+    )
+    // 요청자가 회수하는 등으로 고른 요청이 목록에서 빠지면 다른 요청이 자동으로 골라진다.
+    rerender(panel(withoutSelected))
+    expect(screen.queryByRole('heading', { level: 2, name: '파트너 API 전환 검토' })).toBeNull()
+    expect(within(screen.getByRole('article')).getByPlaceholderText('요청자에게 전할 피드백을 적어 주세요')).toHaveValue('')
+
+    rerender(panel(data))
+    await user.click(within(screen.getByLabelText('검토요청 목록')).getByText('파트너 API 전환 검토'))
+    const detail = await screen.findByRole('article')
+    expect(within(detail).getByRole('heading', { level: 2, name: '파트너 API 전환 검토' })).toBeInTheDocument()
+    expect(within(detail).getByPlaceholderText('요청자에게 전할 피드백을 적어 주세요')).toHaveValue('길게 쓰던 피드백')
+  })
+
+  it('drops the kept draft once the feedback is saved', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(dataModule, 'addReviewFeedback').mockResolvedValue(undefined as never)
+    const data = createPreviewData()
+    const withoutSelected = { ...data, reviewRequests: data.reviewRequests.filter((request) => request.id !== 'review-01') }
+    const panel = (current: AppData) => (
+      <ReviewsPanel profile={previewLeader} data={current} mutate={passthroughMutate()} setData={() => undefined} />
+    )
+    const { rerender } = render(panel(data))
+
+    const detail = screen.getByRole('article')
+    await user.type(within(detail).getByPlaceholderText('요청자에게 전할 피드백을 적어 주세요'), '보낼 피드백')
+    await user.click(within(detail).getByRole('button', { name: '피드백 남기기' }))
+    rerender(panel(withoutSelected))
+    rerender(panel(data))
+    await user.click(within(screen.getByLabelText('검토요청 목록')).getByText('파트너 API 전환 검토'))
+
+    expect(within(screen.getByRole('article')).getByPlaceholderText('요청자에게 전할 피드백을 적어 주세요')).toHaveValue('')
   })
 
   it('keeps the local draft when the feedback mutation is rejected', async () => {

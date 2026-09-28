@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppData, Profile } from '../../types'
 import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
+import { ACCOUNT_ACTIVE_DELETE_MESSAGE, ACCOUNT_EMAIL_LOCKED_MESSAGE } from '../validation/masterOcc'
 import {
   addAllowedUser,
   addDuty,
@@ -207,21 +208,91 @@ describe('local assignment replacement parity', () => {
     }
 
     await updateInvite(ctx, 'invite-1', {
-      email: 'new-member@example.com',
+      email: member.email.toUpperCase(),
       name: 'Renamed invite',
       role: 'leader',
       expectedUpdatedAt: revision,
-      reason: 'role and email correction',
+      reason: 'role and name correction',
     })
 
     expect(nextData.allowedUsers.find((item) => item.id === 'invite-1')).toMatchObject({
-      email: 'new-member@example.com',
+      email: member.email.toUpperCase(),
       role: 'leader',
     })
     expect(nextData.profiles.find((item) => item.id === member.id)).toMatchObject({
-      name: member.name,
+      name: 'Renamed invite',
       role: 'leader',
     })
+  })
+
+  it('refuses to change the email of a signed-up account in preview, like the server guard', async () => {
+    const ctx = localContext()
+    ctx.data.allowedUsers = [{
+      id: 'invite-1', email: member.email, name: member.name, role: 'member', updated_at: revision,
+    }]
+
+    await expect(updateInvite(ctx, 'invite-1', {
+      email: 'new-member@example.com',
+      name: member.name,
+      role: 'member',
+      expectedUpdatedAt: revision,
+      reason: 'email correction',
+    })).rejects.toThrow(ACCOUNT_EMAIL_LOCKED_MESSAGE)
+    expect(ctx.setData).not.toHaveBeenCalled()
+  })
+
+  it('lets an unlinked invite change its email in preview', async () => {
+    const ctx = localContext()
+    ctx.data.allowedUsers = [{
+      id: 'invite-1', email: 'not-signed-up@example.com', name: 'Pending', role: 'member', updated_at: revision,
+    }]
+    let nextData = ctx.data
+    ctx.setData = (updater) => {
+      nextData = typeof updater === 'function' ? updater(nextData) : updater
+    }
+
+    await updateInvite(ctx, 'invite-1', {
+      email: 'corrected@example.com',
+      name: 'Pending',
+      role: 'member',
+      expectedUpdatedAt: revision,
+      reason: 'email correction',
+    })
+
+    expect(nextData.allowedUsers.find((item) => item.id === 'invite-1')?.email).toBe('corrected@example.com')
+  })
+
+  it('refuses to delete the list row of an active account in preview, like the server guard', async () => {
+    const ctx = localContext()
+    ctx.data.allowedUsers = [{
+      id: 'invite-1', email: member.email, name: member.name, role: 'member', updated_at: revision,
+    }]
+
+    await expect(deleteAllowedUser(ctx, 'invite-1', { expectedUpdatedAt: revision, reason: '정리' }))
+      .rejects.toThrow(ACCOUNT_ACTIVE_DELETE_MESSAGE)
+    expect(ctx.setData).not.toHaveBeenCalled()
+
+    ctx.data.profiles = ctx.data.profiles.map((item) => (item.id === member.id ? { ...item, is_active: false } : item))
+    await deleteAllowedUser(ctx, 'invite-1', { expectedUpdatedAt: revision, reason: '정리' })
+    expect(ctx.setData).toHaveBeenCalledOnce()
+  })
+
+  it('reuses a pre-signup list row with the same email when adding an account in preview', async () => {
+    const ctx = localContext()
+    ctx.data.allowedUsers = [{
+      id: 'invite-csv', email: 'csv-only@example.com', name: 'CSV name', role: 'member', updated_at: revision,
+    }]
+    let nextData = ctx.data
+    ctx.setData = (updater) => {
+      nextData = typeof updater === 'function' ? updater(nextData) : updater
+    }
+
+    await addAllowedUser(ctx, { email: 'csv-only@example.com', name: 'Final name', role: 'leader' })
+
+    const rows = nextData.allowedUsers.filter((item) => item.email.toLowerCase() === 'csv-only@example.com')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ id: 'invite-csv', name: 'Final name', role: 'leader' })
+    expect(nextData.profiles.filter((item) => item.email === 'csv-only@example.com')).toHaveLength(1)
   })
 
   it('keeps local assignment no-op silent and logs only after changed state is applied', async () => {

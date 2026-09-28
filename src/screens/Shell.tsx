@@ -53,6 +53,17 @@ import {
   X,
 } from 'lucide-react'
 
+/** 열어 둔 탭의 옛 번들이 서버와 맞지 않는 경우. 데이터 재조회로는 풀리지 않아 페이지를 새로 불러와야 한다. */
+function needsAppReload(lastErrorCode: string | null) {
+  return lastErrorCode === 'SQA_BOOTSTRAP_SCHEMA_MISMATCH' || lastErrorCode === 'PGRST202'
+}
+
+/**
+ * 경고에 덧붙여도 되는 분류 코드(SQLSTATE·PGRST·SQA_* 또는 toErrorCode 분류값).
+ * 이 모양이 아니면 원문일 수 있으므로 보여 주지 않는다.
+ */
+const DISPLAYABLE_ERROR_CODE = /^(?:[0-9A-Z]{5}|PGRST\d{3}|SQA_[A-Z0-9_]+|aborted|stale-write|chunk-load)$/
+
 function buildSyncWarning(syncHealth: SyncHealth): { label: string; title: string } {
   const failureSuffix = syncHealth.consecutiveFailures > 0
     ? ` ${syncHealth.consecutiveFailures}번 연속으로 실패했어요.`
@@ -65,21 +76,26 @@ function buildSyncWarning(syncHealth: SyncHealth): { label: string; title: strin
         title: `서버 연결이 불안정해요. 네트워크를 확인하고 다시 시도해 주세요.${failureSuffix}`,
       }
     case 'SQA_BOOTSTRAP_SCHEMA_MISMATCH':
+    case 'PGRST202':
       return {
         label: '업데이트 필요',
-        title: `앱이 최신 버전이 아니에요. 화면을 새로고침하고, 그래도 계속되면 관리자에게 알려 주세요.${failureSuffix}`,
+        title: `앱이 최신 버전이 아니에요. 브라우저에서 새로고침(F5)하고, 그래도 계속되면 관리자에게 알려 주세요.${failureSuffix}`,
       }
     case '42501':
     case 'PGRST301':
+    case 'SQA_APP_ACCESS_REQUIRED':
       return {
         label: '권한 확인 필요',
         title: `데이터를 볼 권한을 확인하지 못했어요. 다시 로그인해도 계속되면 관리자에게 알려 주세요.${failureSuffix}`,
       }
-    default:
+    default: {
+      const code = syncHealth.lastErrorCode
+      const codeSuffix = code && DISPLAYABLE_ERROR_CODE.test(code) ? ` (코드: ${code})` : ''
       return {
         label: '동기화 지연',
-        title: `최신 데이터를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.${failureSuffix}`,
+        title: `최신 데이터를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.${failureSuffix}${codeSuffix}`,
       }
+    }
   }
 }
 
@@ -586,6 +602,15 @@ export function Shell({
               onPreviewRoleChange={onPreviewRoleChange}
               onRefresh={onRefresh}
               onSignOut={onSignOut}
+              // 버전 불일치는 데이터 재조회로 풀리지 않으므로 위 막대의 [다시 시도]처럼 페이지를 새로 불러온다.
+              // 저장·새로고침 중에는 [다시 시도]와 같이 누르지 않은 것으로 둔다(진행 중인 요청을 끊지 않는다).
+              onSyncWarningClick={
+                needsAppReload(syncHealth.lastErrorCode)
+                  ? () => {
+                      if (!saving && !refreshing) window.location.reload()
+                    }
+                  : undefined
+              }
               onToggleNotifications={() => setNotifOpen((value) => !value)}
               presence={presence}
               previewRoles={PREVIEW_ROLES}
@@ -668,6 +693,11 @@ export function Shell({
                       disabled={refreshing || saving}
                       onClick={() => {
                         setSyncDetailOpen(false)
+                        // 버전 불일치는 데이터 재조회로 풀리지 않으므로 페이지를 새로 불러온다.
+                        if (needsAppReload(syncHealth.lastErrorCode)) {
+                          window.location.reload()
+                          return
+                        }
                         onRefresh()
                       }}
                       type="button"

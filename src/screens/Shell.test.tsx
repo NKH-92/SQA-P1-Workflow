@@ -461,7 +461,12 @@ describe('Shell sync health warning', () => {
     {
       code: 'SQA_BOOTSTRAP_SCHEMA_MISMATCH',
       label: '업데이트 필요',
-      guidance: '앱이 최신 버전이 아니에요.',
+      guidance: '앱이 최신 버전이 아니에요. 브라우저에서 새로고침(F5)',
+    },
+    {
+      code: 'PGRST202',
+      label: '업데이트 필요',
+      guidance: '앱이 최신 버전이 아니에요. 브라우저에서 새로고침(F5)',
     },
     {
       code: '42501',
@@ -472,6 +477,11 @@ describe('Shell sync health warning', () => {
       code: 'PGRST301',
       label: '권한 확인 필요',
       guidance: '데이터를 볼 권한을 확인하지 못했어요.',
+    },
+    {
+      code: 'SQA_APP_ACCESS_REQUIRED',
+      label: '권한 확인 필요',
+      guidance: '다시 로그인해도 계속되면',
     },
     {
       code: 'unexpected-private-code',
@@ -497,6 +507,60 @@ describe('Shell sync health warning', () => {
     expect(warning).toHaveAttribute('title', expect.stringContaining(guidance))
     expect(warning).toHaveAttribute('title', expect.stringContaining('3번 연속으로 실패했어요'))
     if (code) expect(warning?.getAttribute('title')).not.toContain(code)
+  })
+
+  it.each(['57014', 'P0001', 'aborted'])('adds the classified code %s to the generic sync delay guidance', (code) => {
+    const staleHealth: SyncHealth = {
+      consecutiveFailures: 2,
+      lastSuccessAt: null,
+      lastFailureAt: new Date('2026-07-20T00:10:00.000Z'),
+      stale: true,
+      lastErrorCode: code,
+    }
+    renderShell(leader, true, { syncHealth: staleHealth })
+
+    const warning = screen.getByText('동기화 지연').closest('button')
+    expect(warning).toHaveAttribute('title', `최신 데이터를 불러오지 못했어요. 잠시 후 다시 시도해 주세요. 2번 연속으로 실패했어요. (코드: ${code})`)
+  })
+
+  it('does not add a code suffix when the failure could not be classified', () => {
+    const staleHealth: SyncHealth = {
+      consecutiveFailures: 2,
+      lastSuccessAt: null,
+      lastFailureAt: new Date('2026-07-20T00:10:00.000Z'),
+      stale: true,
+      lastErrorCode: 'unknown',
+    }
+    renderShell(leader, true, { syncHealth: staleHealth })
+
+    expect(screen.getByText('동기화 지연').closest('button')?.getAttribute('title')).not.toContain('코드')
+  })
+
+  it.each(['SQA_BOOTSTRAP_SCHEMA_MISMATCH', 'PGRST202'])('reloads the page instead of refetching data when retrying after %s', (code) => {
+    const onRefresh = vi.fn()
+    const reload = vi.fn()
+    const originalLocation = window.location
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...originalLocation, hash: originalLocation.hash, pathname: originalLocation.pathname, reload },
+    })
+    try {
+      const staleHealth: SyncHealth = {
+        consecutiveFailures: 2,
+        lastSuccessAt: null,
+        lastFailureAt: new Date('2026-07-20T00:10:00.000Z'),
+        stale: true,
+        lastErrorCode: code,
+      }
+      renderShell(leader, true, { syncHealth: staleHealth, onRefresh })
+
+      fireEvent.click(screen.getByRole('button', { name: '업데이트 필요' }))
+      fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+      expect(reload).toHaveBeenCalledTimes(1)
+      expect(onRefresh).not.toHaveBeenCalled()
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
+    }
   })
 
   it('explains a stale sync on tap and offers a retry', () => {
@@ -578,6 +642,36 @@ describe('Shell full-screen office home', () => {
     expect(menu).toHaveAttribute('aria-expanded', 'true')
     fireEvent.click(within(sidebarNav()).getByRole('button', { name: /^제품/ }))
     expect(setActiveTab).toHaveBeenCalledWith('products', undefined, { replace: true })
+  })
+
+  it.each([
+    { code: 'PGRST202', label: '업데이트 필요', reloads: true },
+    { code: 'network', label: '연결 지연', reloads: false },
+  ])('reloads from the top-menu sync warning only for a version mismatch ($code)', ({ code, label, reloads }) => {
+    const onRefresh = vi.fn()
+    const reload = vi.fn()
+    const originalLocation = window.location
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...originalLocation, hash: originalLocation.hash, pathname: originalLocation.pathname, reload },
+    })
+    try {
+      const staleHealth: SyncHealth = {
+        consecutiveFailures: 2,
+        lastSuccessAt: null,
+        lastFailureAt: new Date('2026-07-20T00:10:00.000Z'),
+        stale: true,
+        lastErrorCode: code,
+      }
+      const element = shellElement(leader, true, { syncHealth: staleHealth, onRefresh, onPreviewRoleChange: vi.fn() })
+      render(<Shell {...element.props} homeMode="office" onHomeModeChange={vi.fn()} />)
+
+      fireEvent.click(screen.getByRole('button', { name: label }))
+      expect(reload).toHaveBeenCalledTimes(reloads ? 1 : 0)
+      expect(onRefresh).toHaveBeenCalledTimes(reloads ? 0 : 1)
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
+    }
   })
 
   it('keeps the usual side menu and top bar on other screens', () => {

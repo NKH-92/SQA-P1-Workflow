@@ -152,6 +152,14 @@ function ReviewsWorkspace({
   const reviewDetailRef = useRef<HTMLDivElement>(null)
   const archiveRequestedRef = useRef(false)
   const titleFocusTargetRef = useRef<string | null>(null)
+  // 요청 id별 피드백·반려 사유 초안. 상세는 요청마다 새로 그려지므로(key), 고른 요청이 목록에서 빠져
+  // 다른 요청으로 바뀌어도 쓰던 글을 잃지 않고 그 요청을 다시 열면 이어 쓰도록 상세 밖에 둔다.
+  const feedbackDraftsRef = useRef(new Map<string, string>())
+  const readFeedbackDraft = useCallback((requestId: string) => feedbackDraftsRef.current.get(requestId), [])
+  const storeFeedbackDraft = useCallback((requestId: string, draft: string) => {
+    if (draft) feedbackDraftsRef.current.set(requestId, draft)
+    else feedbackDraftsRef.current.delete(requestId)
+  }, [])
 
   const loadArchivePage = useCallback(async (page: number) => {
     setArchiveLoading(true)
@@ -420,21 +428,25 @@ function ReviewsWorkspace({
     setSelectedReviewId(nextId)
   }
 
-  const approveReview = async (request: ReviewRequest): Promise<boolean> => {
+  const approveReview = async (request: ReviewRequest, expectedUpdatedAt?: string): Promise<boolean> => {
     const order = visibleReviewRequests
     const ok = await mutate(async () => {
-      await controller.updateStatus(request.id, 'approved')
+      await controller.updateStatus(request.id, 'approved', expectedUpdatedAt)
     }, `${quotedWithJosa(request.title, '을/를')} 승인했어요.`)
     if (ok) advanceAfterDecision(request.id, order)
     return ok
   }
 
-  const rejectReview = async (request: ReviewRequest, reason: string): Promise<boolean> => {
+  const rejectReview = async (request: ReviewRequest, reason: string, expectedUpdatedAt?: string): Promise<boolean> => {
     const order = visibleReviewRequests
     const ok = await mutate(async () => {
-      await controller.reject(request.id, reason.trim())
+      await controller.reject(request.id, reason.trim(), expectedUpdatedAt)
     }, `${quotedWithJosa(request.title, '을/를')} 반려했어요.`)
-    if (ok) advanceAfterDecision(request.id, order)
+    if (ok) {
+      // 보낸 사유 그대로면 초안을 지운다(보내는 동안 더 고쳐 쓴 글은 남긴다).
+      if (feedbackDraftsRef.current.get(request.id)?.trim() === reason.trim()) storeFeedbackDraft(request.id, '')
+      advanceAfterDecision(request.id, order)
+    }
     return ok
   }
 
@@ -460,12 +472,15 @@ function ReviewsWorkspace({
       await controller.voidFeedback(feedbackId, reason)
     }, '피드백을 무효화했어요.')
 
-  const addFeedback = (requestId: string, comment: string): Promise<boolean> =>
-    mutate(async () => {
+  const addFeedback = async (requestId: string, comment: string): Promise<boolean> => {
+    const ok = await mutate(async () => {
       const trimmedComment = comment.trim()
       if (!trimmedComment) return
       await controller.addFeedback(requestId, trimmedComment)
     }, '피드백을 남겼어요.')
+    if (ok && feedbackDraftsRef.current.get(requestId) === comment) storeFeedbackDraft(requestId, '')
+    return ok
+  }
 
   const detailHandlers = {
     onApprove: approveReview,
@@ -487,7 +502,9 @@ function ReviewsWorkspace({
       detailRef={reviewDetailRef}
       localEvents={data.reviewEvents}
       onBackToList={mobileDetailOpen ? closeMobileDetail : undefined}
+      onDraftChange={storeFeedbackDraft}
       profile={profile}
+      readDraft={readFeedbackDraft}
       selectedReview={selectedReview}
     />
   )

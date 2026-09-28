@@ -33,6 +33,7 @@ export function ProductCard({
   onDelete,
   onAssign,
   readOnly = false,
+  assignments: providedAssignments,
 }: {
   product: AppData['products'][number]
   data: AppData
@@ -44,16 +45,19 @@ export function ProductCard({
   onDelete: (productId: string, input: AuditedDeleteInput) => void
   onAssign?: (productId: string) => void
   readOnly?: boolean
+  /** 패널이 제품별로 묶어 둔 이 제품의 배정. 없으면 data에서 찾는다(결과는 같다). */
+  assignments?: AppData['productAssignments']
 }) {
-  const assignments = data.productAssignments.filter((assignment) => assignment.product_id === product.id)
+  const assignments = providedAssignments
+    ?? data.productAssignments.filter((assignment) => assignment.product_id === product.id)
   const edit = productEdits[product.id]
   const isInactive = (userId: string) => data.profiles.find((profile) => profile.id === userId)?.is_active === false
   const hasInactiveAssignee = assignments.some((assignment) => isInactive(assignment.user_id))
   const needsAssignee = assignments.length === 0 || hasInactiveAssignee
 
   const startEdit = () =>
-    setProductEdits({
-      ...productEdits,
+    setProductEdits((current) => ({
+      ...current,
       [product.id]: {
         name: product.name,
         category: product.category ?? '자사',
@@ -61,6 +65,13 @@ export function ProductCard({
         unassignedReason: product.unassigned_reason ?? '',
         expectedUpdatedAt: product.updated_at ?? null,
       },
+    }))
+
+  // 입력마다 최신 편집 상태 위에 이 제품 항목만 고친다(연속 입력이 앞선 스냅샷을 덮어쓰지 않게).
+  const patchEdit = (patch: (edit: ProductEdit) => ProductEdit) =>
+    setProductEdits((current) => {
+      const currentEdit = current[product.id]
+      return currentEdit ? { ...current, [product.id]: patch(currentEdit) } : current
     })
 
   const closeEdit = () =>
@@ -79,9 +90,10 @@ export function ProductCard({
             <input
               autoFocus
               value={edit.name}
-              onChange={(event) =>
-                setProductEdits({ ...productEdits, [product.id]: { ...edit, name: event.target.value } })
-              }
+              onChange={(event) => {
+                const name = event.target.value
+                patchEdit((current) => ({ ...current, name }))
+              }}
             />
           </label>
           <label>
@@ -90,14 +102,11 @@ export function ProductCard({
               value={edit.category}
               onChange={(event) => {
                 const category = event.target.value as ProductCategory
-                setProductEdits({
-                  ...productEdits,
-                  [product.id]: {
-                    ...edit,
-                    category,
-                    companyName: category === '자사' ? '자사' : edit.companyName === '자사' ? '' : edit.companyName,
-                  },
-                })
+                patchEdit((current) => ({
+                  ...current,
+                  category,
+                  companyName: category === '자사' ? '자사' : current.companyName === '자사' ? '' : current.companyName,
+                }))
               }}
             >
               <option value="자사">자사</option>
@@ -110,9 +119,10 @@ export function ProductCard({
               <input
                 placeholder="예: 위탁사 A"
                 value={edit.companyName}
-                onChange={(event) =>
-                  setProductEdits({ ...productEdits, [product.id]: { ...edit, companyName: event.target.value } })
-                }
+                onChange={(event) => {
+                  const companyName = event.target.value
+                  patchEdit((current) => ({ ...current, companyName }))
+                }}
               />
             </label>
           )}
@@ -123,12 +133,10 @@ export function ProductCard({
                 maxLength={1000}
                 placeholder="예: 담당 제품군 조정 중"
                 value={edit.unassignedReason}
-                onChange={(event) =>
-                  setProductEdits({
-                    ...productEdits,
-                    [product.id]: { ...edit, unassignedReason: event.target.value },
-                  })
-                }
+                onChange={(event) => {
+                  const unassignedReason = event.target.value
+                  patchEdit((current) => ({ ...current, unassignedReason }))
+                }}
               />
               <small>{edit.unassignedReason.length}/1000자</small>
             </label>

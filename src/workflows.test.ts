@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -71,9 +72,14 @@ const migrateSecrets: SecretUse[] = [
   { job: 'migrate', step: 'Check secret', secret: 'SUPABASE_ACCESS_TOKEN' },
   { job: 'migrate', step: 'Check secret', secret: 'SUPABASE_DB_URL' },
   { job: 'migrate', step: 'Check secret', secret: 'SUPABASE_PROJECT_REF' },
+  { job: 'migrate', step: 'Check secret', secret: 'SUPABASE_DB_URL' },
+  { job: 'migrate', step: 'Check secret', secret: 'SUPABASE_PROJECT_REF' },
+  { job: 'migrate', step: 'Preflight Supabase access token', secret: 'SUPABASE_ACCESS_TOKEN' },
+  { job: 'migrate', step: 'Preflight Supabase access token', secret: 'SUPABASE_PROJECT_REF' },
   { job: 'migrate', step: 'Guard migration history', secret: 'SUPABASE_DB_URL' },
   { job: 'migrate', step: 'List migration status (before)', secret: 'SUPABASE_DB_URL' },
   { job: 'migrate', step: 'Guard Stage B Storage handoff', secret: 'SUPABASE_DB_URL' },
+  { job: 'migrate', step: 'Check review retention cron health (warning only)', secret: 'SUPABASE_DB_URL' },
   { job: 'migrate', step: 'Push pending migrations', secret: 'SUPABASE_DB_URL' },
   { job: 'migrate', step: 'Verify production DB readiness from canonical SQL', secret: 'SUPABASE_DB_URL' },
   { job: 'migrate', step: 'Deploy account Edge Functions', secret: 'SUPABASE_ACCESS_TOKEN' },
@@ -202,6 +208,11 @@ describe('workflow security contracts', () => {
       .toBeLessThan(requiredStepIndex(migrate, 'Guard Stage B Storage handoff'))
     expect(requiredStepIndex(migrate, 'Guard Stage B Storage handoff'))
       .toBeLessThan(requiredStepIndex(migrate, 'Push pending migrations'))
+    // 보존 Cron 실패는 DB를 바꾸기 전에 경고만 남기고 릴리스를 막지 않는다(부분 릴리스 방지).
+    expect(requiredStepIndex(migrate, 'Check review retention cron health (warning only)'))
+      .toBeLessThan(requiredStepIndex(migrate, 'Push pending migrations'))
+    expect(migrate).toContain('::warning::SQA_REVIEW_RETENTION_CRON_FAILED')
+    expect(migrate).not.toContain('::error::SQA_REVIEW_RETENTION_CRON_FAILED')
     expect(migrate).not.toMatch(/^\s*run:\s*supabase migration repair/m)
     expect(deploy).toContain('environment: production')
     expect(deploy).toContain('inputs.deploy_confirm != true')
@@ -386,7 +397,10 @@ describe('workflow security contracts', () => {
   it('keeps encrypted daily backups and failure notification', () => {
     const backup = workflow('backup.yml')
     const migrate = workflow('db-migrate.yml')
-    expect(backup).toContain("cron: '0 20 * * *'")
+    // 정각 예약은 GitHub 부하로 지연·누락되기 쉬워 정각이 아닌 분(05:17 KST)에 둔다.
+    expect(backup).toContain("cron: '17 20 * * *'")
+    expect(backup).not.toMatch(/cron: '0 /)
+    expect(backup).toContain('ls -l "db-backup-$DUMP_DATE.tar.gz.gpg" "db-backup-$DUMP_DATE.tar.gz.enc"')
     expect(backup).toContain('.tar.gz.gpg')
     expect(backup).toContain('.tar.gz.enc')
     expect(backup).toContain('node scripts/verify-dr-package.mjs')
@@ -430,5 +444,87 @@ describe('workflow security contracts', () => {
     expect(rehearsal).toContain('if: ${{ always() }}')
     expect(rehearsal).toContain('rm -rf dr-work')
     assertSecretScope(rehearsal, drRehearsalSecrets)
+  })
+
+  it('cancels only superseded pull request CI runs and never main pushes', () => {
+    const ci = workflow('ci.yml')
+    expect(ci).toContain(
+      "concurrency:\n  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}\n"
+        + "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+    )
+    for (const file of ['backup.yml', 'db-migrate.yml', 'deploy-worker.yml', 'dr-rehearsal.yml']) {
+      const source = workflow(file)
+      expect(source, file).toContain('cancel-in-progress: false')
+      expect(source, file).not.toContain('cancel-in-progress: true')
+    }
+  })
+
+  it('bounds every job with timeout-minutes so a hung step cannot hold the release group for 6 hours', () => {
+    for (const file of readdirSync(workflowDirectory).filter((name) => name.endsWith('.yml'))) {
+      const source = workflow(file)
+      const jobsSource = source.slice(source.indexOf('\njobs:\n'))
+      const jobs = jobsSource.split(/\n(?= {2}[a-zA-Z0-9_-]+:\n)/).slice(1)
+      expect(jobs.length, file).toBeGreaterThan(0)
+      for (const job of jobs) {
+        const name = job.slice(2, job.indexOf(':'))
+        // 재사용 워크플로 호출 job은 timeout-minutes를 둘 수 없어 호출되는 쪽(reusable-rls.yml)에 둔다.
+        if (/^ {4}uses: /m.test(job)) continue
+        const timeout = job.match(/^ {4}timeout-minutes: (\d+)$/m)
+        expect(timeout, `${file}: ${name}`).not.toBeNull()
+        expect(Number(timeout?.[1]), `${file}: ${name}`).toBeGreaterThan(0)
+        expect(Number(timeout?.[1]), `${file}: ${name}`).toBeLessThanOrEqual(60)
+      }
+    }
+  })
+
+  it('checks the Supabase access token before touching the production DB', () => {
+    const migrate = workflow('db-migrate.yml')
+    const preflight = 'Preflight Supabase access token'
+    expect(requiredStepIndex(migrate, 'Check secret')).toBeLessThan(requiredStepIndex(migrate, preflight))
+    expect(migrate.indexOf('uses: supabase/setup-cli@')).toBeLessThan(requiredStepIndex(migrate, preflight))
+    expect(requiredStepIndex(migrate, preflight)).toBeLessThan(requiredStepIndex(migrate, 'Guard migration history'))
+    expect(requiredStepIndex(migrate, preflight)).toBeLessThan(requiredStepIndex(migrate, 'Push pending migrations'))
+    expect(migrate).toContain('if ! supabase functions list --project-ref "$PROJECT_REF" --output json >/dev/null; then')
+    expect(migrate).toContain('::error::SQA_SUPABASE_ACCESS_TOKEN_INVALID')
+  })
+
+  // WSL bash처럼 환경변수를 넘겨받지 못하는 bash에서는 건너뛴다(CI ubuntu와 Git Bash에서는 실행된다).
+  const bashAvailable = spawnSync('bash', ['-c', '[ "$SQA_BASH_PROBE" = ok ]'], {
+    env: { ...process.env, SQA_BASH_PROBE: 'ok' },
+  }).status === 0
+
+  it.skipIf(!bashAvailable)('rejects a DB URL that does not belong to SUPABASE_PROJECT_REF without printing it', () => {
+    const migrate = workflow('db-migrate.yml')
+    const guardStart = migrate.indexOf('          case "$DATABASE_URL" in')
+    const guardEnd = migrate.indexOf('          esac', guardStart)
+    expect(guardStart).toBeGreaterThan(requiredStepIndex(migrate, 'Check secret'))
+    expect(guardStart).toBeLessThan(requiredStepIndex(migrate, 'Checkout'))
+    const guard = migrate.slice(guardStart, guardEnd + '          esac'.length)
+    const ref = 'abcdefghijklmnopqrst'
+    const run = (databaseUrl: string) => {
+      const result = spawnSync('bash', ['-c', guard], {
+        encoding: 'utf8',
+        env: { ...process.env, DATABASE_URL: databaseUrl, PROJECT_REF: ref, GITHUB_STEP_SUMMARY: '/dev/null' },
+      })
+      return { status: result.status, output: `${result.stdout}${result.stderr}` }
+    }
+
+    for (const accepted of [
+      `postgresql://postgres.${ref}:pw-secret@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres`,
+      `postgres://postgres.${ref}@aws-0-ap-northeast-2.pooler.supabase.com:6543/postgres`,
+      `postgresql://postgres:pw-secret@db.${ref}.supabase.co:5432/postgres`,
+    ]) {
+      expect(run(accepted).status, accepted).toBe(0)
+    }
+    for (const rejected of [
+      'postgresql://postgres.zyxwvutsrqponmlkjihg:pw-secret@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres',
+      'postgresql://postgres:pw-secret@db.zyxwvutsrqponmlkjihg.supabase.co:5432/postgres',
+      `postgresql://postgres.${ref}x:pw-secret@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres`,
+    ]) {
+      const result = run(rejected)
+      expect(result.status, rejected).toBe(1)
+      expect(result.output).toContain('::error::SQA_SUPABASE_DB_URL_PROJECT_REF_MISMATCH')
+      expect(result.output).not.toContain('pw-secret')
+    }
   })
 })

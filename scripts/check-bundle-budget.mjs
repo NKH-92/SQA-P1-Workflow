@@ -21,7 +21,10 @@ const MAX_CHUNK_BYTES = 560 * 1024
 // remote repositories, the combined office Realtime/30-second sync, the scheduled-meeting banner model and the
 // pixel-mode context now ship with the shell. The status dialog itself, the pixel faces and screen vignettes stay
 // lazy, and the classic status button uses a CSS dot instead of line icons (−0.7 KiB). The cap moves to 156 KiB.
-const MAX_INITIAL_GZIP_BYTES = 156 * 1024
+// 2026-09 ops preflight fixes: 158,613 B → 150,167 B measured after dropping the preview-only local repositories and
+// demo-data work from production bundles. The cap is re-tightened to 150 KiB: about 3.3 KiB of headroom, so a small
+// hotfix does not fail CI/Deploy builds (the old cap left ~1 KiB), while still catching real growth.
+const MAX_INITIAL_GZIP_BYTES = 150 * 1024
 // The change-application route lazy-loads the browser-only XLSX reader when a
 // leader selects a file. This raises the all-routes sum while keeping initial
 // navigation unchanged, so retain a narrow cap around the measured surface.
@@ -47,7 +50,9 @@ const MAX_INITIAL_GZIP_BYTES = 156 * 1024
 // work screens (character faces, office vignettes) now shared by the dashboard and the announcement, review,
 // change, project and team routes through common office chunks (no module is duplicated), plus the initial
 // additions noted above.
-const MAX_TOTAL_GZIP_BYTES = 326 * 1024
+// The ops preflight fixes then measured 324,527 B total, so the cap is re-tightened to 321 KiB (about 4.2 KiB of
+// headroom, same hotfix rationale as the initial cap).
+const MAX_TOTAL_GZIP_BYTES = 321 * 1024
 // 빠른 이동(Ctrl K)과 알림 패널은 열 때만 쓰므로 첫 화면에서 빼고 지연 로딩한다(한가할 때 미리 받음).
 const EXPECTED_ROUTE_DYNAMIC_IMPORTS = new Set([
   'src/components/CommandPalette.tsx',

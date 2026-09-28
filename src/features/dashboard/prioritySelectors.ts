@@ -2,7 +2,7 @@ import type { TabId } from '../../app/types'
 import type { AppData, Product, Profile } from '../../types'
 import { daysUntil, dueState, eventTime, relativeDateLabel, type DueKind, type DueState } from '../../lib/dates'
 import { formatDate } from '../../lib/format'
-import { selectChangeApplicationSummary, selectProductChangeTaskContexts } from '../change-applications/selectors'
+import { selectChangeApplicationSummaries, selectProductChangeTaskContexts } from '../change-applications/selectors'
 
 export type PriorityUrgency = 'urgent' | 'warning' | 'normal'
 
@@ -230,8 +230,10 @@ export function selectLeaderPriorityQueue(data: AppData, teamMembers: Profile[],
     })
   }
 
+  // 요약은 한 번에 만들어 두고 조회한다(신청서마다 전체 적용 업무를 다시 훑지 않게).
+  const changeSummaries = selectChangeApplicationSummaries(data)
   for (const application of data.changeApplications) {
-    if (selectChangeApplicationSummary(data, application.id)?.workflow_status !== 'final_review_ready') continue
+    if (changeSummaries.get(application.id)?.workflow_status !== 'final_review_ready') continue
     items.push({
       id: `final-${application.id}`,
       category: 'final',

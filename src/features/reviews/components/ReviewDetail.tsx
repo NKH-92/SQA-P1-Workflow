@@ -14,6 +14,9 @@ type ReviewDetailProps = ReviewRequestItemHandlers & {
   inlineConfirm?: boolean
   compact?: boolean
   onBackToList?: () => void
+  /** 요청 id별로 보관한 피드백·반려 사유 초안을 읽는다. 상세가 새로 그려질 때 초기값으로만 쓴다. */
+  readDraft?: (requestId: string) => string | undefined
+  onDraftChange?: (requestId: string, draft: string) => void
 }
 
 /**
@@ -29,6 +32,8 @@ export function ReviewDetail({
   inlineConfirm = false,
   compact = false,
   onBackToList,
+  readDraft,
+  onDraftChange,
   ...handlers
 }: ReviewDetailProps) {
   return (
@@ -48,9 +53,11 @@ export function ReviewDetail({
               reviewRequestId={selectedReview.id}
             />
           )}
+          initialDraft={readDraft?.(selectedReview.id)}
           inlineConfirm={inlineConfirm}
           key={selectedReview.id}
           onBackToList={onBackToList}
+          onDraftChange={onDraftChange}
           profile={profile}
           readOnly={readOnly}
           request={selectedReview}

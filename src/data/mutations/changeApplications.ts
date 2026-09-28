@@ -101,17 +101,3 @@ export function undoFinalizeChangeApplication(
     reopen_tasks: [...new Map(input.reopen_tasks.map((task) => [task.task_id, task])).values()],
   })
 }
-
-export function archiveChangeApplication(ctx: RepositoryContext, changeApplicationId: string, reason: string) {
-  return ctx.repositories.changeApplications.archiveChangeApplication(
-    changeApplicationId,
-    normalizeTaskReason(reason, '보관 사유'),
-  )
-}
-
-export function restoreChangeApplication(ctx: RepositoryContext, changeApplicationId: string, reason: string) {
-  return ctx.repositories.changeApplications.restoreChangeApplication(
-    changeApplicationId,
-    normalizeTaskReason(reason, '복원 사유'),
-  )
-}

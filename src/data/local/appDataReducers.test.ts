@@ -156,6 +156,10 @@ describe('master delete activity logging (demo)', () => {
     const data = createPreviewData()
     const invite = data.allowedUsers[0]
     expect(invite).toBeTruthy()
+    // 사용 중인 계정은 지울 수 없으므로(SQA_ACCOUNT_ACTIVE와 같은 가드) 먼저 비활성화된 상태로 둔다.
+    data.profiles = data.profiles.map((item) =>
+      item.email.toLowerCase() === invite!.email.toLowerCase() ? { ...item, is_active: false } : item,
+    )
 
     let next = data
     const { deleteAllowedUser } = await import('../mutations/master')

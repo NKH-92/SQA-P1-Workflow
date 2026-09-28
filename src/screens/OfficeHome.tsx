@@ -7,6 +7,7 @@ import { selectMemberHomeItems } from '../features/dashboard/memberHomeModel'
 import { selectLeaderPriorityQueue } from '../features/dashboard/prioritySelectors'
 import { OfficeScene } from '../features/office/components/OfficeScene'
 import { WORLD_CAMERA } from '../features/office/officeGeometry'
+import { useBusinessToday } from '../hooks/useBusinessToday'
 import { useTeamSummaries } from '../hooks/useTeamSummaries'
 import { formatClock, formatDateWithWeekday } from '../lib/format'
 import { requestComposer } from '../lib/navigation'
@@ -70,7 +71,7 @@ export function OfficeHome({
   const canManage = canManageTeamData(profile)
   const [collapsed, setCollapsed] = useState(readQuestCollapsed)
   const [showAll, setShowAll] = useState(false)
-  const [today] = useState(() => new Date())
+  const today = useBusinessToday()
   const { teamMembers } = useTeamSummaries(data)
 
   const quests = useMemo<QuestItem[]>(() => {

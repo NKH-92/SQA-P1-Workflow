@@ -177,6 +177,29 @@ describe('updateReviewStatus (demo)', () => {
   })
 })
 
+describe('confirmation version check (demo)', () => {
+  it('blocks approval and rejection when the request changed after the confirmation opened', async () => {
+    const data = createPreviewData()
+    const request = data.reviewRequests.find((item) => item.status === 'pending')!
+    let next = data
+    const ctx: RepositoryContext = createRepositoryContextFromDeps('local', {      profile: previewLeader,
+      data,
+      setData: (updater) => {
+        next = typeof updater === 'function' ? updater(next) : updater
+      },
+    })
+
+    await expect(updateReviewStatus(ctx, request.id, 'approved', '2000-01-01T00:00:00.000Z'))
+      .rejects.toThrow('다른 사람이 먼저 수정했어요. 새로고침한 뒤 다시 시도해 주세요.')
+    await expect(rejectReviewRequest(ctx, request.id, '표를 추가해 주세요', '2000-01-01T00:00:00.000Z'))
+      .rejects.toThrow('다른 사람이 먼저 수정했어요. 새로고침한 뒤 다시 시도해 주세요.')
+    expect(next).toBe(data)
+
+    await updateReviewStatus(ctx, request.id, 'approved', request.updated_at)
+    expect(next.reviewRequests.find((item) => item.id === request.id)?.status).toBe('approved')
+  })
+})
+
 describe('reopenReviewRequest and feedback correction (demo)', () => {
   it('reopens a closed request and retains its feedback history', async () => {
     const data = createPreviewData()

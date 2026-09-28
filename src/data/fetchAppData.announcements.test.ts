@@ -66,6 +66,22 @@ function defaultRpcResult(name: string): { data: unknown; error: unknown } {
   return { data: [], error: null }
 }
 
+const REQUIRED_BOOTSTRAP_TRACE = [
+  'rpc:get_core_bootstrap_v2',
+  'rpc:get_review_bootstrap_v2',
+  'rpc:get_change_bootstrap_v3',
+]
+const OPTIONAL_QUERY_TRACE = [
+  'from:allowed_users',
+  'from:profile_notes',
+  'from:activity_logs',
+  'from:announcements',
+  'rpc:get_office_seats',
+  'rpc:get_section_read_marks',
+  'rpc:get_office_meeting',
+  'rpc:get_member_presence',
+]
+
 const mocks = vi.hoisted(() => {
   const results: Record<string, { data: unknown[] | null; error: unknown }> = {}
   const rpcResults: Record<string, { data: unknown; error: unknown }> = {}
@@ -148,35 +164,19 @@ describe('fetchAppData orchestration and optional data', () => {
     mocks.rpcResults.get_member_presence = { data: { statuses: [], leaves: [] }, error: null }
   })
 
-  it('reports the first required-bootstrap error and never creates optional queries after it', async () => {
+  it('reports the first required-bootstrap error even though optional queries already started', async () => {
     const firstError = { message: 'core bootstrap unavailable' }
     mocks.rpcResults.get_core_bootstrap_v2 = { data: null, error: firstError }
 
     await expect(fetchAppData()).rejects.toBe(firstError)
 
-    expect(mocks.trace).toEqual([
-      'rpc:get_core_bootstrap_v2',
-      'rpc:get_review_bootstrap_v2',
-      'rpc:get_change_bootstrap_v3',
-    ])
+    expect(mocks.trace).toEqual([...OPTIONAL_QUERY_TRACE, ...REQUIRED_BOOTSTRAP_TRACE])
   })
 
-  it('creates optional queries only after the three required bootstraps succeed', async () => {
+  it('starts optional queries together with the three required bootstraps instead of after them', async () => {
     await fetchAppData()
 
-    expect(mocks.trace).toEqual([
-      'rpc:get_core_bootstrap_v2',
-      'rpc:get_review_bootstrap_v2',
-      'rpc:get_change_bootstrap_v3',
-      'from:allowed_users',
-      'from:profile_notes',
-      'from:activity_logs',
-      'from:announcements',
-      'rpc:get_office_seats',
-      'rpc:get_section_read_marks',
-      'rpc:get_office_meeting',
-      'rpc:get_member_presence',
-    ])
+    expect(mocks.trace).toEqual([...OPTIONAL_QUERY_TRACE, ...REQUIRED_BOOTSTRAP_TRACE])
   })
 
   it('exposes the earliest of the three bootstrap snapshot_at values as evidence for lastSyncedAt', async () => {

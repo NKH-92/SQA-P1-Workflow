@@ -3,7 +3,6 @@ import { createPreviewData, previewLeader, previewMember } from '../../demoData'
 import type { AppData, Profile } from '../../types'
 import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
 import {
-  archiveChangeApplication,
   cancelChangeApplication,
   cancelProductChangeTask,
   completeProductChangeTask,
@@ -12,7 +11,6 @@ import {
   reassignProductChangeTasks,
   removeProductChangeScope,
   reopenProductChangeTask,
-  restoreChangeApplication,
   saveChangeApplication,
   undoFinalizeChangeApplication,
 } from './changeApplications'
@@ -309,27 +307,63 @@ describe('local change application mutations', () => {
     },
   )
 
-  it('does not auto-archive a cancellation and restricts manual archive and restore to leaders', async () => {
+  it('does not auto-archive a cancellation', async () => {
     const state = harness()
     const payload = { ...input(state.data), tasks: [input(state.data).tasks[0]] }
     const applicationId = await saveChangeApplication(state.context(previewLeader), payload, true)
     const actionId = state.data.changeActionItems.find((item) => item.change_application_id === applicationId)!.id
     const task = state.data.productChangeTasks.find((item) => item.action_item_id === actionId)!
 
-    await expect(archiveChangeApplication(state.context(previewLeader), applicationId, '아직 미완료'))
-      .rejects.toThrow('파트장 최종 완료로 마무리')
     await cancelProductChangeTask(state.context(previewLeader), task.id, '적용 취소')
     expect(state.data.changeApplications.find((item) => item.id === applicationId)?.archived_at).toBeNull()
-    await expect(archiveChangeApplication(state.context(previewMember), applicationId, '완료 보관'))
-      .rejects.toThrow('파트장만')
 
     await cancelChangeApplication(state.context(previewLeader), applicationId, '변경 자체 취소')
-    await archiveChangeApplication(state.context(previewLeader), applicationId, '취소 이력 보관')
-    expect(state.data.changeApplications.find((item) => item.id === applicationId)?.archive_reason).toBe('취소 이력 보관')
-    await expect(restoreChangeApplication(state.context(previewMember), applicationId, '재검토'))
-      .rejects.toThrow('파트장만')
+    expect(state.data.changeApplications.find((item) => item.id === applicationId)).toMatchObject({
+      status: 'cancelled',
+      archived_at: null,
+    })
+  })
 
-    await restoreChangeApplication(state.context(previewLeader), applicationId, '재검토')
-    expect(state.data.changeApplications.find((item) => item.id === applicationId)?.archived_at).toBeNull()
+  it('rejects processing a task of an archived application like the server', async () => {
+    const setup = harness()
+    const applicationId = await saveChangeApplication(setup.context(previewLeader), input(setup.data), true)
+    const actionId = setup.data.changeActionItems.find((item) => item.change_application_id === applicationId)!.id
+    const tasks = setup.data.productChangeTasks.filter((item) => item.action_item_id === actionId)
+    // 과거 수동 보관 데이터처럼 배포 상태 그대로 보관만 된 공통변경을 만든다.
+    const state = harness({
+      ...setup.data,
+      changeApplications: setup.data.changeApplications.map((item) => item.id === applicationId
+        ? { ...item, archived_at: '2026-08-01T00:00:00.000Z', archive_origin: 'manual' as const }
+        : item),
+    })
+    const before = state.data
+
+    await expect(completeProductChangeTask(state.context(previewMember), tasks[0].id, '완료', ''))
+      .rejects.toThrow('이미 취소했거나 완료·보관한 공통변경이에요.')
+    await expect(markProductChangeTaskNotApplicable(state.context(previewMember), tasks[1].id, '적용 대상 아님', ''))
+      .rejects.toThrow('이미 취소했거나 완료·보관한 공통변경이에요.')
+    expect(state.data).toBe(before)
+  })
+
+  it('requires completion undo instead of reopening a task of a finalized application', async () => {
+    const state = harness()
+    const payload = { ...input(state.data), tasks: [input(state.data).tasks[0]] }
+    const applicationId = await saveChangeApplication(state.context(previewLeader), payload, true)
+    const actionId = state.data.changeActionItems.find((item) => item.change_application_id === applicationId)!.id
+    const task = state.data.productChangeTasks.find((item) => item.action_item_id === actionId)!
+
+    await completeProductChangeTask(state.context(previewMember), task.id, '완료', '')
+    await finalizeChangeApplication(state.context(previewLeader), {
+      changeApplicationId: applicationId,
+      expected_updated_at: state.data.changeApplications.find((item) => item.id === applicationId)!.updated_at,
+      note: '',
+    })
+    const finalized = state.data
+
+    await expect(reopenProductChangeTask(state.context(previewMember), task.id, '개정본 재확인'))
+      .rejects.toThrow('완료 이력은 [완료 취소]로 다시 열 수 있어요.')
+    expect(state.data).toBe(finalized)
+    expect(state.data.changeApplications.find((item) => item.id === applicationId)?.archived_at).toBeTruthy()
+    expect(state.data.productChangeTasks.find((item) => item.id === task.id)?.status).toBe('completed')
   })
 })

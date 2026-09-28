@@ -9,6 +9,7 @@ import {
   throwMasterOccError,
 } from './supabaseMasterShared'
 import { PRODUCT_HAS_CHANGE_HISTORY_MESSAGE } from '../validation/masterOcc'
+import { translateChangeApplicationError } from './changeApplicationError'
 
 export function createSupabaseProductAdminRepository(ctx: RepositoryDeps): ProductAdminRepository {
   const { data, setData } = ctx
@@ -61,7 +62,8 @@ export function createSupabaseProductAdminRepository(ctx: RepositoryDeps): Produ
           p_transfer_pending: true,
           p_reason: transferReason,
         })
-        if (error) throw error
+        // 이관 경로는 공통변경 업무 코드(SQA_CHANGE_*)를 올리므로 같은 번역기를 거친다.
+        if (error) throw translateChangeApplicationError(error)
         return { kind: 'server-audited' }
       }
       // try_add_product_assignment returns whether a row was actually inserted —

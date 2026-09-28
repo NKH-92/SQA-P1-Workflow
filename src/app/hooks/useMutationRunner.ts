@@ -14,9 +14,16 @@ import type { SetToast, ToastInput, ToastMessage, ToastSpec } from '../types'
  */
 export type MutationSuccess = string | ToastSpec | (() => string | ToastSpec)
 
+/**
+ * refresh: false — 저장소가 이미 바뀐 조각(자리 상태·회의실 등)만 다시 읽어 화면을 맞추는 작업에서
+ * 성공 뒤 전체 목록 새로고침을 건너뛴다. 실패했을 때의 새로고침은 그대로 한다.
+ */
+export type MutationOptions = { refresh?: boolean }
+
 export type MutationRunner = (
   operation: () => Promise<void>,
   success: MutationSuccess,
+  options?: MutationOptions,
 ) => Promise<boolean>
 
 export type MutationErrorReportContext = { role: ErrorReportRole; route: string }
@@ -79,7 +86,7 @@ export function useMutationRunner(
   }, [])
 
   const mutate = useCallback<MutationRunner>(
-    async (operation: () => Promise<void>, success: MutationSuccess): Promise<boolean> => {
+    async (operation: () => Promise<void>, success: MutationSuccess, options?: MutationOptions): Promise<boolean> => {
       // Re-entrancy guard: a second submit (double-click / Ctrl+Enter + click) while one
       // is in flight is ignored, so we never insert the same record twice. The guard spans
       // both the operation and its post-op refresh. The drop must never be silent — the
@@ -98,7 +105,8 @@ export function useMutationRunner(
           const { text } = resolveSuccess(success)
           setMessage({ text: toUserMessage(error), tone: 'error' })
           const { role, route } = getReportContextRef.current()
-          reportError({ error, role, route, operation: text })
+          // 어떤 작업이 실패했는지 fingerprint로 나눠 모이게 문구를 context로 넘긴다(해시되어 원문은 남지 않는다).
+          reportError({ error, role, route, operation: text, context: text })
           // 실패했어도 서버에는 일부가 반영됐을 수 있다(여러 건을 차례로 저장하다 중간에 실패, 동시 수정 충돌 등).
           // 화면이 서버와 어긋난 채 다시 시도하지 않도록 목록을 새로 불러온다. 이 새로고침의 실패는 따로 알리지 않는다.
           if (supabase) await refreshData().catch(() => undefined)
@@ -109,7 +117,7 @@ export function useMutationRunner(
         const spec = resolveSuccess(success)
         // A failure of the post-op refresh must NOT be reported as a failed operation —
         // that would make the user retry and create a duplicate.
-        if (supabase) {
+        if (supabase && options?.refresh !== false) {
           try {
             await refreshData()
           } catch {

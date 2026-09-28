@@ -1,16 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Download, Package, Plus, Search, Upload } from 'lucide-react'
-import type { ProductCategory } from '../../../types'
+import type { AppData, ProductCategory } from '../../../types'
 import type { PendingAdminDelete } from '../../../app/types'
 import type { AuditedDeleteInput } from '../../../data/contracts'
 import { EmptyState, ReasonPromptModal } from '../../../components/ui'
 import { useViewState } from '../../../hooks/useViewState'
 import { downloadCsv } from '../../../lib/csv'
 import { buildProductAllocationCsvRows } from '../../../lib/productAllocationCsv'
-import { parseCsvRows, parseProductImportRows } from '../../../lib/csvImport'
+import { parseCsvRows, parseProductImportRows, readCsvFileText } from '../../../lib/csvImport'
+import { toUserMessage, UserFacingError } from '../../../lib/errors'
 import { quoted, quotedWithJosa, withJosa } from '../../../lib/korean'
 import { canManageTeamData, canReceiveAssignment } from '../../../domain/permissions'
 import {
+  groupProductAssignments,
   isProductAssigneeFilter,
   matchesProductAssigneeFilter,
   productAssigneeState,
@@ -25,6 +27,7 @@ import {
 } from '../master.validators'
 import type { MasterSubPanelProps } from '../shared/types'
 import { ImportDiagnostics, type CsvImportIssue } from '../shared/ImportDiagnostics'
+import { isMasterStaleError } from '../shared/masterStale'
 import {
   ProductAssignModal,
   UNASSIGNED_PRODUCT_USER_ID,
@@ -38,6 +41,8 @@ import { useProductAdminController } from './useProductAdminController'
 export const PRODUCT_FILTER_VIEW_KEY = 'products.leader.filter'
 
 const emptyAssignment: ProductAssignmentForm = { user_id: '', product_id: '', unassigned_reason: '', transfer_pending_tasks: false }
+
+const NO_ASSIGNMENTS: AppData['productAssignments'] = []
 
 const FILTER_LABELS: Record<ProductAssigneeFilter, string> = {
   all: '전체',
@@ -89,14 +94,16 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
     setProductAssignOpen(true)
   }
   const query = adminSearch.trim()
-  const { ownCompanyProducts, consignedProducts, unassignedProducts } = selectProductGroups(data, query)
+  // 제품별 배정을 한 번만 묶어 둔다. 칩 개수·필터·카드가 제품마다 전체 배정을 다시 훑지 않는다.
+  const assignmentsByProduct = useMemo(() => groupProductAssignments(data.productAssignments), [data.productAssignments])
+  const { ownCompanyProducts, consignedProducts, unassignedProducts } = selectProductGroups(data, query, assignmentsByProduct)
   const filterCounts: Record<ProductAssigneeFilter, number> = {
     all: data.products.length,
     unassigned: unassignedProducts.length,
-    inactive: data.products.filter((product) => productAssigneeState(data, product.id) === 'inactive').length,
+    inactive: data.products.filter((product) => productAssigneeState(data, product.id, assignmentsByProduct) === 'inactive').length,
   }
-  const visibleOwnProducts = ownCompanyProducts.filter((product) => matchesProductAssigneeFilter(data, product.id, assigneeFilter))
-  const visibleConsignedProducts = consignedProducts.filter((product) => matchesProductAssigneeFilter(data, product.id, assigneeFilter))
+  const visibleOwnProducts = ownCompanyProducts.filter((product) => matchesProductAssigneeFilter(data, product.id, assigneeFilter, assignmentsByProduct))
+  const visibleConsignedProducts = consignedProducts.filter((product) => matchesProductAssigneeFilter(data, product.id, assigneeFilter, assignmentsByProduct))
   const filtersApplied = assigneeFilter !== 'all' || Boolean(query)
 
   useEffect(() => {
@@ -107,7 +114,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
     setProductImportIssues([])
     let rows: ReturnType<typeof parseProductImportRows>
     try {
-      rows = parseProductImportRows(parseCsvRows(await file.text()))
+      rows = parseProductImportRows(parseCsvRows(await readCsvFileText(file)))
     } catch (error) {
       // 파일 읽기·파싱 실패도 다른 실패와 같은 경로(오류 토스트)로 보여준다.
       await mutate(async () => {
@@ -225,12 +232,21 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
         changed = !result.noop
       }
       if (form.transfer_pending_tasks) {
-        const result = await controller.assign({
-          userId: form.user_id,
-          productId: form.product_id,
-          transferPendingChangeTasks: true,
-          transferReason: '제품 담당자를 바꾸면서 미완료 적용 업무도 넘겨요',
-        })
+        let result: Awaited<ReturnType<typeof controller.assign>>
+        try {
+          result = await controller.assign({
+            userId: form.user_id,
+            productId: form.product_id,
+            transferPendingChangeTasks: true,
+            transferReason: '제품 담당자를 바꾸면서 미완료 적용 업무도 넘겨요',
+          })
+        } catch (error) {
+          // 담당자 교체는 이미 저장됐다. 전부 실패한 것으로 오해하지 않게 어디까지 됐는지 알려준다.
+          if (!changed) throw error
+          throw new UserFacingError(
+            `담당자는 ${memberName(form.user_id)}님으로 바꿨지만 미완료 적용 업무는 넘기지 못했어요. 한 번 더 저장해 주세요. (${toUserMessage(error)})`,
+          )
+        }
         changed = changed || !result.noop
       }
       noop = !changed
@@ -243,6 +259,13 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
     if (ok) setProductAssignOpen(false)
   }
 
+  const closeProductEdit = (productId: string) =>
+    setProductEdits((current) => {
+      const next = { ...current }
+      delete next[productId]
+      return next
+    })
+
   const saveProductEdit = (productId: string, reason: string) => {
     let noop = false
     let savedName = productName(productId)
@@ -253,23 +276,30 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
       if (!product) return
       const name = validateProductUpdate(data, productId, edit.name)
       savedName = name
-      const result = await controller.update(productId, {
-        name,
-        category: edit.category || '자사',
-        company_name: edit.category === '자사' ? '자사' : edit.companyName.trim(),
-        unassigned_reason: data.productAssignments.some((assignment) => assignment.product_id === productId)
-          ? null
-          : edit.unassignedReason.trim() || null,
-        sort_order: product.sort_order ?? null,
-        expectedUpdatedAt: edit.expectedUpdatedAt,
-        reason,
-      })
+      let result: Awaited<ReturnType<typeof controller.update>>
+      try {
+        result = await controller.update(productId, {
+          name,
+          category: edit.category || '자사',
+          company_name: edit.category === '자사' ? '자사' : edit.companyName.trim(),
+          unassigned_reason: data.productAssignments.some((assignment) => assignment.product_id === productId)
+            ? null
+            : edit.unassignedReason.trim() || null,
+          sort_order: product.sort_order ?? null,
+          expectedUpdatedAt: edit.expectedUpdatedAt,
+          reason,
+        })
+      } catch (error) {
+        // 수정을 연 시점의 버전으로는 다시 저장해도 같은 충돌이 난다. 편집을 닫아 다시 열 때 최신 버전을 받게 한다.
+        if (isMasterStaleError(error)) {
+          closeProductEdit(productId)
+          setProductReasonPrompt(null)
+          setProductReason('')
+        }
+        throw error
+      }
       noop = result.noop
-      setProductEdits((current) => {
-        const next = { ...current }
-        delete next[productId]
-        return next
-      })
+      closeProductEdit(productId)
     }, () => noop ? '바뀐 내용이 없어요.' : `${quoted(savedName)} 제품 정보를 수정했어요.`)
   }
 
@@ -302,6 +332,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
             key={product.id}
             product={product}
             data={data}
+            assignments={assignmentsByProduct.get(product.id) ?? NO_ASSIGNMENTS}
             productEdits={productEdits}
             setProductEdits={setProductEdits}
             onSave={(productId) => setProductReasonPrompt({ productId })}

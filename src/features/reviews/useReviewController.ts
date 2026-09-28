@@ -53,8 +53,11 @@ export function useReviewController(profile: Profile, data: AppData, setData: Ap
     save: (editingReviewId: string | null, payload: ReviewRequestPayload) =>
       saveReviewRequest(context, { editingReviewId, payload }),
     withdraw: (requestId: string, reason: string) => withdrawReviewRequest(context, requestId, reason),
-    reject: (requestId: string, comment: string) => rejectReviewRequest(context, requestId, comment),
-    updateStatus: (requestId: string, status: ReviewStatus) => updateReviewStatus(context, requestId, status),
+    /** expectedUpdatedAt: 확인 창을 연 시점의 버전. 그 뒤 요청이 고쳐졌으면 충돌로 막는다. */
+    reject: (requestId: string, comment: string, expectedUpdatedAt?: string) =>
+      rejectReviewRequest(context, requestId, comment, expectedUpdatedAt),
+    updateStatus: (requestId: string, status: ReviewStatus, expectedUpdatedAt?: string) =>
+      updateReviewStatus(context, requestId, status, expectedUpdatedAt),
     reopen: (requestId: string) => reopenReviewRequest(context, requestId),
     resubmit: (requestId: string, comment: string) => resubmitReviewRequest(context, requestId, comment),
     /** 반려된 요청을 고쳐서 같은 요청으로 다시 보낸다(내용 수정 + 재요청을 한 번에). */

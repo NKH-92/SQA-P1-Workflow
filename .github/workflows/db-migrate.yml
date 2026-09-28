@@ -26,6 +26,7 @@ concurrency:
 jobs:
   migrate:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: production
     steps:
       - name: Require main branch
@@ -101,6 +102,8 @@ jobs:
           DB_URL_SET: ${{ secrets.SUPABASE_DB_URL != '' }}
           ACCESS_TOKEN_SET: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' }}
           PROJECT_REF_SET: ${{ secrets.SUPABASE_PROJECT_REF != '' }}
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: |
           if [ "$DB_URL_SET" != "true" ] || [ "$ACCESS_TOKEN_SET" != "true" ] || [ "$PROJECT_REF_SET" != "true" ]; then
             {
@@ -114,6 +117,21 @@ jobs:
             exit 1
           fi
 
+          # DB URL과 Edge Function 배포 대상 ref가 같은 프로젝트인지 확인한다(프로젝트 전환 후 ref만 옛 값으로 남는 사고 방지).
+          # pooler 사용자명 postgres.<ref> 또는 직접 연결 host db.<ref>.supabase.co 중 하나여야 한다. 값은 출력하지 않는다.
+          case "$DATABASE_URL" in
+            *"://postgres.$PROJECT_REF:"*|*"://postgres.$PROJECT_REF@"*|*"@db.$PROJECT_REF.supabase.co"*) ;;
+            *)
+              echo "::error::SQA_SUPABASE_DB_URL_PROJECT_REF_MISMATCH"
+              {
+                echo "## DB migrate failed — SUPABASE_DB_URL과 SUPABASE_PROJECT_REF가 가리키는 프로젝트가 달라요"
+                echo ""
+                echo "두 secret을 같은 Supabase 프로젝트 값으로 맞춘 뒤 다시 실행하세요."
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+              ;;
+          esac
+
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -122,6 +140,18 @@ jobs:
       - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
         with:
           version: 2.109.1
+
+      # DB를 건드리기 전에 access token이 유효한지 읽기 전용 호출로 확인한다.
+      # 토큰이 만료·폐기된 채로 진행하면 db push만 반영되고 Edge Function 배포에서 실패한다.
+      - name: Preflight Supabase access token
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          if ! supabase functions list --project-ref "$PROJECT_REF" --output json >/dev/null; then
+            echo "::error::SQA_SUPABASE_ACCESS_TOKEN_INVALID"
+            exit 1
+          fi
 
       # CLI db push는 supabase_migrations.schema_migrations 이력 기준으로 미적용분을 계산한다.
       # SQL Editor로만 적용해 온 프로젝트(이력 0건 + 스키마 존재)에서 그대로 push하면
@@ -164,6 +194,29 @@ jobs:
           if [ "$object_count" -ne 0 ] || [ "$bucket_count" -ne 0 ]; then
             echo "::error::SQA_REVIEW_ATTACHMENTS_BUCKET_STILL_EXISTS: operator Storage API evidence must show objectCount=0 and bucketExists=false before Stage B (objects=$object_count buckets=$bucket_count)"
             exit 1
+          fi
+
+      # Review-history retention runs daily in pg_cron. A failed latest run is surfaced here as a warning,
+      # before any DB change: it must not block releases (a migration may be the fix) or leave a partial release.
+      - name: Check review retention cron health (warning only)
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          latest=$(psql "$DATABASE_URL" -tAc "
+            select coalesce((
+              select run.status || ' ' || to_char(run.start_time at time zone 'Asia/Seoul', 'YYYY-MM-DD HH24:MI')
+                from cron.job_run_details run
+                join cron.job job on job.jobid = run.jobid
+               where job.jobname = 'sqa-review-retention-daily'
+               order by run.runid desc
+               limit 1), 'none')" || echo "unreadable")
+          if [ "${latest%% *}" = "failed" ]; then
+            echo "::warning::SQA_REVIEW_RETENTION_CRON_FAILED: latest sqa-review-retention-daily run failed (${latest#* } KST). See docs/OPERATIONS.md retention cron section."
+            echo "- WARNING: review retention cron latest run failed (${latest#* } KST). Check cron.job_run_details.return_message." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$latest" = "unreadable" ]; then
+            echo "::warning::SQA_REVIEW_RETENTION_CRON_UNREADABLE: could not read cron.job_run_details"
+          else
+            echo "review retention cron latest run: $latest"
           fi
 
       # Migration history repair is intentionally excluded from this routine.

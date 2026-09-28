@@ -3,6 +3,7 @@ import { createPreviewData, previewLeader, previewMember } from '../demoData'
 import type { Profile, SectionReadMark } from '../types'
 import {
   FIRST_VISIT_NEW_DAYS,
+  READ_MARK_KEY_LIMIT,
   newestSectionTarget,
   receivesSectionNews,
   sectionNeedsReadMark,
@@ -88,6 +89,29 @@ describe('section news', () => {
   it('opens the most recent new item', () => {
     expect(newestSectionTarget([item('a', 3, 'x'), item('b', 1, 'y'), item('c', null, 'z')])).toBe('y')
     expect(newestSectionTarget([])).toBeUndefined()
+  })
+
+  it('only judges as many items as the server can record, so opening the section clears the news', () => {
+    const data = createPreviewData()
+    const base = data.projectAssignments[0]
+    const uuid = (index: number) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`
+    // 501건 가운데 하나만 가장 오래됐고, 나머지는 같은 때라 key 순으로 자른다.
+    const assignments = Array.from({ length: READ_MARK_KEY_LIMIT + 1 }, (_, index) => ({
+      ...base,
+      id: uuid(index),
+      user_id: previewMember.id,
+      created_at: index === 0 ? '2026-09-01T00:00:00.000Z' : '2026-09-20T00:00:00.000Z',
+    }))
+    const items = sectionNewsItems(previewMember, { ...data, projectAssignments: assignments }, 'projects')
+    expect(items).toHaveLength(READ_MARK_KEY_LIMIT)
+    expect(items.map((news) => news.key)).not.toContain(uuid(0))
+    expect(items[0].key).toBe(uuid(1))
+    expect(items[READ_MARK_KEY_LIMIT - 1].key).toBe(uuid(READ_MARK_KEY_LIMIT))
+
+    // 화면을 열어 서버가 저장할 수 있는 만큼(판정 대상 전부) 기록하면 새 소식이 남지 않는다.
+    const recorded = mark('projects', items.map((news) => news.key))
+    expect(unseenSectionItems(items, recorded, true, NOW)).toEqual([])
+    expect(sectionNeedsReadMark(items, recorded)).toBe(false)
   })
 
   it('reads only my own mark for a section', () => {

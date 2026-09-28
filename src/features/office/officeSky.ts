@@ -337,6 +337,8 @@ function drawTowerLight(ctx: Ctx, area: SkyRect, state: SkyState, now: number, a
 export type SkyPainter = {
   /** 창 안쪽(월드 좌표)에 하늘을 그린다. 분이 바뀔 때만 하늘·건물을 새로 만든다. */
   paint(ctx: Ctx, hour: number, now: number, animate: boolean): SkyState
+  /** 캐시한 하늘·건물을 버린다. 다음 paint에서 같은 분이어도 새로 그린다(캔버스 컨텍스트 복원 뒤). */
+  invalidate(): void
 }
 
 function layer(width: number, height: number) {
@@ -380,6 +382,9 @@ export function createSkyPainter(area: SkyRect): SkyPainter | null {
       ctx.drawImage(front.canvas, area.x, area.y)
       drawTowerLight(ctx, area, state, now, animate)
       return state
+    },
+    invalidate() {
+      cachedMinute = -1
     },
   }
 }

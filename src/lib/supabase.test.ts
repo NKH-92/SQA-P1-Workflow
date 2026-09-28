@@ -58,4 +58,5 @@ describe('supabase mode detection', () => {
     expect(isPreviewMode).toBe(false)
     expect(supabase).not.toBeNull()
   })
+
 })

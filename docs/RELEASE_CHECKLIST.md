@@ -7,7 +7,7 @@
 ## 릴리스 원칙
 
 - 작업 브랜치 → PR → squash merge 순서를 지킵니다.
-- `main` 직접 push, force push, migration 수정·삭제·rename을 금지합니다.
+- `main` 직접 push, force push, 운영에 적용된 migration의 수정·삭제·rename을 금지합니다.
 - 운영 DB와 Worker는 자동 배포하지 않고 승인된 `workflow_dispatch`로만 승격합니다.
 - CI, backup, migration, deploy는 **같은 전체 SHA**를 사용합니다.
 - 어느 단계든 실패·skip·SHA 불일치가 있으면 다음 단계로 진행하지 않습니다.
@@ -20,8 +20,10 @@
 | 변경 목적과 비목표가 PR 한 개의 책임으로 설명됨 | [ ] |
 | `git status`와 diff에서 의도한 파일만 변경됨 | [ ] |
 | `.env*`, DB dump, 사용자 목록, 운영 URL·ID·key가 포함되지 않음 | [ ] |
-| 기존 migration의 수정·삭제·rename이 없고 필요한 변경은 새 migration임 | [ ] |
+| 운영에 적용된(`schema_migrations`에 기록된) migration의 수정·삭제·rename이 없고 필요한 변경은 새 migration임 | [ ] |
+| 새 migration 버전이 `main`의 최신 migration 버전보다 큼 | [ ] |
 | UI/DOM/ARIA/hash/RPC/RLS/audit 호환성 영향이 PR에 기록됨 | [ ] |
+| 이 migration만 적용된 상태에서도 현재 운영 번들이 그대로 동작함(운영 번들이 호출하는 RPC를 같은 이름으로 다시 만들 때 인자 시그니처·응답 `schema_version`·필수 필드가 그대로이고 drop이 없음, [DEPLOYMENT.md](./DEPLOYMENT.md) expand/contract) | [ ] |
 | rollback 또는 roll-forward 방법이 PR에 기록됨 | [ ] |
 
 기록:
@@ -156,6 +158,10 @@ DB 변경이 없어도 같은 SHA의 migration history와 readiness를 증명하
 | leader | 피드백·최종 판단 | 상태·이력·badge 반영 | [ ] |
 | 공통 | 동기화·모바일 drawer·모달 keyboard | 경고·focus·overflow 이상 없음 | [ ] |
 | leader | 활동·감사 이력 | 예상 mutation 기록 | [ ] |
+| leader | 홈 사무실 표시, 자리 배치 저장, 회의 시작 → member 화면에 안내 띠 표시 → member 확인 → 종료 | 자리 저장·회의 안내·확인·종료 정상, 종료 뒤 안내 띠 사라짐 | [ ] |
+| member | 내 자리 상태 설정·해제, 공지 화면을 연 뒤 홈으로 돌아오기 | 상태 표지 표시·해제, 홈의 새 소식 표시 꺼짐 | [ ] |
+
+배포 당일 Supabase Dashboard > Logs에서 배포 시각 이후 `/rest/v1/rpc/` 경로의 4xx·5xx를 RPC별로 한 번 확인합니다. Free 플랜 API 로그는 약 1일만 보존되므로 다음 날로 미루지 않습니다.
 
 ## 8. 릴리스 종료
 
@@ -167,6 +173,7 @@ DB 변경이 없어도 같은 SHA의 migration history와 readiness를 증명하
 | Release tag | `<TAG_OR_NOT_CREATED>` |
 | CI / Backup / DB / Deploy | `<RUN_IDS>` |
 | 스모크 결과 | `<PASS_OR_INCIDENT_REFERENCE>` |
+| 배포 공지·탭 새로고침 요청 시각 | `<YYYY-MM-DD HH:mm>` (팀 메신저: "PC는 열린 탭 F5, 휴대폰은 탭을 닫았다 다시 열기") |
 | 후속 작업 | `<NONE_OR_PRIVATE_REFERENCE>` |
 
 Release tag는 실제 운영 `/version.json`과 같은 SHA에만 생성합니다. 이 체크리스트의
@@ -179,8 +186,15 @@ Release tag는 실제 운영 `/version.json`과 같은 SHA에만 생성합니다
 - DB Migrate 전 실패: 운영에는 반영하지 않고 CI·backup 증거부터 다시 만듭니다.
 - DB Migrate 후 Worker 배포 전 실패: DB가 구 Worker와 호환되는지 확인하고
   deploy를 중단한 채 roll-forward PR을 준비합니다.
-- Worker healthcheck 실패: 이전 정상 SHA를 기준으로 새 CI → Backup → DB Migrate
-  → Deploy 승격을 수행합니다.
+- DB Migrate의 `db push`가 버전 순서 역전이나 파일 중간 실패로 멈춤: 워크플로의
+  migration list 출력으로 **운영에 미적용임을 확인한 파일에 한해** 수정하거나 새
+  타임스탬프로 rename하는 PR을 만들고 CI → Backup → DB Migrate를 다시 수행합니다.
+  `migration repair`나 `--include-all`은 사용하지 않습니다.
+- Worker healthcheck 실패·배포 직후 치명적 회귀: DB가 구 Worker와 호환되면(expand만
+  적용) Cloudflare Deployments Rollback으로 먼저 되돌립니다([DEPLOYMENT.md](./DEPLOYMENT.md)
+  롤백 절). 이어서 **이전 정상 프런트 + 현재 migration 세트를 유지한 새 SHA**로
+  새 CI → Backup → DB Migrate → Deploy 승격을 수행합니다. `supabase/migrations`·
+  `scripts/sql/verify`·manifest는 되돌리지 않습니다.
 - 적용된 migration은 되돌리거나 수정하지 않습니다. 새 append-only migration으로
   보정합니다.
 - 데이터 복원이 필요하면 [DR_CONTRACT.md](./DR_CONTRACT.md)와

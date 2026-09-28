@@ -84,4 +84,29 @@ describe('useSectionReadMarker', () => {
     await waitFor(() => expect(mocks.markSectionSeen).toHaveBeenCalledTimes(2))
     expect(sentKeys(1)).toEqual(sentKeys(0))
   })
+
+  it('does not resend a failed write just because data refreshed, only when the items change', async () => {
+    const data = createPreviewData()
+    mocks.markSectionSeen.mockRejectedValueOnce(new Error('network down'))
+    const { rerender } = renderMarker({ profile: previewMember, data, tab: 'projects' })
+    expect(mocks.markSectionSeen).toHaveBeenCalledTimes(1)
+    await (mocks.markSectionSeen.mock.results[0]?.value as Promise<unknown>).catch(() => undefined)
+
+    // 사무실 확인 등으로 데이터만 새로 와도 같은 기록은 다시 보내지 않는다.
+    rerender({ profile: previewMember, data: { ...data }, tab: 'projects' })
+    rerender({ profile: previewMember, data: { ...data }, tab: 'projects' })
+    expect(mocks.markSectionSeen).toHaveBeenCalledTimes(1)
+
+    // 새 항목이 오면 다시 남긴다.
+    const arrived: AppData = {
+      ...data,
+      projectAssignments: [
+        ...data.projectAssignments,
+        { ...data.projectAssignments[0], id: 'project-assignment-new', user_id: previewMember.id },
+      ],
+    }
+    rerender({ profile: previewMember, data: arrived, tab: 'projects' })
+    expect(mocks.markSectionSeen).toHaveBeenCalledTimes(2)
+    expect(sentKeys(1).keys).toContain('project-assignment-new')
+  })
 })

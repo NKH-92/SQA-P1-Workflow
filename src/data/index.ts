@@ -96,6 +96,4 @@ export {
   cancelChangeApplication,
   finalizeChangeApplication,
   undoFinalizeChangeApplication,
-  archiveChangeApplication,
-  restoreChangeApplication,
 } from './mutations/changeApplications'

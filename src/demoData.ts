@@ -43,16 +43,17 @@ export const previewLeader: Profile = {
   role: 'leader',
 }
 
-const demoAssigneeNames = Array.from(
-  new Set(demoProductAllocationRows.map((row) => row.assigneeName.trim()).filter(Boolean)),
-)
-
-const previewMembers: Profile[] = demoAssigneeNames.map((name, index) => ({
-  id: `member-${String(index + 1).padStart(2, '0')}`,
-  email: `member-${String(index + 1).padStart(2, '0')}@example.com`,
-  name,
-  role: 'member',
-}))
+function listPreviewMembers(): Profile[] {
+  const demoAssigneeNames = Array.from(
+    new Set(demoProductAllocationRows.map((row) => row.assigneeName.trim()).filter(Boolean)),
+  )
+  return demoAssigneeNames.map((name, index) => ({
+    id: `member-${String(index + 1).padStart(2, '0')}`,
+    email: `member-${String(index + 1).padStart(2, '0')}@example.com`,
+    name,
+    role: 'member',
+  }))
+}
 
 const extraPreviewProfiles: Profile[] = [
   {
@@ -63,15 +64,27 @@ const extraPreviewProfiles: Profile[] = [
   },
 ]
 
-const previewProfiles = [...previewMembers, ...extraPreviewProfiles].filter(
-  (profile, index, profiles) => profiles.findIndex((item) => item.name === profile.name) === index,
-)
+function listPreviewProfiles(members: Profile[]) {
+  return [...members, ...extraPreviewProfiles].filter(
+    (profile, index, profiles) => profiles.findIndex((item) => item.name === profile.name) === index,
+  )
+}
+
+// 최상위 계산은 미리보기에서만 쓴다. /* @__PURE__ */ 표시로 결과를 쓰지 않는 운영 번들에서는
+// 계산과 데모 제품 데이터가 함께 트리셰이킹된다. 내보내는 값과 계산 결과는 그대로다.
+const previewMembers: Profile[] = /* @__PURE__ */ listPreviewMembers()
+
+const previewProfiles = /* @__PURE__ */ listPreviewProfiles(previewMembers)
 
 function previewProfileByName(name: string) {
   return previewProfiles.find((profile) => profile.name === name)
 }
 
-export const previewMember: Profile = previewMembers[0]
+function firstPreviewMember(members: Profile[]): Profile {
+  return members[0]
+}
+
+export const previewMember: Profile = /* @__PURE__ */ firstPreviewMember(previewMembers)
 
 const projectNames = [
   '고객 포털 개편',

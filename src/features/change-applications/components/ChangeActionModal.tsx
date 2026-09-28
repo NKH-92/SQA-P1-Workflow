@@ -3,6 +3,7 @@ import { ArchiveRestore, CheckCheck, CheckCircle2, MinusCircle, RefreshCw, UserR
 import { DialogActions, Modal } from '../../../components/ui'
 import { withJosa } from '../../../lib/korean'
 import type { AppData, ChangeApplication, ProductChangeTask } from '../../../types'
+import { canHoldChangeTask, selectAssignableChangeAssignees } from '../selectors'
 
 export type ChangeActionDialog =
   | { kind: 'complete'; task: ProductChangeTask }
@@ -165,16 +166,16 @@ export function ChangeActionModal({
   const reasonRef = useRef<HTMLTextAreaElement>(null)
   const assigneeRef = useRef<HTMLSelectElement>(null)
   const isReassign = dialog.kind === 'reassign' || dialog.kind === 'bulk_reassign'
+  // 담당자 후보는 처리할 수 있는 활성 사용자만(팀장 제외). 지금 담당자가 후보가 아니면 새로 고르게 비워 둔다.
+  const activeAssignees = selectAssignableChangeAssignees(data)
   const [initialAssigneeId] = useState<string | null>(() => {
     if (dialog.kind !== 'reassign' || !dialog.task.assignee_id) return null
     const current = data.profiles.find((item) => item.id === dialog.task.assignee_id)
-    return current?.is_active === false ? null : dialog.task.assignee_id
+    if (current?.is_active === false) return null
+    const person = current ?? data.changeAssigneeOptions.find((item) => item.id === dialog.task.assignee_id)
+    return person && !canHoldChangeTask(person) ? null : dialog.task.assignee_id
   })
   const [selectedAssigneeId, setSelectedAssigneeId] = useState<string | null>(initialAssigneeId)
-  const activeAssignees = data.changeAssigneeOptions.filter((item) => {
-    const assignee = data.profiles.find((profileItem) => profileItem.id === item.id)
-    return assignee?.is_active !== false
-  })
   const config = dialogCopy(dialog)
   const needsReason = Boolean(config.reasonLabel)
   const takesNote = dialog.kind === 'complete' || dialog.kind === 'complete_all'

@@ -95,6 +95,10 @@ export async function fetchAppData(previous?: AssembledAppData): Promise<FetchAp
   // between two of them can still be reflected in one bootstrap and not the
   // other for this one refresh. See docs/ARCHITECTURE.md for the documented,
   // bounded skew this implies and why it is an accepted business boundary.
+  // 부가 조회도 같은 시점에 시작해 왕복 한 단계를 줄인다. 필수가 실패하면 결과를 쓰지 않고 버린다
+  // (allSettled라 reject하지 않지만, 필수 실패로 먼저 빠져나갈 때 unhandled rejection이 남지 않게 한다).
+  const optionalPromise = fetchOptionalQueries(supabase)
+  optionalPromise.catch(() => {})
   const [core, review, change] = await Promise.all([
     fetchCoreQueries(supabase),
     fetchReviewQueries(supabase),
@@ -127,7 +131,7 @@ export async function fetchAppData(previous?: AssembledAppData): Promise<FetchAp
   const failed = requiredResults.find((result) => result.error)
   if (failed?.error) throw failed.error
 
-  const optional = await fetchOptionalQueries(supabase)
+  const optional = await optionalPromise
   const snapshotAt = earliestSnapshot([core.coreSnapshotAt, review.reviewSnapshotAt, change.changeSnapshotAt])
   const assembled = assembleAppData(required, optional, mergeReviewRequests, previous)
   // Server-detected partial conditions (for example a bounded startup

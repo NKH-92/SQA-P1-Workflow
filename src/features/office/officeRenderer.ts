@@ -357,15 +357,21 @@ export function createOfficeRenderer(
   const sky = createSkyPainter(BIG_WINDOW)
   if (!frame || !background || !windowOverlay || !islandBack || !islandFront || !sky) return null
 
-  for (const layer of [background, windowOverlay]) {
-    layer.ctx.save()
-    layer.ctx.translate(-WORLD_LEFT, -WORLD_TOP)
+  /** 한 번만 그려 두는 층(벽·바닥, 창틀·창가 소품, 책상 섬 뒤쪽). GPU 컨텍스트가 복원되면 다시 그린다. */
+  const paintStatic = () => {
+    for (const layer of [background, windowOverlay]) {
+      layer.ctx.clearRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT)
+      layer.ctx.save()
+      layer.ctx.translate(-WORLD_LEFT, -WORLD_TOP)
+    }
+    drawBackground(background.ctx)
+    drawBigWindowFrame(windowOverlay.ctx)
+    drawWindowFrontProps(windowOverlay.ctx)
+    for (const layer of [background, windowOverlay]) layer.ctx.restore()
+    islandBack.ctx.clearRect(0, 0, SCENE_WIDTH, SCENE_HEIGHT)
+    drawIslandBack(islandBack.ctx)
   }
-  drawBackground(background.ctx)
-  drawBigWindowFrame(windowOverlay.ctx)
-  drawWindowFrontProps(windowOverlay.ctx)
-  for (const layer of [background, windowOverlay]) layer.ctx.restore()
-  drawIslandBack(islandBack.ctx)
+  paintStatic()
 
   let camera: OfficeCamera = CORE_CAMERA
   let attendees: number[] = []
@@ -381,6 +387,23 @@ export function createOfficeRenderer(
   let nextChatterAt = 0
   let nextTripAt = 0
   const tripRandom = seededRandom(Math.floor(Math.random() * 0x7fffffff))
+
+  /** 책상 섬 앞쪽(모니터·키보드 등)은 앉은 사람에 따라 달라서 자리 배치가 바뀔 때 다시 그린다. */
+  const repaintFront = () => {
+    islandFront.ctx.clearRect(0, 0, SCENE_WIDTH, SCENE_HEIGHT)
+    drawIslandFront(islandFront.ctx, actors.map((entry) => ({ seatIndex: entry.seat.seatIndex, look: entry.character.look })))
+  }
+
+  // 절전 복귀·그래픽 드라이버 재설정 등으로 캔버스 컨텍스트가 유실됐다 복원되면 캔버스가 비어 있다.
+  // 매 장 새로 그리지 않는 층과 스프라이트·하늘 캐시를 다시 만든다.
+  const layerCanvases = [frame, background, windowOverlay, islandBack, islandFront].map((layer) => layer.canvas)
+  const onContextRestored = () => {
+    paintStatic()
+    repaintFront()
+    spriteCache.clear()
+    sky.invalidate()
+  }
+  for (const canvas of layerCanvases) canvas.addEventListener('contextrestored', onContextRestored)
 
   const publishBubbles = () => {
     options.onBubblesChange?.(bubbles.map(({ id, seatIndex, text }) => ({ id, seatIndex, text })))
@@ -507,8 +530,7 @@ export function createOfficeRenderer(
           trip: null,
         }]
       })
-      islandFront.ctx.clearRect(0, 0, SCENE_WIDTH, SCENE_HEIGHT)
-      drawIslandFront(islandFront.ctx, actors.map((entry) => ({ seatIndex: entry.seat.seatIndex, look: entry.character.look })))
+      repaintFront()
       const seated = new Set(actors.map((entry) => entry.seat.seatIndex))
       const remaining = bubbles.filter((bubble) => seated.has(bubble.seatIndex))
       if (remaining.length !== bubbles.length) {
@@ -769,6 +791,7 @@ export function createOfficeRenderer(
     },
 
     destroy() {
+      for (const canvas of layerCanvases) canvas.removeEventListener('contextrestored', onContextRestored)
       actors = []
       spriteCache.clear()
       bubbles = []

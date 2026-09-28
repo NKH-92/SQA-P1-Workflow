@@ -212,6 +212,84 @@ describe('ChangeApplicationsPanel', () => {
     expect(screen.queryByRole('button', { name: `${ownTask.product_name} 업무 취소` })).not.toBeInTheDocument()
   })
 
+  it('lets the leader process and reopen a task assigned to themselves, but never a team leader', () => {
+    const data = createPreviewData()
+    const pendingTask = data.productChangeTasks.find(
+      (task) => task.status === 'pending' && task.action_item_id === 'change-action-01',
+    )!
+    const doneTask = data.productChangeTasks.find(
+      (task) => task.id !== pendingTask.id && task.action_item_id === 'change-action-01',
+    )!
+    const assignTo = (assigneeId: string, name: string): AppData => ({
+      ...data,
+      changeApplicationSummaries: [],
+      productChangeTasks: data.productChangeTasks.map((task) => {
+        if (task.id === pendingTask.id) return { ...task, assignee_id: assigneeId, assignee_name: name }
+        if (task.id === doneTask.id) {
+          return {
+            ...task,
+            assignee_id: assigneeId,
+            assignee_name: name,
+            status: 'completed' as const,
+            completed_at: '2026-07-22T02:00:00.000Z',
+            completed_by: assigneeId,
+            completed_by_name: name,
+          }
+        }
+        return task
+      }),
+    })
+
+    // 서버는 담당자 본인이면 처리를 허용하므로, 파트장 본인 업무에는 처리·다시 열기 버튼이 보인다.
+    const leaderView = render(
+      <ChangeApplicationsPanel profile={previewLeader} data={assignTo(previewLeader.id, previewLeader.name)} mutate={vi.fn(runMutation)} setData={vi.fn()} />,
+    )
+    expect(screen.getAllByRole('button', { name: '적용 완료' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: '해당 없음' })).toHaveLength(1)
+    expect(screen.getByRole('button', { name: `${doneTask.product_name} 다시 열기` })).toBeInTheDocument()
+
+    leaderView.unmount()
+    const teamLeader = { id: 'team-leader-1', email: 'team-leader@example.com', name: '팀장', role: 'team_leader' as const }
+    const teamLeaderData = assignTo(teamLeader.id, teamLeader.name)
+    render(
+      <ChangeApplicationsPanel profile={teamLeader} data={{ ...teamLeaderData, profiles: [...teamLeaderData.profiles, teamLeader] }} mutate={vi.fn(runMutation)} setData={vi.fn()} />,
+    )
+    expect(screen.queryByRole('button', { name: '적용 완료' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '해당 없음' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: `${doneTask.product_name} 다시 열기` })).not.toBeInTheDocument()
+  })
+
+  it('never offers a team leader as a new assignee', () => {
+    const data = createPreviewData()
+    const task = data.productChangeTasks.find((item) => item.status === 'pending' && item.action_item_id === 'change-action-01')!
+    const teamLeader = { id: 'team-leader-1', email: 'team-leader@example.com', name: '팀장', role: 'team_leader' as const }
+    data.profiles = [...data.profiles, teamLeader]
+    data.changeAssigneeOptions = [...data.changeAssigneeOptions, { id: teamLeader.id, name: teamLeader.name, role: teamLeader.role }]
+    render(
+      <ChangeApplicationsPanel profile={previewLeader} data={data} mutate={vi.fn(runMutation)} setData={vi.fn()} />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: `${task.product_name} 담당자 변경` }))
+    const assigneeSelect = screen.getByLabelText('새 담당자')
+    expect(within(assigneeSelect).getByRole('option', { name: `${previewLeader.name} (파트장)` })).toBeInTheDocument()
+    expect(within(assigneeSelect).queryByRole('option', { name: teamLeader.name })).not.toBeInTheDocument()
+  })
+
+  it('closes an open detail menu when another common change is selected', () => {
+    const { data } = twoTasksForOneProductData()
+    render(
+      <ChangeApplicationsPanel profile={previewLeader} data={data} mutate={vi.fn(runMutation)} setData={vi.fn()} />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'CC-2026-014 더보기' }))
+    expect(screen.getByRole('menuitem', { name: '공통변경 취소' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /CC-2026-015/ }))
+
+    // 열려 있던 메뉴가 새로 고른 공통변경을 가리킨 채 남지 않는다.
+    expect(screen.getByRole('button', { name: 'CC-2026-015 더보기' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('menuitem', { name: '공통변경 취소' })).not.toBeInTheDocument()
+  })
+
   it('shows member work as a product list with full change details', () => {
     const data = createPreviewData()
     const ownContexts = data.productChangeTasks.filter(

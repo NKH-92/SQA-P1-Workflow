@@ -50,6 +50,7 @@ concurrency:
 jobs:
   rehearsal:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment: dr-rehearsal
     steps:
       - name: Check target safety

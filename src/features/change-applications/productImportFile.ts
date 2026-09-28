@@ -1,5 +1,5 @@
 import readXlsxFile from 'read-excel-file/browser'
-import { parseCsvRows } from '../../lib/csvImport'
+import { parseCsvRows, readCsvFileText } from '../../lib/csvImport'
 import { UserFacingError } from '../../lib/errors'
 import {
   MAX_CHANGE_PRODUCT_IMPORT_BYTES,
@@ -58,7 +58,8 @@ export async function readChangeProductImportFile(file: File): Promise<ProductIm
 
   const extension = file.name.split('.').pop()?.toLocaleLowerCase('en')
   if (extension === 'csv') {
-    const rows = parseCsvRows(await file.text())
+    // 한국어 Excel 기본 CSV(CP949)도 읽는다(UTF-8이 아니면 EUC-KR로 다시 읽음).
+    const rows = parseCsvRows(await readCsvFileText(file))
     return {
       fileName: file.name,
       sheetName: null,

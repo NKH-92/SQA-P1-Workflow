@@ -7,7 +7,12 @@ export function validateInviteCreate(data: AppData, input: { email: string; name
   const email = input.email.trim().toLowerCase()
   if (!EMAIL_PATTERN.test(email)) throw new UserFacingError('이메일 형식을 확인해 주세요.')
   if (!input.name.trim()) throw new UserFacingError('이름을 입력해 주세요.')
-  if (data.allowedUsers.some((item) => item.email.toLowerCase() === email)) {
+  // 목록에만 있고 가입한 계정(profile)이 없는 ‘가입 전’ 행(CSV 가져오기 등)은 통과시킨다.
+  // account-admin이 그 행을 이어받아 로그인 계정을 만든다. 가입한 계정이 있으면 서버도 409로 막는다.
+  if (
+    data.allowedUsers.some((item) => item.email.toLowerCase() === email)
+    && data.profiles.some((item) => item.email.toLowerCase() === email)
+  ) {
     throw new UserFacingError('이미 등록된 이메일이에요. 목록에서 계정을 확인해 주세요.')
   }
   return { email, name: input.name.trim(), role: input.role }

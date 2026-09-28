@@ -116,21 +116,5 @@ export function createSupabaseChangeApplicationRepository(
       })
       if (error) throw translateChangeApplicationError(error)
     },
-
-    async archiveChangeApplication(changeApplicationId, reason) {
-      const { error } = await supabase!.rpc('archive_change_application', {
-        p_change_application_id: changeApplicationId,
-        p_reason: reason,
-      })
-      if (error) throw translateChangeApplicationError(error)
-    },
-
-    async restoreChangeApplication(changeApplicationId, reason) {
-      const { error } = await supabase!.rpc('restore_change_application', {
-        p_change_application_id: changeApplicationId,
-        p_reason: reason,
-      })
-      if (error) throw translateChangeApplicationError(error)
-    },
   }
 }

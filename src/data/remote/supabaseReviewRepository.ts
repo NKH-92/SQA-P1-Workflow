@@ -14,6 +14,7 @@ import {
   normalizeReviewRequestPayload,
   assertReviewStatusTransition,
 } from '../validation/reviews'
+import { throwIfPossiblySaved } from './createFailure'
 import { REVIEW_NOT_FOUND_MESSAGE, translateReviewOccError } from './reviewOccError'
 
 function throwReviewError(error: { message?: string }): never {
@@ -55,7 +56,10 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
         p_description: normalized.description,
         p_due_date: normalized.due_date,
       })
-      if (error) throwReviewError(error)
+      if (error) {
+        throwIfPossiblySaved(error)
+        throwReviewError(error)
+      }
       return { reviewId: typeof createdId === 'string' ? createdId : '', isUpdate: false }
     },
 
@@ -71,7 +75,7 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
       if (error) throwReviewError(error)
     },
 
-    async rejectReviewRequest(requestId, comment) {
+    async rejectReviewRequest(requestId, comment, expectedUpdatedAt) {
       const request = data.reviewRequests.find((item) => item.id === requestId)
       if (!request) throw new UserFacingError(REVIEW_NOT_FOUND_MESSAGE)
       assertCanReject(request.status)
@@ -79,20 +83,21 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
       assertRejectReason(comment)
       const { error } = await supabase!.rpc('reject_review_request', {
         p_review_request_id: requestId,
-        p_expected_updated_at: expectedRevision(requestId, request.updated_at),
+        // 확인 창을 연 시점의 버전을 우선한다. 그 뒤 요청이 고쳐졌으면 충돌로 막아, 파트장이 읽지 않은 수정본에 결정이 붙지 않게 한다.
+        p_expected_updated_at: expectedUpdatedAt ?? expectedRevision(requestId, request.updated_at),
         p_comment: comment.trim(),
       })
       if (error) throwReviewError(error)
     },
 
-    async updateReviewStatus(requestId, status) {
+    async updateReviewStatus(requestId, status, expectedUpdatedAt) {
       const request = data.reviewRequests.find((item) => item.id === requestId)
       if (!request) throw new UserFacingError(REVIEW_NOT_FOUND_MESSAGE)
       assertReviewStatusTransition(request.status, status)
       if (status !== 'approved') throw new UserFacingError('이 상태로는 바꿀 수 없어요. 목록을 새로고침해 주세요.')
       const { error } = await supabase!.rpc('approve_review_request', {
         p_review_request_id: requestId,
-        p_expected_updated_at: expectedRevision(requestId, request.updated_at),
+        p_expected_updated_at: expectedUpdatedAt ?? expectedRevision(requestId, request.updated_at),
       })
       if (error) throwReviewError(error)
     },
@@ -130,7 +135,10 @@ export function createSupabaseReviewRepository(ctx: RepositoryDeps): ReviewRepos
         p_review_request_id: requestId,
         p_comment: comment.trim(),
       })
-      if (error) throwReviewError(error)
+      if (error) {
+        throwIfPossiblySaved(error)
+        throwReviewError(error)
+      }
       return typeof createdId === 'string' ? createdId : null
     },
 

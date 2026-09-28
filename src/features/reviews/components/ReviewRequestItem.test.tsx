@@ -159,8 +159,31 @@ describe('ReviewRequestItem leader decisions', () => {
     expect(buttons.map((button) => button.textContent)).toEqual(['닫기', '승인하기'])
 
     await user.click(within(dialog).getByRole('button', { name: '승인하기' }))
-    await waitFor(() => expect(itemHandlers.onApprove).toHaveBeenCalledWith(pendingRequest))
+    await waitFor(() => expect(itemHandlers.onApprove).toHaveBeenCalledWith(pendingRequest, pendingRequest.updated_at))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('approves and rejects against the version shown when the confirmation opened', async () => {
+    const user = userEvent.setup()
+    const itemHandlers = handlers()
+    const openedAt = pendingRequest.updated_at
+    const edited = { ...pendingRequest, description: '창이 떠 있는 동안 고친 설명', updated_at: '2026-07-15T02:00:00.000Z' }
+    const { rerender } = render(<ReviewRequestItem {...itemHandlers} profile={leader} request={pendingRequest} />)
+
+    await user.click(screen.getByRole('button', { name: '승인하기' }))
+    // 확인 창이 떠 있는 동안 요청자가 요청을 고쳐 목록이 새로 그려진다.
+    rerender(<ReviewRequestItem {...itemHandlers} profile={leader} request={edited} />)
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '승인하기' }))
+    await waitFor(() => expect(itemHandlers.onApprove).toHaveBeenCalledWith(edited, openedAt))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    rerender(<ReviewRequestItem {...itemHandlers} profile={leader} request={pendingRequest} />)
+    await user.click(screen.getByRole('button', { name: '반려하기' }))
+    rerender(<ReviewRequestItem {...itemHandlers} profile={leader} request={edited} />)
+    const dialog = screen.getByRole('dialog')
+    await user.type(within(dialog).getByRole('textbox', { name: /반려 사유/ }), '표를 추가해 주세요')
+    await user.click(within(dialog).getByRole('button', { name: '반려하기' }))
+    await waitFor(() => expect(itemHandlers.onReject).toHaveBeenCalledWith(edited, '표를 추가해 주세요', openedAt))
   })
 
   it('requires a rejection reason and pre-fills it from the feedback draft', async () => {
@@ -186,7 +209,11 @@ describe('ReviewRequestItem leader decisions', () => {
     expect(dialog).toHaveTextContent('작성 중이던 피드백을 옮겨 왔어요.')
 
     await user.click(within(dialog).getByRole('button', { name: '반려하기' }))
-    await waitFor(() => expect(itemHandlers.onReject).toHaveBeenCalledWith(pendingRequest, '영향 범위 표를 추가해 주세요'))
+    await waitFor(() => expect(itemHandlers.onReject).toHaveBeenCalledWith(
+      pendingRequest,
+      '영향 범위 표를 추가해 주세요',
+      pendingRequest.updated_at,
+    ))
   })
 
   it('keeps 다시 열기 visible for a decided request and confirms inline inside another dialog', async () => {
@@ -213,7 +240,57 @@ describe('ReviewRequestItem leader decisions', () => {
   })
 })
 
+describe('ReviewRequestItem feedback draft', () => {
+  it('starts from the kept draft and reports every change with the request id', async () => {
+    const user = userEvent.setup()
+    const onDraftChange = vi.fn()
+    render(
+      <ReviewRequestItem
+        {...handlers()}
+        initialDraft="쓰던 피드백"
+        onDraftChange={onDraftChange}
+        profile={leader}
+        request={pendingRequest}
+      />,
+    )
+
+    const textarea = screen.getByRole('textbox', { name: '검토 피드백' })
+    expect(textarea).toHaveValue('쓰던 피드백')
+    await user.type(textarea, '!')
+    expect(onDraftChange).toHaveBeenLastCalledWith(pendingRequest.id, '쓰던 피드백!')
+  })
+})
+
 describe('ReviewDetail', () => {
+  it('restores a kept draft when the detail is shown again for the same request', async () => {
+    const user = userEvent.setup()
+    const drafts = new Map<string, string>()
+    const readDraft = (id: string) => drafts.get(id)
+    const onDraftChange = (id: string, draft: string) => {
+      if (draft) drafts.set(id, draft)
+      else drafts.delete(id)
+    }
+    const other = { ...pendingRequest, id: 'review-3', title: '다른 검토' }
+    const detail = (selectedReview: ReviewRequest) => (
+      <ReviewDetail
+        {...handlers()}
+        onDraftChange={onDraftChange}
+        profile={leader}
+        readDraft={readDraft}
+        selectedReview={selectedReview}
+      />
+    )
+    const { rerender } = render(detail(pendingRequest))
+
+    await user.type(screen.getByRole('textbox', { name: '검토 피드백' }), '긴 피드백')
+    // 고른 요청이 목록에서 빠져 다른 요청으로 바뀌면 상세가 새로 그려진다.
+    rerender(detail(other))
+    expect(screen.getByRole('textbox', { name: '검토 피드백' })).toHaveValue('')
+    rerender(detail(pendingRequest))
+    expect(screen.getByRole('textbox', { name: '검토 피드백' })).toHaveValue('긴 피드백')
+  })
+
+
   it('does not announce the whole pane as a live region', () => {
     const { container } = render(
       <ReviewDetail {...handlers()} profile={leader} selectedReview={pendingRequest} />,

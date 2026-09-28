@@ -20,8 +20,9 @@ import { reviewRequestedAt } from '../reviewOrdering'
 import { PersonFace } from '../../office/components/PersonFace'
 
 export type ReviewRequestItemHandlers = {
-  onApprove: (request: ReviewRequest) => Promise<boolean>
-  onReject: (request: ReviewRequest, reason: string) => Promise<boolean>
+  /** expectedUpdatedAt: 확인 창을 연 시점의 요청 버전. 그 뒤 요청이 고쳐졌으면 저장소가 충돌로 막는다. */
+  onApprove: (request: ReviewRequest, expectedUpdatedAt?: string) => Promise<boolean>
+  onReject: (request: ReviewRequest, reason: string, expectedUpdatedAt?: string) => Promise<boolean>
   onReopen: (request: ReviewRequest) => Promise<boolean>
   onEdit: (request: ReviewRequest) => void
   onResubmit: (request: ReviewRequest) => void
@@ -44,6 +45,10 @@ type ReviewRequestItemProps = ReviewRequestItemHandlers & {
   onBackToList?: () => void
   /** 상세 아래에 이어 붙일 내용(처리 기록 등). 아래 고정 버튼 줄보다 위에 온다. */
   footer?: ReactNode
+  /** 이 요청에 쓰다 만 피드백·반려 사유. 상세가 다시 그려져도(다른 요청으로 바뀌었다 돌아와도) 이어 쓰게 한다. */
+  initialDraft?: string
+  /** 피드백·반려 사유 초안이 바뀔 때마다 알린다(요청 id별로 화면 밖에 보관). */
+  onDraftChange?: (requestId: string, draft: string) => void
 }
 
 type Action = {
@@ -72,6 +77,8 @@ export function ReviewRequestItem({
   compact = false,
   onBackToList,
   footer,
+  initialDraft,
+  onDraftChange,
   onApprove,
   onReject,
   onReopen,
@@ -82,11 +89,13 @@ export function ReviewRequestItem({
   updateFeedback,
   voidFeedback,
 }: ReviewRequestItemProps) {
-  const [feedbackDraft, setFeedbackDraft] = useState('')
+  const [feedbackDraft, setFeedbackDraft] = useState(() => initialDraft ?? '')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [dialog, setDialog] = useState<'approve' | 'reject' | 'reopen' | null>(null)
   const [rejectError, setRejectError] = useState<string | null>(null)
   const [rejectPrefilled, setRejectPrefilled] = useState(false)
+  // 승인·반려 확인 창을 연 시점의 요청 버전. 창이 떠 있는 동안 요청이 고쳐지면 읽지 않은 수정본에 결정이 붙지 않게 한다.
+  const [decisionRevision, setDecisionRevision] = useState<string | undefined>(undefined)
   const [editingFeedbackId, setEditingFeedbackId] = useState<string | null>(null)
   const [editingFeedbackText, setEditingFeedbackText] = useState('')
   const [voidFeedbackId, setVoidFeedbackId] = useState<string | null>(null)
@@ -126,6 +135,10 @@ export function ReviewRequestItem({
     if (inlineReopenOpen) inlineReopenCloseRef.current?.focus()
   }, [inlineReopenOpen])
 
+  useEffect(() => {
+    onDraftChange?.(request.id, feedbackDraft)
+  }, [feedbackDraft, onDraftChange, request.id])
+
   const withSubmitting = async <T,>(operation: () => Promise<T>): Promise<T> => {
     setIsSubmitting(true)
     try {
@@ -142,7 +155,13 @@ export function ReviewRequestItem({
     if (wasInlineReopen) reopenTriggerRef.current?.focus()
   }
 
+  const openApprove = () => {
+    setDecisionRevision(request.updated_at)
+    setDialog('approve')
+  }
+
   const openReject = () => {
+    setDecisionRevision(request.updated_at)
     setRejectError(null)
     setRejectPrefilled(Boolean(feedbackDraft.trim()))
     setDialog('reject')
@@ -151,7 +170,7 @@ export function ReviewRequestItem({
   // 확인 창은 처리가 끝나면 결과와 관계없이 닫는다. 실패 이유는 토스트로 알리고, 반려 사유는 피드백 칸에 남는다.
   const confirmApprove = async () => {
     if (isSubmitting) return
-    await withSubmitting(() => onApprove(request))
+    await withSubmitting(() => onApprove(request, decisionRevision))
     setDialog(null)
   }
 
@@ -164,7 +183,7 @@ export function ReviewRequestItem({
       return
     }
     const reason = feedbackDraft.trim()
-    const ok = await withSubmitting(() => onReject(request, reason))
+    const ok = await withSubmitting(() => onReject(request, reason, decisionRevision))
     if (ok) setFeedbackDraft((current) => (current.trim() === reason ? '' : current))
     setDialog(null)
   }
@@ -217,7 +236,7 @@ export function ReviewRequestItem({
   if (!readOnly && model.canDecide) {
     actions.push(
       { key: 'reject', label: '반려하기', onClick: openReject, variant: 'reject', disabled: isSubmitting },
-      { key: 'approve', label: '승인하기', onClick: () => setDialog('approve'), variant: 'primary', disabled: isSubmitting },
+      { key: 'approve', label: '승인하기', onClick: openApprove, variant: 'primary', disabled: isSubmitting },
     )
   }
   if (model.canReopen) {

@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { UserFacingError } from '../../lib/errors'
+import { POSSIBLY_SAVED_MESSAGE } from '../remote/createFailure'
 import type { AppData, Profile, ReviewRequest } from '../../types'
 import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
 
@@ -56,6 +58,26 @@ describe('review mutation contracts (remote)', () => {
     expect(mocks.rpc).toHaveBeenNthCalledWith(2, 'reject_review_request', {
       p_review_request_id: review.id, p_expected_updated_at: updatedAt, p_comment: 'needs changes',
     })
+  })
+
+  it('uses the version captured when the confirmation opened for approval and rejection', async () => {
+    const ctx = remoteContext(leader)
+    // 확인 창을 연 뒤 요청이 고쳐져 화면 data에는 새 버전이 들어와 있다.
+    ctx.data.reviewRequests = [{ ...review, updated_at: '2026-07-02T00:00:00.000Z' }]
+    await updateReviewStatus(ctx, review.id, 'approved', updatedAt)
+    await rejectReviewRequest(ctx, review.id, 'needs changes', updatedAt)
+    expect(mocks.rpc).toHaveBeenNthCalledWith(1, 'approve_review_request', {
+      p_review_request_id: review.id, p_expected_updated_at: updatedAt,
+    })
+    expect(mocks.rpc).toHaveBeenNthCalledWith(2, 'reject_review_request', {
+      p_review_request_id: review.id, p_expected_updated_at: updatedAt, p_comment: 'needs changes',
+    })
+  })
+
+  it('shows the stale message when the captured version no longer matches', async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: { code: 'P0001', message: 'review changed since it was opened' } })
+    await expect(updateReviewStatus(remoteContext(leader), review.id, 'approved', updatedAt))
+      .rejects.toThrow('다른 사람이 먼저 수정했어요. 새로고침한 뒤 다시 시도해 주세요.')
   })
 
   it('blocks a blank rejection reason before calling the RPC', async () => {
@@ -155,6 +177,33 @@ describe('review mutation contracts (remote)', () => {
     expect(mocks.rpc).toHaveBeenCalledWith('withdraw_review_request', {
       p_review_request_id: review.id, p_expected_updated_at: updatedAt, p_reason: 'request no longer needed',
     })
+  })
+
+  it('warns that a new review or feedback may already be saved when the connection drops', async () => {
+    const networkFailure = { message: 'TypeError: Failed to fetch', details: '', hint: '', code: '' }
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: networkFailure })
+    const createError = await saveReviewRequest(remoteContext(), {
+      editingReviewId: null, payload: { title: 'New', description: 'Body', due_date: null },
+    }).catch((error: unknown) => error)
+    expect(createError).toBeInstanceOf(UserFacingError)
+    expect((createError as Error).message).toBe(POSSIBLY_SAVED_MESSAGE)
+
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: networkFailure })
+    await expect(addReviewFeedback(remoteContext(leader), review.id, 'comment')).rejects.toThrow(POSSIBLY_SAVED_MESSAGE)
+  })
+
+  it('keeps other create failures and non-create network failures as before', async () => {
+    const serverError = { code: 'P0001', message: 'SQA_REVIEW_TITLE_INVALID' }
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: serverError })
+    await expect(saveReviewRequest(remoteContext(), {
+      editingReviewId: null, payload: { title: 'New', description: 'Body', due_date: null },
+    })).rejects.not.toThrow(POSSIBLY_SAVED_MESSAGE)
+
+    const networkFailure = { message: 'TypeError: Failed to fetch', details: '', hint: '', code: '' }
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: networkFailure })
+    await expect(saveReviewRequest(remoteContext(), {
+      editingReviewId: review.id, payload: { title: 'Edited', description: 'Body', due_date: null },
+    })).rejects.toBe(networkFailure)
   })
 
   it('keeps feedback creation on the server-owned RPC', async () => {

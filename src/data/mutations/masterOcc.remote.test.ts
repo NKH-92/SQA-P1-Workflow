@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppData, Profile } from '../../types'
 import { createRepositoryContextFromDeps, type RepositoryContext } from '../repositoryContext'
+import { ACCOUNT_ACTIVE_DELETE_MESSAGE, ACCOUNT_EMAIL_LOCKED_MESSAGE } from '../validation/masterOcc'
 
 /**
  * Dedicated remote-adapter coverage for the `*_if_current` master OCC
@@ -214,6 +215,23 @@ describe('master OCC RPC contracts (remote)', () => {
     await expect(
       toggleProfileActive(remoteContext(), leader.id, false, { expectedUpdatedAt: EXPECTED, reason: '사유' }),
     ).rejects.toThrow('활성 파트장이 최소 한 명은 있어야 해요. 다른 파트장을 먼저 활성화해 주세요.')
+  })
+
+  it('translates the account-list guards into the same messages local preview uses', async () => {
+    rpcMock.mockImplementation(async () => ({
+      data: null,
+      error: { message: 'active account must be deactivated before deletion', details: 'SQA_ACCOUNT_ACTIVE' } as { message: string },
+    }))
+    await expect(deleteAllowedUser(remoteContext(), 'invite-1', { expectedUpdatedAt: EXPECTED, reason: '정리' }))
+      .rejects.toThrow(ACCOUNT_ACTIVE_DELETE_MESSAGE)
+
+    rpcMock.mockImplementation(async () => ({
+      data: null,
+      error: { message: 'linked account email cannot be changed', details: 'SQA_ACCOUNT_EMAIL_LOCKED' } as { message: string },
+    }))
+    await expect(updateInvite(remoteContext(), 'invite-1', {
+      email: 'new@example.com', name: 'New', role: 'member', expectedUpdatedAt: EXPECTED, reason: '이메일 정정',
+    })).rejects.toThrow(ACCOUNT_EMAIL_LOCKED_MESSAGE)
   })
 
   it('translates the self-deactivation guard into a user-facing message', async () => {

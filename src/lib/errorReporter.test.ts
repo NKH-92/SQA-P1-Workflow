@@ -92,6 +92,22 @@ describe('computeErrorFingerprint', () => {
     expect(first).not.toBe(third)
   })
 
+  it('separates plain PostgREST error objects by code and message instead of collapsing them', () => {
+    const permission = computeErrorFingerprint({ code: '42501', details: null, hint: null, message: 'permission denied for table member_presence' })
+    const duplicate = computeErrorFingerprint({ code: '23505', details: 'Key (email)=(member@example.com) already exists.', hint: null, message: 'duplicate key value violates unique constraint "profiles_email_key"' })
+    const network = computeErrorFingerprint({ message: 'TypeError: Failed to fetch', details: '', hint: '', code: '' })
+    const accessRequired = computeErrorFingerprint({ code: 'P0001', details: 'SQA_APP_ACCESS_REQUIRED', hint: null, message: 'app access required' })
+
+    expect(new Set([permission, duplicate, network, accessRequired]).size).toBe(4)
+    for (const fingerprint of [permission, duplicate, network, accessRequired]) {
+      expect(fingerprint).toMatch(/^[0-9a-f]{8}$/)
+    }
+    // 같은 모양은 같은 값으로 모이고, details(행 데이터)는 해시 입력에 쓰지 않는다.
+    expect(computeErrorFingerprint({ code: '23505', details: 'Key (email)=(other@example.com) already exists.', message: 'duplicate key value violates unique constraint "profiles_email_key"' })).toBe(duplicate)
+    // message 없이 code만 있어도 '[object Object]' 하나로 뭉치지 않는다.
+    expect(computeErrorFingerprint({ code: '42501' })).not.toBe(computeErrorFingerprint({ code: '23505' }))
+  })
+
   it('folds an additional context signal (e.g. componentStack) into the hash without leaking it', () => {
     const error = new Error('boom')
     const withContext = computeErrorFingerprint(error, 'at ReviewsPanel (ReviewsPanel.tsx:42)')

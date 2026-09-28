@@ -9,6 +9,7 @@ import { canManageTeamData } from '../domain/permissions'
 import { dueState } from '../lib/dates'
 import { quoted } from '../lib/korean'
 import { requestComposer } from '../lib/navigation'
+import { useBusinessToday } from '../hooks/useBusinessToday'
 import { useViewState } from '../hooks/useViewState'
 import {
   isPriorityFilter,
@@ -106,7 +107,7 @@ export function LeaderDashboard({
   const reviewOverview = useLeaderReviewOverview(data)
   const monthlyRows = reviewOverview.status === 'ready' ? reviewOverview.envelope.monthly_breakdown : []
   const currentMonth = monthlyRows[monthlyRows.length - 1]
-  const [today] = useState(() => new Date())
+  const today = useBusinessToday()
 
   const openItem = (item: PriorityItem) => {
     if (item.category === 'product') {

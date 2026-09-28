@@ -1369,4 +1369,88 @@ describe('Supabase migrations', () => {
     expect(migration).toContain('revoke all on function private.assert_member_presence_writer(uuid) from public, anon, authenticated')
     expect(migration).toContain('grant execute on function public.add_member_leave(uuid, text, date, date, text) to authenticated')
   })
+
+  it('hardens account guards, activity log reads, pending-first change cuts and one last-leader lock key without other changes', () => {
+    const normalize = (value: string) => value.replace(/\r\n?/g, '\n')
+    const migration = normalize(readMigration('20260928090000_ops_preflight_hardening.sql'))
+    const deleteRpc = readFunctionDefinition(migration, 'public.delete_allowed_user_if_current')
+    const updateRpc = readFunctionDefinition(migration, 'public.update_allowed_user_if_current')
+    const bootstrap = readFunctionDefinition(migration, 'public.get_change_bootstrap_v2')
+    const guard = readFunctionDefinition(migration, 'private.guard_last_leader_role_transition')
+    const previousUpdate = readFunctionDefinition(
+      normalize(readMigration('20260720200000_atomic_invite_occ.sql')),
+      'public.update_allowed_user_if_current',
+    )
+    const previousBootstrap = readFunctionDefinition(
+      normalize(readMigration('20260720230000_full_code_review_hardening.sql')),
+      'public.get_change_bootstrap_v2',
+    )
+    const previousGuard = readFunctionDefinition(
+      normalize(readMigration('20260820150511_account_admin_and_team_leader_access.sql')),
+      'private.guard_last_leader_role_transition',
+    )
+
+    // F16: 활성 계정의 목록 행 삭제와 연결된 계정의 이메일 변경을 막는다.
+    expect(deleteRpc).toContain('security definer')
+    expect(deleteRpc).toContain("set search_path = ''")
+    expect(deleteRpc.indexOf('public.is_active_leader()')).toBeGreaterThan(-1)
+    expect(deleteRpc.indexOf('public.is_active_leader()')).toBeLessThan(deleteRpc.indexOf('SQA_ACCOUNT_ACTIVE'))
+    expect(deleteRpc).toContain('lower(profile.email::text) = lower(invite.email::text)')
+    expect(deleteRpc).toContain('and profile.is_active')
+    expect(deleteRpc).toContain("errcode = 'P0001'")
+    expect(deleteRpc.indexOf('SQA_ACCOUNT_ACTIVE')).toBeLessThan(deleteRpc.indexOf('private.delete_versioned_row('))
+    expect(deleteRpc).toContain("'delete_allowed_user_if_current',")
+    expect(migration).toContain('revoke all on function public.delete_allowed_user_if_current(uuid,timestamptz,text,uuid) from public,anon,authenticated')
+    expect(migration).toContain('grant execute on function public.delete_allowed_user_if_current(uuid,timestamptz,text,uuid) to authenticated')
+
+    const emailLock = updateRpc.slice(
+      updateRpc.indexOf('  -- The Auth and profile email stay on the old address'),
+      updateRpc.indexOf('  v_changed :='),
+    )
+    expect(emailLock).toContain("detail = 'SQA_ACCOUNT_EMAIL_LOCKED'")
+    expect(emailLock).toContain('lower(v_invite.email::text) is distinct from lower(v_email::text)')
+    expect(updateRpc.indexOf('v_linked_profile_found := found')).toBeLessThan(updateRpc.indexOf('SQA_ACCOUNT_EMAIL_LOCKED'))
+    expect(previousUpdate).not.toBe('')
+    expect(updateRpc.replace(emailLock, '')).toBe(previousUpdate)
+    expect(migration).toContain('grant execute on function public.update_allowed_user_if_current(uuid, timestamptz, text, text, public.app_role, text, uuid)\n  to authenticated')
+
+    // F57: 같은 가시성, 권한 함수는 initPlan으로 한 번만 평가한다.
+    expect(migration).toContain('drop policy if exists "activity_logs_select_relevant" on public.activity_logs;')
+    expect(migration).toContain([
+      'create policy "activity_logs_select_relevant"',
+      'on public.activity_logs for select',
+      'to authenticated',
+      'using (',
+      '  (select public.is_active_leader())',
+      '  or (',
+      '    (select public.can_use_app())',
+      '    and (actor_id = (select auth.uid()) or target_user_id = (select auth.uid()))',
+      '  )',
+      ');',
+    ].join('\n'))
+    expect(migration).toContain('create index if not exists activity_logs_created_at_idx\non public.activity_logs(created_at desc);')
+
+    // F58: 상한 두 단계만 대기 업무 우선으로 자르고, 응답 모양과 최종 정렬은 그대로 둔다.
+    expect(bootstrap).toContain("order by (task.status = 'pending') desc, task.updated_at desc, task.id desc\n       limit 5001")
+    expect(bootstrap).toContain("order by (status = 'pending') desc, updated_at desc, id desc\n       limit 5000")
+    expect(bootstrap).toContain(')) order by task.updated_at desc, task.id desc')
+    expect(previousBootstrap).not.toBe('')
+    expect(bootstrap
+      .replace("order by (task.status = 'pending') desc, task.updated_at desc, task.id desc", 'order by task.updated_at desc, task.id desc')
+      .replace("order by (status = 'pending') desc, updated_at desc, id desc", 'order by updated_at desc, id desc'))
+      .toBe(previousBootstrap)
+    expect(migration).toContain('revoke all on function public.get_change_bootstrap_v2() from public, anon, authenticated;')
+    expect(migration).toContain('grant execute on function public.get_change_bootstrap_v2() to authenticated;')
+
+    // F7: 두 파트장 보호 트리거가 같은 advisory lock 키를 쓴다.
+    expect(guard).toContain("pg_advisory_xact_lock(hashtextextended('sqa-p1-active-leader-guard', 0))")
+    expect(guard).not.toContain("hashtext('sqa:last-active-leader')")
+    expect(previousGuard).not.toBe('')
+    expect(guard.replace(
+      "hashtextextended('sqa-p1-active-leader-guard', 0)",
+      "hashtext('sqa:last-active-leader')",
+    )).toBe(previousGuard)
+    expect(migration).not.toContain('drop trigger')
+    expect(migration).toContain("notify pgrst, 'reload schema';")
+  })
 })

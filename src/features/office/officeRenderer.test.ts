@@ -142,3 +142,89 @@ describe('office renderer meeting room', () => {
     expect(anchorOf(renderer, 3)).toMatchObject({ standing: false, x: SCENE_SEATS[2].x })
   })
 })
+
+describe('office renderer context restore', () => {
+  let original: PropertyDescriptor | undefined
+  /** 캔버스마다 불린 그리기 함수 이름 */
+  const calls = new Map<HTMLCanvasElement, string[]>()
+  let created: HTMLCanvasElement[] = []
+
+  function recordingContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
+    const log: string[] = []
+    calls.set(canvas, log)
+    return new Proxy({} as Record<string, unknown>, {
+      get: (target, key) => (key in target ? target[key as string] : () => { log.push(String(key)) }),
+      set: (target, key, value) => {
+        target[key as string] = value
+        return true
+      },
+    }) as unknown as CanvasRenderingContext2D
+  }
+
+  beforeEach(() => {
+    calls.clear()
+    created = []
+    original = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'getContext')
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+      configurable: true,
+      writable: true,
+      value(this: HTMLCanvasElement) {
+        return recordingContext(this)
+      },
+    })
+    const create = document.createElement.bind(document)
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string, options?: ElementCreationOptions) => {
+      const element = create(tag, options)
+      if (element instanceof HTMLCanvasElement) created.push(element)
+      return element
+    })
+    vi.spyOn(Math, 'random').mockReturnValue(0.99)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    if (original) Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', original)
+  })
+
+  const drawn = (canvas: HTMLCanvasElement) => calls.get(canvas) ?? []
+  const forget = () => {
+    for (const log of calls.values()) log.length = 0
+  }
+
+  function officeWithLayers() {
+    const renderer = createOfficeRenderer(document.createElement('canvas'))!
+    // 대상 캔버스 다음으로 만드는 층: 한 장 층, 배경, 창틀·창가 소품, 책상 섬 뒤, 책상 섬 앞, 하늘 뒤, 하늘 앞
+    const [, frame, background, windowOverlay, islandBack, islandFront, skyBack] = created
+    renderer.setOccupants([2, 3].map((seatIndex) => ({ seatIndex, character: resolveOfficeCharacter('female', seatIndex * 7) })))
+    renderer.draw(0, { animate: false, clock })
+    return { renderer, frame, background, windowOverlay, islandBack, islandFront, skyBack }
+  }
+
+  it('repaints the layers it only draws once and rebuilds the sprite and sky caches when the canvas context comes back', () => {
+    const { renderer, frame, background, windowOverlay, islandBack, islandFront, skyBack } = officeWithLayers()
+    forget()
+    const before = created.length
+    renderer.draw(100, { animate: false, clock })
+    // 같은 분이고 같은 자세면 하늘도 스프라이트도 캐시를 그대로 쓴다.
+    expect(drawn(skyBack)).toEqual([])
+    expect(created.length).toBe(before)
+
+    frame.dispatchEvent(new Event('contextrestored'))
+    for (const layer of [background, windowOverlay, islandBack, islandFront]) {
+      expect(drawn(layer)).toContain('clearRect')
+      expect(drawn(layer).length).toBeGreaterThan(1)
+    }
+    renderer.draw(200, { animate: false, clock })
+    expect(drawn(skyBack)).toContain('clearRect')
+    expect(created.length).toBeGreaterThan(before)
+  })
+
+  it('stops listening for restored contexts once destroyed', () => {
+    const { renderer, background, islandFront } = officeWithLayers()
+    renderer.destroy()
+    forget()
+    background.dispatchEvent(new Event('contextrestored'))
+    expect(drawn(background)).toEqual([])
+    expect(drawn(islandFront)).toEqual([])
+  })
+})

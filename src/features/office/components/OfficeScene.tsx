@@ -179,6 +179,7 @@ export function OfficeScene({
     let animate = !prefersReducedMotion()
     let onScreen = true
     let frameId = 0
+    let timerId = 0
     let lastDraw = -Infinity
     let clock = seoulClock()
     let clockCheckedAt = 0
@@ -200,13 +201,24 @@ export function OfficeScene({
       }
       schedule()
     }
+    // 매 화면 주사율마다 깨어나지 않도록, 다음 장까지 남은 시간은 타이머로 기다렸다가 프레임을 한 번만 예약한다.
     const schedule = () => {
-      if (!animate || !onScreen || document.hidden || frameId) return
-      frameId = window.requestAnimationFrame(tick)
+      if (!animate || !onScreen || document.hidden || frameId || timerId) return
+      const wait = FRAME_INTERVAL - (performance.now() - lastDraw)
+      if (wait <= 0) {
+        frameId = window.requestAnimationFrame(tick)
+        return
+      }
+      timerId = window.setTimeout(() => {
+        timerId = 0
+        frameId = window.requestAnimationFrame(tick)
+      }, wait)
     }
     const stop = () => {
       if (frameId) window.cancelAnimationFrame(frameId)
+      if (timerId) window.clearTimeout(timerId)
       frameId = 0
+      timerId = 0
     }
     redrawRef.current = () => {
       clockCheckedAt = 0

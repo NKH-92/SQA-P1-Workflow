@@ -13,7 +13,7 @@ Release와 Actions run을 사용하고, 실행 계약은 `ARCHITECTURE`, `TEST_P
    사용합니다.
 4. `/version.json`의 SHA·lockfile hash·readiness manifest hash와
    root/CSP/nosniff healthcheck를 확인합니다.
-5. 기존 migration은 수정·삭제·rename하지 않고 새 append-only migration으로만
+5. 운영에 적용된 migration은 수정·삭제·rename하지 않고 새 append-only migration으로만
    보정합니다.
 
 구체적인 승인·증거 양식은 [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md)를
@@ -36,8 +36,6 @@ Release와 Actions run을 사용하고, 실행 계약은 `ARCHITECTURE`, `TEST_P
   rehearsal을 정기 수행하고 비공개 증거를 보존합니다.
 - `.gpg` backup의 복원 리허설과 운영자 전환이 완료되면 과도기 `.enc` 이중 산출을
   제거하는 별도 PR을 검토합니다.
-- backup schedule heartbeat는 GitHub Actions 자체 실패 알림과 독립된 내부
-  모니터링 수단으로 보완합니다.
 
 ### 보안·저장소
 

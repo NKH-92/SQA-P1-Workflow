@@ -2,9 +2,13 @@
 -- audit; every object keeps its name, signature, response shape and grants.
 --
 -- 1. Account list guards: a list row whose email still belongs to an active
---    profile cannot be deleted (deactivate the account first), and the email of
---    a row linked to a profile cannot be changed (Auth email is not changed by
---    this RPC, so the account would silently drop out of the list).
+--    profile cannot be deleted (deactivate the account first), the email of a
+--    row linked to a profile cannot be changed (Auth email is not changed by
+--    this RPC, so the account would silently drop out of the list), and a
+--    profile cannot be activated without its list row. Delete, update and
+--    activation all lock the list row first and then the profile, so a
+--    concurrent activation and deletion serialize instead of leaving an active
+--    account without a list row.
 -- 2. activity_logs SELECT policy evaluates the access helpers once per query
 --    (initPlan) instead of once per row, and the newest-first list read gets a
 --    created_at index. Visibility is unchanged.
@@ -27,6 +31,8 @@ language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  v_invite_email text;
 begin
   if auth.uid() is null or not public.is_active_leader() then
     raise exception using errcode = 'P0001', message = 'active leader required', detail = 'SQA_ACTIVE_LEADER_REQUIRED';
@@ -34,15 +40,28 @@ begin
 
   -- Deleting the row does not stop sign-in (access follows profiles.is_active),
   -- and the account can no longer be deactivated from the list afterwards.
-  if exists (
-    select 1
-      from public.allowed_users invite
-      join public.profiles profile
-        on lower(profile.email::text) = lower(invite.email::text)
-     where invite.id = p_id
-       and profile.is_active
-  ) then
-    raise exception using errcode = 'P0001', message = 'active account must be deactivated before deletion', detail = 'SQA_ACCOUNT_ACTIVE';
+  -- Lock the list row and then every profile with its email (the same order as
+  -- update_allowed_user_if_current and set_profile_active_if_current), so a
+  -- concurrent activation cannot commit between this check and the delete.
+  -- A missing row falls through to delete_versioned_row's not-found error.
+  select lower(invite.email::text) into v_invite_email
+    from public.allowed_users invite
+   where invite.id = p_id
+   for update;
+  if found then
+    perform 1
+      from public.profiles profile
+     where lower(profile.email::text) = v_invite_email
+     order by profile.id
+     for update;
+    if exists (
+      select 1
+        from public.profiles profile
+       where lower(profile.email::text) = v_invite_email
+         and profile.is_active
+    ) then
+      raise exception using errcode = 'P0001', message = 'active account must be deactivated before deletion', detail = 'SQA_ACCOUNT_ACTIVE';
+    end if;
   end if;
 
   return private.delete_versioned_row(
@@ -176,6 +195,98 @@ revoke all on function public.update_allowed_user_if_current(uuid, timestamptz, 
   from public, anon, authenticated;
 grant execute on function public.update_allowed_user_if_current(uuid, timestamptz, text, text, public.app_role, text, uuid)
   to authenticated;
+
+-- Activation needs the list row: without it the account can no longer be
+-- managed from the list. Lock the list row(s) with the profile's email before
+-- the profile (the delete path's order); otherwise the latest definition
+-- (20260720140000) is unchanged, including the no-op and OCC paths.
+create or replace function public.set_profile_active_if_current(
+  p_profile_id uuid,
+  p_expected_updated_at timestamptz,
+  p_is_active boolean,
+  p_reason text,
+  p_correlation_id uuid default null
+)
+returns timestamptz
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_profile public.profiles%rowtype;
+  v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
+  v_updated_at timestamptz;
+  v_profile_email text;
+  v_list_row_found boolean := false;
+begin
+  if not public.is_active_leader() then
+    raise exception using errcode = 'P0001', message = 'permission denied', detail = 'SQA_PERMISSION_DENIED';
+  end if;
+  if p_expected_updated_at is null then
+    raise exception using errcode = 'P0001', message = 'master record version is required', detail = 'SQA_MASTER_VERSION_REQUIRED';
+  end if;
+  if v_reason is null then
+    raise exception using errcode = 'P0001', message = 'change reason is required', detail = 'SQA_REASON_REQUIRED';
+  end if;
+  if char_length(v_reason) > 500 then
+    raise exception using errcode = 'P0001', message = 'change reason must be 500 characters or fewer', detail = 'SQA_REASON_TOO_LONG';
+  end if;
+  if p_is_active is null then
+    raise exception using errcode = 'P0001', message = 'active state is required', detail = 'SQA_PROFILE_ACTIVE_REQUIRED';
+  end if;
+
+  if p_is_active then
+    select lower(profile.email::text) into v_profile_email
+      from public.profiles profile
+     where profile.id = p_profile_id;
+    if v_profile_email is not null then
+      perform 1
+        from public.allowed_users invite
+       where lower(invite.email::text) = v_profile_email
+       order by invite.id
+       for update;
+      v_list_row_found := found;
+    end if;
+  end if;
+
+  select * into v_profile from public.profiles where id = p_profile_id for update;
+  if not found then
+    raise exception using errcode = 'P0001', message = 'master record not found', detail = 'SQA_MASTER_NOT_FOUND';
+  end if;
+  if v_profile.updated_at is distinct from p_expected_updated_at then
+    raise exception using errcode = 'P0001', message = 'master record changed since it was opened', detail = 'SQA_MASTER_STALE';
+  end if;
+
+  if v_profile.is_active is not distinct from p_is_active then
+    return v_profile.updated_at;
+  end if;
+
+  if p_is_active and not v_list_row_found then
+    raise exception using errcode = 'P0001', message = 'account list row is required to activate', detail = 'SQA_ACCOUNT_LIST_ROW_REQUIRED';
+  end if;
+
+  perform set_config('sqa.audit_reason', v_reason, true);
+  perform set_config('sqa.audit_source', 'set_profile_active_if_current', true);
+  if p_correlation_id is not null then
+    perform set_config('sqa.audit_correlation_id', p_correlation_id::text, true);
+  end if;
+
+  -- guard_last_active_leader_profile (before update trigger) still enforces
+  -- the last-active-leader invariant and self-deactivation block unchanged.
+  update public.profiles
+     set is_active = p_is_active
+   where id = p_profile_id
+   returning updated_at into v_updated_at;
+
+  return v_updated_at;
+end;
+$$;
+revoke all on function public.set_profile_active_if_current(uuid, timestamptz, boolean, text, uuid) from public, anon, authenticated;
+grant execute on function public.set_profile_active_if_current(uuid, timestamptz, boolean, text, uuid) to authenticated;
+-- These guards cover the RPC paths the app uses. The expand-phase direct
+-- profiles UPDATE / allowed_users DELETE grants stay until a contract release.
+comment on function public.set_profile_active_if_current(uuid, timestamptz, boolean, text, uuid) is
+  'OCC profile active toggle with required authoritative-audit reason. Last-active-leader guard unchanged. Activation requires the account list row (SQA_ACCOUNT_LIST_ROW_REQUIRED), locked before the profile.';
 
 -- 2. activity_logs read cost ------------------------------------------------
 

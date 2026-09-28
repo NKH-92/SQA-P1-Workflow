@@ -517,4 +517,32 @@ describe('local assignment replacement parity', () => {
     ).rejects.toThrow('활성 파트장이 최소 한 명은 있어야 해요. 다른 파트장을 먼저 활성화해 주세요.')
     expect(ctx.setData).not.toHaveBeenCalled()
   })
+
+  it('does not activate an account whose list row was removed, like the server', async () => {
+    const ctx = localContext()
+
+    await expect(
+      toggleProfileActive(ctx, inactiveMember.id, true, { expectedUpdatedAt: revision, reason: '복귀' }),
+    ).rejects.toThrow('목록에서 지운 계정은 다시 활성화할 수 없어요. 목록을 새로고침해 주세요.')
+    expect(ctx.setData).not.toHaveBeenCalled()
+  })
+
+  it('still activates an account that has its list row (email compared case-insensitively)', async () => {
+    const ctx = localContext()
+    ctx.data.allowedUsers = [{
+      id: 'invite-inactive',
+      email: inactiveMember.email.toUpperCase(),
+      name: inactiveMember.name,
+      role: 'member',
+      updated_at: revision,
+    } as AppData['allowedUsers'][number]]
+
+    const result = await toggleProfileActive(ctx, inactiveMember.id, true, { expectedUpdatedAt: revision, reason: '복귀' })
+
+    expect(result).toEqual({ noop: false })
+    expect(ctx.setData).toHaveBeenCalledTimes(1)
+    const update = vi.mocked(ctx.setData).mock.calls[0]![0] as (current: AppData) => AppData
+    const next = update(ctx.data)
+    expect(next.profiles.find((item) => item.id === inactiveMember.id)?.is_active).toBe(true)
+  })
 })

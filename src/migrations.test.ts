@@ -1395,7 +1395,14 @@ describe('Supabase migrations', () => {
     expect(deleteRpc).toContain("set search_path = ''")
     expect(deleteRpc.indexOf('public.is_active_leader()')).toBeGreaterThan(-1)
     expect(deleteRpc.indexOf('public.is_active_leader()')).toBeLessThan(deleteRpc.indexOf('SQA_ACCOUNT_ACTIVE'))
-    expect(deleteRpc).toContain('lower(profile.email::text) = lower(invite.email::text)')
+    // 동시 활성화와 직렬화: 목록 행 → 같은 이메일의 프로필 순서로 잠근 뒤 활성 여부를 본다.
+    const lockInvite = deleteRpc.indexOf('from public.allowed_users invite')
+    const lockProfiles = deleteRpc.indexOf('from public.profiles profile')
+    expect(lockInvite).toBeGreaterThan(-1)
+    expect(lockInvite).toBeLessThan(lockProfiles)
+    expect(deleteRpc.slice(lockInvite, lockProfiles)).toContain('for update')
+    expect(deleteRpc.slice(lockProfiles, deleteRpc.indexOf('SQA_ACCOUNT_ACTIVE'))).toContain('for update')
+    expect(deleteRpc).toContain('where lower(profile.email::text) = v_invite_email')
     expect(deleteRpc).toContain('and profile.is_active')
     expect(deleteRpc).toContain("errcode = 'P0001'")
     expect(deleteRpc.indexOf('SQA_ACCOUNT_ACTIVE')).toBeLessThan(deleteRpc.indexOf('private.delete_versioned_row('))
@@ -1413,6 +1420,32 @@ describe('Supabase migrations', () => {
     expect(previousUpdate).not.toBe('')
     expect(updateRpc.replace(emailLock, '')).toBe(previousUpdate)
     expect(migration).toContain('grant execute on function public.update_allowed_user_if_current(uuid, timestamptz, text, text, public.app_role, text, uuid)\n  to authenticated')
+
+    // 활성화는 목록 행을 먼저 잠그고, 목록 행이 없으면 거부한다. 나머지는 직전 정의와 같다.
+    const activeRpc = readFunctionDefinition(migration, 'public.set_profile_active_if_current')
+    const previousActive = readFunctionDefinition(
+      normalize(readMigration('20260720140000_master_occ_audit_reasons.sql')),
+      'public.set_profile_active_if_current',
+    )
+    expect(previousActive).not.toBe('')
+    const listLock = activeRpc.slice(activeRpc.indexOf('  if p_is_active then'), activeRpc.indexOf('  select * into v_profile'))
+    expect(listLock).toContain('from public.allowed_users invite')
+    expect(listLock).toContain('where lower(invite.email::text) = v_profile_email')
+    expect(listLock).toContain('for update')
+    // 목록 행이 있으면 활성화가 통과하도록 잠금 결과를 그대로 받는다(항상 거부되는 회귀 방지).
+    expect(listLock).toContain('v_list_row_found := found;')
+    expect(activeRpc.indexOf('from public.allowed_users invite')).toBeLessThan(activeRpc.indexOf('from public.profiles where id = p_profile_id for update'))
+    const listRequired = activeRpc.slice(
+      activeRpc.indexOf('  if p_is_active and not v_list_row_found then'),
+      activeRpc.indexOf("  perform set_config('sqa.audit_reason'"),
+    )
+    expect(listRequired).toContain("detail = 'SQA_ACCOUNT_LIST_ROW_REQUIRED'")
+    // no-op(이미 같은 상태)과 OCC 경로는 목록 행 확인보다 먼저 그대로 돈다.
+    expect(activeRpc.indexOf('return v_profile.updated_at;')).toBeLessThan(activeRpc.indexOf('SQA_ACCOUNT_LIST_ROW_REQUIRED'))
+    const declarations = '  v_profile_email text;\n  v_list_row_found boolean := false;\n'
+    expect(activeRpc.replace(declarations, '').replace(listLock, '').replace(listRequired, '')).toBe(previousActive)
+    expect(migration).toContain('revoke all on function public.set_profile_active_if_current(uuid, timestamptz, boolean, text, uuid) from public, anon, authenticated;')
+    expect(migration).toContain('grant execute on function public.set_profile_active_if_current(uuid, timestamptz, boolean, text, uuid) to authenticated;')
 
     // F57: 같은 가시성, 권한 함수는 initPlan으로 한 번만 평가한다.
     expect(migration).toContain('drop policy if exists "activity_logs_select_relevant" on public.activity_logs;')

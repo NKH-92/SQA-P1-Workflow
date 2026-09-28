@@ -2,6 +2,7 @@ import { UserFacingError } from '../../lib/errors'
 import {
   ACCOUNT_ACTIVE_DELETE_MESSAGE,
   ACCOUNT_EMAIL_LOCKED_MESSAGE,
+  ACCOUNT_LIST_ROW_REQUIRED_MESSAGE,
   LAST_ACTIVE_LEADER_MESSAGE,
   MASTER_REASON_REQUIRED_MESSAGE,
   MASTER_STALE_MESSAGE,
@@ -9,7 +10,7 @@ import {
 } from '../validation/masterOcc'
 
 // 로컬 저장소도 같은 문구를 던지므로 상수는 validation 계층에 두고 여기서는 다시 내보낸다.
-export { ACCOUNT_ACTIVE_DELETE_MESSAGE, ACCOUNT_EMAIL_LOCKED_MESSAGE }
+export { ACCOUNT_ACTIVE_DELETE_MESSAGE, ACCOUNT_EMAIL_LOCKED_MESSAGE, ACCOUNT_LIST_ROW_REQUIRED_MESSAGE }
 
 /**
  * Translate the stable RPC error text raised by the `*_if_current`
@@ -36,6 +37,13 @@ export function translateMasterOccError<T extends { message?: string; details?: 
     || message.includes('linked account email cannot be changed')
   ) {
     return new UserFacingError(ACCOUNT_EMAIL_LOCKED_MESSAGE)
+  }
+  if (
+    details.includes('SQA_ACCOUNT_LIST_ROW_REQUIRED')
+    || message.includes('SQA_ACCOUNT_LIST_ROW_REQUIRED')
+    || message.includes('account list row is required to activate')
+  ) {
+    return new UserFacingError(ACCOUNT_LIST_ROW_REQUIRED_MESSAGE)
   }
   if (message.includes('record changed since it was opened')) {
     return new UserFacingError(MASTER_STALE_MESSAGE)

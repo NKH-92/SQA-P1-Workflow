@@ -101,7 +101,34 @@ describeRls(`RLS ops preflight hardening (${RLS_SKIP_NOTE})`, () => {
       const gone = await service.from('allowed_users').select('id').eq('id', invite.id)
       expect(gone.error).toBeNull()
       expect(gone.data).toEqual([])
+
+      // 목록 행이 없는 계정은 다시 활성화할 수 없다(목록에서 관리할 수 없는 활성 계정이 생기지 않게).
+      const profile = await service
+        .from('profiles')
+        .select('id,is_active,updated_at')
+        .eq('id', requiredEnv('RLS_INACTIVE_MEMBER_USER_ID'))
+        .single()
+      expect(profile.error).toBeNull()
+      expect(profile.data!.is_active).toBe(false)
+      const activated = await leader.rpc('set_profile_active_if_current', {
+        p_profile_id: profile.data!.id,
+        p_expected_updated_at: profile.data!.updated_at,
+        p_is_active: true,
+        p_reason: 'RLS account guard probe',
+        p_correlation_id: crypto.randomUUID(),
+      })
+      expect(activated.error).not.toBeNull()
+      expect(activated.error!.details).toBe('SQA_ACCOUNT_LIST_ROW_REQUIRED')
+      const still = await service.from('profiles').select('is_active,updated_at').eq('id', profile.data!.id).single()
+      expect(still.data).toEqual({ is_active: false, updated_at: profile.data!.updated_at })
     } finally {
+      // 가드가 회귀해 활성화가 통과했더라도 공유 fixture(비활성 파트원)는 비활성으로 되돌린다.
+      const reset = await service
+        .from('profiles')
+        .update({ is_active: false })
+        .eq('id', requiredEnv('RLS_INACTIVE_MEMBER_USER_ID'))
+        .eq('is_active', true)
+      expect(reset.error).toBeNull()
       const existing = await service.from('allowed_users').select('id').eq('email', inactiveEmail)
       if (!existing.data?.length) {
         const restored = await service.from('allowed_users').insert({

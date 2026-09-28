@@ -4,6 +4,7 @@ import type { InviteAdminRepository, RepositoryDeps } from '../repositories/type
 import {
   ACCOUNT_ACTIVE_DELETE_MESSAGE,
   ACCOUNT_EMAIL_LOCKED_MESSAGE,
+  ACCOUNT_LIST_ROW_REQUIRED_MESSAGE,
   LAST_ACTIVE_LEADER_MESSAGE,
   normalizeMasterReason,
 } from '../validation/masterOcc'
@@ -114,6 +115,11 @@ export function createLocalInviteAdminRepository(deps: RepositoryDeps): InviteAd
         }
       }
       if ((target.is_active ?? true) === nextActive) return { noop: true }
+      // 서버(set_profile_active_if_current)와 같게, 목록 행이 없는 계정은 활성화하지 않는다.
+      const targetEmail = target.email.toLowerCase()
+      if (nextActive && !data.allowedUsers.some((item) => item.email.toLowerCase() === targetEmail)) {
+        throw new UserFacingError(ACCOUNT_LIST_ROW_REQUIRED_MESSAGE)
+      }
       const now = new Date().toISOString()
       setData((current) => ({
         ...current,

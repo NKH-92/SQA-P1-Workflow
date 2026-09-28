@@ -1,18 +1,20 @@
 -- Ops preflight hardening readiness. A list row of an active account cannot be
--- deleted and a linked row cannot change email; activity_logs keeps the same
+-- deleted, a linked row cannot change email and activation needs the list row
+-- (delete and activation lock the list row before the profile); activity_logs keeps the same
 -- visibility with initPlan-cached helpers and a newest-first index; the change
 -- bootstrap cuts pending tasks last; both last-leader guards share one lock key.
 do $verify$
 declare
   delete_rpc regprocedure := to_regprocedure('public.delete_allowed_user_if_current(uuid,timestamptz,text,uuid)');
   update_rpc regprocedure := to_regprocedure('public.update_allowed_user_if_current(uuid,timestamptz,text,text,public.app_role,text,uuid)');
+  active_rpc regprocedure := to_regprocedure('public.set_profile_active_if_current(uuid,timestamptz,boolean,text,uuid)');
   target regprocedure;
 begin
   if not exists (select 1 from supabase_migrations.schema_migrations where version = '20260928090000') then
     raise exception 'SQA_DB_READY_OPS_PREFLIGHT_MIGRATION';
   end if;
 
-  foreach target in array array[delete_rpc, update_rpc] loop
+  foreach target in array array[delete_rpc, update_rpc, active_rpc] loop
     if target is null
        or not coalesce((select prosecdef from pg_proc where oid = target), false)
        or not coalesce((select exists (
@@ -30,7 +32,12 @@ begin
      or position('profile.is_active' in pg_get_functiondef(delete_rpc)) = 0
      or position('private.delete_versioned_row' in pg_get_functiondef(delete_rpc)) = 0
      or position('SQA_ACCOUNT_EMAIL_LOCKED' in pg_get_functiondef(update_rpc)) = 0
-     or position('SQA_MASTER_STALE' in pg_get_functiondef(update_rpc)) = 0 then
+     or position('SQA_MASTER_STALE' in pg_get_functiondef(update_rpc)) = 0
+     or position('for update' in pg_get_functiondef(delete_rpc)) = 0
+     or position('SQA_ACCOUNT_LIST_ROW_REQUIRED' in pg_get_functiondef(active_rpc)) = 0
+     or position('from public.allowed_users invite' in pg_get_functiondef(active_rpc)) = 0
+     or position('v_list_row_found := found' in pg_get_functiondef(active_rpc)) = 0
+     or position('SQA_MASTER_STALE' in pg_get_functiondef(active_rpc)) = 0 then
     raise exception 'SQA_DB_READY_OPS_PREFLIGHT_ACCOUNT_GUARD';
   end if;
 end

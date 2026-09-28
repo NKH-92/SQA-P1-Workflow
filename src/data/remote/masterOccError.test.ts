@@ -4,6 +4,7 @@ import { MASTER_STALE_MESSAGE } from '../validation/masterOcc'
 import {
   ACCOUNT_ACTIVE_DELETE_MESSAGE,
   ACCOUNT_EMAIL_LOCKED_MESSAGE,
+  ACCOUNT_LIST_ROW_REQUIRED_MESSAGE,
   translateMasterOccError,
 } from './masterOccError'
 
@@ -26,6 +27,14 @@ describe('translateMasterOccError', () => {
     expect(translated).toBeInstanceOf(UserFacingError)
     expect(translated.message).toBe(ACCOUNT_EMAIL_LOCKED_MESSAGE)
     expect(translated.message).toBe('가입한 계정의 이메일은 바꿀 수 없어요.')
+  })
+
+  it('explains that an account removed from the list cannot be activated again', () => {
+    const translated = translateMasterOccError({ message: 'account list row is required to activate', details: 'SQA_ACCOUNT_LIST_ROW_REQUIRED' })
+    expect(translated).toBeInstanceOf(UserFacingError)
+    expect(translated.message).toBe(ACCOUNT_LIST_ROW_REQUIRED_MESSAGE)
+    expect(translateMasterOccError({ message: 'account list row is required to activate' }).message)
+      .toBe(ACCOUNT_LIST_ROW_REQUIRED_MESSAGE)
   })
 
   it('also recognizes the account codes when they appear in the message text', () => {

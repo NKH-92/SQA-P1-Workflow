@@ -8,6 +8,7 @@ import type { AppDataUpdater } from '../data/repositories/appDataUpdater'
 import { formatDate, formatDateWithWeekday } from '../lib/format'
 import { requestComposer } from '../lib/navigation'
 import { productCategory, productCompanyName, productName } from '../lib/products'
+import { useBusinessToday } from '../hooks/useBusinessToday'
 import { useViewState } from '../hooks/useViewState'
 import { selectMyProductChangeTaskContexts } from '../features/change-applications/selectors'
 import {
@@ -40,7 +41,7 @@ export function Dashboard({
 }) {
   const [filter, setFilter] = useViewState<MemberHomeFilter>('dashboard.member.filter', 'all', isMemberHomeFilter)
   const [showAll, setShowAll] = useState(false)
-  const [today] = useState(() => new Date())
+  const today = useBusinessToday()
   const items = useMemo(() => selectMemberHomeItems(data, profile, today), [data, profile, today])
   const filterCounts = new Map(MEMBER_HOME_FILTERS.map((option) => [
     option.key,

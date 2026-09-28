@@ -164,11 +164,29 @@ function redact(message: string): string {
  * DB row data·리뷰 제목 같은 원문은 해시를 지나며 사라진다.
  */
 export function computeErrorFingerprint(error: unknown, context?: string): string {
-  const name = error instanceof Error ? error.name : 'UnknownError'
-  const message = error instanceof Error ? error.message : String(error)
-  const parts = [name, redact(message)]
+  const parts = fingerprintParts(error)
   if (context) parts.push(redact(context))
   return hashToHex(parts.join('|'))
+}
+
+/**
+ * supabase-js(postgrest)는 오류를 Error가 아닌 일반 객체({ message, details, hint, code })로 돌려준다.
+ * String()으로 바꾸면 모두 '[object Object]'가 되어 서로 다른 DB 실패가 한 fingerprint로 뭉치므로
+ * code와 정리된 message로 나눈다. details·hint는 행 데이터가 섞일 수 있어 넣지 않는다.
+ */
+function fingerprintParts(error: unknown): string[] {
+  if (error instanceof Error) return [error.name, redact(error.message)]
+  if (typeof error === 'object' && error !== null) {
+    const { code, message } = error as { code?: unknown; message?: unknown }
+    if (typeof code === 'string' || typeof message === 'string') {
+      return [
+        'PostgrestError',
+        typeof code === 'string' && code ? code : 'nocode',
+        redact(typeof message === 'string' ? message : ''),
+      ]
+    }
+  }
+  return ['UnknownError', redact(String(error))]
 }
 
 export type ErrorReportInput = {

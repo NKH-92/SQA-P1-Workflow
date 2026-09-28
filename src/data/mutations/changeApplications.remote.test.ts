@@ -17,10 +17,8 @@ vi.mock('../../lib/supabase', () => ({
 }))
 
 import {
-  archiveChangeApplication,
   finalizeChangeApplication,
   removeProductChangeScope,
-  restoreChangeApplication,
   saveChangeApplication,
   undoFinalizeChangeApplication,
 } from './changeApplications'
@@ -118,22 +116,6 @@ describe('change application mutation contracts (remote)', () => {
     await expect(saveChangeApplication(ctx, input, false)).rejects.toThrow(
       '다른 사람이 먼저 공통변경을 수정했어요. 새로고침한 뒤 다시 시도해 주세요.',
     )
-  })
-
-  it('uses explicit archive and restore RPC contracts', async () => {
-    const ctx = remoteContext()
-
-    await archiveChangeApplication(ctx, 'application-1', '모든 제품 처리 완료')
-    expect(mocks.rpc).toHaveBeenLastCalledWith('archive_change_application', {
-      p_change_application_id: 'application-1',
-      p_reason: '모든 제품 처리 완료',
-    })
-
-    await restoreChangeApplication(ctx, 'application-1', '추가 반영 필요')
-    expect(mocks.rpc).toHaveBeenLastCalledWith('restore_change_application', {
-      p_change_application_id: 'application-1',
-      p_reason: '추가 반영 필요',
-    })
   })
 
   it('uses the dedicated scope-removal RPC instead of task cancellation', async () => {

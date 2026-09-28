@@ -1,8 +1,8 @@
 import type { ReadMarkSection, SectionReadMark } from '../../types'
+import { READ_MARK_KEY_LIMIT } from '../../lib/sectionNews'
 
 export const READ_MARK_SECTIONS: readonly ReadMarkSection[] = ['announcements', 'projects', 'change-applications']
-/** public.mark_section_seen이 받는 id 개수 상한(section_read_marks_keys_check와 같다). */
-export const READ_MARK_KEY_LIMIT = 500
+export { READ_MARK_KEY_LIMIT }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

@@ -20,6 +20,8 @@ export function createSupabaseActivityLogWriter(): ActivityLogWriter {
           route: globalThis.location?.hash || '#/unknown',
           role: input.actor.role === 'team_leader' ? 'leader' : input.actor.role,
           operation: 'activity-log-write',
+          // 어떤 기록이 실패했는지 구분한다(해시되어 원문은 남지 않는다).
+          context: `${input.entityType}:${input.action}`,
         })
       }
     },

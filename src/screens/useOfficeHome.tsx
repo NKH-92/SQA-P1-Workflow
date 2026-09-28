@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { MutateFn, TabId } from '../app/types'
+import type { MutationRunner } from '../app/hooks/useMutationRunner'
+import type { TabId } from '../app/types'
 import type { AppDataUpdater } from '../data/repositories/appDataUpdater'
 import { presenceChipLabel, presenceOf, presenceSummary, PRESENCE_TEXT } from '../data/validation/memberPresence'
 import { hasOfficeMeetingStarted, isOfficeMeetingOpen, officeMeetingPlace, type OfficeMeetingStartInput } from '../data/validation/officeMeeting'
@@ -81,7 +82,8 @@ export function useOfficeHome({
   profile: Profile
   data: AppData
   setActiveTab: (tab: TabId, entityId?: string) => void
-  mutate?: MutateFn
+  /** 회의 조작은 전체 새로고침을 건너뛰는 선택 인자를 넘기므로 MutationRunner로 받는다(MutateFn도 그대로 들어온다). */
+  mutate?: MutationRunner
   setData?: AppDataUpdater
 }) {
   const layout = data.officeLayout
@@ -182,6 +184,8 @@ export function useOfficeHome({
   }
 
   const noMutation = async () => false
+  // 저장소가 바꾼 뒤 회의실만 다시 읽어 화면을 맞추므로, 성공 뒤 전체 새로고침은 하지 않는다.
+  const meetingOnly = { refresh: false } as const
   const meetingActions = mutate
     ? {
         onStart: (input: OfficeMeetingStartInput) => {
@@ -191,14 +195,14 @@ export function useOfficeHome({
             : place
               ? `회의를 열었어요. 부른 사람이 확인하면 ${place}에서 만나요.`
               : '회의를 열었어요. 부른 사람이 확인하면 회의실로 모여요.'
-          return mutate(() => controller.startMeeting(input), toast)
+          return mutate(() => controller.startMeeting(input), toast, meetingOnly)
         },
         onAcknowledge: (meetingId: string) =>
-          mutate(() => controller.acknowledgeMeeting(meetingId), meetingToast('acknowledged', meeting, now)),
+          mutate(() => controller.acknowledgeMeeting(meetingId), meetingToast('acknowledged', meeting, now), meetingOnly),
         onEnd: (meetingId: string) =>
           mutate(async () => {
             await controller.endMeeting(meetingId)
-          }, meetingToast('ended', meeting, now)),
+          }, meetingToast('ended', meeting, now), meetingOnly),
       }
     : { onStart: noMutation, onAcknowledge: noMutation, onEnd: noMutation }
 

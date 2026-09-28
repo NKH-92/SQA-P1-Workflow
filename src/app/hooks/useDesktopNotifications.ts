@@ -55,7 +55,10 @@ export function useDesktopNotifications(
   useEffect(() => {
     if (!profileId) return
     const settings = loadDesktopNotificationSettings(profileId)
-    setEnabled(settings.enabled && supported)
+    // 저장값이 켜짐이어도 브라우저 권한이 초기화·회수됐으면 꺼진 것으로 보여 준다(저장값은 그대로 둔다).
+    // 그래야 체크박스를 한 번 누르면 바로 권한 요청이나 차단 안내로 이어진다.
+    setEnabled(settings.enabled && supported && Notification.permission === 'granted')
+    if (supported) setPermission(Notification.permission)
     notifiedUpToRef.current = settings.notifiedUpToIso
     notifiedIdsRef.current = new Set()
     hideRequesterNameRef.current = settings.hideRequesterName
@@ -66,7 +69,12 @@ export function useDesktopNotifications(
 
   useEffect(() => {
     if (!profileId || !leaderMode || !enabled || !supported) return
-    if (Notification.permission !== 'granted') return
+    if (Notification.permission !== 'granted') {
+      // 쓰는 도중 권한이 회수됐으면 표시도 꺼 둔다 — 켜져 보이는데 알림이 안 뜨는 일이 없게.
+      setEnabled(false)
+      setPermission(Notification.permission)
+      return
+    }
     if (!notifiedUpToRef.current) {
       // 켜진 채 시작한 세션의 첫 데이터 관찰 — 여기 이전 것은 알리지 않는다.
       notifiedUpToRef.current = initialNotifiedUpTo(data)

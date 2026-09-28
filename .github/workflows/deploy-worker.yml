@@ -30,6 +30,7 @@ concurrency:
 jobs:
   guard:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Require main branch
         if: ${{ github.ref != 'refs/heads/main' }}
@@ -104,6 +105,7 @@ jobs:
   deploy:
     needs: rls
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: production
     # 시크릿은 job 레벨에 두지 않는다 — npm ci/test가 실행하는 서드파티 코드에
     # 노출되지 않도록 실제로 쓰는 단계(Build, Deploy)에만 주입한다.

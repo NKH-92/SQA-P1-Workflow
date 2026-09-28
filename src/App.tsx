@@ -14,6 +14,7 @@ import { useDesktopNotifications } from './app/hooks/useDesktopNotifications'
 import { usePreviewRoleChange } from './app/hooks/usePreviewRoleChange'
 import { useRealtimeReviewInserts } from './app/hooks/useRealtimeReviewInserts'
 import { useAuthProfile } from './app/hooks/useAuthProfile'
+import { useSessionRevocationCheck } from './app/hooks/useSessionRevocationCheck'
 import { useHashNavigation } from './app/hooks/useHashNavigation'
 import { useMutationRunner } from './app/hooks/useMutationRunner'
 import type { MutationErrorReportContext } from './app/hooks/useMutationRunner'
@@ -39,8 +40,9 @@ import { Shell } from './screens/Shell'
  */
 const loadCommandPalette = () => import('./components/CommandPalette')
 const CommandPalette = lazy(() => loadCommandPalette().then((module) => ({ default: module.CommandPalette })))
-/** 내 상태 창은 열 때만 받는다. */
-const MemberPresenceDialog = lazy(() => import('./features/office/components/MemberPresenceDialog').then((module) => ({ default: module.MemberPresenceDialog })))
+/** 내 상태 창은 열 때만 필요하다. 배포 뒤 오래된 탭에서도 열리도록 팔레트처럼 한가할 때 미리 받아 둔다. */
+const loadMemberPresenceDialog = () => import('./features/office/components/MemberPresenceDialog')
+const MemberPresenceDialog = lazy(() => loadMemberPresenceDialog().then((module) => ({ default: module.MemberPresenceDialog })))
 
 /**
  * 로그인·비밀번호 변경·계정 안내·설정 오류 화면은 로그인한 사용자가 매일 여는 첫 화면에 필요 없다.
@@ -137,7 +139,6 @@ function App() {
   // (must_change_password는 RLS가 조회를 막아 빈 응답만 반복한다).
   const backgroundSyncEnabled =
     hasSupabaseConfig && Boolean(profile) && profile?.is_active !== false && !profile?.must_change_password
-  useBackgroundRefresh(backgroundSyncEnabled, () => refreshData({ silent: true }))
   // 새 검토요청을 처리하는 사람은 파트장뿐이므로 구독도 파트장만 연다.
   useRealtimeReviewInserts(backgroundSyncEnabled && canManage, () => {
     refreshData({ silent: true }).catch(() => {})
@@ -150,6 +151,13 @@ function App() {
     data,
     setActiveTab,
   )
+  // 숨긴 탭의 5분 폴링은 데스크톱 알림을 켠 파트장에게만 쓰인다. 그 외에는 탭 복귀 때 곧바로 재조회한다.
+  // (데스크톱 알림 상태가 정해진 뒤에 부른다.)
+  useBackgroundRefresh(backgroundSyncEnabled, () => refreshData({ silent: true }), {
+    pollWhenHidden: canManage && desktopNotifications.enabled,
+  })
+  // 다른 기기 로그아웃·비활성화·비밀번호 초기화로 서버가 접근을 막으면 프로필을 다시 확인해 알맞은 화면으로 보낸다.
+  useSessionRevocationCheck(syncHealth.lastErrorCode, retryProfileLoad, profile?.id ?? null)
 
   const pendingCount = data.reviewRequests.filter((request) => request.status === 'pending').length
   const unreadReviewsCount = useMemo(() => (profile ? countUnreadReviews(profile, data) : 0), [profile, data])
@@ -196,6 +204,10 @@ function App() {
   const meetingActions = useOfficeMeetingActions(profile, data, setData, mutate)
   // 개인 상태(잠깐 비움·휴가·출장)는 어느 화면에서든 연다. 기존 화면·사무실 화면 모두 같은 기능이다.
   const presenceActions = usePresenceActions(profile, data, setData, mutate)
+  useEffect(
+    () => (commandPaletteAvailable && presenceActions.canEdit ? prefetchWhenIdle(loadMemberPresenceDialog) : undefined),
+    [commandPaletteAvailable, presenceActions.canEdit],
+  )
   const myPresence = useMemo(() => (profile ? presenceOf(data.memberPresence, profile.id) : null), [data.memberPresence, profile])
 
   // signOut이 resetNavigation까지 수행한다(useAuthProfile → useHashNavigation).

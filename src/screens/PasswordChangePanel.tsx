@@ -1,6 +1,7 @@
 import { useId, useState } from 'react'
 import type { Profile } from '../types'
 import { PASSWORD_MIN_LENGTH } from '../app/constants'
+import { TEMPORARY_PASSWORD } from '../domain/accountPolicy'
 import { supabase } from '../lib/supabase'
 import { LogOut, ShieldCheck } from 'lucide-react'
 import { writePasswordChangedFlag } from './passwordChangedNotice'
@@ -12,17 +13,19 @@ type PasswordChangePanelProps = {
   onSignOut: () => void
 }
 
-const TEMPORARY_PASSWORD = '12345678'
 const MISMATCH_MESSAGE = '두 비밀번호가 달라요. 같은 비밀번호를 한 번 더 입력해 주세요.'
 const GENERIC_MESSAGE = '비밀번호를 바꾸지 못했어요. 잠시 후 다시 시도해 주세요.'
+/** 서버에서는 이미 바뀌었는데 응답만 못 받은 뒤 다시 시도한 경우에도 맞는 안내. */
+const MAYBE_CHANGED_MESSAGE =
+  '비밀번호가 이미 바뀌었을 수 있어요. 로그아웃한 뒤 방금 만든 새 비밀번호로 먼저 로그인해 보고, 안 되면 임시 비밀번호로 로그인해 주세요.'
 
 /** 서버(complete-password-change)가 돌려주는 오류 코드별 안내. 영문 원문은 보여주지 않는다. */
 const serverErrorMessages: Record<string, string> = {
   password_too_short: `새 비밀번호를 ${PASSWORD_MIN_LENGTH}자 이상으로 입력해 주세요.`,
   temporary_password_reuse: '임시 비밀번호와 다른 비밀번호를 입력해 주세요.',
-  authentication_required: '로그인 정보가 만료됐어요. 다시 로그인한 뒤 비밀번호를 바꿔 주세요.',
+  authentication_required: MAYBE_CHANGED_MESSAGE,
   password_change_failed: '이 비밀번호로는 바꿀 수 없어요. 더 길거나 다른 비밀번호로 다시 시도해 주세요.',
-  password_change_not_prepared: GENERIC_MESSAGE,
+  password_change_not_prepared: MAYBE_CHANGED_MESSAGE,
   internal_error: GENERIC_MESSAGE,
 }
 
@@ -42,7 +45,7 @@ async function passwordChangeErrorMessage(error: unknown, data: unknown): Promis
   }
   if (code && serverErrorMessages[code]) return serverErrorMessages[code]
   if ((error as { name?: unknown } | null)?.name === 'FunctionsFetchError') {
-    return '서버에 연결하지 못했어요. 네트워크를 확인하고 다시 시도해 주세요.'
+    return '서버에 연결하지 못했어요. 네트워크를 확인하고 다시 시도해 주세요. 다시 시도해도 안 되면 로그아웃한 뒤 새 비밀번호로 로그인해 보세요.'
   }
   return GENERIC_MESSAGE
 }

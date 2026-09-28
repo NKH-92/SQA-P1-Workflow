@@ -1,6 +1,7 @@
 import { assertAffectedRows, assertRecordExists, STALE_WRITE_MESSAGE, UserFacingError } from '../../lib/errors'
 import { supabase } from '../../lib/supabase'
 import type { AnnouncementRepository, RepositoryDeps } from '../repositories/types'
+import { throwIfPossiblySaved } from './createFailure'
 
 export function createSupabaseAnnouncementRepository(ctx: RepositoryDeps): AnnouncementRepository {
   const { data } = ctx
@@ -37,7 +38,10 @@ export function createSupabaseAnnouncementRepository(ctx: RepositoryDeps): Annou
         })
         .select('id')
         .single()
-      if (error) throw error
+      if (error) {
+        throwIfPossiblySaved(error)
+        throw error
+      }
       assertRecordExists(created)
     },
 

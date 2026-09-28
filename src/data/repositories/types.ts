@@ -32,8 +32,9 @@ export type ReviewRepository = {
     payload: ReviewRequestPayload
   }): Promise<{ reviewId: string; isUpdate: boolean }>
   withdrawReviewRequest(requestId: string, reason: string): Promise<void>
-  rejectReviewRequest(requestId: string, comment: string): Promise<void>
-  updateReviewStatus(requestId: string, status: ReviewStatus): Promise<void>
+  /** expectedUpdatedAt: 확인 창을 연 시점의 버전. 주면 그 버전으로 낙관적 잠금을 건다. */
+  rejectReviewRequest(requestId: string, comment: string, expectedUpdatedAt?: string): Promise<void>
+  updateReviewStatus(requestId: string, status: ReviewStatus, expectedUpdatedAt?: string): Promise<void>
   reopenReviewRequest(requestId: string): Promise<void>
   resubmitReviewRequest(requestId: string, comment: string): Promise<void>
   addReviewFeedback(requestId: string, comment: string): Promise<string | null>
@@ -213,10 +214,6 @@ export type ChangeApplicationRepository = {
   cancelChangeApplication(changeApplicationId: string, reason: string): Promise<void>
   finalizeChangeApplication(input: FinalizeChangeApplicationInput): Promise<void>
   undoFinalizeChangeApplication(input: UndoFinalizeChangeApplicationInput): Promise<void>
-  /** @deprecated Compatibility path until all UI callers use finalizeChangeApplication. */
-  archiveChangeApplication(changeApplicationId: string, reason: string): Promise<void>
-  /** @deprecated Compatibility path for legacy archived records only. */
-  restoreChangeApplication(changeApplicationId: string, reason: string): Promise<void>
 }
 
 export type OfficeRepository = {

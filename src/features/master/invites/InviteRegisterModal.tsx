@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react'
 import { UserPlus } from 'lucide-react'
 import { FormGrid, Modal } from '../../../components/ui'
+import { TEMPORARY_PASSWORD } from '../../../domain/accountPolicy'
 import type { Role } from '../../../types'
 
 export function InviteRegisterModal({
@@ -27,7 +28,7 @@ export function InviteRegisterModal({
       onClose={onClose}
       title="계정 추가"
       titleId="invite-register-title"
-      description="임시 비밀번호 12345678로 계정을 만들어요. 처음 로그인하면 새 비밀번호로 바꾸게 돼요."
+      description={`임시 비밀번호 ${TEMPORARY_PASSWORD}로 계정을 만들어요. 처음 로그인하면 새 비밀번호로 바꾸게 돼요.`}
       eyebrow="계정 관리"
       icon={<UserPlus size={18} />}
       closeLabel="계정 추가 닫기"

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 
+// 바꿀 때 함께 수정: src/domain/accountPolicy.ts, account-admin 함수, docs/OPERATIONS.md, 원격 E2E(tests/e2e/remote/remote-workflows.spec.ts)
 const TEMPORARY_PASSWORD = '12345678'
 const MIN_PASSWORD_LENGTH = 8
 const corsHeaders = {
@@ -19,6 +20,20 @@ function requiredEnv(name: string) {
   const value = Deno.env.get(name)
   if (!value) throw new Error(`Missing server configuration: ${name}`)
   return value
+}
+
+// 로그에는 분류 정보만 남긴다. Auth·PostgREST message에는 이메일이 들어갈 수 있어 기록하지 않는다.
+function errorFields(err: unknown) {
+  const value = (typeof err === 'object' && err !== null ? err : {}) as Record<string, unknown>
+  const message = typeof value.message === 'string' && value.message.startsWith('Missing server configuration: ')
+    ? value.message
+    : undefined
+  return {
+    name: typeof value.name === 'string' ? value.name : undefined,
+    code: typeof value.code === 'string' || typeof value.code === 'number' ? value.code : undefined,
+    status: typeof value.status === 'number' ? value.status : undefined,
+    ...(message ? { message } : {}),
+  }
 }
 
 Deno.serve(async (request) => {
@@ -57,12 +72,18 @@ Deno.serve(async (request) => {
 
     const { error: updateError } = await adminClient.auth.admin.updateUserById(userData.user.id, { password })
     if (updateError) {
-      await userClient.rpc('cancel_own_password_change', { p_correlation_id: correlationId })
+      const { error: cancelError } = await userClient.rpc('cancel_own_password_change', { p_correlation_id: correlationId })
+      if (cancelError) {
+        console.error('complete-password-change rollback failed', {
+          step: 'cancel_own_password_change',
+          code: errorFields(cancelError).code,
+        })
+      }
       return json(400, { error: 'password_change_failed', message: updateError.message })
     }
     return json(200, { ok: true, requiresRelogin: true })
-  } catch {
-    console.error('complete-password-change request failed')
+  } catch (err) {
+    console.error('complete-password-change request failed', errorFields(err))
     return json(500, { error: 'internal_error' })
   }
 })

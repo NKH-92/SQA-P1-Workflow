@@ -58,6 +58,35 @@ describe('OfficeMeetingBanner', () => {
     expect(onEnd).toHaveBeenCalledWith('meeting-1')
   })
 
+  it('shows a scheduled meeting that already started by the time it arrives as in progress', () => {
+    // 배너는 앱을 띄울 때 한 번 마운트된다. 절전 중에 예약된 회의를 시작 시각이 지난 뒤에 받는 경우.
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-09-28T23:50:00.000Z'))
+      const props = { onAcknowledge: vi.fn(async () => true), onEnd: vi.fn(async () => true), profile: previewLeader }
+      const { rerender } = render(<OfficeMeetingBanner meeting={null} {...props} />)
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+
+      vi.setSystemTime(new Date('2026-09-29T04:10:00.000Z'))
+      rerender(
+        <OfficeMeetingBanner
+          meeting={{
+            ...meeting,
+            created_at: '2026-09-29T03:30:00.000Z',
+            starts_at: '2026-09-29T04:00:00.000Z',
+            expires_at: '2026-09-29T07:00:00.000Z',
+          }}
+          {...props}
+        />,
+      )
+      expect(screen.getByRole('status')).toHaveTextContent('회의 중 · 사무실 회의실 · 일탈 건 5분 논의 · 확인 1/2명')
+      expect(screen.getByRole('button', { name: '회의 완료' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: '회의 취소' })).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('stays out of the way for people outside the meeting and when the room is empty', () => {
     renderBanner({ ...previewMember, id: 'member-09' })
     expect(screen.queryByRole('status')).not.toBeInTheDocument()

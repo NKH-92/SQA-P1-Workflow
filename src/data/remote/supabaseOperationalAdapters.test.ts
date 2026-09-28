@@ -86,6 +86,8 @@ describe('remote operational adapters', () => {
       route: expect.any(String),
       role: 'leader',
       operation: 'activity-log-write',
+      // 어떤 기록이 실패했는지만 남긴다(해시되어 원문은 남지 않는다).
+      context: 'project:updated',
     })
     const reportInput = mocks.reportError.mock.calls[0]?.[0]
     expect(reportInput).not.toHaveProperty('targetUserId')

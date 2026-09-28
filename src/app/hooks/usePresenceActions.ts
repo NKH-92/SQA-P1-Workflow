@@ -8,6 +8,9 @@ import type { MutationRunner } from './useMutationRunner'
 
 export type PresencePerson = { id: string; name: string }
 
+/** 저장소가 바꾼 뒤 자리 상태만 다시 읽어 화면을 맞추므로, 성공 뒤 전체 새로고침은 하지 않는다. */
+const PRESENCE_MUTATION = { refresh: false } as const
+
 /** 알림 문구의 ‘누구’: 나면 ‘내’, 다른 사람이면 ‘파트원 B님’ */
 function whose(profile: Profile, person: PresencePerson) {
   return person.id === profile.id ? '내' : `${person.name}님`
@@ -44,7 +47,7 @@ export function usePresenceActions(
     const label = status ? PRESENCE_TEXT[status].label : '자리에 있음'
     return mutate(async () => {
       await setMemberStatus(context(), person.id, status)
-    }, `${whose(profile, person)} 상태를 ${quotedWithJosa(label, '으로/로')} 바꿨어요.`)
+    }, `${whose(profile, person)} 상태를 ${quotedWithJosa(label, '으로/로')} 바꿨어요.`, PRESENCE_MUTATION)
   }, [context, mutate, profile])
 
   const addLeave = useCallback((person: PresencePerson, input: MemberLeaveInput) => {
@@ -52,14 +55,14 @@ export function usePresenceActions(
     const label = PRESENCE_TEXT[input.kind].short
     return mutate(async () => {
       await addMemberLeave(context(), input)
-    }, `${whose(profile, person)} ${withJosa(label, '을/를')} 등록했어요. ${leavePeriodLabel({ starts_on: input.startsOn, ends_on: input.endsOn })}`)
+    }, `${whose(profile, person)} ${withJosa(label, '을/를')} 등록했어요. ${leavePeriodLabel({ starts_on: input.startsOn, ends_on: input.endsOn })}`, PRESENCE_MUTATION)
   }, [context, mutate, profile])
 
   const deleteLeave = useCallback((person: PresencePerson, leaveId: string, kind: MemberLeaveKind) => {
     if (!profile) return Promise.resolve(false)
     return mutate(async () => {
       await deleteMemberLeave(context(), leaveId)
-    }, `${whose(profile, person)} ${withJosa(PRESENCE_TEXT[kind].short, '을/를')} 취소했어요.`)
+    }, `${whose(profile, person)} ${withJosa(PRESENCE_TEXT[kind].short, '을/를')} 취소했어요.`, PRESENCE_MUTATION)
   }, [context, mutate, profile])
 
   return {

@@ -6,6 +6,7 @@ SQA P1 Workflow의 일상 운영·백업·장애 대응 절차입니다. 저장�
 ## 릴리스 차단 조건
 
 - local RLS는 `npm run test:rls:full`만 canonical 진입점으로 사용한다. runner는 pinned Supabase CLI `2.109.1`로 start -> migration -> DB lint(error) -> fixture -> RLS -> readiness SQL을 실행하고 성공/실패와 관계없이 stop 및 임시 migration 복원을 수행한다.
+  - 중단(Ctrl+C·창 닫기·강제 종료)된 경우 다음 실행이 시작할 때 저장소 루트의 `.sqa-local-rls-*` 폴더에 남은 migration을 `supabase/migrations`로 자동 복원한다. 같은 이름 파일이 이미 있으면 `SQA_RLS_GATE_LEFTOVER_MIGRATION_CONFLICT`로 멈추므로, 두 파일을 비교한 뒤 남은 폴더를 직접 정리한다.
 - Docker daemon에 연결할 수 없거나 RLS test가 하나라도 skip/fail이면 DB 관련 작업과 전체 리팩토링을 완료로 표시하지 않는다.
 - readiness SQL과 migration version은 `scripts/sql/verify/manifest.json`만 사용한다. workflow에서 glob이나 별도 목록을 만들지 않는다.
 - PowerShell의 Supabase native 호출은 각 호출 직후 `$LASTEXITCODE`를 검사한다. link/push/query 오류 뒤에 다음 단계로 진행하지 않는다.
@@ -44,10 +45,20 @@ supabase login
 | 1 | 앱 접속 | Workers URL 브라우저 접속 | 로그인 화면 또는 홈 표시 |
 | 2 | Supabase 프로젝트 pause 여부 | Dashboard > 프로젝트 상태 | `Active` 표시 (일시정지 아님) |
 | 3 | Cloudflare Workers | Dashboard > Workers & Pages > 해당 Worker | 최근 배포 성공, 에러율 없음 |
-| 4 | Supabase | Dashboard > Logs (API, Auth) | 5xx 급증 없음 |
+| 4 | Supabase | Dashboard > Logs (API, Auth) | 5xx 급증 없음, `/rest/v1/rpc/` 경로 4xx 반복 없음 |
 | 5 | Auth | Dashboard > Authentication > Users | 로그인 시도 실패 패턴 확인 |
 
 > **앱이 아예 안 열리면 pause를 먼저 의심하세요.** Supabase 무료 티어는 **7일 동안 접속(활동)이 없으면 프로젝트를 자동으로 pause**합니다. pause 상태면 API·Auth가 모두 응답하지 않습니다. Dashboard에서 해당 프로젝트를 **Restore/Resume**하면 몇 분 뒤 복구됩니다. 연휴·장기 미사용 구간 전에는 **접속 1회 루틴**(누군가 로그인만 해도 됨)으로 pause를 예방하세요.
+
+Free 플랜 API 로그는 약 1일만 보존됩니다. 4xx·5xx 원인을 찾으려면 신고 당일에 Logs를 확인합니다.
+
+### 오류 화면 신고 시
+
+오류 보고는 중앙 수집 없이 사용자 PC 브라우저 콘솔에만 남습니다. "화면을 다시 불러와 주세요" 같은 오류 화면 신고를 받으면 아래 순서로 확인합니다.
+
+1. 신고자에게 오류 화면 캡처와 함께 **F12 > Console** 탭의 빨간 오류 줄과 `[error-report]` 줄 캡처를 요청합니다. React가 남긴 원래 오류 메시지·stack과 `buildSha`·`route`·`occurredAt`·`fingerprint`가 여기에 있습니다.
+2. `[error-report]`의 `buildSha`를 `<WORKER_URL>/version.json`의 `sha`와 비교합니다. 다르면 배포 전에 연 오래된 탭 문제로 보고 새로고침(F5)을 안내합니다.
+3. 같은 `fingerprint`를 여러 명이 보고하면 해당 `buildSha` 커밋에서 바뀐 화면부터 조사합니다.
 
 ### 알림·자동 갱신이 안 될 때
 
@@ -57,7 +68,7 @@ Realtime·데스크톱 알림은 **실패해도 오류를 표시하지 않도록
 |---|---|---|
 | 새 검토요청이 즉시(수 초 내) 반영되지 않고 몇 분 뒤에만 보임 | SQL Editor: `select exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='review_requests');` | `false`면 migration `202607090001` 미적용 — Actions → **DB Migrate** 실행 ([SUPABASE_MIGRATIONS.md](./SUPABASE_MIGRATIONS.md)) |
 | 데스크톱 알림이 안 뜸 | ① 파트장 계정인가 ② 벨 패널에서 옵트인했는가 ③ 브라우저 사이트 권한이 `허용`인가 ④ 창이 **비포커스**였는가 (앱을 보고 있으면 뱃지만 갱신) | 브라우저 사이트 설정에서 알림 권한 허용 후 벨 패널에서 다시 켜기. 모바일 브라우저는 미지원(뱃지만 동작) |
-| Realtime 연결 실패가 의심됨 | Supabase Dashboard → Logs → Realtime | 연결 실패여도 데이터는 폴링으로 갱신된다 — 즉시성만 떨어짐 |
+| Realtime 연결 실패가 의심됨 | ① 신고한 사용자 PC 브라우저에서 F12 → Network → **WS** 필터를 열고 `realtime/v1/websocket` 요청이 `101`(Switching Protocols)로 열렸는지 확인한다. Console에 `WebSocket connection … failed`가 있거나 요청이 실패·대기 상태이면 사내망/프록시 차단이다(이 경우 Supabase 로그에는 흔적이 남지 않는다). ② `101`로 열렸는데도 이벤트가 오지 않을 때만 Supabase Dashboard → Logs → Realtime과 위 publication SQL을 확인한다 | 연결 실패여도 데이터는 폴링(검토요청 5분, 사무실 30초)으로 갱신된다 — 즉시성만 떨어짐. 사내망 차단이면 IT에 `wss://<PROJECT_REF>.supabase.co` 허용을 요청한다 |
 
 ### 데스크톱 알림과 잠금화면 노출 위험
 
@@ -67,22 +78,33 @@ OS 데스크톱 알림은 화면이 잠겨 있어도(또는 다른 사람이 옆
 
 ### 자동 백업 (기본) — GitHub Actions
 
-`.github/workflows/backup.yml`이 **매일 05:00 KST**(cron)에 roles·application schema/data·migration history를 분리해 **L2 DR package**를 만듭니다. 파일별 SHA-256과 필수 audit 객체, 폐기된 Storage surface의 실제 object count 0을 검증한 뒤 AES-256 GPG 대칭 암호화(`.gpg`)와 전환 기간용 OpenSSL 형식(`.enc`)으로 만듭니다. 두 암호문을 실제 복호화해 `dr-manifest.json`과 checksum을 다시 검증하고 plaintext를 삭제한 뒤에만 워크플로 아티팩트(보존 90일)로 업로드합니다. Actions 탭에서 **Backup DB > Run workflow**로 수동 실행도 가능합니다. 상세 등급 계약은 [DR_CONTRACT.md](./DR_CONTRACT.md)를 따릅니다.
+`.github/workflows/backup.yml`이 **매일 05:17 KST**(cron `17 20 * * *`, UTC)에 roles·application schema/data·migration history를 분리해 **L2 DR package**를 만듭니다. 파일별 SHA-256과 필수 audit 객체, 폐기된 Storage surface의 실제 object count 0을 검증한 뒤 AES-256 GPG 대칭 암호화(`.gpg`)와 전환 기간용 OpenSSL 형식(`.enc`)으로 만듭니다. 두 암호문을 실제 복호화해 `dr-manifest.json`과 checksum을 다시 검증하고 plaintext를 삭제한 뒤에만 워크플로 아티팩트(보존 90일)로 업로드합니다. Actions 탭에서 **Backup DB > Run workflow**로 수동 실행도 가능합니다. 상세 등급 계약은 [DR_CONTRACT.md](./DR_CONTRACT.md)를 따릅니다.
 
 이 artifact는 `authIdentityIncluded=false`인 **L2**다. Auth UUID/password hash와 Auth 설정을 포함하지 않으므로 L3, L4, 신규 Supabase project full DR이라고 부르지 않습니다. Backup DB, DB Migrate, Deploy Worker는 공통 `sqa-production-release` concurrency group을 사용하며, DB Migrate는 동일 `main` SHA의 성공한 CI와 24시간 이내 **schedule 또는 수동 실행**으로 성공한 백업이 없으면 DB 접속 전에 중단됩니다.
 
-Backup job이 실패하면 `[Backup] Daily DB backup failed` issue를 새로 만들거나 기존 open issue에 실패 run 링크를 추가합니다. schedule 자체가 장기간 비활성화되는 경우에는 이 알림도 실행되지 않으므로, 외부 uptime/heartbeat 모니터는 별도로 유지해야 합니다.
+예약 시각을 정각이 아닌 17분으로 둔 이유: 예전 정각(`0 20 * * *`, 05:00 KST) 예약은 GitHub 부하로 2~3시간 늦게 시작되는 일이 있었고, GitHub는 부하가 몰리는 정각 예약을 지연하거나 건너뛸 수 있다고 안내합니다.
+
+Backup job이 실패하면 `[Backup] Daily DB backup failed` issue를 새로 만들거나 기존 open issue에 실패 run 링크를 추가합니다. 예약 실행이 아예 시작되지 않거나(누락·Actions 사용량 한도 소진) schedule이 비활성화되면 이 알림도 실행되지 않으므로, 아래 주간 점검으로 확인합니다.
+
+**주간 점검(매주 월요일, 파트장):**
+
+- Actions → **Backup DB**의 최근 성공 run이 **26시간 이내**인지 확인합니다. 아니면 즉시 수동 실행하고 원인(예약 누락, 사용량 한도, secret 오류)을 기록합니다.
+- Settings → Billing에서 이번 달 **Actions 사용량**을 확인합니다. 한도를 다 쓰면 백업과 실패 알림이 함께 멈춥니다.
+- GitHub 청구 알림 메일(포함 사용량 75%·90%·100%) 수신 설정을 끄지 않습니다.
+- Backup DB가 `Artifact storage quota has been hit`로 실패하면 Actions → Backup DB의 가장 오래된 run부터 `db-backup-*` artifact를 지우고 **Backup DB > Run workflow**로 다시 실행한 뒤, 그 run ID로 DB Migrate를 진행합니다. 아티팩트 저장 한도(Free 계정 전체 500MB)는 실행 시간(분) 한도와 별개이므로, Job Summary에 찍힌 두 암호문(.gpg·.enc) 크기의 합 × 90이 한도 안인지 함께 봅니다(2026-09 실측: 1개 약 1.37MB, 105개 70.6MB).
 
 | 항목 | 내용 |
 |---|---|
 | 필요 Secrets | `SUPABASE_DB_URL` (Dashboard > Connect의 Session pooler URI), `BACKUP_PASSPHRASE` (암호화 암구호) |
 | 암호화 이유 | 저장소가 Private이어도 권한 오설정·계정 침해·Artifact 오배포 위험이 있으므로 팀원 이름·이메일이 담긴 dump는 평문 업로드 금지 |
 | 암구호 보관 | **분실 시 백업 복원 불가.** 비밀번호 관리자 등 통제된 곳에 보관 |
-| 확인 | 매일 Actions run이 green인지, Job Summary에 `L2 application DB package`와 Auth identity 미포함 문구가 있는지 |
+| 확인 | 주간 점검 때 최근 Actions run이 green인지, Job Summary에 `L2 application DB package`와 Auth identity 미포함 문구가 있는지 |
 
 ### 검토요청 1년 보존과 자동 삭제
 
-`20260731151100_review_history_retention.sql` 적용 후 Supabase Cron은 매일 **06:00 KST**(`0 21 * * *`, UTC)에 `private.purge_expired_review_requests()`를 실행합니다. 05:00 KST Backup DB 예약 시간보다 한 시간 뒤입니다. 두 스케줄은 서로 다른 시스템이므로 백업 실패가 보존 삭제를 자동 중단시키지는 않습니다. 매일 Backup DB 성공 여부와 아래 Cron 실행 결과를 함께 확인합니다.
+`20260731151100_review_history_retention.sql` 적용 후 Supabase Cron은 매일 **06:00 KST**(`0 21 * * *`, UTC)에 `private.purge_expired_review_requests()`를 실행합니다. 05:17 KST Backup DB 예약 시간보다 뒤입니다. 두 스케줄은 서로 다른 시스템이므로 백업 실패가 보존 삭제를 자동 중단시키지는 않습니다. 아래 Cron 점검 SQL은 **릴리스 시와 월 1회** 수동으로 실행하고, Backup DB 성공 여부는 위 주간 점검으로 확인합니다.
+
+DB Migrate는 DB를 바꾸기 전에 이 Cron의 최신 실행을 읽어, `failed`이면 `SQA_REVIEW_RETENTION_CRON_FAILED` 경고와 Job Summary 한 줄을 남깁니다(릴리스는 막지 않음). 경고가 보이면 아래 점검 SQL의 `return_message`로 원인을 확인해 조치하고, 다음 06:00 KST 실행이 `succeeded`인지 확인합니다. SQL Editor에서 함수를 직접 실행해도 실행 기록은 생기지 않으며, 실패 이력 행을 지워 경고를 없애지 않습니다. 운영 시작(2026-07) 뒤 종결된 요청만 있으므로 실제 삭제 대상(365일이 지난 종결 요청)은 빨라야 2027-07경에 생기고, 그 전까지 매일 실행은 0건으로 끝납니다. **2027-06 전에** 이 절의 점검 SQL로 첫 실삭제 결과(`return_message`, 삭제 후 만료 대상 0건)를 확인할 일정을 잡아 둡니다.
 
 - `pending`은 생성 시각과 관계없이 자동 삭제하지 않습니다.
 - `approved`/`rejected`는 `closed_at`, `withdrawn`은 `withdrawn_at`부터 정확히 365일 보존합니다. `terminal_at < 실행 시각 - 365 days`인 행만 삭제하므로 정확히 경계에 있는 행은 다음 실행까지 남습니다.
@@ -170,6 +192,50 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 보관한다. 같은 Storage surface를 다시 만들지 않으며, 유사한 폐기 작업에서도 SQL로
 `storage.objects`나 `storage.buckets`를 삭제하지 않는다.
 
+## 월 1회 사용량 점검
+
+무료 한도에 가까워져도 앱은 미리 알려 주지 않습니다. 파트장이 매월 첫 영업일에 아래 값을 운영 기록에 남깁니다.
+
+| 순서 | 확인 대상 | 방법 |
+|---|---|---|
+| 1 | Supabase 사용량 | Dashboard > Usage에서 당월 **Database size**, **Egress**, **Realtime**(메시지·동시 연결) 값과 무료 한도 대비 비율 |
+| 2 | DB 크기·큰 테이블 | 아래 SQL을 SQL Editor에서 실행(읽기 전용) |
+| 3 | GitHub Actions 사용량 | Settings > Billing의 이번 달 Actions 사용량(위 백업 주간 점검과 같은 값) |
+
+```sql
+select pg_size_pretty(pg_database_size(current_database())) as database_size;
+
+select n.nspname || '.' || c.relname as table_name,
+       pg_size_pretty(pg_total_relation_size(c.oid)) as total_size
+from pg_class c
+join pg_namespace n on n.oid = c.relnamespace
+where c.relkind = 'r'
+  and n.nspname in ('public', 'private')
+order by pg_total_relation_size(c.oid) desc
+limit 10;
+```
+
+- `private.audit_events`, `public.activity_logs`, `public.product_change_tasks`처럼 계속 쌓이는 테이블의 증가 추세를 지난달 값과 비교합니다.
+- 첫 점검 때는 브라우저 F12 > Network에서 새로고침 1회의 전송량을 한 번 재서 egress 기준선으로 남깁니다.
+- 어느 항목이든 무료 한도의 **70%**에 도달하면 [DEPLOYMENT.md](./DEPLOYMENT.md)의 Supabase Pro 전환 기준에 따라 전환 또는 보존 정책을 결정합니다.
+
+**적용 업무 건수(같은 점검 때):** 공통변경 부트스트랩은 적용 업무를 5,000건까지만 보냅니다. SQL Editor에서 아래 값을 함께 남기고, **4,000건을 넘으면** 상한에 닿기 전에 개발자와 대응(완료 이력 정리 기준 등)을 정합니다. 앱에 `적용 업무: 최근 …건까지만 보여요.` 안내가 한 번이라도 뜨면 점검 주기와 관계없이 바로 알립니다.
+
+```sql
+select count(*) from public.product_change_tasks
+where status = 'pending' or updated_at >= now() - interval '6 months';
+```
+
+### 분기 1회 활동 기록 정리
+
+`public.activity_logs`는 자동으로 지워지지 않습니다. 화면은 최근 100건만 보여 주므로 오래된 기록을 정리해도 보이는 변화는 없고, `private.audit_events`(감사 기록)는 건드리지 않습니다.
+
+1. 먼저 건수만 확인합니다: `npm run ops:activity-prune:dry-run` (기본 보존 180일, 삭제하지 않음)
+2. 정리가 필요하면 **Backup DB 성공 직후, 파트장 승인 뒤에** 실행합니다: `node scripts/prune-activity-logs.mjs --retention-days=180 --execute --confirm=PRUNE_ACTIVITY_LOGS`
+3. 실행 시각·삭제 건수(`prunedCount`)·직전 Backup DB run 링크를 운영 기록에 남깁니다.
+
+두 명령 모두 `SUPABASE_URL`과 service role 키(`SUPABASE_SERVICE_ROLE_KEY`)를 그 셸에만 환경 변수로 넣고 실행하며, 키를 파일이나 저장소에 남기지 않습니다.
+
 ## Auth 계정 생성·정리
 
 앱에는 **로그인 화면만** 있습니다. 공개 sign-up UI는 제공하지 않습니다.
@@ -181,7 +247,7 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 
 > 운영 프로젝트는 `disable_signup: true`를 유지해야 한다. Deploy Worker가 배포 전 실제 Auth settings endpoint를 검사하므로 이 검증을 생략하지 않는다.
 
-> **"Require current password when updating"는 coordinated rollout 전까지 OFF로 둔다.** 현재 client는 `current_password`를 지원하지만 구형 배포 화면은 이를 보내지 않을 수 있다. 화면·Auth 설정을 함께 교체하고 통합 검증하기 전에는 이 토글을 켜지 않는다.
+> **"Require current password when updating"는 OFF로 둔다.** 앱의 비밀번호 변경은 `complete-password-change` 서버 함수가 Admin API(`updateUserById`)로 처리하므로 이 토글의 영향을 받지 않는다. 불필요한 설정 변경을 피하려고 OFF를 유지한다.
 
 계정 생성·초기화 절차와 임시 비밀번호 규칙은 아래 "임시 비밀번호·첫 로그인" 절을 따릅니다.
 
@@ -190,9 +256,38 @@ Actions를 쓸 수 없거나 마이그레이션 직전 즉석 백업이 필요�
 초대 없이 Dashboard에서만 생성된 계정, 또는 테스트 중 남은 계정이 쌓일 수 있습니다.
 
 1. Supabase Dashboard > Authentication > Users
-2. `profiles`에 대응 row가 없거나 `allowed_users`에 없는 이메일 조회
-3. 미사용 계정이면 Users에서 삭제
+2. SQL Editor에서 **`profiles` 행이 없는 Auth 사용자**만 조회합니다. 삭제 대상은 이 목록뿐입니다.
+   ```sql
+   select u.id, u.email, u.created_at, u.last_sign_in_at
+   from auth.users u
+   left join public.profiles p on p.id = u.id
+   where p.id is null;
+   ```
+3. 위 목록에 있고 미사용 계정이면 Users에서 삭제
+   - `profiles` 행이 있는 계정은 `allowed_users`에 없더라도 삭제하지 않습니다. `profiles_block_physical_delete` 트리거가 막아 "Database error deleting user"로 실패합니다. 앱 **계정 관리**에서 비활성화합니다(목록에서 사라진 계정은 아래 "목록 행이 끊긴 계정 복구" 절 참고).
 4. public sign-up이 OFF이므로 미승인 계정은 Dashboard 생성 경로에서만 생깁니다 — 계정 생성은 파트장만 수행합니다
+
+### 계정 목록 행과 로그인 계정
+
+계정 관리 카드는 목록 행(`allowed_users`)을 기준으로 그려지고, 카드 안에서만 활성화·비활성화·비밀번호 초기화를 할 수 있습니다.
+
+- **[CSV 가져오기]는 목록 행만 만듭니다.** Auth 사용자를 만들지 않으므로 그 행은 `가입 전`으로 보이고 로그인할 수 없습니다. 로그인 계정은 같은 이메일로 **[계정 추가]**를 해야 만들어집니다.
+- **가입한 계정의 목록 행은 [목록에서 삭제]하지 않습니다.** 행을 지우면 카드가 사라져 비활성화·재활성화·비밀번호 초기화를 누를 곳이 없어지고, 같은 이메일로 [계정 추가]를 해도 이미 가입한 이메일이라 거부됩니다. 접근을 막을 때는 [비활성화]를 누릅니다.
+- 서버도 같은 규칙을 강제합니다. **활성 계정의 목록 행은 삭제가 거부**되고(먼저 비활성화), **가입한 계정의 이메일은 [계정 정보 수정]으로 바꿀 수 없습니다**(Auth 로그인 이메일은 이 화면으로 바뀌지 않기 때문).
+
+#### 목록 행이 끊긴 계정 복구
+
+서버 가드가 생기기 전에 이미 목록에서 지워진 계정은 다음 순서로 되살립니다.
+
+1. 같은 이메일·이름·기존 역할로 한 행짜리 CSV를 만들어 **[CSV 가져오기]**를 합니다. 저장 트리거가 기존 프로필과 다시 연결해 카드가 `활성 계정` 또는 `비활성 계정`으로 다시 나타납니다.
+2. 카드가 다시 나타나면 필요한 조치를 합니다. 퇴사자라면 [비활성화], 복귀자라면 [활성화]를 누릅니다.
+3. 카드가 `가입 전`으로 남거나 가져오기가 실패하면 SQL을 직접 실행하지 말고 개발자에게 넘깁니다.
+
+예전에 가입한 계정의 이메일을 바꿔 카드가 `가입 전`으로 바뀐 경우에는, 카드의 이메일을 원래 값으로 되돌려 저장합니다.
+
+### 역할 변경
+
+파트장·파트원을 **팀장(team_leader)**으로 바꾸기 전에, 그 사람의 사무실 **자리 상태**(회의·현장 등)와 **남은 휴가·출장**을 먼저 해제합니다. 팀장은 자리 상태를 가질 수 없어 역할을 바꾼 뒤에는 본인도 파트장도 해제할 수 없고, 사무실 화면에 표지가 계속 남습니다. 이미 바꿨다면 역할을 잠시 파트원으로 되돌려 해제한 뒤 다시 팀장으로 바꿉니다.
 
 ## 분기 L2 추출 리허설
 
@@ -285,10 +380,10 @@ Auth UUID/FK/login 증거가 있을 때만 완료로 판정한다.
 3. 선택한 공식 복구 경로가 Auth UUID/hash를 보존하는지 확인하고, 최신 package를 복호화한 뒤 `verify-dr-package.mjs`로 L3 이상인지 검증합니다. L2이면 중단합니다.
 4. 공식 경로에 맞춰 Auth identity와 application DB를 복원합니다. 오류가 하나라도 있으면 전환하지 말고 폐기 가능한 target에서 원인을 해결합니다.
 5. Auth 설정을 재적용합니다: email signup OFF, Site URL/Redirect URL, SMTP·메일 설정, 비밀번호 최소 길이와 현재 비밀번호 요구 정책을 운영 기준과 대조합니다.
-6. GitHub Actions의 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_DB_URL`을 신규 프로젝트 값으로 교체합니다. 이전 값은 즉시 폐기하지 말고 제한된 비상 롤백 기록으로만 보관합니다.
+6. GitHub Actions의 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_DB_URL`, `SUPABASE_PROJECT_REF`를 신규 프로젝트 값으로 교체합니다. `SUPABASE_PROJECT_REF`가 이전 값으로 남으면 DB Migrate가 Edge Function을 이전 프로젝트에 배포하고도 green으로 끝나, 신규 프로젝트에서 계정 추가·비밀번호 초기화·강제 비밀번호 변경이 모두 실패합니다. `SUPABASE_ACCESS_TOKEN`(PAT)이 신규 프로젝트에 접근할 수 있는지(같은 조직인지)도 확인합니다. `dr-rehearsal` environment의 `DR_PRODUCTION_PROJECT_REF`도 신규 운영 ref로 교체합니다. 이전 값은 즉시 폐기하지 말고 제한된 비상 롤백 기록으로만 보관합니다.
 7. 신규 DB의 `supabase_migrations.schema_migrations`와 로컬 migration 목록을 대조합니다. 복원된 객체를 확인하지 않고 `migration repair --status applied`를 사용하지 않습니다.
 8. RLS smoke test와 핵심 행 수(`profiles`, `products`, `review_requests`, 각 assignment)를 확인하고, leader/member 로그인·권한·첨부 없는 검토요청 작성까지 검증합니다.
-9. Deploy Worker를 수동 실행합니다. 배포 workflow의 DB readiness 및 Worker health check가 모두 green일 때만 사용자에게 전환 완료를 공지합니다.
+9. 신규 프로젝트를 대상으로 **Backup DB → DB Migrate → Deploy Worker** 순서로 실행합니다. DB Migrate에는 CI run ID와 방금 성공한 Backup run ID를, Deploy Worker에는 CI run ID와 DB Migrate run ID를 입력합니다. DB Migrate Job Summary에서 `account Edge Functions: active`를 확인합니다(clone은 Edge Function을 복사하지 않으므로 이 단계가 신규 프로젝트에 함수를 배포합니다). 배포 workflow의 DB readiness 및 Worker health check가 모두 green이고, 파트장이 시험 계정의 비밀번호를 한 번 초기화한 뒤 그 계정으로 강제 비밀번호 변경까지 완료했을 때만 사용자에게 전환 완료를 공지합니다.
 10. 이전 프로젝트는 즉시 삭제하지 않습니다. 접근을 제한하고 사고 분석·데이터 대조가 끝날 때까지 보존한 뒤 별도 승인으로 폐기합니다.
 
 전환 기록에는 장애 원인, 사용한 백업 run ID, 복원 행 수, 변경한 GitHub 설정, RLS/로그인/배포 검증 결과, 최종 승인자를 남깁니다. Storage `review-attachments`는 백업 대상이 아니므로 복원되지 않는다는 점도 공지합니다.
@@ -297,15 +392,15 @@ Auth UUID/FK/login 증거가 있을 때만 완료로 판정한다.
 
 **기본 원칙: 삭제하지 않고 비활성화한다.** 퇴사·전배자는 즉시 삭제하지 말고 **비활성화(`is_active=false`)를 기본**으로 처리합니다. 비활성화만으로 로그인·데이터 접근이 즉시 차단됩니다. 삭제는 **일정 보존 기간(권장: 1년) 경과 후**에만 검토합니다.
 
-초대 목록(`allowed_users`)에서 삭제하는 것만으로는 **이미 가입한 계정의 로그인을 막을 수 없습니다.** 접근 회수는 아래 비활성화로 합니다.
+계정 목록(`allowed_users`)에서 삭제하는 것만으로는 **이미 가입한 계정의 로그인을 막을 수 없습니다.** 접근 회수는 아래 비활성화로 합니다.
 
 ### 1단계(기본): 비활성화
 
 | 단계 | 작업 | 확인 |
 |---|---|---|
-| 1 | 마스터 > 초대 관리에서 대상 사용자 `비활성화` (`is_active` 토글) | 상태 배지가 `비활성`으로 변경 |
-| 2 | 대상 계정으로 로그인 시도 | "계정이 비활성화되었습니다" 안내, 데이터 접근 불가 |
-| 3 | (선택) `allowed_users`에서도 제거 | 앱 > 마스터 > 초대 관리 |
+| 1 | 마스터 > 계정 관리에서 대상 사용자 `비활성화` (`is_active` 토글) | 카드 상태가 `비활성 계정`으로 변경 |
+| 2 | 대상 계정으로 로그인 시도 | "계정이 비활성 상태예요" 차단 화면, 데이터 접근 불가 |
+| 3 | 가입한 계정은 [목록에서 삭제]하지 않음 | 카드가 사라지면 재활성화·비밀번호 초기화를 할 수 없음("계정 목록 행과 로그인 계정" 절 참고) |
 | 4 | (복귀 시) 재활성화 후 로그인 | 정상 홈 진입 |
 
 상세 RLS 검증은 [TEST_PLAN.md](./TEST_PLAN.md)와
@@ -315,23 +410,20 @@ Auth UUID/FK/login 증거가 있을 때만 완료로 판정한다.
 
 ### 2단계(보존 1년 경과 후에만): 삭제
 
-> ⚠️ **삭제는 되돌릴 수 없고, 그 사람이 남긴 이력이 함께 영구 삭제됩니다.** Auth Users에서 계정을 삭제하면 `profiles`가 cascade로 삭제되며, 이에 딸린 다음 데이터가 **함께 영구 삭제**됩니다.
-> - 그 사람이 올린 **검토요청**(`review_requests.requester_id` → CASCADE) 및 그에 달린 **피드백**(`review_feedback` → CASCADE)
-> - 그 사람의 **활동로그**(`activity_logs.actor_id` → CASCADE)
-> - `product_assignments`·`duty_assignments`·`project_assignments`·`profile_notes` 등 배정·메모 (모두 CASCADE)
+> ⚠️ **프로필이 있는 계정의 물리 삭제는 DB가 막습니다.** `profiles_block_physical_delete` 트리거(`20260718054124_harden_review_workflow.sql`)가 모든 `profiles` 삭제를 거부하므로, Auth Users에서 이런 계정을 삭제하면 "Database error deleting user"로 실패합니다.
 >
-> ⚠️ **leader 계정은 삭제 자체가 실패할 수 있습니다.** 그 사람이 **피드백을 남겼거나**(`review_feedback.leader_id` → `ON DELETE RESTRICT`) **프로젝트를 만든**(`projects.created_by` → `ON DELETE RESTRICT`) 경우, 참조가 남아 있는 한 삭제가 **FK 오류로 실패**합니다. leader는 원칙적으로 비활성화만 하고, 부득이 삭제해야 하면 참조 이력을 먼저 정리/이관해야 합니다.
+> ⚠️ **break-glass 승인 없이 이 트리거를 비활성화하지 않습니다.** 트리거를 끄고 Auth 사용자를 삭제하면 `profiles`가 cascade로 삭제되고, 그 사람이 올린 **검토요청**과 거기에 달린 **피드백**, **활동로그**, `product_assignments`·`duty_assignments`·`project_assignments`·`profile_notes` 등 배정·메모가 **함께 영구 삭제**됩니다. leader 계정은 피드백(`review_feedback.leader_id`)·프로젝트 생성(`projects.created_by`) 참조가 `ON DELETE RESTRICT`라 FK 오류로 실패할 수도 있습니다.
 >
-> (FK 근거: `supabase/migrations/202607020001_initial_schema.sql`, `202607040003_operational_queue.sql`)
+> (FK 근거, break-glass 설계 참고용: `supabase/migrations/202607020001_initial_schema.sql`, `202607040003_operational_queue.sql`)
 
 보존 기간(권장 1년)이 지나 삭제가 확정되면:
 
 | 단계 | 작업 | 확인 |
 |---|---|---|
-| 0 | **DB·Storage 백업 수행** | `scripts/backup-db.ps1` + Storage 수동 백업(위 백업 절 참고) |
+| 0 | **DB 백업 수행** | Actions → **Backup DB** 성공(Actions를 쓸 수 없으면 `scripts/backup-db.ps1`) |
 | 1 | 대상이 leader이면 leader 권한·진행 중 업무를 다른 사람에게 이관 | 참조 이력 정리 |
 | 2 | 앱에서 프로필을 비활성화 | 감사·검토·변경 이력은 보존되고 로그인 후 앱 접근은 차단됨 |
-| 3 | `allowed_users`에서도 제거 | 앱 > 마스터 > 초대 관리 |
+| 3 | 복귀 가능성이 없을 때만 목록 행(`allowed_users`)도 제거 | 앱 > 마스터 > 계정 관리 > [목록에서 삭제]. 삭제 뒤에는 카드가 사라져 재활성화할 수 없음 |
 | 4 | 대상 계정으로 로그인 시도 | 접근 불가 확인 |
 
 프로필과 Auth 사용자의 물리 삭제는 기본 운영 경로가 아니며 DB 트리거가 차단한다. 법적 삭제 요청은 별도 승인, 참조 이력 익명화 설계, 백업 영향 검토를 거친 break-glass 절차로 처리한다.
@@ -387,15 +479,23 @@ live `/version.json`을 다시 받아 현재 `github.sha` 및 로컬 두 hash와
 
 Windows에서 `npm ci`가 `EPERM`으로 실패하면, 다른 터미널·에디터에서 `node_modules`를 잠그고 있지 않은지 확인한 뒤 해당 폴더를 삭제하고 다시 실행하세요.
 
-## 데이터 시드 재생성 (선택)
+## 데이터 시드 재생성 (빈 DB 초기 구축 전용)
 
-제품·업무 배정을 사설 CSV에서 일괄 생성해야 할 때 사용합니다. 일상 등록은 앱의 마스터 탭(CSV 가져오기 포함)으로 충분합니다.
+**빈 DB를 처음 구축할 때만 사용합니다. 운영 중에는 사용하지 않습니다.** 제품 시드는 공통변경 적용 업무가 한 건이라도 있으면 `product_change_tasks` FK(`ON DELETE RESTRICT`)로 실패하고, 업무 시드는 앱에서 조정한 업무 배정과 업무 ID를 모두 지우고 다시 만듭니다. 운영 중 재배정은 앱의 제품·업무 화면(CSV 가져오기, 담당자 변경)으로 합니다.
+
+실행 전 조건:
+
+- Actions → **Backup DB**가 방금 성공했습니다.
+- SQL Editor에서 `select count(*) from public.product_change_tasks;` 결과가 **0**입니다.
+- profile-map에는 활성 파트원(`role='member'`)만 넣습니다. 파트장·팀장은 DB 트리거가 배정을 거부합니다.
 
 1. `data/private/*.example` 3개 파일을 `.local.*`로 복사해 실제 값 입력 (`.local.*`은 커밋되지 않음)
 2. `node scripts/generate-p1-product-seed.mjs` / `node scripts/generate-p1-duty-seed.mjs` 실행
-3. 생성된 `scripts/.seed-batches/*.sql`(비추적)을 SQL Editor에서 실행
+3. 생성된 `scripts/.seed-batches/*.sql`(비추적)을 SQL Editor에서 순서대로 실행합니다. **어느 파일에서든 오류가 나면 다음 파일을 실행하지 말고 중단합니다.**
 
-## 제품명 중복 정리 (products_name_key)
+## 제품명 중복 정리 (products_name_key) — 적용 완료된 과거 절차
+
+> 이 절은 `202607060002`·`202607060003` 적용 당시의 기록입니다. 두 migration은 이미 운영에 적용됐고 `products_name_key`가 있어 중복 제품명이 새로 생기지 않으므로 다시 수행하지 않습니다. 참고로 지금은 변경 적용 이력이 있는 제품이 `product_change_tasks`의 `ON DELETE RESTRICT` 때문에 3단계 행 삭제에서 실패합니다.
 
 `202607060002` migration은 **중복 제품을 삭제하지 않습니다**. 중복이 있으면 migration이 실패하므로, 적용 전 반드시 수동 병합하세요. `202607060003_audit_product_duplicates.sql`은 중복을 감사 테이블(`product_dedup_audit`)에 기록하고 unique constraint를 적용합니다.
 

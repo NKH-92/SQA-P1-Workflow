@@ -28,16 +28,18 @@ export async function rejectReviewRequest(
   ctx: RepositoryContext,
   requestId: string,
   comment: string,
+  expectedUpdatedAt?: string,
 ): Promise<void> {
-  return ctx.repositories.reviews.rejectReviewRequest(requestId, comment)
+  return ctx.repositories.reviews.rejectReviewRequest(requestId, comment, expectedUpdatedAt)
 }
 
 export async function updateReviewStatus(
   ctx: RepositoryContext,
   requestId: string,
   status: ReviewStatus,
+  expectedUpdatedAt?: string,
 ): Promise<void> {
-  return ctx.repositories.reviews.updateReviewStatus(requestId, status)
+  return ctx.repositories.reviews.updateReviewStatus(requestId, status, expectedUpdatedAt)
 }
 
 export async function reopenReviewRequest(ctx: RepositoryContext, requestId: string): Promise<void> {

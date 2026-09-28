@@ -26,8 +26,11 @@ import { ChangeApplicationHistory } from '../features/change-applications/compon
 import { ChangeFinalizationModal, type ReopenChangeTask } from '../features/change-applications/components/ChangeFinalizationModal'
 import {
   canEditChangeApplication,
+  canProcessOwnChangeTask,
+  canReopenOwnChangeTask,
   changeActionLabel,
-  selectChangeApplicationSummary,
+  selectAssignableChangeAssignees,
+  selectChangeApplicationSummaries,
   selectProductChangeTaskContexts,
   type ProductChangeTaskContext,
 } from '../features/change-applications/selectors'
@@ -163,23 +166,18 @@ export function ChangeApplicationsPanel({
     }
     return result
   }, [allContexts])
-  const summaryByApplication = useMemo(() => new Map(
-    data.changeApplications.flatMap((application) => {
-      const summary = selectChangeApplicationSummary(data, application.id)
-      return summary ? [[application.id, summary] as const] : []
-    }),
-  ), [data])
+  const summaryByApplication = useMemo(() => selectChangeApplicationSummaries(data), [data])
 
   const finalReviewCount = [...summaryByApplication.values()].filter(
     (summary) => summary.workflow_status === 'final_review_ready',
   ).length
-  const ownPendingContexts = allContexts.filter(
+  const ownPendingContexts = useMemo(() => allContexts.filter(
     ({ task, application }) => task.assignee_id === profile.id
       && task.status === 'pending'
       && application.status === 'published'
       && !application.final_completed_at
       && !application.archived_at,
-  )
+  ), [allContexts, profile.id])
   const ownProcessedContexts = allContexts.filter(
     ({ task, application }) => task.assignee_id === profile.id
       && (task.status === 'completed' || task.status === 'not_applicable')
@@ -191,20 +189,20 @@ export function ChangeApplicationsPanel({
     ({ application }) => summaryByApplication.get(application.id)?.workflow_status === 'final_review_ready',
   )
   const attentionActive = attention !== 'all'
-  const matchesFilters = (context: ProductChangeTaskContext) => {
-    if (statusFilter !== 'all' && context.task.status !== statusFilter) return false
-    if (!matchesChangeAttention(context, attention)) return false
-    return applicationMatchesQuery(context.application, [context], query)
-  }
-  const baseContexts = leaderMode
+  // 목록 파생값은 입력이 바뀔 때만 다시 계산한다(체크박스·다른 상태 변경마다 전체 업무를 다시 훑지 않게).
+  const baseContexts = useMemo(() => leaderMode
     ? allContexts.filter(({ application }) => {
         const workflow = summaryByApplication.get(application.id)?.workflow_status
         return leaderTab === 'final_review'
           ? workflow === 'final_review_ready'
           : workflow === 'draft' || workflow === 'in_progress'
       })
-    : ownPendingContexts
-  const filteredContexts = baseContexts.filter(matchesFilters)
+    : ownPendingContexts, [allContexts, leaderMode, leaderTab, ownPendingContexts, summaryByApplication])
+  const filteredContexts = useMemo(() => baseContexts.filter((context) => {
+    if (statusFilter !== 'all' && context.task.status !== statusFilter) return false
+    if (!matchesChangeAttention(context, attention)) return false
+    return applicationMatchesQuery(context.application, [context], query)
+  }), [attention, baseContexts, query, statusFilter])
 
   const applicationSource = leaderMode
     ? filterApplicationsByLeaderTab(
@@ -236,7 +234,10 @@ export function ChangeApplicationsPanel({
     ? selectedContexts.filter((context) => matchesChangeAttention(context, attention))
     : selectedContexts
   const selectedSummary = selectedApplication ? summaryByApplication.get(selectedApplication.id) ?? null : null
-  const groupedContexts = viewMode === 'change' ? [] : groupChangeTaskContexts(filteredContexts, viewMode)
+  const groupedContexts = useMemo(
+    () => viewMode === 'change' ? [] : groupChangeTaskContexts(filteredContexts, viewMode),
+    [filteredContexts, viewMode],
+  )
   const memberProductGroups = useMemo(() => leaderMode ? [] : buildMemberProductBoardGroups(
     allContexts.filter((context) => (
       context.task.assignee_id === profile.id
@@ -337,7 +338,8 @@ export function ChangeApplicationsPanel({
   }, [leaderMode, memberProductGroups, memberTab, selectedMemberProductId, setSelectedMemberProductId])
 
   // 여러 건 선택은 지금 보이는, 담당자를 바꿀 수 있는 업무 안에서만 유효하다.
-  const canReassignTask = ({ task, application }: ProductChangeTaskContext) => {
+  // 담당자를 바꿀 수 있는 업무는 한 번만 판정해 두고 행·그룹·선택 바에서 함께 쓴다.
+  const reassignableTaskIds = useMemo(() => new Set(allContexts.filter(({ task, application }) => {
     const workflow = summaryByApplication.get(application.id)?.workflow_status
     if (!canManageTeam || workflow !== 'in_progress') return false
     if (task.status === 'pending') return true
@@ -347,10 +349,21 @@ export function ChangeApplicationsPanel({
       ? assigneeProfile.is_active !== false
       : data.changeAssigneeOptions.some((item) => item.id === task.assignee_id))
     return !assigneeIsActive
-  }
+  }).map(({ task }) => task.id)), [allContexts, canManageTeam, data.changeAssigneeOptions, data.profiles, summaryByApplication])
+  const canReassignTask = ({ task }: ProductChangeTaskContext) => reassignableTaskIds.has(task.id)
   const bulkSelectable = leaderMode && canManageTeam && leaderTab !== 'history' && viewMode !== 'change'
-  const selectableContexts = bulkSelectable ? filteredContexts.filter(canReassignTask) : []
-  const effectiveSelectedTasks = selectableContexts.filter(({ task }) => selectedTaskIds.has(task.id)).map(({ task }) => task)
+  const selectableContexts = useMemo(
+    () => bulkSelectable ? filteredContexts.filter(({ task }) => reassignableTaskIds.has(task.id)) : [],
+    [bulkSelectable, filteredContexts, reassignableTaskIds],
+  )
+  const groupSelectableIds = useMemo(() => new Map(groupedContexts.map((group) => [
+    group.key,
+    bulkSelectable ? group.items.filter(({ task }) => reassignableTaskIds.has(task.id)).map(({ task }) => task.id) : [],
+  ])), [bulkSelectable, groupedContexts, reassignableTaskIds])
+  const effectiveSelectedTasks = useMemo(
+    () => selectableContexts.filter(({ task }) => selectedTaskIds.has(task.id)).map(({ task }) => task),
+    [selectableContexts, selectedTaskIds],
+  )
 
   const toggleTaskSelection = (taskId: string, checked: boolean) => {
     setSelectedTaskIds((current) => {
@@ -489,15 +502,10 @@ export function ChangeApplicationsPanel({
   const taskRow = (context: ProductChangeTaskContext, options: { selectable?: boolean } = {}) => {
     const { task, actionItem, application } = context
     const workflow = summaryByApplication.get(application.id)?.workflow_status
-    const canProcess = !leaderMode
-      && workflow === 'in_progress'
-      && task.status === 'pending'
-      && task.assignee_id === profile.id
+    // 처리·다시 열기는 서버처럼 담당자 본인이면 된다(파트장도 본인 업무는 처리, 팀장은 처리 불가).
+    const canProcess = canProcessOwnChangeTask(profile, task, workflow)
     const canManage = canManageTeam && workflow === 'in_progress'
-    const canReopen = !leaderMode
-      && (workflow === 'in_progress' || workflow === 'final_review_ready')
-      && (task.status === 'completed' || task.status === 'not_applicable')
-      && task.assignee_id === profile.id
+    const canReopen = canReopenOwnChangeTask(profile, task, workflow)
     const assigneeProfile = task.assignee_id
       ? data.profiles.find((item) => item.id === task.assignee_id)
       : null
@@ -600,7 +608,9 @@ export function ChangeApplicationsPanel({
             {canEdit && <button className="ghost compact" onClick={() => setComposer({ editingId: selectedApplication.id })} type="button"><FilePenLine size={14} />{selectedApplication.status === 'draft' ? '초안 이어쓰기' : '내용 수정'}</button>}
             {canFinalize && <button className="primary compact" onClick={() => setFinalizationDialog({ mode: 'finalize', application: selectedApplication, summary: selectedSummary, tasks: selectedContexts.map(({ task }) => task) })} type="button"><CheckCircle2 size={14} />공통변경 완료하기</button>}
             {canCancel && (
+              // 선택한 공통변경이 바뀌면 열려 있던 메뉴를 닫는다(열린 메뉴가 새로 고른 공통변경을 취소하지 않게).
               <OverflowMenu
+                key={selectedApplication.id}
                 label={`${selectedApplication.change_number} 더보기`}
                 items={[{
                   label: '공통변경 취소',
@@ -937,9 +947,7 @@ export function ChangeApplicationsPanel({
           ) : (
             <div className="change-group-list">
               {groupedContexts.map((group) => {
-                const groupSelectable = bulkSelectable
-                  ? group.items.filter(canReassignTask).map(({ task }) => task.id)
-                  : []
+                const groupSelectable = groupSelectableIds.get(group.key) ?? []
                 const allSelected = groupSelectable.length > 0 && groupSelectable.every((taskId) => selectedTaskIds.has(taskId))
                 return (
                   <article className="change-group" data-selectable={bulkSelectable || undefined} key={`${viewMode}-${group.key}`}>
@@ -981,7 +989,7 @@ export function ChangeApplicationsPanel({
 
       {composer && <ChangeApplicationComposer data={data} profile={profile} editingApplicationId={composer.editingId} onClose={() => setComposer(null)} onSave={saveComposer} onOpenExisting={(id) => { setComposer(null); setSelectedApplicationId(id) }} />}
       {dialog && <ChangeActionModal dialog={dialog} data={data} onClose={() => setDialog(null)} onConfirm={runDialog} />}
-      {finalizationDialog && <ChangeFinalizationModal mode={finalizationDialog.mode} application={finalizationDialog.application} summary={finalizationDialog.summary} tasks={finalizationDialog.tasks} assignees={data.changeAssigneeOptions.filter((assignee) => data.profiles.find((item) => item.id === assignee.id)?.is_active !== false)} onClose={() => setFinalizationDialog(null)} onFinalize={(note) => finalize(finalizationDialog.application, note)} onUndo={(reason, reopenTasks) => undoFinalization(finalizationDialog.application, reason, reopenTasks)} />}
+      {finalizationDialog && <ChangeFinalizationModal mode={finalizationDialog.mode} application={finalizationDialog.application} summary={finalizationDialog.summary} tasks={finalizationDialog.tasks} assignees={selectAssignableChangeAssignees(data)} onClose={() => setFinalizationDialog(null)} onFinalize={(note) => finalize(finalizationDialog.application, note)} onUndo={(reason, reopenTasks) => undoFinalization(finalizationDialog.application, reason, reopenTasks)} />}
     </div>
   )
 }

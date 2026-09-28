@@ -8,6 +8,7 @@ import {
 import type { ReviewFeedback } from '../../types'
 import { canViewTeamData } from '../../domain/permissions'
 import type { RepositoryDeps, ReviewRepository } from '../repositories/types'
+import { REVIEW_STALE_MESSAGE } from '../remote/reviewOccError'
 import {
   assertActiveLeader,
   assertActiveMember,
@@ -35,6 +36,13 @@ import {
 
 const REVIEW_NOT_FOUND_MESSAGE = '검토요청을 찾지 못했어요. 목록을 새로고침해 주세요.'
 const FEEDBACK_NOT_FOUND_MESSAGE = '피드백을 찾지 못했어요. 목록을 새로고침해 주세요.'
+
+/** 원격 OCC와 같은 규칙: 확인 창을 연 시점의 버전을 받았는데 그 뒤 요청이 바뀌었으면 막는다. */
+function assertReviewUnchanged(currentUpdatedAt: string | undefined, expectedUpdatedAt: string | undefined) {
+  if (expectedUpdatedAt !== undefined && currentUpdatedAt !== expectedUpdatedAt) {
+    throw new UserFacingError(REVIEW_STALE_MESSAGE)
+  }
+}
 
 export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewRepository {
   const { profile, data, setData, activityLogs } = ctx
@@ -103,11 +111,12 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       })
     },
 
-    async rejectReviewRequest(requestId, comment) {
+    async rejectReviewRequest(requestId, comment, expectedUpdatedAt) {
       assertActiveLeader(profile)
       const request = data.reviewRequests.find((item) => item.id === requestId)
       if (!request) throw new UserFacingError(REVIEW_NOT_FOUND_MESSAGE)
       assertCanReject(request.status)
+      assertReviewUnchanged(request.updated_at, expectedUpdatedAt)
       // 반려 사유는 필수다(원격 어댑터와 같은 규칙). 사유는 요청자에게 피드백으로 남는다.
       assertRejectReason(comment)
       const trimmedComment = comment.trim()
@@ -124,11 +133,12 @@ export function createLocalReviewRepository(ctx: RepositoryDeps): ReviewReposito
       })
     },
 
-    async updateReviewStatus(requestId, status) {
+    async updateReviewStatus(requestId, status, expectedUpdatedAt) {
       assertActiveLeader(profile)
       const request = data.reviewRequests.find((item) => item.id === requestId)
       if (!request) throw new UserFacingError(REVIEW_NOT_FOUND_MESSAGE)
       assertReviewStatusTransition(request.status, status)
+      assertReviewUnchanged(request.updated_at, expectedUpdatedAt)
       setData((current) => setReviewStatus(current, requestId, status, profile))
       await recordActivityLog(activityLogs, {
         actor: profile,

@@ -18,6 +18,15 @@ export const SELF_DEACTIVATION_MESSAGE = '내 계정은 비활성화할 수 없�
 
 export const PRODUCT_HAS_CHANGE_HISTORY_MESSAGE = '변경 적용 이력이 있는 제품은 기록을 지키기 위해 삭제할 수 없어요.'
 
+/** 가입한(활성 profile이 연결된) 계정의 목록 행을 지우려 할 때(SQA_ACCOUNT_ACTIVE, 로컬·원격 공통). */
+export const ACCOUNT_ACTIVE_DELETE_MESSAGE = '가입한 계정은 목록에서 지울 수 없어요. 먼저 비활성화해 주세요.'
+
+/** 가입한 계정의 목록 행 이메일을 바꾸려 할 때(SQA_ACCOUNT_EMAIL_LOCKED, 로컬·원격 공통). 로그인 이메일은 이 수정으로 바뀌지 않는다. */
+export const ACCOUNT_EMAIL_LOCKED_MESSAGE = '가입한 계정의 이메일은 바꿀 수 없어요.'
+
+/** 목록 행이 없는 계정을 활성화하려 할 때(SQA_ACCOUNT_LIST_ROW_REQUIRED, 로컬·원격 공통). 그 사이 목록에서 지워진 경우다. */
+export const ACCOUNT_LIST_ROW_REQUIRED_MESSAGE = '목록에서 지운 계정은 다시 활성화할 수 없어요. 목록을 새로고침해 주세요.'
+
 export const MASTER_REASON_MAX_LENGTH = 500
 
 export function normalizeMasterReason(reason: string | null | undefined): string {

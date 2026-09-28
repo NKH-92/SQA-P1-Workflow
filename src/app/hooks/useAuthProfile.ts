@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { User } from '@supabase/supabase-js'
+import { isAuthApiError, isAuthSessionMissingError, type User } from '@supabase/supabase-js'
 import { createPreviewData, previewLeader as demoLeader } from '../../demoData'
 import { emptyData } from '../constants'
 import { toUserMessage } from '../../lib/errors'
@@ -20,6 +20,12 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): 
   ])
 }
 
+/** 세션 자체가 더는 쓸 수 없다는 뜻의 getUser() 오류인지 확인한다(세션 없음, 401/403/404). */
+function isInvalidSessionError(error: unknown) {
+  if (isAuthSessionMissingError(error)) return true
+  return isAuthApiError(error) && [401, 403, 404].includes(error.status)
+}
+
 async function loadProfileForSession(): Promise<{ profile: Profile | null; inactive: boolean; invalidSession: boolean }> {
   if (!supabase) return { profile: null, inactive: false, invalidSession: false }
 
@@ -28,7 +34,12 @@ async function loadProfileForSession(): Promise<{ profile: Profile | null; inact
     error: userError,
   } = await supabase.auth.getUser()
   if (userError || !user) {
-    return { profile: null, inactive: false, invalidSession: true }
+    // 세션이 없거나 서버가 거부한 경우만 로그아웃으로 정리한다. 네트워크·5xx 같은 일시 오류는
+    // 프로필 오류 화면(다시 시도)으로 넘겨 멀쩡한 세션을 버리지 않는다.
+    if (!userError || isInvalidSessionError(userError)) {
+      return { profile: null, inactive: false, invalidSession: true }
+    }
+    throw userError
   }
 
   const { data: profileRow, error } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle()
@@ -94,7 +105,7 @@ export function useAuthProfile(
 
     const timeoutId = window.setTimeout(() => {
       if (cancelled || bootstrapDoneRef.current) return
-      void client.auth.signOut()
+      void client.auth.signOut({ scope: 'local' })
       completeBootstrap(null)
       setInitialLoading(false)
       setMessage({
@@ -109,7 +120,9 @@ export function useAuthProfile(
       if (cancelled) return
 
       const user = session?.user ?? null
-      setSessionUser(user)
+      // 포커스·토큰 갱신마다 새 객체가 와도 같은 사람이면 이전 참조를 유지해 App 전체가 다시 그려지지 않게 한다.
+      // 앱은 sessionUser의 id와 undefined 여부만 쓴다.
+      setSessionUser((prev) => (prev && user && prev.id === user.id ? prev : user))
 
       if (
         event === 'INITIAL_SESSION' ||
@@ -126,7 +139,7 @@ export function useAuthProfile(
         completeBootstrap(sessionData.session?.user ?? null)
       })
       .catch(() => {
-        void client.auth.signOut()
+        void client.auth.signOut({ scope: 'local' })
         completeBootstrap(null)
         setInitialLoading(false)
       })
@@ -168,7 +181,7 @@ export function useAuthProfile(
         if (cancelled || profileLoadGenerationRef.current !== generation) return
 
         if (result.invalidSession) {
-          await supabase.auth.signOut()
+          await supabase.auth.signOut({ scope: 'local' })
           setSessionUser(null)
           setProfile(null)
           setSessionWithoutProfile(false)
@@ -233,7 +246,7 @@ export function useAuthProfile(
   // 로그아웃해도 임시저장한 검토요청은 지우지 않는다(사람별로 따로 저장된다). 다시 로그인하면 이어서 쓸 수 있다.
   // 화면별 검색어·필터(보기 상태)는 같은 탭을 다음 사람이 쓸 수 있으니 지운다.
   const signOut = useCallback(async () => {
-    if (supabase) await supabase.auth.signOut()
+    if (supabase) await supabase.auth.signOut({ scope: 'local' })
     clearViewState()
     // 같은 탭을 다음 사람이 쓸 수 있으니 임시 비밀번호 같은 안내도 남기지 않는다.
     clearAllToastsRef.current()

@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabase'
 import type { RepositoryDeps, TeamRepository } from '../repositories/types'
+import { throwIfPossiblySaved } from './createFailure'
 
 export function createSupabaseTeamRepository(ctx: RepositoryDeps): TeamRepository {
   return {
@@ -9,7 +10,10 @@ export function createSupabaseTeamRepository(ctx: RepositoryDeps): TeamRepositor
         leader_id: ctx.profile.id,
         note: input.note,
       })
-      if (error) throw error
+      if (error) {
+        throwIfPossiblySaved(error)
+        throw error
+      }
     },
   }
 }

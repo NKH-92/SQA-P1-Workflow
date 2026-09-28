@@ -86,7 +86,7 @@ export function resolveProductTaskTransition(
 }
 
 export function reopenProductTaskTransition(
-  input: TaskTransitionInput & { reason: string; wasArchived: boolean },
+  input: TaskTransitionInput & { reason: string },
 ): ChangeTransitionResult {
   const { data, actor, task, application, now, reason } = input
   const previous = {
@@ -95,14 +95,11 @@ export function reopenProductTaskTransition(
     completion_note: task.completion_note,
     resolution_reason: task.resolution_reason,
   }
+  // 보관·최종 완료한 공통변경은 저장소가 먼저 거부하므로 여기서는 보관 상태를 건드리지 않는다.
   const dataAfter: AppData = {
     ...data,
     changeApplications: updateApplication(data, application.id, (item) => ({
       ...item,
-      archived_at: null,
-      archived_by: null,
-      archive_origin: null,
-      archive_reason: null,
       updated_at: now,
     })),
     productChangeTasks: updateTask(data, task.id, (item) => ({
@@ -131,16 +128,6 @@ export function reopenProductTaskTransition(
     summary: `${actor.name}님이 ${task.product_name} 적용 업무를 다시 열었어요.`,
     metadata: { ...previous, reason },
   }]
-  if (input.wasArchived) {
-    logFacts.push({
-      actor,
-      entityType: 'change_application',
-      entityId: application.id,
-      action: 'archive_restored_automatically',
-      summary: `${actor.name}님이 적용 업무를 다시 열어 ${application.change_number} 공통변경 보관을 자동으로 풀었어요.`,
-      metadata: { task_id: task.id, reason },
-    })
-  }
   return { data: dataAfter, logFacts }
 }
 
@@ -274,70 +261,6 @@ export function cancelChangeApplicationTransition(input: {
       action: 'cancelled',
       summary: `${input.actor.name}님이 ${input.application.change_number} 공통변경을 취소했어요.`,
       metadata: { reason: input.reason },
-    }],
-  }
-}
-
-export function archiveChangeApplicationTransition(input: {
-  data: AppData
-  actor: Profile
-  application: ChangeApplication
-  reason: string
-  now: string
-}): ChangeTransitionResult {
-  return {
-    data: {
-      ...input.data,
-      changeApplications: updateApplication(input.data, input.application.id, (item) => ({
-        ...item,
-        archived_at: input.now,
-        archived_by: input.actor.id,
-        archive_origin: 'manual',
-        archive_reason: input.reason,
-        updated_at: input.now,
-      })),
-    },
-    logFacts: [{
-      actor: input.actor,
-      entityType: 'change_application',
-      entityId: input.application.id,
-      action: 'archived',
-      summary: `${input.actor.name}님이 ${input.application.change_number} 공통변경을 보관했어요.`,
-      metadata: { reason: input.reason },
-    }],
-  }
-}
-
-export function restoreChangeApplicationTransition(input: {
-  data: AppData
-  actor: Profile
-  application: ChangeApplication
-  reason: string
-  now: string
-}): ChangeTransitionResult {
-  return {
-    data: {
-      ...input.data,
-      changeApplications: updateApplication(input.data, input.application.id, (item) => ({
-        ...item,
-        archived_at: null,
-        archived_by: null,
-        archive_origin: null,
-        archive_reason: null,
-        updated_at: input.now,
-      })),
-    },
-    logFacts: [{
-      actor: input.actor,
-      entityType: 'change_application',
-      entityId: input.application.id,
-      action: 'restored',
-      summary: `${input.actor.name}님이 ${input.application.change_number} 공통변경을 보관함에서 복원했어요.`,
-      metadata: {
-        reason: input.reason,
-        previous_archive_reason: input.application.archive_reason ?? null,
-        previous_archived_at: input.application.archived_at,
-      },
     }],
   }
 }

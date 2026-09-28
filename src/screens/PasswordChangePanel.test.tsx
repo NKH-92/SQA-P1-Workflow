@@ -93,6 +93,42 @@ describe('PasswordChangePanel', () => {
     expect(window.sessionStorage.getItem(PASSWORD_CHANGED_FLAG_KEY)).toBeNull()
   })
 
+  it.each(['authentication_required', 'password_change_not_prepared'])(
+    'suggests the new password first when a retry fails with %s (the change may have already gone through)',
+    async (code) => {
+      const user = userEvent.setup()
+      functions.invoke.mockResolvedValue({
+        data: null,
+        error: { name: 'FunctionsHttpError', context: new Response(JSON.stringify({ error: code })) },
+      })
+      const onSignOut = vi.fn()
+      render(<PasswordChangePanel onComplete={vi.fn()} onSignOut={onSignOut} profile={profile} />)
+
+      await user.type(screen.getByLabelText('새 비밀번호'), 'new-password-1')
+      await user.type(screen.getByLabelText('새 비밀번호 확인'), 'new-password-1')
+      await user.click(screen.getByRole('button', { name: '비밀번호 변경' }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        '비밀번호가 이미 바뀌었을 수 있어요. 로그아웃한 뒤 방금 만든 새 비밀번호로 먼저 로그인해 보고, 안 되면 임시 비밀번호로 로그인해 주세요.',
+      )
+      expect(onSignOut).not.toHaveBeenCalled()
+    },
+  )
+
+  it('points to the new password when the server response never arrives', async () => {
+    const user = userEvent.setup()
+    functions.invoke.mockResolvedValue({ data: null, error: { name: 'FunctionsFetchError' } })
+    render(<PasswordChangePanel onComplete={vi.fn()} onSignOut={vi.fn()} profile={profile} />)
+
+    await user.type(screen.getByLabelText('새 비밀번호'), 'new-password-1')
+    await user.type(screen.getByLabelText('새 비밀번호 확인'), 'new-password-1')
+    await user.click(screen.getByRole('button', { name: '비밀번호 변경' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '서버에 연결하지 못했어요. 네트워크를 확인하고 다시 시도해 주세요. 다시 시도해도 안 되면 로그아웃한 뒤 새 비밀번호로 로그인해 보세요.',
+    )
+  })
+
   it('checks length, match and temporary-password reuse before calling the server', async () => {
     const user = userEvent.setup()
     render(<PasswordChangePanel onComplete={vi.fn()} onSignOut={vi.fn()} profile={profile} />)

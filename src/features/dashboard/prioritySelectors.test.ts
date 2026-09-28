@@ -244,3 +244,87 @@ describe('selectProjectReminderItems', () => {
     expect(items[1].assigneeNames).toEqual([])
   })
 })
+
+describe('selectLeaderPriorityQueue final review items', () => {
+  function finalReviewData(assignee: Profile): AppData {
+    const data = emptyData()
+    const timestamps = { created_at: '2026-06-01T00:00:00.000Z', updated_at: '2026-06-01T00:00:00.000Z' }
+    data.profiles = [assignee]
+    data.changeAssigneeOptions = [{ id: assignee.id, name: assignee.name, role: assignee.role }]
+    data.changeApplications = [{
+      id: 'cc1',
+      change_number: 'CC-2026-014',
+      source: 'official',
+      title: '원료 제조원 변경',
+      summary: '',
+      source_url: null,
+      effective_date: null,
+      status: 'published',
+      created_by: 'leader-1',
+      published_at: '2026-06-01T00:00:00.000Z',
+      cancelled_at: null,
+      cancellation_reason: null,
+      ...timestamps,
+    }]
+    data.changeActionItems = [{
+      id: 'a1',
+      change_application_id: 'cc1',
+      kind: 'product_standard',
+      custom_kind_name: null,
+      content: '',
+      due_date: '2026-08-30',
+      sort_order: 1,
+      ...timestamps,
+    }]
+    data.productChangeTasks = [{
+      id: 't1',
+      action_item_id: 'a1',
+      product_id: 'p1',
+      product_name: '자사제품 A',
+      assignee_id: assignee.id,
+      assignee_name: assignee.name,
+      status: 'completed',
+      product_note: null,
+      completion_note: '반영',
+      resolution_reason: null,
+      proxy_reason: null,
+      completed_by: assignee.id,
+      completed_by_name: assignee.name,
+      completed_at: '2026-06-02T00:00:00.000Z',
+      reopened_by: null,
+      reopened_by_name: null,
+      reopened_at: null,
+      reopen_reason: null,
+      ...timestamps,
+    }]
+    data.changeApplicationSummaries = [{
+      change_application_id: 'cc1',
+      workflow_status: 'final_review_ready',
+      total_count: 1,
+      pending_count: 0,
+      completed_count: 1,
+      not_applicable_count: 0,
+      scope_removed_count: 0,
+      unresolved_cancelled_count: 0,
+      unassigned_count: 0,
+      processed_count: 1,
+      percent: 100,
+      can_finalize: true,
+    }]
+    return data
+  }
+
+  it('asks for final confirmation once every product is processed', () => {
+    const queue = selectLeaderPriorityQueue(finalReviewData(member('m1', '파트원1')), [], now)
+
+    expect(queue.filter((item) => item.category === 'final')).toEqual([
+      expect.objectContaining({ id: 'final-cc1', meta: 'CC-2026-014 · 모든 제품 처리를 마쳤어요', entityId: 'cc1' }),
+    ])
+  })
+
+  it('does not trust the cached summary when the assignee became inactive', () => {
+    const queue = selectLeaderPriorityQueue(finalReviewData({ ...member('m1', '파트원1'), is_active: false }), [], now)
+
+    expect(queue.some((item) => item.category === 'final')).toBe(false)
+  })
+})

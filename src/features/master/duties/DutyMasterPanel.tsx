@@ -15,6 +15,7 @@ import {
   validateMajorCategoryCreate,
   validateMajorCategoryUpdate,
 } from '../master.validators'
+import { isMasterStaleError } from '../shared/masterStale'
 import type { MasterSubPanelProps } from '../shared/types'
 import { DutyAssignModal } from './DutyAssignModal'
 import { DutyReassignModal, type DutyReassignResult } from './DutyReassignModal'
@@ -36,7 +37,8 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
   const [dutyRegisterOpen, setDutyRegisterOpen] = useState(false)
   const [dutyAssignOpen, setDutyAssignOpen] = useState(false)
   const [majorCategoryRegisterOpen, setMajorCategoryRegisterOpen] = useState(false)
-  const [reassignDutyId, setReassignDutyId] = useState<string | null>(null)
+  // 담당자 변경 창을 연 시점의 업무 버전. 저장할 때 이 값으로 동시 변경을 막는다(제품 담당자 창과 같은 방식).
+  const [reassignTarget, setReassignTarget] = useState<{ dutyId: string; expectedUpdatedAt: string | null } | null>(null)
   const [saving, setSaving] = useState(false)
   // 이름·대분류 수정은 저장 전에 변경 사유(감사 이력)를 받는다.
   const [dutyReasonPrompt, setDutyReasonPrompt] = useState<{ kind: 'duty' | 'category'; id: string } | null>(null)
@@ -46,7 +48,7 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
   const query = adminSearch.trim()
   const { unassignedDuties } = selectProductGroups(data, query)
   const dutyTableGroups = selectDutyTableGroups(data, query)
-  const reassignDuty = reassignDutyId ? data.duties.find((duty) => duty.id === reassignDutyId) ?? null : null
+  const reassignDuty = reassignTarget ? data.duties.find((duty) => duty.id === reassignTarget.dutyId) ?? null : null
 
   useEffect(() => {
     setPendingDelete(null)
@@ -139,26 +141,58 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
   }
 
   /** P0-3: 업무 담당자를 빼거나 다른 사람에게 옮긴다. 사유와 함께 담당자 목록을 통째로 저장한다. */
+  const openDutyReassign = (dutyId: string) => {
+    const duty = data.duties.find((item) => item.id === dutyId)
+    setReassignTarget({ dutyId, expectedUpdatedAt: duty?.updated_at ?? null })
+  }
+
   const saveDutyReassignment = async (result: DutyReassignResult) => {
-    if (!reassignDuty) return
+    if (!reassignDuty || !reassignTarget) return
     const duty = reassignDuty
+    const { expectedUpdatedAt } = reassignTarget
     let noop = false
     const ok = await run(() => mutate(async () => {
-      const saved = await controller.saveAssignments({
-        dutyId: duty.id,
-        nextMemberIds: result.nextMemberIds,
-        reason: result.reason,
-        duty,
-        memberOptions: memberOptions.map((member) => ({ id: member.id, name: member.name, email: member.email })),
-        expectedUpdatedAt: duty.updated_at ?? null,
-      })
+      let saved: Awaited<ReturnType<typeof controller.saveAssignments>>
+      try {
+        saved = await controller.saveAssignments({
+          dutyId: duty.id,
+          nextMemberIds: result.nextMemberIds,
+          reason: result.reason,
+          duty,
+          memberOptions: memberOptions.map((member) => ({ id: member.id, name: member.name, email: member.email })),
+          expectedUpdatedAt,
+        })
+      } catch (error) {
+        // 창을 연 시점의 버전으로는 다시 저장해도 같은 충돌이 나므로 창을 닫아, 다시 열 때 최신 상태를 받게 한다.
+        if (isMasterStaleError(error)) setReassignTarget(null)
+        throw error
+      }
       noop = saved.noop
     }, () => noop
       ? '바뀐 내용이 없어요.'
       : result.nextMemberIds.length === 0
         ? `${quoted(duty.name)} 업무의 담당자를 모두 뺐어요.`
         : `${quoted(duty.name)} 업무의 담당자를 바꿨어요.`))
-    if (ok) setReassignDutyId(null)
+    if (ok) setReassignTarget(null)
+  }
+
+  const closeDutyEdit = (dutyId: string) =>
+    setDutyEdits((current) => {
+      const next = { ...current }
+      delete next[dutyId]
+      return next
+    })
+
+  const closeMajorCategoryEdit = (majorCategoryId: string) =>
+    setMajorCategoryEdits((current) => {
+      const next = { ...current }
+      delete next[majorCategoryId]
+      return next
+    })
+
+  const closeDutyReasonPrompt = () => {
+    setDutyReasonPrompt(null)
+    setDutyReason('')
   }
 
   const saveDutyEdit = (dutyId: string, reason: string) => {
@@ -174,21 +208,27 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
         name: edit.name,
       })
       savedName = payload.name
-      const result = await controller.update(dutyId, {
-        name: payload.name,
-        major_category_id: payload.majorCategoryId,
-        sort_order: duty.sort_order ?? null,
-        assignee_label: duty.assignee_label ?? null,
-        notes: duty.notes ?? null,
-        expectedUpdatedAt: edit.expectedUpdatedAt,
-        reason,
-      })
+      let result: Awaited<ReturnType<typeof controller.update>>
+      try {
+        result = await controller.update(dutyId, {
+          name: payload.name,
+          major_category_id: payload.majorCategoryId,
+          sort_order: duty.sort_order ?? null,
+          assignee_label: duty.assignee_label ?? null,
+          notes: duty.notes ?? null,
+          expectedUpdatedAt: edit.expectedUpdatedAt,
+          reason,
+        })
+      } catch (error) {
+        // 수정을 연 시점의 버전으로는 다시 저장해도 같은 충돌이 난다. 편집을 닫아 다시 열 때 최신 버전을 받게 한다.
+        if (isMasterStaleError(error)) {
+          closeDutyEdit(dutyId)
+          closeDutyReasonPrompt()
+        }
+        throw error
+      }
       noop = result.noop
-      setDutyEdits((current) => {
-        const next = { ...current }
-        delete next[dutyId]
-        return next
-      })
+      closeDutyEdit(dutyId)
     }, () => noop ? '바뀐 내용이 없어요.' : `${quoted(savedName)} 업무를 수정했어요.`)
   }
 
@@ -202,18 +242,23 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
       if (!category) return
       const name = validateMajorCategoryUpdate(data, majorCategoryId, edit.name)
       savedName = name
-      const result = await controller.updateCategory(majorCategoryId, {
-        name,
-        sort_order: category.sort_order ?? null,
-        expectedUpdatedAt: edit.expectedUpdatedAt,
-        reason,
-      })
+      let result: Awaited<ReturnType<typeof controller.updateCategory>>
+      try {
+        result = await controller.updateCategory(majorCategoryId, {
+          name,
+          sort_order: category.sort_order ?? null,
+          expectedUpdatedAt: edit.expectedUpdatedAt,
+          reason,
+        })
+      } catch (error) {
+        if (isMasterStaleError(error)) {
+          closeMajorCategoryEdit(majorCategoryId)
+          closeDutyReasonPrompt()
+        }
+        throw error
+      }
       noop = result.noop
-      setMajorCategoryEdits((current) => {
-        const next = { ...current }
-        delete next[majorCategoryId]
-        return next
-      })
+      closeMajorCategoryEdit(majorCategoryId)
     }, () => noop ? '바뀐 내용이 없어요.' : `${quoted(savedName)} 대분류를 수정했어요.`)
   }
 
@@ -222,10 +267,7 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
     const ok = await run(() => dutyReasonPrompt.kind === 'duty'
       ? saveDutyEdit(dutyReasonPrompt.id, dutyReason)
       : saveMajorCategoryEdit(dutyReasonPrompt.id, dutyReason))
-    if (ok) {
-      setDutyReasonPrompt(null)
-      setDutyReason('')
-    }
+    if (ok) closeDutyReasonPrompt()
   }
 
   const deleteDuty = (dutyId: string, input: AuditedDeleteInput) => {
@@ -305,7 +347,7 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
         onSaveMajorCategory={(majorCategoryId) => setDutyReasonPrompt({ kind: 'category', id: majorCategoryId })}
         onDeleteDuty={deleteDuty}
         onDeleteMajorCategory={deleteMajorCategory}
-        onReassignDuty={canManage ? setReassignDutyId : undefined}
+        onReassignDuty={canManage ? openDutyReassign : undefined}
         onRegisterCategory={canManage ? () => setMajorCategoryRegisterOpen(true) : undefined}
         onRegisterDuty={canManage ? openDutyRegister : undefined}
         searchActive={Boolean(query)}
@@ -346,17 +388,14 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
           duty={reassignDuty}
           data={data}
           memberOptions={memberOptions}
-          onClose={() => setReassignDutyId(null)}
+          onClose={() => setReassignTarget(null)}
           onSubmit={(result) => void saveDutyReassignment(result)}
           submitting={saving}
         />
       )}
       <ReasonPromptModal
         open={dutyReasonPrompt !== null}
-        onClose={() => {
-          setDutyReasonPrompt(null)
-          setDutyReason('')
-        }}
+        onClose={closeDutyReasonPrompt}
         title={dutyReasonPrompt?.kind === 'category' ? '대분류 이름을 바꿀까요?' : '업무 정보를 바꿀까요?'}
         description="변경 사유는 감사 이력에 남아요. 다른 파트장도 볼 수 있어요."
         reason={dutyReason}

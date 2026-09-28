@@ -160,4 +160,63 @@ describe('ProductCard', () => {
     await user.click(screen.getByRole('button', { name: '닫기' }))
     expect(setProductEdits).toHaveBeenCalled()
   })
+
+  it('uses the assignments the panel grouped for this product', () => {
+    const source = createPreviewData()
+    const assignment = source.productAssignments[0]!
+    const product = source.products.find((item) => item.id === assignment.product_id)!
+
+    render(
+      <ProductCard
+        product={product}
+        data={source}
+        assignments={[]}
+        productEdits={{}}
+        setProductEdits={vi.fn()}
+        onSave={vi.fn()}
+        pendingDelete={null}
+        setPendingDelete={vi.fn()}
+        onDelete={vi.fn()}
+        onAssign={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('담당자 없음')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: `${product.name} 담당자 배정` })).toBeInTheDocument()
+  })
+
+  it('applies each edit on top of the latest edit state for this product only', async () => {
+    const user = userEvent.setup()
+    const source = createPreviewData()
+    const product = { ...source.products[0]!, category: '자사', company_name: '자사' }
+    const other = source.products[1]!
+    const setProductEdits = vi.fn()
+    const edit = { name: product.name, category: '자사', companyName: '자사', unassignedReason: '', expectedUpdatedAt: 'v1' }
+    const otherEdit = { name: other.name, category: '위탁', companyName: '위탁사 A', unassignedReason: '', expectedUpdatedAt: 'v9' }
+
+    render(
+      <ProductCard
+        product={product}
+        data={{ ...source, products: [product] }}
+        productEdits={{ [product.id]: edit }}
+        setProductEdits={setProductEdits}
+        onSave={vi.fn()}
+        pendingDelete={null}
+        setPendingDelete={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    )
+
+    await user.selectOptions(screen.getByLabelText('구분'), '위탁')
+    const updater = setProductEdits.mock.calls[setProductEdits.mock.calls.length - 1]![0] as (current: Record<string, typeof edit>) => Record<string, typeof edit>
+    // 앞선 입력이 이미 반영된 최신 상태 위에 구분만 바꾼다.
+    const latest = { [product.id]: { ...edit, name: '먼저 고친 이름' }, [other.id]: otherEdit }
+    expect(updater(latest)).toEqual({
+      [product.id]: { ...edit, name: '먼저 고친 이름', category: '위탁', companyName: '' },
+      [other.id]: otherEdit,
+    })
+    // 그 사이에 편집이 닫혔다면 되살리지 않는다.
+    const closed = { [other.id]: otherEdit }
+    expect(updater(closed)).toBe(closed)
+  })
 })

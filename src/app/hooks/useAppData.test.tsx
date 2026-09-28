@@ -204,6 +204,108 @@ describe('useAppData session reset', () => {
     expect(result.current.lastSyncedAt).toBeNull()
   })
 
+  it('lets a superseded refresh settle only after the newest refresh has applied its data', async () => {
+    let resolveFirst!: (value: typeof emptyResult) => void
+    let resolveSecond!: (value: typeof emptyResult) => void
+    fetchAppDataMock
+      .mockImplementationOnce(() => new Promise<typeof emptyResult>((resolve) => { resolveFirst = resolve }))
+      .mockImplementationOnce(() => new Promise<typeof emptyResult>((resolve) => { resolveSecond = resolve }))
+    const { result } = renderHook(() => useAppData())
+
+    let firstSettled = false
+    let first!: Promise<void>
+    let second!: Promise<void>
+    act(() => {
+      first = result.current.refreshData().then(() => { firstSettled = true })
+      second = result.current.refreshData({ silent: true })
+    })
+
+    await act(async () => {
+      resolveFirst({ ...emptyResult, profiles: [{ id: 'stale', email: 'stale@example.com', name: 'Stale', role: 'member' }] })
+      await Promise.resolve()
+    })
+    // 추월당한 첫 refresh는 최신 refresh가 끝나기 전에 끝나지 않는다.
+    expect(firstSettled).toBe(false)
+    expect(result.current.data.profiles).toEqual([])
+
+    const latestProfiles = [{ id: 'fresh', email: 'fresh@example.com', name: 'Fresh', role: 'member' as const }]
+    await act(async () => {
+      resolveSecond({ ...emptyResult, profiles: latestProfiles })
+      await second
+      await first
+    })
+
+    expect(firstSettled).toBe(true)
+    expect(result.current.data.profiles).toEqual(latestProfiles)
+    expect(result.current.refreshing).toBe(false)
+  })
+
+  it('surfaces the newest refresh failure to a superseded caller', async () => {
+    let resolveFirst!: (value: typeof emptyResult) => void
+    fetchAppDataMock
+      .mockImplementationOnce(() => new Promise<typeof emptyResult>((resolve) => { resolveFirst = resolve }))
+      .mockRejectedValueOnce(new Error('failed to fetch'))
+    const { result } = renderHook(() => useAppData())
+
+    let first!: Promise<void>
+    let second!: Promise<void>
+    act(() => {
+      first = result.current.refreshData()
+      second = result.current.refreshData({ silent: true })
+    })
+    await act(async () => { await second.catch(() => {}) })
+
+    let caught: unknown
+    await act(async () => {
+      resolveFirst(emptyResult)
+      try {
+        await first
+      } catch (error) {
+        caught = error
+      }
+    })
+
+    expect((caught as Error).message).toBe('failed to fetch')
+    expect(result.current.syncHealth.consecutiveFailures).toBe(1)
+    expect(result.current.lastSyncedAt).toBeNull()
+  })
+
+  it('keeps office fields that were partially updated while a full refresh was in flight', async () => {
+    let resolveFetch!: (value: typeof emptyResult) => void
+    fetchAppDataMock.mockImplementationOnce(
+      () => new Promise<typeof emptyResult>((resolve) => { resolveFetch = resolve }),
+    )
+    const { result } = renderHook(() => useAppData())
+
+    let pending!: Promise<void>
+    act(() => { pending = result.current.refreshData({ silent: true }) })
+    const liveMarks: NonNullable<AppData['sectionReadMarks']> = [
+      { user_id: 'member-1', section: 'announcements', seen_keys: ['a-2'], seen_at: '2026-09-28T01:00:00.000Z' },
+    ]
+    act(() => result.current.setData((current) => ({ ...current, sectionReadMarks: liveMarks })))
+
+    const staleMarks: NonNullable<AppData['sectionReadMarks']> = [
+      { user_id: 'member-1', section: 'announcements', seen_keys: ['a-1'], seen_at: '2026-09-27T01:00:00.000Z' },
+    ]
+    const snapshotPresence: NonNullable<AppData['memberPresence']> = { statuses: [], leaves: [] }
+    await act(async () => {
+      resolveFetch({
+        ...emptyResult,
+        profiles: [{ id: 'fresh', email: 'fresh@example.com', name: 'Fresh', role: 'member' }],
+        sectionReadMarks: staleMarks,
+        memberPresence: snapshotPresence,
+        officeMeeting: null,
+      })
+      await pending
+    })
+
+    // 부분 갱신된 읽음 기록은 유지하고, 부분 갱신이 없던 필드와 나머지는 스냅샷으로 바꾼다.
+    expect(result.current.data.sectionReadMarks).toBe(liveMarks)
+    expect(result.current.data.memberPresence).toBe(snapshotPresence)
+    expect(result.current.data.officeMeeting).toBeNull()
+    expect(result.current.data.profiles.map((profile) => profile.id)).toEqual(['fresh'])
+  })
+
   it('loads an old deep-linked review without expanding the regular history query', async () => {
     const oldReview = {
       id: 'old-review',

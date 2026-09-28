@@ -31,8 +31,14 @@ export function OfficeMeetingBanner({
   const startsAt = meeting ? Date.parse(meeting.starts_at) : NaN
   // 예약한 회의가 시작하면 ‘예정’이 ‘회의 중’으로 바뀌도록 그때 한 번 다시 그린다.
   useEffect(() => {
-    if (!Number.isFinite(startsAt) || startsAt <= Date.now()) return
-    const timer = window.setTimeout(() => setNow(Date.now()), Math.min(startsAt - Date.now() + 50, 2_147_000_000))
+    if (!Number.isFinite(startsAt)) return
+    const remaining = startsAt - Date.now()
+    // 시작 시각이 지난 뒤에 받은 회의(절전·잠금 중 예약된 회의 등)는 기다리지 않고 바로 맞춘다.
+    if (remaining <= 0) {
+      setNow(Date.now())
+      return
+    }
+    const timer = window.setTimeout(() => setNow(Date.now()), Math.min(remaining + 50, 2_147_000_000))
     return () => window.clearTimeout(timer)
   }, [startsAt])
 

@@ -83,6 +83,30 @@ describe('migration scripts', () => {
     expect(script).toContain('--data-only')
   })
 
+  it('backup-db.ps1 fails closed on native exit codes, stale files, and empty dump contents', () => {
+    const script = readScript('backup-db.ps1').replace(/\r\n/g, '\n')
+    const schemaDump = script.indexOf('supabase db dump --db-url $DatabaseUrl -f $schemaFile')
+    const dataDump = script.indexOf('supabase db dump --db-url $DatabaseUrl --data-only -f $dataFile')
+    const schemaCheck = 'if ($LASTEXITCODE -ne 0) {\n  throw "supabase db dump failed (exit $LASTEXITCODE): $schemaFile"'
+    const dataCheck = 'if ($LASTEXITCODE -ne 0) {\n  throw "supabase db dump failed (exit $LASTEXITCODE): $dataFile"'
+    const removeStale = script.indexOf('Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue')
+    const ok = script.indexOf('Write-Host "Backup OK:"')
+
+    expect(removeStale).toBeGreaterThan(-1)
+    expect(removeStale).toBeLessThan(schemaDump)
+    // exit code는 각 네이티브 호출 바로 다음 줄에서 검사해야 한다.
+    expect(script.slice(schemaDump).split('\n')[1] + '\n' + script.slice(schemaDump).split('\n')[2])
+      .toBe(schemaCheck)
+    expect(script.slice(dataDump).split('\n')[1] + '\n' + script.slice(dataDump).split('\n')[2])
+      .toBe(dataCheck)
+    expect(script.indexOf("-Pattern 'CREATE TABLE' -SimpleMatch -Quiet")).toBeGreaterThan(dataDump)
+    expect(script.indexOf("-Pattern '^\\s*(COPY|INSERT)\\b' -Quiet")).toBeGreaterThan(dataDump)
+    expect(script.indexOf("-Pattern 'CREATE TABLE' -SimpleMatch -Quiet")).toBeLessThan(ok)
+    expect(script.indexOf("-Pattern '^\\s*(COPY|INSERT)\\b' -Quiet")).toBeLessThan(ok)
+    // Windows PowerShell 5.1은 BOM 없는 UTF-8을 ANSI로 읽으므로 ASCII만 쓴다.
+    expect([...script].every((character) => character.charCodeAt(0) < 0x80)).toBe(true)
+  })
+
   it('generate-p1-product-seed.mjs reads CSV/JSON inputs instead of src/data', () => {
     const script = readScript('generate-p1-product-seed.mjs')
     expect(script).toContain('readCsvRows')

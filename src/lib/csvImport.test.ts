@@ -1,6 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import { parseCsvRows, parseInviteImportRows, parseProductImportRows } from './csvImport'
+import { parseCsvRows, parseInviteImportRows, parseProductImportRows, readCsvFileText } from './csvImport'
 import { UserFacingError } from './errors'
+
+describe('readCsvFileText', () => {
+  it('reads UTF-8 files (with or without BOM) as UTF-8', async () => {
+    const withBom = new TextEncoder().encode('﻿제품명\n모델A')
+    const withoutBom = new TextEncoder().encode('제품명\n모델A')
+    expect(parseCsvRows(await readCsvFileText(new Blob([withBom])))).toEqual([['제품명'], ['모델A']])
+    expect(parseCsvRows(await readCsvFileText(new Blob([withoutBom])))).toEqual([['제품명'], ['모델A']])
+  })
+
+  it('falls back to EUC-KR for Korean Excel "CSV (comma delimited)" files', async () => {
+    // "제품명\n모델A" in CP949
+    const cp949 = Uint8Array.from([0xc1, 0xa6, 0xc7, 0xb0, 0xb8, 0xed, 0x0a, 0xb8, 0xf0, 0xb5, 0xa8, 0x41])
+    const text = await readCsvFileText(new Blob([cp949]))
+    expect(text).toBe('제품명\n모델A')
+    expect(parseCsvRows(text)).toEqual([['제품명'], ['모델A']])
+  })
+})
 
 describe('csvImport', () => {
   it('parses quoted csv rows', () => {

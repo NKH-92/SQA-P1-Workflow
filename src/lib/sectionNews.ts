@@ -2,6 +2,9 @@ import type { AppData, Profile, ReadMarkSection, SectionReadMark } from '../type
 import { selectLeaderChangeActions, selectMemberPendingTasks } from '../domain/changeApplications/attention'
 import { canManageTeamData, canViewTeamData } from '../domain/permissions'
 
+/** public.mark_section_seen이 받는 id 개수 상한(section_read_marks_keys_check와 같다). 판정 대상도 이 개수로 맞춘다. */
+export const READ_MARK_KEY_LIMIT = 500
+
 /**
  * 화면별 ‘새 소식’ 판정(홈 사무실 기물 알림).
  * 지금 보이는 항목 id를 마지막으로 그 화면을 열 때 기록한 id(section_read_marks)와 비교한다.
@@ -53,8 +56,31 @@ function latest(...values: Array<string | null | undefined>): string | null {
   return best
 }
 
+/**
+ * 판정 대상을 서버가 기록할 수 있는 개수(READ_MARK_KEY_LIMIT)로 맞춘다. 넘치면 최근 것부터(같은 때면 key 순) 남긴다.
+ * 기록 대상과 판정 대상이 같아야 화면을 열었을 때 새 소식 알림이 꺼진다. 상한 안이면 그대로 둔다.
+ */
+function capSectionItems(items: SectionNewsItem[]): SectionNewsItem[] {
+  if (items.length <= READ_MARK_KEY_LIMIT) return items
+  const timeOrOldest = (item: SectionNewsItem) => {
+    const time = timeOf(item.at)
+    return Number.isNaN(time) ? Number.NEGATIVE_INFINITY : time
+  }
+  return [...items]
+    .sort((left, right) => {
+      const byTime = timeOrOldest(right) - timeOrOldest(left)
+      if (byTime !== 0 && !Number.isNaN(byTime)) return byTime
+      return left.key < right.key ? -1 : left.key > right.key ? 1 : 0
+    })
+    .slice(0, READ_MARK_KEY_LIMIT)
+}
+
 /** 이 사람이 이 화면에서 ‘새 소식’으로 받을 수 있는 항목. */
 export function sectionNewsItems(profile: Profile, data: SectionNewsData, section: ReadMarkSection): SectionNewsItem[] {
+  return capSectionItems(allSectionNewsItems(profile, data, section))
+}
+
+function allSectionNewsItems(profile: Profile, data: SectionNewsData, section: ReadMarkSection): SectionNewsItem[] {
   if (!receivesSectionNews(profile)) return []
   const leader = canManageTeamData(profile)
   switch (section) {

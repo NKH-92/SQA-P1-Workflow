@@ -28,11 +28,21 @@ import type { RepositoryDeps, RepositorySet } from './types'
 
 export type RepositoryMode = 'local' | 'remote'
 
+// local 저장소는 미리보기(VITE_APP_MODE=preview)·개발 서버·vitest에서만 쓴다.
+// Vite가 import.meta.env를 빌드 때 상수로 바꾸므로 운영·CI 빌드에서는 이 분기가 false로 접혀
+// src/data/local/* 전체가 번들에서 빠진다. 운영 빌드에서 설정이 없으면 이미 설정 오류 화면이 떠서 local 경로에 닿지 않는다.
+export const LOCAL_REPOSITORIES_ENABLED = import.meta.env.DEV || import.meta.env.VITE_APP_MODE === 'preview'
+
+function localRepositoriesUnavailable(): never {
+  throw new Error('local repositories are unavailable in this build')
+}
+
 export function createRepositorySet(
   mode: RepositoryMode,
   deps: Omit<RepositoryDeps, 'activityLogs'>,
 ): RepositorySet {
-  const activityLogs = mode === 'remote'
+  if (mode !== 'remote' && !LOCAL_REPOSITORIES_ENABLED) localRepositoriesUnavailable()
+  const activityLogs = mode === 'remote' || !LOCAL_REPOSITORIES_ENABLED
     ? createSupabaseActivityLogWriter()
     : createLocalActivityLogWriter(deps.setData)
   const repositoryDeps: RepositoryDeps = {
@@ -41,7 +51,7 @@ export function createRepositorySet(
     setData(update) { deps.setData(update) },
     activityLogs,
   }
-  return mode === 'remote'
+  return mode === 'remote' || !LOCAL_REPOSITORIES_ENABLED
     ? {
         get reviews() { return createSupabaseReviewRepository(repositoryDeps) },
         get projects() { return createSupabaseProjectRepository(repositoryDeps) },

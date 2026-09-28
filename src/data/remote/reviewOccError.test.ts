@@ -25,6 +25,30 @@ describe('translateReviewOccError', () => {
     expect(translateReviewOccError({ message: 'review not found' }).message).toBe(REVIEW_NOT_FOUND_MESSAGE)
   })
 
+  // 최신 정의(20260718054124_harden_review_workflow 등)가 올리는 상태 전이 오류의 실제 모양
+  it.each([
+    ['review is not editable', 'SQA_REVIEW_NOT_EDITABLE', '이미 처리한 요청이라 수정할 수 없어요. 목록을 새로고침해 주세요.'],
+    ['only pending reviews can be withdrawn', 'SQA_REVIEW_NOT_WITHDRAWABLE', '이미 처리한 요청이라 회수할 수 없어요. 목록을 새로고침해 주세요.'],
+    ['only rejected reviews can be resubmitted', 'SQA_REVIEW_NOT_RESUBMITTABLE', '이미 처리한 검토요청이에요. 목록을 새로고침해 주세요.'],
+    ['review cannot be reopened', 'SQA_REVIEW_NOT_REOPENABLE', '이미 처리한 검토요청이에요. 목록을 새로고침해 주세요.'],
+    ['review is not pending', 'SQA_REVIEW_NOT_PENDING', '이미 처리한 검토요청이에요. 목록을 새로고침해 주세요.'],
+    ['review changed since it was opened', 'SQA_REVIEW_CONFLICT', REVIEW_STALE_MESSAGE],
+    ['review not found', 'SQA_REVIEW_NOT_FOUND', REVIEW_NOT_FOUND_MESSAGE],
+    ['feedback changed since it was opened', 'SQA_FEEDBACK_CONFLICT', REVIEW_STALE_MESSAGE],
+    ['feedback not found', 'SQA_FEEDBACK_NOT_FOUND', '피드백을 찾지 못했어요. 목록을 새로고침해 주세요.'],
+    ['voided feedback cannot be edited', 'SQA_FEEDBACK_VOIDED', '이미 무효화한 피드백이에요.'],
+    ['feedback already voided', 'SQA_FEEDBACK_VOIDED', '이미 무효화한 피드백이에요.'],
+  ])('maps the server state error "%s" (%s) to a refresh guidance', (message, details, expected) => {
+    const translated = translateReviewOccError({ code: 'P0001', details, hint: null, message })
+    expect(translated).toBeInstanceOf(UserFacingError)
+    expect(translated.message).toBe(expected)
+  })
+
+  it('maps a state code even when only the details marker is stable', () => {
+    const translated = translateReviewOccError({ message: 'request rejected', details: 'SQA_REVIEW_NOT_WITHDRAWABLE' })
+    expect(translated.message).toBe('이미 처리한 요청이라 회수할 수 없어요. 목록을 새로고침해 주세요.')
+  })
+
   it('leaves unrelated errors untouched', () => {
     const original = { message: 'active leader required' }
     expect(translateReviewOccError(original)).toBe(original)

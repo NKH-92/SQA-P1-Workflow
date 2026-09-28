@@ -186,7 +186,7 @@ DB, RLS, repository 또는 배포 계약을 바꾸면 `npm run test:rls:full`과
   `workflow_dispatch` 입력과 동일 SHA 증거를 확인한 뒤 단계별로 실행합니다.
 - DB 변경이 없는 릴리스도 `DB Migrate`를 실행해 migration history와 canonical
   readiness를 같은 SHA에서 확인합니다.
-- 기존 migration은 수정·삭제·이름 변경하지 않고 새 파일로만 보정합니다.
+- 운영에 적용된 migration은 수정·삭제·이름 변경하지 않고 새 파일로만 보정합니다.
 - 반복 배포는 [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md)를 따릅니다.
 
 ## 보안·데이터 원칙

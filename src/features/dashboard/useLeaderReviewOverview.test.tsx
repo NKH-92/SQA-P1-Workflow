@@ -1,5 +1,5 @@
-import { act, renderHook, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppData, ReviewEvent, ReviewRequest } from '../../types'
 
 const mocks = vi.hoisted(() => ({
@@ -83,6 +83,9 @@ function envelope() {
     monthly_breakdown: [],
   }
 }
+
+// 앞선 테스트의 훅이 남아 있으면 날짜 변경(visibilitychange)에 함께 반응하므로 매번 정리한다.
+afterEach(cleanup)
 
 describe('useLeaderReviewOverview', () => {
   beforeEach(() => {
@@ -201,6 +204,29 @@ describe('useLeaderReviewOverview', () => {
 
     await act(async () => resolveFirst?.({ ...envelope(), approvals: 0, pending_count: 1 }))
     expect(result.current).toEqual({ status: 'ready', envelope: newest })
+  })
+
+  describe('when the Seoul date changes while the home stays open', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('recomputes the range and refetches this month on the next business day', async () => {
+      // Date만 가짜로 돌려 waitFor의 타이머는 그대로 쓴다. KST 9/30 23:00 → 절전 뒤 10/1 09:30.
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date('2026-09-30T14:00:00.000Z'))
+      renderHook(() => useLeaderReviewOverview(appData()))
+      await waitFor(() => expect(mocks.fetchReviewStatisticsV2).toHaveBeenCalledTimes(1))
+      expect(mocks.fetchReviewStatisticsV2).toHaveBeenLastCalledWith({ from: '2026-04-01', to: '2026-09-30' })
+
+      vi.setSystemTime(new Date('2026-10-01T00:30:00.000Z'))
+      act(() => {
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+
+      await waitFor(() => expect(mocks.fetchReviewStatisticsV2).toHaveBeenCalledTimes(2))
+      expect(mocks.fetchReviewStatisticsV2).toHaveBeenLastCalledWith({ from: '2026-05-01', to: '2026-10-01' })
+    })
   })
 
   it('offers a retry when the monthly overview fails to load', async () => {

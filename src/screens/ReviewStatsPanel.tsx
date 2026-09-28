@@ -32,7 +32,7 @@ import {
   useReviewStatisticsV2,
 } from '../features/reviews/useReviewStatisticsV2'
 import { ZERO_REVIEW_STATS_V2_KPIS, loadReviewStatsV2View, type ReviewStatsV2View } from '../features/reviews/reviewStatsV2View'
-import { businessDateKey } from '../lib/businessTime'
+import { useBusinessToday } from '../hooks/useBusinessToday'
 import { GENERIC_FAILURE_MESSAGE, toUserMessage } from '../lib/errors'
 import { reviewStatusLabels } from '../lib/format'
 import type { AppData } from '../types'
@@ -64,29 +64,12 @@ function requesterLabel(name: string, inactive: boolean) {
   return inactive ? `${name} (비활성)` : name
 }
 
-function millisecondsUntilNextBusinessDay(now: Date) {
-  // Asia/Seoul day boundary: advance until businessDateKey changes.
-  const currentKey = businessDateKey(now)
-  let cursor = now.getTime() + 1000
-  const limit = now.getTime() + 36 * 60 * 60 * 1000
-  while (cursor < limit && businessDateKey(new Date(cursor)) === currentKey) {
-    cursor += 60_000
-  }
-  return Math.max(1000, cursor - now.getTime())
-}
-
 export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
-  const [referenceNow, setReferenceNow] = useState(() => now ?? new Date())
-
-  // 날짜 경계는 필터 조작 중 흔들리지 않되, 화면을 밤새 열어 둔 경우 다음 로컬 날짜에 갱신한다.
-  useEffect(() => {
-    if (now) return
-    const timer = window.setTimeout(
-      () => setReferenceNow(new Date()),
-      millisecondsUntilNextBusinessDay(referenceNow),
-    )
-    return () => window.clearTimeout(timer)
-  }, [now, referenceNow])
+  // 날짜 경계는 필터 조작 중 흔들리지 않되, 화면을 밤새 열어 둔 경우 다음 서울 날짜에 갱신한다.
+  // now를 넘기면(테스트) 처음 값에 고정한다.
+  const [fixedNow] = useState(now)
+  const businessToday = useBusinessToday()
+  const referenceNow = fixedNow ?? businessToday
   const [filters, setFilters] = useState<ReviewStatsFilters>(() => {
     const availableRange = getReviewStatsAvailableRange(referenceNow)
     return {

@@ -9,6 +9,19 @@ export function normalizeCsvImportedValue(value: string) {
   return trimmed
 }
 
+/**
+ * CSV 파일을 문자열로 읽는다. 한국어 Excel의 기본 ‘CSV(쉼표로 분리)’는 CP949(EUC-KR)로 저장되므로,
+ * UTF-8로 엄격하게 읽어 보고 잘못된 바이트가 있으면 EUC-KR로 다시 읽는다(BOM은 parseCsvRows가 뗀다).
+ */
+export async function readCsvFileText(file: Blob): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  } catch {
+    return new TextDecoder('euc-kr').decode(bytes)
+  }
+}
+
 export function parseCsvRows(text: string): string[][] {
   const normalized = text.replace(/^\uFEFF/, '')
   const rows: string[][] = []

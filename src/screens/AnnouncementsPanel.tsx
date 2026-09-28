@@ -628,6 +628,7 @@ export function AnnouncementsPanel({
                         수정
                       </button>
                       <OverflowMenu
+                        key={selectedAnnouncement.id}
                         label={`${selectedAnnouncement.title} 더보기`}
                         items={[
                           {

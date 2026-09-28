@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 
+// 바꿀 때 함께 수정: src/domain/accountPolicy.ts, complete-password-change 함수, docs/OPERATIONS.md, 원격 E2E(tests/e2e/remote/remote-workflows.spec.ts)
 const TEMPORARY_PASSWORD = '12345678'
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -25,12 +26,32 @@ function requiredEnv(name: string) {
   return value
 }
 
+// 로그에는 분류 정보만 남긴다. PostgREST message·details에는 이메일이 들어갈 수 있어 기록하지 않는다.
+function errorFields(err: unknown) {
+  const value = (typeof err === 'object' && err !== null ? err : {}) as Record<string, unknown>
+  const message = typeof value.message === 'string' && value.message.startsWith('Missing server configuration: ')
+    ? value.message
+    : undefined
+  return {
+    name: typeof value.name === 'string' ? value.name : undefined,
+    code: typeof value.code === 'string' || typeof value.code === 'number' ? value.code : undefined,
+    status: typeof value.status === 'number' ? value.status : undefined,
+    ...(message ? { message } : {}),
+  }
+}
+
+function logRollbackFailure(step: string, error: { code?: unknown } | null) {
+  if (!error) return
+  console.error('account-admin rollback failed', { step, code: errorFields(error).code })
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (request.method !== 'POST') return json(405, { error: 'method_not_allowed' })
   const authorization = request.headers.get('Authorization')
   if (!authorization) return json(401, { error: 'authentication_required' })
 
+  let action: RequestBody['action'] | undefined
   try {
     const url = requiredEnv('SUPABASE_URL')
     const anonKey = requiredEnv('SUPABASE_ANON_KEY')
@@ -49,6 +70,7 @@ Deno.serve(async (request) => {
     if (permissionError || canManage !== true) return json(403, { error: 'active_leader_required' })
 
     const body = await request.json() as RequestBody
+    if (body?.action === 'create' || body?.action === 'reset_password') action = body.action
     if (body.action === 'create') {
       const email = body.email?.trim().toLowerCase()
       const name = body.name?.trim()
@@ -82,13 +104,15 @@ Deno.serve(async (request) => {
       })
       if (createError || !created.user) {
         if (insertedAllowedId) {
-          await adminClient.from('allowed_users').delete().eq('id', insertedAllowedId)
+          const { error } = await adminClient.from('allowed_users').delete().eq('id', insertedAllowedId)
+          logRollbackFailure('delete_allowed_user', error)
         } else if (existingAllowed) {
-          await adminClient.from('allowed_users').update({
+          const { error } = await adminClient.from('allowed_users').update({
             name: existingAllowed.name,
             role: existingAllowed.role,
             created_by: existingAllowed.created_by,
           }).eq('id', existingAllowed.id)
+          logRollbackFailure('restore_allowed_user', error)
         }
         return json(400, { error: 'account_creation_failed', message: createError?.message })
       }
@@ -108,15 +132,19 @@ Deno.serve(async (request) => {
 
       const { error: resetError } = await adminClient.auth.admin.updateUserById(body.userId, { password: TEMPORARY_PASSWORD })
       if (resetError) {
-        await userClient.rpc('cancel_password_reset', { p_target_user_id: body.userId, p_correlation_id: correlationId })
+        const { error: cancelError } = await userClient.rpc('cancel_password_reset', {
+          p_target_user_id: body.userId,
+          p_correlation_id: correlationId,
+        })
+        logRollbackFailure('cancel_password_reset', cancelError)
         return json(400, { error: 'password_reset_failed', message: resetError.message })
       }
       return json(200, { ok: true, requiresPasswordChange: true })
     }
 
     return json(400, { error: 'unsupported_action' })
-  } catch {
-    console.error('account-admin request failed')
+  } catch (err) {
+    console.error('account-admin request failed', { action, ...errorFields(err) })
     return json(500, { error: 'internal_error' })
   }
 })

@@ -6,22 +6,23 @@ import type { Role } from '../../../types'
 import { EmptyState, ReasonPromptModal } from '../../../components/ui'
 import { useViewState } from '../../../hooks/useViewState'
 import { downloadCsv } from '../../../lib/csv'
-import { parseCsvRows, parseInviteImportRows } from '../../../lib/csvImport'
+import { parseCsvRows, parseInviteImportRows, readCsvFileText } from '../../../lib/csvImport'
 import { UserFacingError } from '../../../lib/errors'
 import { roleLabels } from '../../../lib/format'
+import { TEMPORARY_PASSWORD } from '../../../domain/accountPolicy'
 import { canManageTeamData } from '../../../domain/permissions'
 import { supabase } from '../../../lib/supabase'
 import { selectFilteredAllowedUsers } from '../master.selectors'
 import { validateInviteCreate, validateInviteImport, validateInviteUpdate, validateProfileToggle } from '../master.validators'
 import type { MasterSubPanelProps } from '../shared/types'
 import { ImportDiagnostics, type CsvImportIssue } from '../shared/ImportDiagnostics'
+import { isMasterStaleError } from '../shared/masterStale'
 import { assertAccountAdminResult } from './accountAdminErrors'
 import { InviteCard, type InviteEdit } from './InviteCard'
 import { InviteRegisterModal } from './InviteRegisterModal'
 import { useInviteAdminController } from './useInviteAdminController'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const TEMPORARY_PASSWORD = '12345678'
 
 export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubPanelProps) {
   const canManage = canManageTeamData(profile)
@@ -85,7 +86,7 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
     setInviteImportIssues([])
     let rows: ReturnType<typeof parseInviteImportRows>
     try {
-      rows = parseInviteImportRows(parseCsvRows(await file.text()))
+      rows = parseInviteImportRows(parseCsvRows(await readCsvFileText(file)))
     } catch (error) {
       // 파일 읽기·파싱 실패도 다른 실패와 같은 경로(오류 토스트)로 보여준다.
       // 호출부가 void로 부르므로 여기서 삼키면 사용자는 성공으로 오해한다.
@@ -185,6 +186,13 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
     }
   }
 
+  const closeInviteEdit = (inviteId: string) =>
+    setInviteEdits((current) => {
+      const next = { ...current }
+      delete next[inviteId]
+      return next
+    })
+
   const saveInviteEdit = (inviteId: string, reason: string) => {
     let noop = false
     let savedName = inviteName(inviteId)
@@ -193,19 +201,26 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
       if (!edit?.name.trim() || !edit.email.trim()) return
       const payload = validateInviteUpdate(data, inviteId, edit)
       savedName = payload.name
-      const result = await controller.update(inviteId, {
-        ...payload,
-        expectedUpdatedAt: edit.expectedUpdatedAt,
-        reason,
-      })
+      let result: Awaited<ReturnType<typeof controller.update>>
+      try {
+        result = await controller.update(inviteId, {
+          ...payload,
+          expectedUpdatedAt: edit.expectedUpdatedAt,
+          reason,
+        })
+      } catch (error) {
+        // 수정을 연 시점의 버전으로는 다시 저장해도 같은 충돌이 난다. 편집을 닫아 다시 열 때 최신 버전을 받게 한다.
+        if (isMasterStaleError(error)) {
+          closeInviteEdit(inviteId)
+          setInviteReasonPrompt(null)
+          setInviteReason('')
+        }
+        throw error
+      }
       // The server-side invite OCC RPC propagates any linked profile role in
       // the same transaction, using the pre-edit email as the stable key.
       noop = result.noop
-      setInviteEdits((current) => {
-        const next = { ...current }
-        delete next[inviteId]
-        return next
-      })
+      closeInviteEdit(inviteId)
     }, () => noop ? '바뀐 내용이 없어요.' : `${savedName}님 계정 정보를 수정했어요.`)
   }
 

@@ -67,7 +67,8 @@ export function ChangeFinalizationModal({
     setSelected((current) => {
       const next = { ...current }
       if (task.id in next) delete next[task.id]
-      else next[task.id] = task.assignee_id ?? ''
+      // 지금 담당자가 후보(처리할 수 있는 활성 사용자)가 아니면 새로 고르게 비워 둔다.
+      else next[task.id] = assignees.some((assignee) => assignee.id === task.assignee_id) ? task.assignee_id ?? '' : ''
       return next
     })
     if (errors.tasks) setErrors((current) => ({ ...current, tasks: undefined }))

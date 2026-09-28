@@ -20,6 +20,11 @@ function ChunkBoom(): JSX.Element {
   throw new TypeError('Failed to fetch dynamically imported module: /assets/Projects-abc.js')
 }
 
+/** Vite preload helper가 예전 해시의 CSS를 404로 받지 못했을 때 던지는 오류 */
+function CssPreloadBoom(): JSX.Element {
+  throw new Error('Unable to preload CSS for /assets/ReviewPanels-x.css')
+}
+
 // React logs the caught error to the console by design — keep test output clean.
 const originalConsoleError = console.error
 
@@ -85,6 +90,30 @@ describe('ErrorBoundary', () => {
     )
 
     expect(screen.getByText(/새 버전이 배포돼/)).toBeInTheDocument()
+  })
+
+  it('reloads the page on retry when a screen stylesheet from the previous deploy cannot be preloaded', async () => {
+    const user = userEvent.setup()
+    console.error = vi.fn()
+    const reload = vi.fn()
+    const originalLocation = window.location
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...originalLocation, hash: originalLocation.hash, pathname: originalLocation.pathname, reload },
+    })
+    try {
+      render(
+        <ErrorBoundary>
+          <CssPreloadBoom />
+        </ErrorBoundary>,
+      )
+
+      expect(screen.getByText(/새 버전이 배포돼/)).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: '다시 시도' }))
+      expect(reload).toHaveBeenCalledTimes(1)
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
+    }
   })
 
   it('reports a well-formed, allowlisted ErrorReport with role unknown by default', () => {

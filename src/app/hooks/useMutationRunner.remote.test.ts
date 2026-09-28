@@ -47,4 +47,30 @@ describe('useMutationRunner (remote)', () => {
     expect(result.current.toasts).toHaveLength(1)
     expect(result.current.message).toMatchObject({ text: '저장하지 못했어요.', tone: 'error' })
   })
+
+  it('skips the full reload after success when the repository already re-read what changed, but still reloads after a failure', async () => {
+    const refreshData = vi.fn(async () => undefined)
+    const { result } = renderHook(() => useMutationRunner(refreshData))
+
+    let ok = false
+    await act(async () => {
+      ok = await result.current.mutate(async () => undefined, '상태를 바꿨어요.', { refresh: false })
+    })
+    expect(ok).toBe(true)
+    expect(refreshData).not.toHaveBeenCalled()
+    expect(result.current.message).toMatchObject({ text: '상태를 바꿨어요.', tone: 'success' })
+
+    await act(async () => {
+      ok = await result.current.mutate(async () => {
+        throw new UserFacingError('바꾸지 못했어요.')
+      }, '상태를 바꿨어요.', { refresh: false })
+    })
+    expect(ok).toBe(false)
+    expect(refreshData).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      await result.current.mutate(async () => undefined, '저장했어요.')
+    })
+    expect(refreshData).toHaveBeenCalledTimes(2)
+  })
 })

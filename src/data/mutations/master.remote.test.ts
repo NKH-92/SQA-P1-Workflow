@@ -144,6 +144,20 @@ describe('single assignment RPC contracts (remote)', () => {
     expect(activityLogMock).not.toHaveBeenCalled()
   })
 
+  it('translates server codes from the product-assignment transfer RPC', async () => {
+    rpcMock.mockImplementationOnce(async () => ({
+      data: null,
+      error: { message: 'product assignee must be active', details: 'SQA_CHANGE_ACTIVE_ASSIGNEE_REQUIRED', code: '22023' } as { message: string },
+    }))
+
+    await expect(assignProduct(remoteContext(), {
+      productId: 'product-1',
+      userId: 'member-2',
+      transferPendingChangeTasks: true,
+      transferReason: '제품 담당자 변경에 따른 이관',
+    })).rejects.toThrow('모든 제품에 활성 담당자를 정해 주세요.')
+  })
+
   it('does not trust a stale local duplicate when adding remotely', async () => {
     const ctx = remoteContext()
     ctx.data.productAssignments = [{

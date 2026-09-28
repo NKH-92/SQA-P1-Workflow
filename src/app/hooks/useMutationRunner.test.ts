@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { UserFacingError } from '../../lib/errors'
-import { assertAllowedErrorReport, resetErrorReporter, setErrorReporter } from '../../lib/errorReporter'
+import { assertAllowedErrorReport, computeErrorFingerprint, resetErrorReporter, setErrorReporter } from '../../lib/errorReporter'
 import { useMutationRunner } from './useMutationRunner'
 import type { MutationErrorReportContext } from './useMutationRunner'
 
@@ -165,5 +165,29 @@ describe('useMutationRunner', () => {
       result.current.clearAllToasts()
     })
     expect(result.current.toasts).toEqual([])
+  })
+
+  it('groups failure reports by which operation failed without keeping its text', async () => {
+    const reporter = { report: vi.fn() }
+    setErrorReporter(reporter)
+    const { result } = renderHook(() => useMutationRunner(refreshData))
+    // Supabase는 Error가 아닌 일반 객체로 오류를 돌려준다 — 같은 오류라도 작업이 다르면 따로 모여야 한다.
+    const error = { code: '42501', message: 'permission denied' }
+
+    await act(async () => {
+      await result.current.mutate(async () => {
+        throw error
+      }, '내 상태를 ‘잠깐 비움’으로 바꿨어요.')
+    })
+    await act(async () => {
+      await result.current.mutate(async () => {
+        throw error
+      }, '제품을 저장했어요.')
+    })
+
+    const [first, second] = reporter.report.mock.calls.map((call) => call[0])
+    expect(first.fingerprint).toBe(computeErrorFingerprint(error, '내 상태를 ‘잠깐 비움’으로 바꿨어요.'))
+    expect(first.fingerprint).not.toBe(second.fingerprint)
+    expect(JSON.stringify(first)).not.toContain('잠깐 비움')
   })
 })

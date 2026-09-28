@@ -29,9 +29,11 @@ export function DutyReassignModal({
   submitting?: boolean
 }) {
   const reasonId = useId()
-  const currentIds = data.dutyAssignments
+  // 창을 연 시점의 담당자를 기준으로 삼는다. 열어 둔 사이 목록이 새로고침돼도 고르지 않은 ‘빠지는 사람’이 생기지 않고,
+  // 그 사이 바뀐 내용은 저장할 때 연 시점 버전으로 충돌 안내가 된다.
+  const [currentIds] = useState(() => data.dutyAssignments
     .filter((assignment) => assignment.duty_id === duty.id)
-    .map((assignment) => assignment.user_id)
+    .map((assignment) => assignment.user_id))
   const activeIds = new Set(memberOptions.map((member) => member.id))
   const inactiveCurrent = currentIds
     .filter((userId) => !activeIds.has(userId))

@@ -3,7 +3,7 @@ import { AlertTriangle, Check, ChevronLeft, ChevronRight, ClipboardPlus, FileSpr
 import { Badge, DateQuickPicks, Modal, ModalCloseButton } from '../../../components/ui'
 import { toUserMessage, UserFacingError } from '../../../lib/errors'
 import { formatDate, formatDateTime } from '../../../lib/format'
-import { selectApplicationTaskContexts, selectChangeScopeProducts } from '../selectors'
+import { canHoldChangeTask, selectApplicationTaskContexts, selectAssignableChangeAssignees, selectChangeScopeProducts } from '../selectors'
 import { matchImportedProductNames, uniqueResolvedProductIds, type ProductImportMatch } from '../productImport'
 import {
   changeActionKindLabels,
@@ -201,9 +201,11 @@ export function ChangeApplicationComposer({
   }, [assigneeFilter, category, company, products, query])
 
   const selectedProductIds = Object.keys(selected)
+  // 적용 담당자로 정할 수 있는 사람: 활성 사용자 중 처리할 수 있는 역할(팀장은 처리할 수 없어 뺀다).
   const activeAssigneeIds = new Set(
-    data.profiles.filter((item) => item.is_active !== false).map((item) => item.id),
+    data.profiles.filter((item) => item.is_active !== false && canHoldChangeTask(item)).map((item) => item.id),
   )
+  const assignableAssignees = selectAssignableChangeAssignees(data)
   const importedProductIds = importReview
     ? uniqueResolvedProductIds(importReview.matches.filter((match) => !excludedImportRows.has(match.rowNumber)))
     : []
@@ -715,7 +717,7 @@ export function ChangeApplicationComposer({
                       const isSelected = product.id in selected
                       const responsibilityOptions = product.assignees.length > 0
                         ? product.assignees
-                        : data.changeAssigneeOptions
+                        : assignableAssignees
                       return (
                         <div className={isSelected ? 'scope-product selected' : 'scope-product'} key={product.id} role="listitem">
                           <button aria-pressed={isSelected} className="scope-product-toggle" onClick={() => toggleProduct(product.id)} type="button">

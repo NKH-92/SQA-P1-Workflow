@@ -25,7 +25,9 @@ export type PendingAdminDelete = {
 }
 export type DeadlineMode = 'date' | 'none'
 
+/** useMutationRunner의 MutationRunner와 같은 모양이다(refresh: false면 성공 뒤 전체 새로고침을 건너뛴다). */
 export type MutateFn = (
   operation: () => Promise<void>,
   success: string | ToastSpec | (() => string | ToastSpec),
+  options?: { refresh?: boolean },
 ) => Promise<boolean>

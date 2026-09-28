@@ -2,9 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { emptyData } from '../../app/constants'
 import type { AppData, ChangeActionItem, ProductChangeTask, Profile } from '../../types'
 import { buildChangeApplication, buildProductChangeTask } from '../../test/builders'
+import { createPreviewData, previewLeader } from '../../demoData'
 import {
   calculateChangeProgress,
   canEditChangeApplication,
+  canProcessOwnChangeTask,
+  canReopenOwnChangeTask,
+  selectAssignableChangeAssignees,
+  selectChangeApplicationSummaries,
   selectChangeApplicationSummary,
   selectChangeScopeProducts,
   selectMyProductChangeTaskContexts,
@@ -175,5 +180,90 @@ describe('change application selectors', () => {
     expect(canEditChangeApplication(application, notApplicable, leader)).toBe(false)
     expect(canEditChangeApplication(application, cancelled, leader)).toBe(false)
     expect(canEditChangeApplication({ ...application, archived_at: '2026-07-17T00:00:00.000Z' }, editable, leader)).toBe(false)
+  })
+})
+
+describe('selectChangeApplicationSummaries', () => {
+  it('matches the per-application summary for every application', () => {
+    const data = createPreviewData()
+    const [first] = data.changeApplications
+    const second = buildChangeApplication({ id: 'change-second', change_number: 'CC-2026-201' })
+    const third = buildChangeApplication({ id: 'change-third', change_number: 'CC-2026-202' })
+    const empty = buildChangeApplication({ id: 'change-empty', change_number: 'CC-2026-203', status: 'draft' })
+    data.changeApplications = [...data.changeApplications, second, third, empty]
+    const inactiveMember: Profile = { id: 'member-inactive', email: 'inactive@example.test', name: '퇴사자', role: 'member', is_active: false }
+    const secondAction: ChangeActionItem = { ...actionItem, id: 'action-second', change_application_id: second.id }
+    const thirdAction: ChangeActionItem = { ...actionItem, id: 'action-third', change_application_id: third.id }
+    data.profiles = [...data.profiles, inactiveMember]
+    data.changeAssigneeOptions = [...data.changeAssigneeOptions, { id: 'option-only', name: '목록에만 있음', role: 'member' }]
+    data.changeActionItems = [...data.changeActionItems, secondAction, thirdAction]
+    data.productChangeTasks = [
+      ...data.productChangeTasks,
+      // 비활성 담당자: 서버 요약을 무시하고 담당자 없음으로 계산한다.
+      { ...task('inactive', 'completed', inactiveMember.id), action_item_id: secondAction.id },
+      // 프로필이 없으면 담당자 후보 목록으로 활성 여부를 본다.
+      { ...task('option-only', 'completed', 'option-only'), action_item_id: thirdAction.id },
+      { ...task('unknown', 'pending', 'unknown-person'), action_item_id: thirdAction.id },
+      // 신청서를 찾을 수 없는 업무는 어디에도 들어가지 않는다.
+      { ...task('orphan', 'pending'), action_item_id: 'missing-action' },
+    ]
+    const serverSummary = (id: string) => ({
+      change_application_id: id,
+      workflow_status: 'final_review_ready' as const,
+      total_count: 1,
+      pending_count: 0,
+      completed_count: 1,
+      not_applicable_count: 0,
+      scope_removed_count: 0,
+      unresolved_cancelled_count: 0,
+      unassigned_count: 0,
+      processed_count: 1,
+      percent: 100,
+      can_finalize: true,
+    })
+    data.changeApplicationSummaries = [serverSummary(first.id), serverSummary(second.id)]
+
+    const summaries = selectChangeApplicationSummaries(data)
+
+    expect([...summaries.keys()]).toEqual(data.changeApplications.map((item) => item.id))
+    for (const item of data.changeApplications) {
+      expect(summaries.get(item.id)).toEqual(selectChangeApplicationSummary(data, item.id))
+    }
+    expect(summaries.get(second.id)?.workflow_status).not.toBe('final_review_ready')
+  })
+})
+
+describe('change task permissions', () => {
+  it('lets the assigned person process and reopen their own task regardless of leader role, never a team leader', () => {
+    const leader: Profile = { ...member, id: 'leader-1', role: 'leader' }
+    const teamLeader: Profile = { ...member, id: 'team-leader-1', role: 'team_leader' }
+
+    expect(canProcessOwnChangeTask(member, task('own', 'pending'), 'in_progress')).toBe(true)
+    expect(canProcessOwnChangeTask(leader, task('leader-own', 'pending', leader.id), 'in_progress')).toBe(true)
+    expect(canProcessOwnChangeTask(teamLeader, task('tl-own', 'pending', teamLeader.id), 'in_progress')).toBe(false)
+    expect(canProcessOwnChangeTask(leader, task('other', 'pending'), 'in_progress')).toBe(false)
+    expect(canProcessOwnChangeTask(member, task('own', 'pending'), 'final_review_ready')).toBe(false)
+    expect(canProcessOwnChangeTask(member, task('done', 'completed'), 'in_progress')).toBe(false)
+
+    expect(canReopenOwnChangeTask(member, task('done', 'completed'), 'final_review_ready')).toBe(true)
+    expect(canReopenOwnChangeTask(leader, task('leader-na', 'not_applicable', leader.id), 'in_progress')).toBe(true)
+    expect(canReopenOwnChangeTask(teamLeader, task('tl-done', 'completed', teamLeader.id), 'in_progress')).toBe(false)
+    expect(canReopenOwnChangeTask(member, task('done', 'completed'), 'completed')).toBe(false)
+    expect(canReopenOwnChangeTask(member, task('pending', 'pending'), 'in_progress')).toBe(false)
+  })
+
+  it('offers only active people who can process tasks as assignees', () => {
+    const data: AppData = {
+      ...emptyData,
+      profiles: [previewLeader, member, { ...member, id: 'member-2', is_active: false }],
+      changeAssigneeOptions: [
+        { id: previewLeader.id, name: previewLeader.name, role: 'leader' },
+        { id: member.id, name: member.name, role: 'member' },
+        { id: 'member-2', name: '비활성', role: 'member' },
+        { id: 'team-leader-1', name: '팀장', role: 'team_leader' },
+      ],
+    }
+
+    expect(selectAssignableChangeAssignees(data).map((item) => item.id)).toEqual([previewLeader.id, member.id])
   })
 })

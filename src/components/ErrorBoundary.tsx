@@ -2,6 +2,7 @@ import React from 'react'
 import { AlertTriangle, Home, RefreshCw } from 'lucide-react'
 import { reportError } from '../lib/errorReporter'
 import type { ErrorReportRole } from '../lib/errorReporter'
+import { isChunkLoadError } from '../lib/errors'
 
 type ErrorBoundaryProps = {
   children: React.ReactNode
@@ -16,12 +17,6 @@ type ErrorBoundaryState = {
 }
 
 const HOME_HASH = '#/dashboard'
-const CHUNK_LOAD_ERROR = /dynamically imported module|Importing a module script failed|Loading chunk|ChunkLoadError/i
-
-function isChunkLoadError(error: unknown) {
-  if (!(error instanceof Error)) return false
-  return error.name === 'ChunkLoadError' || CHUNK_LOAD_ERROR.test(error.message)
-}
 
 /**
  * 화면을 그리다 난 오류를 잡아 다시 시도하거나 홈으로 돌아갈 길을 준다(FBK-5).

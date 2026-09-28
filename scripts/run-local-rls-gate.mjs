@@ -3,12 +3,14 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { validateReadinessManifest } from './validate-readiness-manifest.mjs'
 
 const root = resolve(import.meta.dirname, '..')
@@ -36,6 +38,13 @@ function run(command, args, options = {}) {
     env: { ...process.env, ...options.env },
   })
   if (result.error) throw result.error
+  // Ctrl+C/termination reaches the child first. The no-op signal listeners below keep Node alive
+  // for cleanup, so an interrupted step must stop the gate here even when failure is allowed
+  // (outside the final cleanup), instead of silently continuing to the next step.
+  const interrupted = ['SIGINT', 'SIGTERM', 'SIGHUP'].includes(result.signal ?? '')
+    || result.status === 130
+    || result.status === 3221225786 // Windows STATUS_CONTROL_C_EXIT (0xC000013A)
+  if (interrupted && !options.duringCleanup) throw new Error(`SQA_RLS_GATE_INTERRUPTED: ${command} ${args.join(' ')}`)
   if (result.status !== 0 && !options.allowFailure) {
     if (options.capture) {
       process.stdout.write(result.stdout ?? '')
@@ -161,55 +170,90 @@ function restoreMigrations(held) {
   }
 }
 
-// Keep held migrations on the repository volume so rename remains atomic on Windows.
-const temporaryDirectory = mkdtempSync(resolve(root, '.sqa-local-rls-'))
-let heldMigrations = []
-
-try {
-  validateReadinessManifest(root)
-  runSupabase(['stop', '--no-backup'], { allowFailure: true })
-  heldMigrations = holdMigrations(temporaryDirectory)
-  runSupabase(['start'])
-  restoreMigrations(heldMigrations)
-
-  let status = parseEnvironment(runSupabase(['status', '-o', 'env'], { capture: true }).stdout)
-  assertLocalApiUrl(status.API_URL)
-  run(process.execPath, [
-    'scripts/purge-review-attachments.mjs',
-    '--execute',
-    '--confirm=PURGE_REVIEW_ATTACHMENTS',
-  ], {
-    env: {
-      SUPABASE_URL: status.API_URL,
-      SUPABASE_SERVICE_ROLE_KEY: status.SERVICE_ROLE_KEY,
-    },
-  })
-
-  runSupabase(['migration', 'up', '--local', '--include-all'])
-  runSupabase(['db', 'lint', '--local', '--level', 'error', '--fail-on', 'error'])
-  status = parseEnvironment(runSupabase(['status', '-o', 'env'], { capture: true }).stdout)
-
-  const fixtureOutput = resolve(temporaryDirectory, 'rls-fixtures.json')
-  const fixtureResult = run(process.execPath, ['scripts/setup-rls-fixtures.mjs'], {
-    capture: true,
-    env: {
-      SUPABASE_URL: status.API_URL,
-      SUPABASE_ANON_KEY: status.ANON_KEY,
-      SUPABASE_SERVICE_ROLE_KEY: status.SERVICE_ROLE_KEY,
-      RLS_FIXTURE_OUTPUT_FILE: fixtureOutput,
-    },
-  })
-  process.stdout.write(fixtureResult.stdout)
-  const fixtureEnvironment = readFixtureEnvironment(fixtureOutput)
-  rmSync(fixtureOutput, { force: true })
-
-  const legacyRequesterId = fixtureEnvironment.RLS_MEMBER_A_USER_ID
-  if (!legacyRequesterId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(legacyRequesterId)) {
-    throw new Error('SQA_RLS_LEGACY_REVIEW_REQUESTER_INVALID')
+// A previous run that was killed before its finally block (window closed, tool
+// timeout, forced termination) leaves held migrations in a gitignored
+// `.sqa-local-rls-*` folder. Move them back before holding again so neither the
+// committed suffix nor an uncommitted draft migration is stranded there. A
+// same-named file already in supabase/migrations is never overwritten.
+export function recoverLeftoverHeldMigrations(repositoryRoot, log = console.log) {
+  const migrationsDirectory = resolve(repositoryRoot, 'supabase/migrations')
+  const leftovers = readdirSync(repositoryRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith('.sqa-local-rls-'))
+    .map((entry) => entry.name)
+    .sort()
+  const restored = []
+  for (const folder of leftovers) {
+    const directory = resolve(repositoryRoot, folder)
+    const names = readdirSync(directory)
+      .filter((name) => /^\d{12,14}_.+\.sql$/.test(name))
+      .sort()
+    // Check every file first so a conflict leaves the folder untouched.
+    const conflict = names.find((name) => existsSync(join(migrationsDirectory, name)))
+    if (conflict) {
+      throw new Error(`SQA_RLS_GATE_LEFTOVER_MIGRATION_CONFLICT: ${folder}/${conflict}`)
+    }
+    for (const name of names) {
+      renameSync(join(directory, name), join(migrationsDirectory, name))
+      restored.push(name)
+    }
+    log(`SQA_RLS_GATE_LEFTOVER_RESTORED: ${folder} (${names.length} migrations)${names.length ? `: ${names.join(', ')}` : ''}`)
+    rmSync(directory, { recursive: true, force: true })
   }
-  const expectedLegacyRollback = 'SQA_RLS_EXPECTED_LEGACY_REVIEW_INPUT_ROLLBACK'
-  const legacyReviewSql = resolve(temporaryDirectory, 'legacy-review-input.sql')
-  writeFileSync(legacyReviewSql, `
+  return restored
+}
+
+function runGate() {
+  recoverLeftoverHeldMigrations(root)
+
+  // Keep held migrations on the repository volume so rename remains atomic on Windows.
+  const temporaryDirectory = mkdtempSync(resolve(root, '.sqa-local-rls-'))
+  let heldMigrations = []
+
+  try {
+    validateReadinessManifest(root)
+    runSupabase(['stop', '--no-backup'], { allowFailure: true })
+    heldMigrations = holdMigrations(temporaryDirectory)
+    runSupabase(['start'])
+    restoreMigrations(heldMigrations)
+
+    let status = parseEnvironment(runSupabase(['status', '-o', 'env'], { capture: true }).stdout)
+    assertLocalApiUrl(status.API_URL)
+    run(process.execPath, [
+      'scripts/purge-review-attachments.mjs',
+      '--execute',
+      '--confirm=PURGE_REVIEW_ATTACHMENTS',
+    ], {
+      env: {
+        SUPABASE_URL: status.API_URL,
+        SUPABASE_SERVICE_ROLE_KEY: status.SERVICE_ROLE_KEY,
+      },
+    })
+
+    runSupabase(['migration', 'up', '--local', '--include-all'])
+    runSupabase(['db', 'lint', '--local', '--level', 'error', '--fail-on', 'error'])
+    status = parseEnvironment(runSupabase(['status', '-o', 'env'], { capture: true }).stdout)
+
+    const fixtureOutput = resolve(temporaryDirectory, 'rls-fixtures.json')
+    const fixtureResult = run(process.execPath, ['scripts/setup-rls-fixtures.mjs'], {
+      capture: true,
+      env: {
+        SUPABASE_URL: status.API_URL,
+        SUPABASE_ANON_KEY: status.ANON_KEY,
+        SUPABASE_SERVICE_ROLE_KEY: status.SERVICE_ROLE_KEY,
+        RLS_FIXTURE_OUTPUT_FILE: fixtureOutput,
+      },
+    })
+    process.stdout.write(fixtureResult.stdout)
+    const fixtureEnvironment = readFixtureEnvironment(fixtureOutput)
+    rmSync(fixtureOutput, { force: true })
+
+    const legacyRequesterId = fixtureEnvironment.RLS_MEMBER_A_USER_ID
+    if (!legacyRequesterId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(legacyRequesterId)) {
+      throw new Error('SQA_RLS_LEGACY_REVIEW_REQUESTER_INVALID')
+    }
+    const expectedLegacyRollback = 'SQA_RLS_EXPECTED_LEGACY_REVIEW_INPUT_ROLLBACK'
+    const legacyReviewSql = resolve(temporaryDirectory, 'legacy-review-input.sql')
+    writeFileSync(legacyReviewSql, `
 do $verify$
 declare
   legacy_request_id uuid := gen_random_uuid();
@@ -281,53 +325,53 @@ begin
 end
 $verify$;
 `)
-  runSupabase(['db', 'query', '--local', '--file', toRootRelativePath(legacyReviewSql)])
+    runSupabase(['db', 'query', '--local', '--file', toRootRelativePath(legacyReviewSql)])
 
-  // Seed the scale fixture before the RLS suite so the EXPLAIN/bounded gate
-  // is activated (RLS_SCALE_ENABLED=1) rather than permanently skipped.
-  if (!fixtureEnvironment.RLS_LEADER_USER_ID) {
-    throw new Error('SQA_RLS_SCALE_LEADER_MISSING')
-  }
-  run(process.execPath, ['scripts/seed-review-scale-fixture.mjs'], {
-    env: {
-      SUPABASE_URL: status.API_URL,
-      SUPABASE_SERVICE_ROLE_KEY: status.SERVICE_ROLE_KEY,
-      RLS_SCALE_USER_ID: fixtureEnvironment.RLS_LEADER_USER_ID,
-    },
-  })
-
-  const testEnvironment = {
-    SUPABASE_URL: status.API_URL,
-    SUPABASE_ANON_KEY: status.ANON_KEY,
-    SUPABASE_SERVICE_ROLE_KEY: status.SERVICE_ROLE_KEY,
-    SUPABASE_DB_URL: status.DB_URL,
-    // The scale EXPLAIN gate accepts either name; keep both for psql helpers.
-    DATABASE_URL: status.DB_URL,
-    RLS_SCALE_ENABLED: '1',
-    RLS_SCALE_USER_ID: fixtureEnvironment.RLS_LEADER_USER_ID,
-    RLS_SCALE_USER_EMAIL: fixtureEnvironment.RLS_LEADER_EMAIL,
-    RLS_SCALE_USER_PASSWORD: fixtureEnvironment.RLS_LEADER_PASSWORD,
-    ...fixtureEnvironment,
-  }
-  run(npm, ['run', 'test:rls'], { env: testEnvironment })
-
-  const retentionRequesterId = fixtureEnvironment.RLS_MEMBER_A_USER_ID
-  const retentionLeaderId = fixtureEnvironment.RLS_LEADER_USER_ID
-  for (const [label, value] of [
-    ['REQUESTER', retentionRequesterId],
-    ['LEADER', retentionLeaderId],
-  ]) {
-    if (!value || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
-      throw new Error(`SQA_RLS_RETENTION_${label}_INVALID`)
+    // Seed the scale fixture before the RLS suite so the EXPLAIN/bounded gate
+    // is activated (RLS_SCALE_ENABLED=1) rather than permanently skipped.
+    if (!fixtureEnvironment.RLS_LEADER_USER_ID) {
+      throw new Error('SQA_RLS_SCALE_LEADER_MISSING')
     }
-  }
+    run(process.execPath, ['scripts/seed-review-scale-fixture.mjs'], {
+      env: {
+        SUPABASE_URL: status.API_URL,
+        SUPABASE_SERVICE_ROLE_KEY: status.SERVICE_ROLE_KEY,
+        RLS_SCALE_USER_ID: fixtureEnvironment.RLS_LEADER_USER_ID,
+      },
+    })
 
-  // This destructive contract probe is local-only and runs in a PL/pgSQL
-  // subtransaction that deliberately rolls back every fixture row. Canonical
-  // production readiness below remains static and never creates or deletes data.
-  const expectedRetentionRollback = 'SQA_RLS_EXPECTED_RETENTION_PROBE_ROLLBACK'
-  const retentionProbeSql = resolve(temporaryDirectory, 'review-retention-probe.sql')
-  writeFileSync(retentionProbeSql, `
+    const testEnvironment = {
+      SUPABASE_URL: status.API_URL,
+      SUPABASE_ANON_KEY: status.ANON_KEY,
+      SUPABASE_SERVICE_ROLE_KEY: status.SERVICE_ROLE_KEY,
+      SUPABASE_DB_URL: status.DB_URL,
+      // The scale EXPLAIN gate accepts either name; keep both for psql helpers.
+      DATABASE_URL: status.DB_URL,
+      RLS_SCALE_ENABLED: '1',
+      RLS_SCALE_USER_ID: fixtureEnvironment.RLS_LEADER_USER_ID,
+      RLS_SCALE_USER_EMAIL: fixtureEnvironment.RLS_LEADER_EMAIL,
+      RLS_SCALE_USER_PASSWORD: fixtureEnvironment.RLS_LEADER_PASSWORD,
+      ...fixtureEnvironment,
+    }
+    run(npm, ['run', 'test:rls'], { env: testEnvironment })
+
+    const retentionRequesterId = fixtureEnvironment.RLS_MEMBER_A_USER_ID
+    const retentionLeaderId = fixtureEnvironment.RLS_LEADER_USER_ID
+    for (const [label, value] of [
+      ['REQUESTER', retentionRequesterId],
+      ['LEADER', retentionLeaderId],
+    ]) {
+      if (!value || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+        throw new Error(`SQA_RLS_RETENTION_${label}_INVALID`)
+      }
+    }
+
+    // This destructive contract probe is local-only and runs in a PL/pgSQL
+    // subtransaction that deliberately rolls back every fixture row. Canonical
+    // production readiness below remains static and never creates or deletes data.
+    const expectedRetentionRollback = 'SQA_RLS_EXPECTED_RETENTION_PROBE_ROLLBACK'
+    const retentionProbeSql = resolve(temporaryDirectory, 'review-retention-probe.sql')
+    writeFileSync(retentionProbeSql, `
 do $verify$
 declare
   probe_now timestamptz := clock_timestamp();
@@ -483,10 +527,10 @@ begin
 end
 $verify$;
 `)
-  runSupabase(['db', 'query', '--local', '--file', toRootRelativePath(retentionProbeSql)])
+    runSupabase(['db', 'query', '--local', '--file', toRootRelativePath(retentionProbeSql)])
 
-  const evidenceSql = resolve(temporaryDirectory, 'private-evidence.sql')
-  writeFileSync(evidenceSql, `
+    const evidenceSql = resolve(temporaryDirectory, 'private-evidence.sql')
+    writeFileSync(evidenceSql, `
 do $verify$
 begin
   if (select count(*) from private.review_status_events) < 1 then
@@ -498,22 +542,45 @@ begin
 end
 $verify$;
 `)
-  // Supabase CLI 2.109.1 preserves surrounding quotes as filename bytes when
-  // npx.cmd receives an absolute Windows path containing spaces. All gate SQL
-  // lives below the repository root, so pass guarded cwd-relative paths.
-  runSupabase(['db', 'query', '--local', '--file', toRootRelativePath(evidenceSql)])
+    // Supabase CLI 2.109.1 preserves surrounding quotes as filename bytes when
+    // npx.cmd receives an absolute Windows path containing spaces. All gate SQL
+    // lives below the repository root, so pass guarded cwd-relative paths.
+    runSupabase(['db', 'query', '--local', '--file', toRootRelativePath(evidenceSql)])
 
-  const { readinessFiles } = validateReadinessManifest(root)
-  for (const file of readinessFiles) {
-    const verificationSql = resolve(root, 'scripts/sql/verify', file)
-    // db query executes through a prepared statement and therefore accepts one
-    // command per file. Canonical files deliberately group multiple fail-closed
-    // DO blocks, so validate their shape and execute each block independently.
-    runCanonicalSql(verificationSql, temporaryDirectory)
+    const { readinessFiles } = validateReadinessManifest(root)
+    for (const file of readinessFiles) {
+      const verificationSql = resolve(root, 'scripts/sql/verify', file)
+      // db query executes through a prepared statement and therefore accepts one
+      // command per file. Canonical files deliberately group multiple fail-closed
+      // DO blocks, so validate their shape and execute each block independently.
+      runCanonicalSql(verificationSql, temporaryDirectory)
+    }
+    console.log(`SQA_RLS_GATE_OK: ${readinessFiles.length} canonical SQL files`)
+  } finally {
+    restoreMigrations(heldMigrations)
+    runSupabase(['stop', '--no-backup'], { allowFailure: true, duringCleanup: true })
+    rmSync(temporaryDirectory, { recursive: true, force: true })
   }
-  console.log(`SQA_RLS_GATE_OK: ${readinessFiles.length} canonical SQL files`)
-} finally {
-  restoreMigrations(heldMigrations)
-  runSupabase(['stop', '--no-backup'], { allowFailure: true })
-  rmSync(temporaryDirectory, { recursive: true, force: true })
+}
+
+// Node resolves the main entry through realpath, so compare real paths (symlinks/junctions/8.3 names).
+function isEntryPoint() {
+  if (!process.argv[1]) return false
+  try {
+    return realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))
+  } catch {
+    return false
+  }
+}
+
+if (isEntryPoint()) {
+  // Without a listener Node exits immediately on Ctrl+C/termination and skips
+  // the finally block. A no-op listener lets the interrupted child command fail
+  // so the finally block still restores held migrations and stops Supabase.
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    process.on(signal, () => {
+      process.exitCode = 130
+    })
+  }
+  runGate()
 }

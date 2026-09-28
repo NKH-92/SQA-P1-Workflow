@@ -61,22 +61,32 @@ export function useAppData(reportWarnings?: (report: DataWarningReport) => void)
   // 조용한 새로고침(5분 폴링·창 복귀)마다 같은 안내가 다시 뜨지 않게 마지막으로 알린 내용을 기억한다.
   const reportedRef = useRef({ warnings: '', notices: '' })
   const generationRef = useRef(0)
+  // 가장 최근에 시작한 refresh. 추월당한 refresh가 이것을 기다린다.
+  const latestRefreshRef = useRef<Promise<void> | null>(null)
+  // 이 세대 번호 이하는 이전 세션의 refresh다(resetSyncState가 올린다).
+  const sessionFloorRef = useRef(0)
   const dataRef = useRef(data)
   useEffect(() => {
     dataRef.current = data
   }, [data])
 
-  const refreshData = useCallback(async (options?: { initial?: boolean; silent?: boolean }) => {
+  const runRefresh = useCallback(async (options?: { initial?: boolean; silent?: boolean }): Promise<void> => {
     if (!supabase) return
     // silent: 백그라운드 폴링·Realtime 재조회용 — 5분마다 topbar가 '갱신 중'으로 깜빡이지 않게 한다.
     const isQuiet = (options?.initial ?? false) || (options?.silent ?? false)
     // Generation token: if a newer refresh starts before this one resolves, the older
     // (possibly pre-mutation) snapshot must not overwrite the newer state.
     const generation = ++generationRef.current
+    // 추월당하면 최신 refresh가 끝날 때까지 기다려, 호출한 쪽(뮤테이션·첫 로드)이 데이터가 실제로
+    // 반영된 뒤에 끝나고 최신 refresh의 실패도 받게 한다. 세션 초기화 이전 세대는 그대로 조용히 끝낸다.
+    const settleSuperseded = () =>
+      generation > sessionFloorRef.current ? latestRefreshRef.current ?? undefined : undefined
+    // 사무실 부분 갱신(회의·자리 상태·읽음 기록)이 이 refresh 도중 일어났는지 판별하는 기준.
+    const before = dataRef.current
     if (!isQuiet) setRefreshing(true)
     try {
       const result = await fetchAppData({ ...dataRef.current, optionalWarnings: [] })
-      if (generation !== generationRef.current) return
+      if (generation !== generationRef.current) return settleSuperseded()
       const { optionalWarnings, snapshotAt, ...appData } = result
       const { warnings, notices } = splitDataWarnings(optionalWarnings)
       const warningsKey = warnings.join('\n')
@@ -92,7 +102,14 @@ export function useAppData(reportWarnings?: (report: DataWarningReport) => void)
       }
       setDataWarnings(warnings)
       setDataNotices(notices)
-      setData(appData)
+      // 조회 도중 Realtime·폴링·읽음 기록으로 사무실 필드가 부분 갱신됐다면, 그보다 먼저 읽었을 수
+      // 있는 이 스냅샷으로 덮지 않고 현재 값을 유지한다(참조가 바뀌었으면 부분 갱신이 있었다는 뜻).
+      setData((current) => ({
+        ...appData,
+        officeMeeting: current.officeMeeting !== before.officeMeeting ? current.officeMeeting : appData.officeMeeting,
+        memberPresence: current.memberPresence !== before.memberPresence ? current.memberPresence : appData.memberPresence,
+        sectionReadMarks: current.sectionReadMarks !== before.sectionReadMarks ? current.sectionReadMarks : appData.sectionReadMarks,
+      }))
       // Prefer the server snapshot_at (evidence the data is actually known-good
       // as of that instant) over the client wall clock; fall back only when no
       // bootstrap reported one (e.g. preview mode has no Supabase project at all).
@@ -101,7 +118,9 @@ export function useAppData(reportWarnings?: (report: DataWarningReport) => void)
     } catch (error) {
       // 추월당한(superseded) 세대의 실패는 이미 최신 refresh가 진행 중이거나 끝났다는 뜻이므로
       // sync health를 오염시키지 않는다 — generation race protection과 동일한 원칙.
-      if (generation === generationRef.current) recordSyncFailure(error)
+      // 호출한 쪽에는 최신 refresh의 결과를 돌려준다.
+      if (generation !== generationRef.current) return settleSuperseded()
+      recordSyncFailure(error)
       throw error
     } finally {
       // 추월당한 refresh는 자기 리셋을 건너뛰므로, 현재 세대의 완료가 initial 여부와
@@ -110,6 +129,12 @@ export function useAppData(reportWarnings?: (report: DataWarningReport) => void)
       if (generation === generationRef.current) setRefreshing(false)
     }
   }, [recordSyncFailure, recordSyncSuccess])
+
+  const refreshData = useCallback((options?: { initial?: boolean; silent?: boolean }): Promise<void> => {
+    const refresh = runRefresh(options)
+    latestRefreshRef.current = refresh
+    return refresh
+  }, [runRefresh])
 
   const loadReviewRequest = useCallback(async (requestId: string, signal?: AbortSignal): Promise<boolean | null> => {
     if (!supabase) return false
@@ -141,6 +166,8 @@ export function useAppData(reportWarnings?: (report: DataWarningReport) => void)
     // Invalidate an in-flight response from the previous session so it cannot repopulate
     // data or make a new login look ready before its own initial refresh completes.
     generationRef.current += 1
+    sessionFloorRef.current = generationRef.current
+    latestRefreshRef.current = null
     setRefreshing(false)
     setLastSyncedAt(null)
     setDataWarnings([])

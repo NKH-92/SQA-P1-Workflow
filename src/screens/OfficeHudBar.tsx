@@ -29,6 +29,7 @@ export function OfficeHudBar({
   onOpenMenu,
   onOpenCommandPalette,
   onRefresh,
+  onSyncWarningClick,
   onSignOut,
   onPreviewRoleChange,
   children,
@@ -55,6 +56,8 @@ export function OfficeHudBar({
   onOpenMenu: (opener: HTMLElement) => void
   onOpenCommandPalette: () => void
   onRefresh: () => void
+  /** 동기화 경고를 눌렀을 때. 없으면 새로고침(onRefresh)과 같다. */
+  onSyncWarningClick?: () => void
   onSignOut: () => void
   onPreviewRoleChange?: (role: Role) => void
   /** 알림 패널(열려 있을 때) */
@@ -99,7 +102,7 @@ export function OfficeHudBar({
           </span>
         )}
         {syncWarning && (
-          <button className="office-hud-warning" onClick={onRefresh} title={syncWarning.title} type="button">
+          <button className="office-hud-warning" onClick={onSyncWarningClick ?? onRefresh} title={syncWarning.title} type="button">
             <AlertTriangle aria-hidden="true" size={14} />
             <span className="office-hud-label">{syncWarning.label}</span>
           </button>

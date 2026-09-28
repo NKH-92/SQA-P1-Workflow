@@ -1,7 +1,13 @@
 import { assertRecordExists, UserFacingError } from '../../lib/errors'
 import { makeId } from '../../lib/format'
 import type { InviteAdminRepository, RepositoryDeps } from '../repositories/types'
-import { LAST_ACTIVE_LEADER_MESSAGE, normalizeMasterReason } from '../validation/masterOcc'
+import {
+  ACCOUNT_ACTIVE_DELETE_MESSAGE,
+  ACCOUNT_EMAIL_LOCKED_MESSAGE,
+  ACCOUNT_LIST_ROW_REQUIRED_MESSAGE,
+  LAST_ACTIVE_LEADER_MESSAGE,
+  normalizeMasterReason,
+} from '../validation/masterOcc'
 import { removeAllowedUser } from './appDataReducers'
 import { assertLocalLeader, assertLocalMasterCurrent } from './localAdminGuards'
 
@@ -34,11 +40,22 @@ export function createLocalInviteAdminRepository(deps: RepositoryDeps): InviteAd
     async addAllowedUser(input) {
       assertLocalLeader(profile)
       const now = new Date().toISOString()
-      setData((current) => ({
-        ...current,
-        allowedUsers: [{ id: makeId('allowed'), ...input, created_at: now, updated_at: now }, ...current.allowedUsers],
-        profiles: [{ id: makeId('profile'), ...input, created_at: now, updated_at: now }, ...current.profiles],
-      }))
+      setData((current) => {
+        const email = input.email.toLowerCase()
+        // CSV로 먼저 들어온 '가입 전' 행이 있으면 새 행을 만들지 않고 그 행을 고쳐 쓴다(account-admin과 같은 동작).
+        const existingAllowed = current.allowedUsers.find((item) => item.email.toLowerCase() === email)
+        const linkedProfile = current.profiles.some((item) => item.email.toLowerCase() === email)
+        const allowedUsers = existingAllowed && !linkedProfile
+          ? current.allowedUsers.map((item) =>
+            item.id === existingAllowed.id ? { ...item, name: input.name, role: input.role, updated_at: now } : item,
+          )
+          : [{ id: makeId('allowed'), ...input, created_at: now, updated_at: now }, ...current.allowedUsers]
+        return {
+          ...current,
+          allowedUsers,
+          profiles: [{ id: makeId('profile'), ...input, created_at: now, updated_at: now }, ...current.profiles],
+        }
+      })
     },
 
     async updateInvite(inviteId, payload) {
@@ -50,6 +67,11 @@ export function createLocalInviteAdminRepository(deps: RepositoryDeps): InviteAd
       )
       normalizeMasterReason(payload.reason)
       assertLocalMasterCurrent(current, payload.expectedUpdatedAt)
+      // 서버 가드(SQA_ACCOUNT_EMAIL_LOCKED)와 같게: 가입한 계정은 목록 이메일만 바뀌면 카드와 연결이 끊기므로 막는다.
+      // 대소문자만 다른 수정은 연결이 유지되므로 허용한다.
+      if (linkedProfile != null && current.email.toLowerCase() !== payload.email.toLowerCase()) {
+        throw new UserFacingError(ACCOUNT_EMAIL_LOCKED_MESSAGE)
+      }
       const changed =
         current.email !== payload.email
         || current.name !== payload.name
@@ -93,6 +115,11 @@ export function createLocalInviteAdminRepository(deps: RepositoryDeps): InviteAd
         }
       }
       if ((target.is_active ?? true) === nextActive) return { noop: true }
+      // 서버(set_profile_active_if_current)와 같게, 목록 행이 없는 계정은 활성화하지 않는다.
+      const targetEmail = target.email.toLowerCase()
+      if (nextActive && !data.allowedUsers.some((item) => item.email.toLowerCase() === targetEmail)) {
+        throw new UserFacingError(ACCOUNT_LIST_ROW_REQUIRED_MESSAGE)
+      }
       const now = new Date().toISOString()
       setData((current) => ({
         ...current,
@@ -132,6 +159,11 @@ export function createLocalInviteAdminRepository(deps: RepositoryDeps): InviteAd
       assertLocalLeader(profile)
       const invite = data.allowedUsers.find((item) => item.id === id)
       assertRecordExists(invite)
+      // 서버 가드(SQA_ACCOUNT_ACTIVE)와 같게: 행을 지워도 로그인은 막히지 않으므로 사용 중인 계정은 먼저 비활성화하게 한다.
+      const inviteEmail = invite.email.toLowerCase()
+      if (data.profiles.some((item) => item.email.toLowerCase() === inviteEmail && item.is_active !== false)) {
+        throw new UserFacingError(ACCOUNT_ACTIVE_DELETE_MESSAGE)
+      }
       normalizeMasterReason(input.reason)
       assertLocalMasterCurrent(invite, input.expectedUpdatedAt)
       setData((current) => removeAllowedUser(current, id))

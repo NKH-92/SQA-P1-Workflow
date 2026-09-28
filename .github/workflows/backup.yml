@@ -2,8 +2,8 @@ name: Backup DB
 
 on:
   schedule:
-    # 매일 05:00 KST (전날 20:00 UTC)
-    - cron: '0 20 * * *'
+    # 매일 05:17 KST (전날 20:17 UTC). 정각 예약은 GitHub 부하로 지연·누락되기 쉬워 정각을 피한다.
+    - cron: '17 20 * * *'
   workflow_dispatch:
 
 permissions:
@@ -16,6 +16,7 @@ concurrency:
 jobs:
   backup:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Require main branch
         if: ${{ github.ref != 'refs/heads/main' }}
@@ -160,12 +161,19 @@ jobs:
             echo ""
             echo "Auth identity 미포함: 이 artifact는 L3/full DR이 아닙니다."
             echo "복호화·검증·복원 절차: docs/OPERATIONS.md \"매일 백업\" 절 참고"
+            echo ""
+            # Artifact 저장 용량 추세 확인용 (보존 90일 × 2개 파일)
+            echo "암호화 artifact 파일 크기:"
+            echo '```'
+            ls -l "db-backup-$DUMP_DATE.tar.gz.gpg" "db-backup-$DUMP_DATE.tar.gz.enc"
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
   notify-failure:
     needs: backup
     if: ${{ always() && needs.backup.result == 'failure' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       issues: write

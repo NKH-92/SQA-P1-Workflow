@@ -16,14 +16,30 @@ describe('master.validators', () => {
     )
   })
 
-  it('rejects duplicate email on invite create', () => {
+  it('rejects duplicate email on invite create when the listed account has signed up', () => {
+    const linked = data.allowedUsers.find((item) =>
+      data.profiles.some((profile) => profile.email.toLowerCase() === item.email.toLowerCase()),
+    )!
     expect(() =>
       validateInviteCreate(data, {
-        email: data.allowedUsers[0].email,
+        email: linked.email.toUpperCase(),
         name: '테스트',
         role: 'member',
       }),
     ).toThrow('이미 등록된 이메일이에요. 목록에서 계정을 확인해 주세요.')
+  })
+
+  it('lets a listed email without a signed-up profile through so account-admin can create the login', () => {
+    const pending = {
+      ...data.allowedUsers[0],
+      id: 'allowed-csv-only',
+      email: 'Csv.Only@example.com',
+      name: 'CSV 가져오기',
+    }
+    const withPendingRow = { ...data, allowedUsers: [pending, ...data.allowedUsers] }
+    expect(
+      validateInviteCreate(withPendingRow, { email: ' csv.only@example.com ', name: ' 신규 ', role: 'member' }),
+    ).toEqual({ email: 'csv.only@example.com', name: '신규', role: 'member' })
   })
 
   it('rejects duplicate product name', () => {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useBusinessToday } from '../../hooks/useBusinessToday'
 import { businessDateKey } from '../../lib/businessTime'
 import { toUserMessage } from '../../lib/errors'
 import type { AppData, ReviewStatisticsV2Envelope } from '../../types'
@@ -23,7 +24,8 @@ export function useLeaderReviewOverview(data: AppData): LeaderReviewOverviewStat
     () => reviewStatisticsV2ContentRevision({ reviewRequests, reviewEvents }),
     [reviewEvents, reviewRequests],
   )
-  const [referenceDate] = useState(() => new Date())
+  // 서울 날짜가 바뀌면(월이 바뀌면) range가 새로 계산되어 다시 집계한다.
+  const referenceDate = useBusinessToday()
   const range = useMemo(() => leaderReviewRange(businessDateKey(referenceDate)), [referenceDate])
   const [state, setState] = useState<LeaderReviewOverviewState>({ status: 'loading' })
   const [attempt, setAttempt] = useState(0)

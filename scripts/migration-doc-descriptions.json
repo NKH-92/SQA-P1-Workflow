@@ -1,4 +1,5 @@
 {
+  "20261002154002_weekly_menu_board.sql": "회사 주간 메뉴판: 활성 직원 공용 비공개 이미지 저장소, 단일 사진 교체로 이전 파일 누적 방지",
   "202607020001_initial_schema.sql": "초기 스키마",
   "202607020002_remove_project_assignment_allocation.sql": "프로젝트 배정 allocation 컬럼 제거",
   "202607020003_add_profile_notes.sql": "프로필 메모",

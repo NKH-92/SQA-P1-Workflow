@@ -81,6 +81,7 @@ describe('HomeOffice', () => {
       '검토요청›',
       '공지›',
       '프로젝트›',
+      '메뉴판›',
     ])
     fireEvent.click(within(shortcuts).getByRole('button', { name: '검토요청 보드, 검토요청으로 이동' }))
     fireEvent.click(within(shortcuts).getByRole('button', { name: '공지 화면, 공지로 이동' }))

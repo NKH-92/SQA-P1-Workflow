@@ -8,6 +8,7 @@ import { canManageTeamData } from '../domain/permissions'
 import type { OfficeHotspotLink, OfficePersonLink, OfficeSceneAbsence } from '../features/office/components/OfficeScene'
 import { OfficeMeetingDialog } from '../features/office/components/OfficeMeetingDialog'
 import { OfficeSeatEditor } from '../features/office/components/OfficeSeatEditor'
+import { WeeklyMenuDialog } from '../features/office/components/WeeklyMenuDialog'
 import { buildOfficeAlerts } from '../features/office/officeAlerts'
 import { sceneOccupants, type SceneOccupant } from '../features/office/officeLayoutModel'
 import { awaitsMyConfirmation, meetingProgress, meetingSceneState, meetingToast, nextMeetingChangeAt } from '../features/office/officeMeetingModel'
@@ -90,6 +91,7 @@ export function useOfficeHome({
   const occupants = useMemo(() => sceneOccupants(layout), [layout])
   const [editing, setEditing] = useState(false)
   const [meetingOpen, setMeetingOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   const controller = useOfficeController(profile, data, setData ?? ignoreDataUpdate)
   const canEdit = canManageTeamData(profile) && Boolean(mutate && setData)
   const layoutLoaded = layout?.revision != null
@@ -136,6 +138,7 @@ export function useOfficeHome({
 
   const hotspots = hotspotsForViewer(SCENE_HOTSPOTS.map((area) => area.id), profile).map((id): OfficeHotspotLink => {
     const { name, destination } = HOTSPOT_LABELS[id]
+    if (id === 'menu') return { id, sign: '메뉴판', label: '메뉴판, 이번 주 메뉴 보기·사진 올리기', onSelect: () => setMenuOpen(true) }
     if (id === 'meeting') {
       const clock = meeting ? formatClock(meeting.starts_at) : null
       const status = meeting
@@ -208,6 +211,7 @@ export function useOfficeHome({
 
   const dialogs = (
     <>
+      {menuOpen && <WeeklyMenuDialog profile={profile} onClose={() => setMenuOpen(false)} />}
       {editing && canEdit && (
         <OfficeSeatEditor layout={layout} onClose={() => setEditing(false)} onSave={saveSeats} profiles={data.profiles} />
       )}

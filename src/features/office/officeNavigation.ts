@@ -4,7 +4,7 @@ import type { Profile } from '../../types'
 import type { SceneHotspotId } from './officeScene'
 
 /** 회의실은 화면을 옮기지 않고 회의 창을 연다. 나머지 기물은 누르면 그 화면으로 간다. */
-export type TabHotspotId = Exclude<SceneHotspotId, 'meeting'>
+export type TabHotspotId = Exclude<SceneHotspotId, 'meeting' | 'menu'>
 
 /** 사무실 기물을 누르면 가는 화면 */
 export const HOTSPOT_TABS: Record<TabHotspotId, TabId> = {
@@ -21,6 +21,7 @@ export const HOTSPOT_TABS: Record<TabHotspotId, TabId> = {
 }
 
 export const HOTSPOT_LABELS: Record<SceneHotspotId, { name: string; destination: string }> = {
+  menu: { name: '메뉴판', destination: '이번 주 메뉴' },
   projects: { name: '프로젝트 보드', destination: '프로젝트' },
   cabinet: { name: '변경관리 문서함', destination: '변경 적용' },
   kanban: { name: '검토요청 보드', destination: '검토요청' },
@@ -35,7 +36,7 @@ export const HOTSPOT_LABELS: Record<SceneHotspotId, { name: string; destination:
 }
 
 export function isTabHotspot(id: SceneHotspotId): id is TabHotspotId {
-  return id !== 'meeting'
+  return id !== 'meeting' && id !== 'menu'
 }
 
 /**

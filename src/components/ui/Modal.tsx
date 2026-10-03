@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ClipboardEventHandler, type ReactNode, type RefObject } from 'react'
 import { X } from 'lucide-react'
 import { getFocusableElements, initialFocusTarget } from '../../hooks/dialogFocus'
 import { ModalCloseContext, useModalCloseGuard, type ModalCloseGuard } from './modalContext'
@@ -29,6 +29,7 @@ export function Modal({
   closeOnEscape = true,
   dirty = false,
   discardMessage = DISCARD_PROMPT_MESSAGE,
+  onPaste,
   children,
 }: {
   open: boolean
@@ -51,6 +52,7 @@ export function Modal({
   dirty?: boolean
   discardMessage?: string
   children: ReactNode
+  onPaste?: ClipboardEventHandler<HTMLElement>
 }) {
   const generatedTitleId = useId()
   const resolvedTitleId = titleId ?? generatedTitleId
@@ -232,6 +234,7 @@ export function Modal({
         aria-labelledby={resolvedTitleId}
         aria-modal="true"
         className={`modal-card ${className}`}
+        onPaste={onPaste}
         onMouseDown={(event) => event.stopPropagation()}
         role="dialog"
       >

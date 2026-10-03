@@ -1,5 +1,5 @@
-import { morningBriefEnabled, setMorningBriefEnabled } from '../lib/morningBrief'
-import { Suspense, lazy, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { officeCodeLoaded, subscribeRouteLoads } from '../app/routeLoading'
+import { Suspense, lazy, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { AppData, Profile, Role } from '../types'
 import type { TabId, ToastMessage } from '../app/types'
 import type { SyncHealth } from '../app/hooks/useSyncHealth'
@@ -107,6 +107,8 @@ function buildSyncWarning(syncHealth: SyncHealth): { label: string; title: strin
 const loadNotificationPanel = () => import('../components/NotificationPanel')
 const NotificationPanel = lazy(() => loadNotificationPanel().then((module) => ({ default: module.NotificationPanel })))
 
+const PixelPreferences = lazy(() => import('./PixelPreferences').then(m => ({ default: m.PixelPreferences })))
+const OfficeMinimap = lazy(() => import('../features/office/components/OfficeMinimap').then(m => ({ default: m.OfficeMinimap })))
 const loadQuestDrawer = () => import('./QuestDrawer')
 const QuestDrawer = lazy(() => loadQuestDrawer().then(m => ({ default: m.QuestDrawer })))
 
@@ -230,9 +232,8 @@ export function Shell({
   const [mobileSidebar, setMobileSidebar] = useState(false)
   const [actionBarShown, setActionBarShown] = useState(false)
   /** 전체 화면 사무실 홈: 왼쪽 메뉴는 위 메뉴의 ‘전체 메뉴’로 여는 서랍이 된다. */
+  const officeReady = useSyncExternalStore(subscribeRouteLoads, officeCodeLoaded, () => false)
   const [questOpen, setQuestOpen] = useState(false)
-  const [briefChoice, setBriefChoice] = useState<Record<string, boolean>>({})
-  const briefEnabled = briefChoice[profile.id] ?? morningBriefEnabled(profile.id)
   useEffect(() => uiTheme === 'pixel' ? prefetchWhenIdle(loadQuestDrawer) : undefined, [uiTheme])
   const officeLayout = homeMode === 'office' && activeTab === 'dashboard'
   const drawerMode = mobileSidebar || officeLayout
@@ -519,6 +520,7 @@ export function Shell({
           <Search aria-hidden="true" size={16} />
           <span>빠른 검색</span>
         </button>
+        {uiTheme === 'pixel' && officeReady && officeData && <Suspense fallback={null}><OfficeMinimap profile={profile} data={officeData} activeTab={activeTab} navigate={setActiveTab} /></Suspense>}
         <nav aria-label="주 메뉴 항목">
           {navSections.map((section) => (
             <div className="nav-group" key={section.label}>
@@ -570,13 +572,7 @@ export function Shell({
               <Rows3 aria-hidden="true" size={15} />
               촘촘하게 보기
             </button>
-            {profile.role !== 'team_leader' && <button aria-pressed={briefEnabled} className="sidebar-footer-button" type="button" onClick={() => {
-              setMorningBriefEnabled(profile.id, !briefEnabled)
-              setBriefChoice(current => ({ ...current, [profile.id]: !briefEnabled }))
-            }}><ListChecks aria-hidden="true" size={15} /> 아침 조회</button>}
-            {onToggleUiTheme && <button aria-pressed={uiTheme === 'pixel'} className="sidebar-footer-button theme-toggle" onClick={onToggleUiTheme} type="button">
-              <LayoutGrid aria-hidden="true" size={15} /> 도트 화면
-            </button>}
+            <Suspense fallback={null}><PixelPreferences profileId={profile.id} readOnly={profile.role === 'team_leader'} uiTheme={uiTheme} onToggleUiTheme={onToggleUiTheme} /></Suspense>
             {/* 휴대폰에서는 상단바를 알림만 남기고 새로고침을 여기로 옮긴다(G-2). */}
             <button
               className="sidebar-footer-button sidebar-refresh"

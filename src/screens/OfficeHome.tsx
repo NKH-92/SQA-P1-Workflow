@@ -7,7 +7,7 @@ import type { AppData, Profile } from '../types'
 import { useOfficeHome } from './useOfficeHome'
 import './HomeOffice.css'
 
-const QuestContent = lazy(() => import('./QuestDrawer').then(m => ({ default: m.QuestContent })))
+import { QuestContent } from './QuestContent'
 const MorningBriefDialog = lazy(() => import('./MorningBriefDialog').then(m => ({ default: m.MorningBriefDialog })))
 
 const QUEST_STORAGE_KEY = 'ui:office-quest-collapsed'

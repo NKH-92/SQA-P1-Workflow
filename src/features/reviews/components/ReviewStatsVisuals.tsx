@@ -62,7 +62,7 @@ export function RequesterComparisonChart({ rows }: { rows: ReviewStatsRequesterR
             </div>
             <div aria-hidden="true" className="review-stats-bar-line">
               <span className="review-stats-bar-label">건수</span>
-              <span className="review-stats-bar-track">
+              <span className="meter review-stats-bar-track">
                 <span
                   className="meter-fill review-stats-bar-fill request"
                   style={{ width: chartPercent(row.requestCount, maxValue) }}
@@ -72,7 +72,7 @@ export function RequesterComparisonChart({ rows }: { rows: ReviewStatsRequesterR
             </div>
             <div aria-hidden="true" className="review-stats-bar-line">
               <span className="review-stats-bar-label">횟수</span>
-              <span className="review-stats-bar-track">
+              <span className="meter review-stats-bar-track">
                 <span
                   className="meter-fill review-stats-bar-fill submission"
                   style={{ width: chartPercent(row.submissionCount, maxValue) }}

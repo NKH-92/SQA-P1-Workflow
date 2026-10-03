@@ -2,7 +2,7 @@ import { gridToCanvas } from './officeCanvas'
 import type { OfficeLook } from './officeCharacter'
 import { WORLD_HEIGHT, WORLD_LEFT, WORLD_TOP, WORLD_WIDTH } from './officeGeometry'
 import { composeSeatedSprite } from './officeSprites'
-import { drawBackground, drawNoticeContent, SCENE_SEATS } from './officeScene'
+import { drawBackground, drawNoticeContent, drawIslandBack, drawIslandFront, drawWindowChair, drawAisleChair, SCENE_SEATS } from './officeScene'
 import { composeStandingSprite, STAND_FEET_ROW, type Facing, type HeldItem, type StandingPose } from './officeStandingSprites'
 import { drawBigWindowFrame, drawWindowFrontProps } from './officeWorld'
 
@@ -124,6 +124,10 @@ export function worldStill(): HTMLCanvasElement | null {
   if (!ctx) return null
   ctx.translate(-WORLD_LEFT, -WORLD_TOP)
   drawBackground(ctx)
+  SCENE_SEATS.filter(seat => seat.row === 'window').forEach(seat => drawWindowChair(ctx, seat))
+  drawIslandBack(ctx)
+  drawIslandFront(ctx, [])
+  SCENE_SEATS.filter(seat => seat.row === 'aisle').forEach(seat => drawAisleChair(ctx, seat))
   drawBigWindowFrame(ctx)
   drawWindowFrontProps(ctx)
   drawNoticeContent(ctx, 0)
@@ -151,7 +155,18 @@ export function paintVignette(target: HTMLCanvasElement, place: VignettePlace, l
     if (spot.pose === 'seated') {
       const seat = SCENE_SEATS.find(s => s.seatIndex === seatIndex)!
       const sprite = gridToCanvas(composeSeatedSprite(look, { view: seat.view, pose: 'type', frame: 0, expression: 'normal' }))
-      if (sprite) composed.drawImage(sprite, spot.x - area.x, spot.y - area.y)
+      if (sprite) {
+        composed.save()
+        composed.translate(-area.x, -area.y)
+        composed.drawImage(sprite, spot.x, spot.y)
+        if (seat.row === 'window') {
+          drawIslandBack(composed)
+          const handTop = 64 - seat.spriteY
+          composed.drawImage(sprite, 0, handTop, sprite.width, sprite.height - handTop, seat.spriteX, 64, sprite.width, sprite.height - handTop)
+          drawIslandFront(composed, [{ seatIndex: seat.seatIndex, look }])
+        } else drawAisleChair(composed, seat)
+        composed.restore()
+      }
       return
     }
     const sprite = gridToCanvas(composeStandingSprite(look, {

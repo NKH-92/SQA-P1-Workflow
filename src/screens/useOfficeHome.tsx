@@ -1,3 +1,5 @@
+import { fromOffice, prefetchRoute } from '../app/routeLoading'
+import { prefetchWhenIdle } from '../lib/prefetch'
 import { useEffect, useMemo, useState } from 'react'
 import type { MutationRunner } from '../app/hooks/useMutationRunner'
 import type { TabId } from '../app/types'
@@ -87,6 +89,10 @@ export function useOfficeHome({
   mutate?: MutationRunner
   setData?: AppDataUpdater
 }) {
+  useEffect(() => prefetchWhenIdle(async () => {
+    const ids = hotspotsForViewer(SCENE_HOTSPOTS.map(h => h.id), profile)
+    for (const id of ids) if (id !== 'meeting' && id !== 'menu') await prefetchRoute(HOTSPOT_TABS[id])
+  }), [profile])
   const layout = data.officeLayout
   const occupants = useMemo(() => sceneOccupants(layout), [layout])
   const [editing, setEditing] = useState(false)
@@ -163,7 +169,7 @@ export function useOfficeHome({
       label: [name, alert?.description, `${withJosa(destination, '으로/로')} 이동`].filter(Boolean).join(', '),
       alert,
       // 새로 온 게 있으면 그 항목을 바로 열어 준다.
-      onSelect: () => (alert?.targetId ? setActiveTab(tab, alert.targetId) : setActiveTab(tab)),
+      onSelect: () => fromOffice(tab, () => alert?.targetId ? setActiveTab(tab, alert.targetId) : setActiveTab(tab)),
     }
   })
 

@@ -69,4 +69,7 @@
 .quest-drawer .office-quest { position: static; width: 100%; max-height: none; border: 0; box-shadow: none; }
 .morning-brief-list { display: grid; gap: 16px; padding: 20px 32px; margin: 0; }
 .morning-brief-list ul { margin-top: 8px; padding-left: 20px; color: var(--paper-dim); }
-@media (max-width: 1080px) { .quest-open-button { display: none; } }
+@media (max-width: 1080px) { .brand-shell .topbar-actions .quest-open-button { display: none; } }
+
+.office-minimap { display: block; width: 220px; max-width: 100%; height: auto; flex: none; image-rendering: pixelated; cursor: pointer; }
+@media (max-width: 1080px) { .office-minimap { display: none; } }

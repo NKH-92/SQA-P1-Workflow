@@ -122,3 +122,10 @@ export function buildDeskCounts(profile: Profile, data: AppData): Map<number, nu
     : selectMemberPendingTasks(data, profile.id).length)
   return counts
 }
+
+export function newOfficeAssignmentKeys(profile: Profile, data: AppData): string[] {
+  if (profile.role !== 'member') return []
+  return (['change-applications', 'projects'] as const).flatMap(section =>
+    unseenSectionItems(sectionNewsItems(profile, data, section), sectionReadMark(data, profile, section), data.sectionReadMarks !== undefined)
+      .map(item => `${section}:${item.key}`))
+}

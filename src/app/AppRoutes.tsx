@@ -1,3 +1,4 @@
+import { trackRouteLoad } from '../app/routeLoading'
 import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from 'react'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { canViewTeamData } from '../domain/permissions'
@@ -5,9 +6,9 @@ import type { HomeMode } from '../lib/homeMode'
 import type { AppData, Profile } from '../types'
 import type { MutateFn, TabId } from './types'
 
-const loadLeaderAdminPanels = () => import('../screens/LeaderAdminPanels')
-const loadReviewPanels = () => import('../screens/ReviewPanels')
-const loadDashboardPanels = () => import('../screens/DashboardPanels')
+const loadLeaderAdminPanels = trackRouteLoad(['team', 'products', 'duties', 'invites', 'activity'], () => import('../screens/LeaderAdminPanels'))
+const loadReviewPanels = trackRouteLoad(['reviews', 'review-stats'], () => import('../screens/ReviewPanels'))
+const loadDashboardPanels = trackRouteLoad(['dashboard'], () => import('../screens/DashboardPanels'))
 
 type NamedComponent<TModule, TName extends keyof TModule> = TModule[TName] extends ComponentType<infer TProps>
   ? ComponentType<TProps>
@@ -24,14 +25,18 @@ function lazyNamed<TModule, TName extends keyof TModule>(
 }
 
 const ActivityPanel = lazyNamed(loadLeaderAdminPanels, 'ActivityPanel')
-const AnnouncementsPanel = lazyNamed(() => import('../screens/AnnouncementsPanel'), 'AnnouncementsPanel')
-const ChangeApplicationsPanel = lazyNamed(() => import('../screens/ChangeApplicationsPanel'), 'ChangeApplicationsPanel')
+const loadAnnouncementsPanel = trackRouteLoad(['announcements'], () => import('../screens/AnnouncementsPanel'))
+const AnnouncementsPanel = lazyNamed(loadAnnouncementsPanel, 'AnnouncementsPanel')
+const loadChangeApplicationsPanel = trackRouteLoad(['change-applications'], () => import('../screens/ChangeApplicationsPanel'))
+const ChangeApplicationsPanel = lazyNamed(loadChangeApplicationsPanel, 'ChangeApplicationsPanel')
 const Dashboard = lazyNamed(loadDashboardPanels, 'Dashboard')
 const LeaderDashboard = lazyNamed(loadDashboardPanels, 'LeaderDashboard')
 const OfficeHome = lazyNamed(loadDashboardPanels, 'OfficeHome')
 const MasterPanel = lazyNamed(loadLeaderAdminPanels, 'MasterPanel')
-const MyWorkPanel = lazyNamed(() => import('../screens/MyWorkPanel'), 'MyWorkPanel')
-const ProjectsPanel = lazyNamed(() => import('../screens/ProjectsPanel'), 'ProjectsPanel')
+const loadMyWorkPanel = trackRouteLoad(['work'], () => import('../screens/MyWorkPanel'))
+const MyWorkPanel = lazyNamed(loadMyWorkPanel, 'MyWorkPanel')
+const loadProjectsPanel = trackRouteLoad(['projects'], () => import('../screens/ProjectsPanel'))
+const ProjectsPanel = lazyNamed(loadProjectsPanel, 'ProjectsPanel')
 const ReviewStatsPanel = lazyNamed(loadReviewPanels, 'ReviewStatsPanel')
 const ReviewsPanel = lazyNamed(loadReviewPanels, 'ReviewsPanel')
 const TeamPanel = lazyNamed(loadLeaderAdminPanels, 'TeamPanel')

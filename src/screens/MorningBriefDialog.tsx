@@ -8,7 +8,7 @@ import { sectionNewsItems, sectionReadMark, unseenSectionItems } from '../lib/se
 import { selectMemberHomeItems } from '../features/dashboard/memberHomeModel'
 import { selectLeaderPriorityQueue } from '../features/dashboard/prioritySelectors'
 import { useTeamSummaries } from '../hooks/useTeamSummaries'
-import { buildDeskCounts } from '../features/office/officeAlerts'
+import { selectMemberPendingTasks } from '../domain/changeApplications/attention'
 
 export function MorningBriefDialog({ profile, data }: { profile: Profile; data: AppData }) {
   const today = useBusinessToday()
@@ -31,7 +31,7 @@ export function MorningBriefDialog({ profile, data }: { profile: Profile; data: 
   const news = unseenSectionItems(sectionNewsItems(profile, data, 'announcements'), sectionReadMark(data, profile, 'announcements'), true)
   const titles = news.slice(0, 3).map(n => data.announcements.find(a => a.id === n.target)?.title).filter(Boolean)
   const items = profile.role === 'leader' ? selectLeaderPriorityQueue(data, teamMembers) : selectMemberHomeItems(data, profile, today)
-  const pending = [...buildDeskCounts(profile, data).values()].reduce((sum, count) => sum + count, 0)
+  const pending = profile.role === 'leader' ? data.reviewRequests.filter(r => r.status === 'pending').length : selectMemberPendingTasks(data, profile.id).length
   const meeting = data.officeMeeting
   const todayMeeting = meeting && businessDateKey(new Date(meeting.starts_at)) === date ? meeting : null
   return <Modal open title="아침 조회" onClose={() => setOpen(false)} className="morning-brief-dialog">

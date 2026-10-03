@@ -1,5 +1,5 @@
 import type { AppData, Profile } from '../../../types'
-import { buildDeskCounts, deskPileLevel, buildOfficeAlerts } from '../officeAlerts'
+import { buildDeskCounts, deskPileLevel, buildOfficeAlerts, newOfficeAssignmentKeys } from '../officeAlerts'
 import { prefersReducedMotion } from '../../../lib/motion'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { PresenceKind } from '../../../data/validation/memberPresence'
@@ -126,6 +126,8 @@ export function OfficeScene({
   /** 장면 위에 겹쳐 보여 줄 안내(빈 사무실 등) */
   children?: ReactNode
 }) {
+  const previousViewer = useRef<string | null>(null)
+  const previousWorkKeys = useRef<string[]>([])
   const previousAlerts = useRef<ReturnType<typeof buildOfficeAlerts> | null>(null)
   const deskCounts = workflow ? buildDeskCounts(workflow.profile, workflow.data) : new Map<number, number>()
   const cameraRef = useRef(camera)
@@ -253,36 +255,7 @@ export function OfficeScene({
       if (!animate) redrawRef.current()
     }, 30_000)
 
-    useEffect(() => {
-    const renderer = rendererRef.current
-    if (!renderer || !workflow) return
-    const counts = buildDeskCounts(workflow.profile, workflow.data)
-    renderer.setDeskPiles(new Map([...counts].map(([seat, count]) => [seat, deskPileLevel(count)])))
-    const next = buildOfficeAlerts(workflow.profile, workflow.data)
-    const previous = previousAlerts.current
-    previousAlerts.current = next
-    if (!previous) return
-    const ownSeat = occupants.find(o => o.profileId === workflow.profile.id)?.seatIndex
-    if (ownSeat && ['cabinet', 'projects'].some(key => {
-      const id = key as 'cabinet' | 'projects'
-      return next[id]?.level === 'new' && (previous[id]?.level !== 'new' || previous[id]?.targetId !== next[id]?.targetId)
-    })) renderer.announceWork(ownSeat, performance.now())
-    if (workflow.profile.role === 'leader' && !previous.kanban && next.kanban?.level === 'new') {
-      const request = workflow.data.reviewRequests.find(r => r.id === next.kanban?.targetId && r.status === 'pending')
-      const seat = occupants.find(o => o.profileId === request?.requester_id)?.seatIndex
-      if (seat) renderer.deliverPaper(seat, performance.now())
-    }
-  }, [workflow, occupants])
-  useEffect(() => {
-    if (!focusedProfileId) return
-    const seat = occupants.find(o => o.profileId === focusedProfileId)
-    const element = seat ? containerRef.current?.querySelector<HTMLElement>(`[data-seat="${seat.seatIndex}"]`) : null
-    if (!element) return
-    element.dataset.focused = 'true'
-    element.focus({ preventScroll: true })
-    const timer = setTimeout(() => { delete element.dataset.focused }, 2000)
-    return () => { clearTimeout(timer); delete element.dataset.focused }
-  }, [focusedProfileId, occupants])
+
 
   return () => {
       stop()
@@ -396,6 +369,39 @@ export function OfficeScene({
     const area = SCENE_HOTSPOTS.find((item) => item.id === hotspot.id)
     return area && intersectsCamera(camera, area) ? [{ hotspot, area }] : []
   })
+
+  useEffect(() => {
+    const renderer = rendererRef.current
+    if (!renderer || !workflow) return
+    const counts = buildDeskCounts(workflow.profile, workflow.data)
+    renderer.setDeskPiles(new Map([...counts].map(([seat, count]) => [seat, deskPileLevel(count)])))
+    redrawRef.current()
+    const next = buildOfficeAlerts(workflow.profile, workflow.data)
+    const keys = newOfficeAssignmentKeys(workflow.profile, workflow.data)
+    const previous = previousViewer.current === workflow.profile.id ? previousAlerts.current : null
+    const oldKeys = previousWorkKeys.current
+    previousViewer.current = workflow.profile.id
+    previousWorkKeys.current = keys
+    previousAlerts.current = workflow.data.sectionReadMarks === undefined ? null : next
+    if (!previous) return
+    const ownSeat = occupants.find(o => o.profileId === workflow.profile.id)?.seatIndex
+    if (ownSeat && keys.some(key => !oldKeys.includes(key))) renderer.announceWork(ownSeat, performance.now())
+    if (workflow.profile.role === 'leader' && !previous.kanban && next.kanban?.level === 'new') {
+      const request = workflow.data.reviewRequests.find(r => r.id === next.kanban?.targetId && r.status === 'pending')
+      const seat = occupants.find(o => o.profileId === request?.requester_id)?.seatIndex
+      if (seat) renderer.deliverPaper(seat, performance.now())
+    }
+  }, [workflow, occupants])
+  useEffect(() => {
+    if (!focusedProfileId) return
+    const seat = occupants.find(o => o.profileId === focusedProfileId)
+    const element = seat ? containerRef.current?.querySelector<HTMLElement>(`[data-seat="${seat.seatIndex}"]`) : null
+    if (!element) return
+    element.dataset.focused = 'true'
+    element.focus({ preventScroll: true })
+    const timer = setTimeout(() => { delete element.dataset.focused }, 2000)
+    return () => { clearTimeout(timer); delete element.dataset.focused }
+  }, [focusedProfileId, occupants])
 
   return (
     <div className="office-scene-wrap" data-fit={fit} data-sky={skyPeriod}>

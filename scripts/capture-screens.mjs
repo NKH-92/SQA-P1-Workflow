@@ -47,10 +47,15 @@ if (args.includes('--compare')) {
         if (!allTabs.includes(tab)) throw new Error(`Unknown tab: ${tab}`)
         const allowed = role === 'member' ? ['dashboard','announcements','reviews','change-applications','projects','work'].includes(tab) : tab !== 'work'
         if (!allowed) { report.push({ width, role, theme, tab, skipped: '역할 권한에 없는 화면' }); continue }
-        await page.goto(`${url}/#/${tab}`)
+        const previous = await page.title()
+        const previousHash = await page.evaluate(() => location.hash)
+        await page.evaluate(tab => { location.hash = `#/${tab}` }, tab)
+        if (previousHash !== `#/${tab}`) await page.waitForFunction(previous => document.title !== previous, previous)
         await page.locator('.content').waitFor()
         await page.locator('.route-loading').waitFor({ state: 'hidden' })
         await page.evaluate(async () => {
+          const sidebar = document.querySelector('.sidebar')
+          if (sidebar) sidebar.scrollTop = 0
           await document.fonts.ready
           await Promise.all([...document.images].map(img => img.decode().catch(() => {})))
           await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))

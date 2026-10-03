@@ -115,7 +115,7 @@ export function HomeOffice({
       </div>
       {!collapsed && (
         <div id="home-office-scene">
-          <OfficeScene
+          <OfficeScene workflow={{ profile, data }}
             currentProfileId={profile.id}
             absences={office.absences}
             hotspots={office.hotspots}

@@ -7,6 +7,7 @@ import { ReviewRequestItem, type ReviewRequestItemHandlers } from './ReviewReque
 
 type ReviewDetailProps = ReviewRequestItemHandlers & {
   decisionStamp?: 'approved' | 'rejected' | null
+  onOpenMeeting?: (request: ReviewRequest) => void
   detailRef?: Ref<HTMLDivElement>
   profile: Profile
   selectedReview: ReviewRequest | null

@@ -65,6 +65,7 @@ export function AppRoutes({
   onHomeModeChange,
   onOpenPresence,
 }: AppRoutesProps) {
+  const findInOffice = (id: string) => { onHomeModeChange?.('office'); setActiveTab('dashboard', id) }
   const enterOfficeMode = onHomeModeChange ? () => onHomeModeChange('office') : undefined
   const leaderMode = profile.is_active !== false && canViewTeamData(profile)
 
@@ -72,7 +73,7 @@ export function AppRoutes({
     <ErrorBoundary key={activeTab} role={leaderMode ? 'leader' : 'member'}>
       <Suspense fallback={<div className="route-loading" role="status">화면을 불러오고 있어요.</div>}>
         {activeTab === 'dashboard' && homeMode === 'office' && (
-          <OfficeHome
+          <OfficeHome entityId={navEntityId}
             data={data}
             leaderMode={leaderMode}
             mutate={mutate}
@@ -135,7 +136,7 @@ export function AppRoutes({
           />
         )}
         {activeTab === 'projects' && (
-          <ProjectsPanel
+          <ProjectsPanel onFindInOffice={findInOffice}
             profile={profile}
             data={data}
             mutate={mutate}
@@ -145,7 +146,7 @@ export function AppRoutes({
           />
         )}
         {activeTab === 'team' && leaderMode && (
-          <TeamPanel
+          <TeamPanel onFindInOffice={findInOffice}
             profile={profile}
             data={data}
             mutate={mutate}

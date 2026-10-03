@@ -48,6 +48,7 @@ function readQuestCollapsed() {
  * 급한 일부터 바로 갈 수 있다. 위 메뉴(검색·알림·기존 화면 전환)는 Shell이 그린다.
  */
 export function OfficeHome({
+  entityId,
   profile,
   data,
   leaderMode,
@@ -56,6 +57,7 @@ export function OfficeHome({
   setData,
   onOpenPresence,
 }: {
+  entityId?: string | null
   profile: Profile
   data: AppData
   leaderMode: boolean
@@ -109,7 +111,7 @@ export function OfficeHome({
     <div className="office-home" data-quest={collapsed ? 'collapsed' : 'open'}>
       <h1 className="sr-only">우리 파트 사무실</h1>
       <div className="office-home-stage">
-        <OfficeScene
+        <OfficeScene focusedProfileId={entityId} workflow={{ profile, data }}
           camera={WORLD_CAMERA}
           currentProfileId={profile.id}
           fit="fullscreen"

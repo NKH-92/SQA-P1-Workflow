@@ -108,3 +108,17 @@ export function buildOfficeAlerts(profile: Profile, data: AppData, now = Date.no
   put('notice', alertOf(fresh('announcements'), '새 공지'))
   return alerts
 }
+
+export function deskPileLevel(count: number): 0 | 1 | 2 | 3 {
+  return count === 0 ? 0 : count <= 2 ? 1 : count <= 5 ? 2 : 3
+}
+/** 보는 사람의 권한으로 이미 읽은 업무만 사용한다. 타인 파트원 수치는 만들지 않는다. */
+export function buildDeskCounts(profile: Profile, data: AppData): Map<number, number> {
+  const counts = new Map<number, number>()
+  if (profile.role === 'team_leader') return counts
+  const seat = data.officeLayout?.seats.find(s => s.profile_id === profile.id)
+  if (seat) counts.set(seat.seat_index, profile.role === 'leader'
+    ? data.reviewRequests.filter(r => r.status === 'pending').length
+    : selectMemberPendingTasks(data, profile.id).length)
+  return counts
+}

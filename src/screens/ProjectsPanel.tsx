@@ -1,3 +1,4 @@
+import { OverflowMenu } from '../components/ui'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { Download, FolderKanban, Plus, Search, Users } from 'lucide-react'
@@ -66,6 +67,7 @@ function projectInput(form: ProjectFormState) {
 }
 
 export function ProjectsPanel({
+  onFindInOffice,
   profile,
   data,
   mutate,
@@ -73,6 +75,7 @@ export function ProjectsPanel({
   initialSelectedId,
   onInitialSelectionApplied,
 }: {
+  onFindInOffice?: (id: string) => void
   profile: Profile
   data: AppData
   mutate: MutateFn
@@ -460,6 +463,7 @@ export function ProjectsPanel({
                   <PersonFace name={member.name} profileId={member.id} size="md" />
                   <div>
                     <h2 className="group-title" data-px="title">{member.name}{member.id === profile.id ? ' (나)' : ''}</h2>
+                  {onFindInOffice && data.officeLayout?.seats.some(s => s.profile_id === member.id) && <OverflowMenu label={`${member.name} 더보기`} items={[{ label: '사무실에서 찾기', onSelect: () => onFindInOffice(member.id) }]} />}
                     <span>{member.email}</span>
                   </div>
                 </div>

@@ -1,3 +1,4 @@
+import { OverflowMenu } from '../components/ui'
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { ArrowLeft, ArrowRight, Download, Search, SlidersHorizontal, StickyNote, UserPlus } from 'lucide-react'
@@ -128,6 +129,7 @@ function TeamNoteModal({
 }
 
 export function TeamPanel({
+  onFindInOffice,
   profile,
   data,
   mutate,
@@ -137,6 +139,7 @@ export function TeamPanel({
   onInitialSelectionApplied,
   onOpenPresence,
 }: {
+  onFindInOffice?: (id: string) => void
   profile: Profile
   data: AppData
   mutate: MutateFn
@@ -385,6 +388,7 @@ export function TeamPanel({
                 <span>선택 파트원</span>
                 <div className="detail-header-title-row">
                   <h2 data-detail-title>{selectedSummary.member.name}</h2>
+                  {onFindInOffice && data.officeLayout?.seats.some(s => s.profile_id === selectedSummary.member.id) && <OverflowMenu label={`${selectedSummary.member.name} 더보기`} items={[{ label: '사무실에서 찾기', onSelect: () => onFindInOffice(selectedSummary.member.id) }]} />}
                   {canManage && (
                     <button className="ghost compact" onClick={() => setNoteModalOpen(true)} type="button">
                       <StickyNote size={15} aria-hidden="true" />

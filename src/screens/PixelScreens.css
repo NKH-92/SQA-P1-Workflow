@@ -63,3 +63,5 @@
 }
 .pixel-seat-chip { display: none; }
 [data-ui='pixel'] .pixel-seat-chip { display: inline-block; padding: 2px 6px; font-size: 11px; white-space: nowrap; }
+
+.office-person[data-focused='true'] { outline: var(--pixel-border-2) solid var(--brand-yellow); outline-offset: 4px; }

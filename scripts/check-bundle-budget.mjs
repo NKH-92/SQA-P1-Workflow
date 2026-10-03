@@ -70,6 +70,7 @@ const EXPECTED_ROUTE_DYNAMIC_IMPORTS = new Set([
   'src/screens/ChangeApplicationsPanel.tsx',
   'src/screens/DashboardPanels.ts',
   'src/screens/MyWorkPanel.tsx',
+  'src/screens/QuestDrawer.tsx',
   'src/screens/ProjectsPanel.tsx',
   'src/screens/LeaderAdminPanels.ts',
   'src/screens/ReviewPanels.ts',

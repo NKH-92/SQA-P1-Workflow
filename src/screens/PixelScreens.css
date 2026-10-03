@@ -65,3 +65,8 @@
 [data-ui='pixel'] .pixel-seat-chip { display: inline-block; padding: 2px 6px; font-size: 11px; white-space: nowrap; }
 
 .office-person[data-focused='true'] { outline: var(--pixel-border-2) solid var(--brand-yellow); outline-offset: 4px; }
+
+.quest-drawer .office-quest { position: static; width: 100%; max-height: none; border: 0; box-shadow: none; }
+.morning-brief-list { display: grid; gap: 16px; padding: 20px 32px; margin: 0; }
+.morning-brief-list ul { margin-top: 8px; padding-left: 20px; color: var(--paper-dim); }
+@media (max-width: 1080px) { .quest-open-button { display: none; } }

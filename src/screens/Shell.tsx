@@ -1,5 +1,6 @@
+import { morningBriefEnabled, setMorningBriefEnabled } from '../lib/morningBrief'
 import { Suspense, lazy, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import type { Profile, Role } from '../types'
+import type { AppData, Profile, Role } from '../types'
 import type { TabId, ToastMessage } from '../app/types'
 import type { SyncHealth } from '../app/hooks/useSyncHealth'
 import { canManageTeamData } from '../domain/permissions'
@@ -106,6 +107,9 @@ function buildSyncWarning(syncHealth: SyncHealth): { label: string; title: strin
 const loadNotificationPanel = () => import('../components/NotificationPanel')
 const NotificationPanel = lazy(() => loadNotificationPanel().then((module) => ({ default: module.NotificationPanel })))
 
+const loadQuestDrawer = () => import('./QuestDrawer')
+const QuestDrawer = lazy(() => loadQuestDrawer().then(m => ({ default: m.QuestDrawer })))
+
 const noopDismiss = () => {}
 
 /** 하단 탭바(640px 이하)에 두는 자주 가는 화면. 나머지는 ‘전체’로 서랍 메뉴를 연다(토스 TB-1·TB-2). */
@@ -152,6 +156,7 @@ function NavBadges({ state }: { state?: ShellTabState }) {
 }
 
 export function Shell({
+  officeData,
   activeTab,
   setActiveTab,
   profile,
@@ -181,6 +186,7 @@ export function Shell({
   presence,
   children,
 }: {
+  officeData?: AppData
   activeTab: TabId
   setActiveTab: (tab: TabId, entityId?: string, options?: NavigateOptions) => void
   profile: Profile
@@ -224,6 +230,10 @@ export function Shell({
   const [mobileSidebar, setMobileSidebar] = useState(false)
   const [actionBarShown, setActionBarShown] = useState(false)
   /** 전체 화면 사무실 홈: 왼쪽 메뉴는 위 메뉴의 ‘전체 메뉴’로 여는 서랍이 된다. */
+  const [questOpen, setQuestOpen] = useState(false)
+  const [briefChoice, setBriefChoice] = useState<Record<string, boolean>>({})
+  const briefEnabled = briefChoice[profile.id] ?? morningBriefEnabled(profile.id)
+  useEffect(() => uiTheme === 'pixel' ? prefetchWhenIdle(loadQuestDrawer) : undefined, [uiTheme])
   const officeLayout = homeMode === 'office' && activeTab === 'dashboard'
   const drawerMode = mobileSidebar || officeLayout
   const menuButtonRef = useRef<HTMLButtonElement>(null)
@@ -560,6 +570,10 @@ export function Shell({
               <Rows3 aria-hidden="true" size={15} />
               촘촘하게 보기
             </button>
+            {profile.role !== 'team_leader' && <button aria-pressed={briefEnabled} className="sidebar-footer-button" type="button" onClick={() => {
+              setMorningBriefEnabled(profile.id, !briefEnabled)
+              setBriefChoice(current => ({ ...current, [profile.id]: !briefEnabled }))
+            }}><ListChecks aria-hidden="true" size={15} /> 아침 조회</button>}
             {onToggleUiTheme && <button aria-pressed={uiTheme === 'pixel'} className="sidebar-footer-button theme-toggle" onClick={onToggleUiTheme} type="button">
               <LayoutGrid aria-hidden="true" size={15} /> 도트 화면
             </button>}
@@ -693,6 +707,7 @@ export function Shell({
             <span className="k">{shortcutHint()}</span>
           </button>
           <div className="topbar-actions">
+            {uiTheme === 'pixel' && activeTab !== 'dashboard' && officeData && <button className="ghost compact quest-open-button" type="button" onClick={() => setQuestOpen(true)}><ListChecks aria-hidden="true" size={15} /> 오늘 할 일</button>}
             {syncLabel && <span className="sync-label">{syncLabel}</span>}
             {busyLabel && (
               <span aria-label={busyLabel} aria-live="polite" className="saving" role="status">
@@ -827,6 +842,7 @@ export function Shell({
         </button>
       </nav>
       {/* 성공은 3초(행동 버튼이 있으면 5초) 뒤 사라지고, 경고·오류는 사용자가 닫을 때까지 유지한다. */}
+      {questOpen && officeData && uiTheme === 'pixel' && <Suspense fallback={null}><QuestDrawer profile={profile} data={officeData} leaderMode={leaderMode} setActiveTab={setActiveTab} onClose={() => setQuestOpen(false)} /></Suspense>}
       <ToastViewport onDismiss={onDismissToast ?? noopDismiss} toasts={toasts} />
     </div>
   )

@@ -288,6 +288,7 @@ function App() {
   return (
     <PixelUiProvider enabled={uiTheme.theme === 'pixel'} layout={data.officeLayout}>
       <Shell
+        officeData={data}
         activeTab={navigation.activeTab}
         setActiveTab={setActiveTab}
         profile={profile}

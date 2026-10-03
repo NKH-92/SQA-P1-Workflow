@@ -103,7 +103,7 @@ export function MyWorkPanel({ profile, data }: { profile: Profile; data: AppData
       </div>
 
       {hasNothing ? (
-        <EmptyState
+        <EmptyState art="desk"
           icon={<Package size={22} />}
           title="아직 맡은 제품이나 업무가 없어요"
           description="파트장이 담당을 정하면 여기에 모여요. 담당이 필요하면 파트장에게 알려 주세요."

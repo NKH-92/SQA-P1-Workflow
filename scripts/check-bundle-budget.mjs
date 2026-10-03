@@ -56,6 +56,7 @@ const MAX_TOTAL_GZIP_BYTES = 321 * 1024
 // 빠른 이동(Ctrl K)과 알림 패널은 열 때만 쓰므로 첫 화면에서 빼고 지연 로딩한다(한가할 때 미리 받음).
 const EXPECTED_ROUTE_DYNAMIC_IMPORTS = new Set([
   'src/components/CommandPalette.tsx',
+  'src/features/office/officeEmptyArt.tsx',
   'src/components/NotificationPanel.tsx',
   // 로그인·비밀번호 변경·계정 안내·설정 오류 화면은 해당 상태일 때만 받는다.
   'src/screens/AuthPanel.tsx',

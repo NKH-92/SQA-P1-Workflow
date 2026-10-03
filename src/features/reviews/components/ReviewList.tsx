@@ -105,7 +105,7 @@ export const ReviewList = memo(function ReviewList({
       </div>
       {loading && <p className="empty-copy" role="status">회수 보관함을 불러오고 있어요.</p>}
       {!loading && visibleReviewRequests.length === 0 && (
-        <EmptyState
+        <EmptyState art="tray"
           icon={<Inbox size={22} />}
           title={statusFilter === 'withdrawn' ? '회수한 검토요청이 없어요' : '검토요청이 없어요'}
           description={statusFilter === 'withdrawn'

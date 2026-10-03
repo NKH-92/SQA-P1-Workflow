@@ -333,7 +333,7 @@ export function ProjectsPanel({
   }
 
   const emptyState = hasFilter ? (
-    <EmptyState
+    <EmptyState art="board"
       icon={<Search size={22} />}
       title="조건에 맞는 프로젝트가 없어요"
       description="검색어나 상태 필터를 바꿔 보세요."

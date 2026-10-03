@@ -223,3 +223,6 @@
     transform: none;
   }
 }
+
+.pixel-empty-art { width: 48px; height: 48px; flex: none; }
+.pixel-mailbox-art { width: 24px; height: 24px; flex: none; }

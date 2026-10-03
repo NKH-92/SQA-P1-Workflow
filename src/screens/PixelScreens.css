@@ -27,3 +27,18 @@
 [data-ui='pixel'] .kpi[data-px='panel'] {
   box-shadow: var(--pixel-step-shadow-sm);
 }
+
+[data-ui='pixel'] .review-list-item[data-px='row']::after {
+  content: ''; position: absolute; top: 0; left: 12px; width: 18px; height: 6px;
+  background: var(--pixel-frame); pointer-events: none;
+}
+[data-ui='pixel'] .review-detail-pane { position: relative; }
+[data-ui='pixel'] .review-decision-stamp {
+  position: absolute; top: 12px; right: 16px; z-index: 2; pointer-events: none;
+  border: var(--pixel-border-2) solid currentColor; border-radius: var(--radius-px);
+  padding: 6px 12px; background: var(--paper-panel); color: var(--paper-done); font-weight: 800;
+  animation: review-stamp var(--dur-normal) var(--ease-deep) both;
+}
+[data-ui='pixel'] .review-decision-stamp[data-status='rejected'] { color: var(--paper-reject); }
+[data-ui='pixel'] .review-event[data-side='leader'] { margin-left: 24px; }
+@keyframes review-stamp { from { transform: scale(1.4) rotate(-8deg); opacity: 0; } to { transform: scale(1); opacity: 1; } }

@@ -226,3 +226,5 @@
 
 .pixel-empty-art { width: 48px; height: 48px; flex: none; }
 .pixel-mailbox-art { width: 24px; height: 24px; flex: none; }
+
+[data-ui='pixel'] .meter-fill { background-image: repeating-linear-gradient(90deg, transparent 0 3px, var(--paper-panel) 3px 4px); }

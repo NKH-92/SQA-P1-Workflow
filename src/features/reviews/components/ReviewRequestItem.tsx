@@ -314,7 +314,7 @@ export function ReviewRequestItem({
         <Badge status={request.status}>{model.statusLabel}</Badge>
         {model.showRejectionCount && <span className="review-history-chip">반려 {model.rejectionCount}회</span>}
         <span className="request-meta-inline">
-          <PersonFace name={requesterName} profileId={request.requester_id} size="xs" />
+          <PersonFace name={requesterName} profileId={request.requester_id} size="lg" />
           {requesterName} · <time dateTime={requestedAt ?? undefined} title={formatDate(requestedAt)}>
             {relativeDateLabel(requestedAt)}
           </time> {(request.review_round ?? 1) > 1 ? '재요청' : '요청'}

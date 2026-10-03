@@ -1,3 +1,4 @@
+import { TransferFaces } from '../features/office/components/TransferFaces'
 import { useEffect, useMemo, useRef } from 'react'
 import { FileClock, MessageSquare, RefreshCw, Search } from 'lucide-react'
 import { Badge, EmptyState, Section } from '../components/ui'
@@ -168,7 +169,7 @@ export function ActivityPanel({ profile, data }: { profile?: Profile; data: AppD
             ) : visibleLogs.map((log) => (
               <article className="activity-row" key={log.id}>
                 <div>
-                  <strong>{toHaeyoSummary(log.summary)}</strong>
+                  <strong><TransferFaces metadata={log.metadata} people={data.profiles} />{toHaeyoSummary(log.summary)}</strong>
                   <small>
                     <time dateTime={log.created_at} title={formatDateTime(log.created_at)}>{relativeDateLabel(log.created_at)}</time>
                     {' · '}

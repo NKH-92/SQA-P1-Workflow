@@ -42,3 +42,13 @@
 [data-ui='pixel'] .review-decision-stamp[data-status='rejected'] { color: var(--paper-reject); }
 [data-ui='pixel'] .review-event[data-side='leader'] { margin-left: 24px; }
 @keyframes review-stamp { from { transform: scale(1.4) rotate(-8deg); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+[data-ui='pixel'] .change-group[data-px='panel'] { position: relative; }
+[data-ui='pixel'] .change-group[data-px='panel']::before {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 6px;
+  background: var(--pixel-plate); pointer-events: none;
+}
+[data-ui='pixel'] .project-card[data-px='panel']::after {
+  content: ''; position: absolute; top: -4px; left: calc(50% - 18px); width: 36px; height: 10px;
+  background: var(--paper-pending-bg); opacity: .8; transform: rotate(-2deg); pointer-events: none;
+}

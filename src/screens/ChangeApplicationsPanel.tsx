@@ -520,7 +520,7 @@ export function ChangeApplicationsPanel({
     const reassignLabel = needsRecoveryReassignment ? '담당자 다시 배정' : '담당자 변경'
     const selectable = options.selectable && canReassign
     return (
-      <article className="change-task-row" data-status={task.status} key={task.id}>
+      <article className="change-task-row" data-px="row" data-status={task.status} key={task.id}>
         {selectable && (
           <label className="change-task-select">
             <input
@@ -624,7 +624,7 @@ export function ChangeApplicationsPanel({
         </header>
         <div className="change-detail-meta"><span className="person-inline">등록 <PersonFace name={applicationCreatorName(data, selectedApplication)} profileId={selectedApplication.created_by} size="xs" /><strong>{applicationCreatorName(data, selectedApplication)}</strong></span><span>시행일 <strong>{formatDate(selectedApplication.effective_date)}</strong></span><span>상태 <strong>{changeApplicationWorkflowLabel(selectedSummary.workflow_status)}</strong></span>{selectedApplication.source_url && <a href={selectedApplication.source_url} rel="noreferrer" target="_blank">공식 문서 열기</a>}</div>
         {data.changeActionItems.filter((item) => item.change_application_id === selectedApplication.id).map((item) => <div className="change-action-summary" key={item.id}><Badge>{changeActionLabel(item)}</Badge><strong>{item.content}</strong><span>적용 기한 {formatDate(item.due_date)}</span></div>)}
-        <div className="change-detail-progress"><div><strong>{selectedSummary.percent}%</strong><span>{selectedSummary.total_count}개 중 {selectedSummary.processed_count}개 처리</span></div><span className="change-progress"><i style={{ width: `${selectedSummary.percent}%` }} /></span><p>완료 {selectedSummary.completed_count} · 해당 없음 {selectedSummary.not_applicable_count} · 범위 제외 {selectedSummary.scope_removed_count} · 미적용 {selectedSummary.pending_count}</p></div>
+        <div className="change-detail-progress"><div><strong>{selectedSummary.percent}%</strong><span>{selectedSummary.total_count}개 중 {selectedSummary.processed_count}개 처리</span></div><span className="change-progress meter"><i className="meter-fill" style={{ width: `${selectedSummary.percent}%` }} /></span><p>완료 {selectedSummary.completed_count} · 해당 없음 {selectedSummary.not_applicable_count} · 범위 제외 {selectedSummary.scope_removed_count} · 미적용 {selectedSummary.pending_count}</p></div>
         {attentionActive && <p className="change-detail-filter-note">{changeAttentionLabels[attention as Exclude<ChangeAttentionFilter, 'all'>]} 업무 {visibleSelectedContexts.length}건만 보여요.</p>}
         <div className="change-task-table-head"><span>제품 / 적용 항목</span><span>공통변경</span><span>기한</span><span>상태</span><span>처리</span></div>
         <div className="change-task-list">{visibleSelectedContexts.map((context) => taskRow(context))}{visibleSelectedContexts.length === 0 && <EmptyState icon={<Package size={22} />} title="표시할 적용 업무가 없어요" />}</div>
@@ -924,7 +924,7 @@ export function ChangeApplicationsPanel({
                       <strong>{application.title}</strong>
                       <small className="person-inline"><PersonFace name={applicationCreatorName(data, application)} profileId={application.created_by} size="xs" />{applicationCreatorName(data, application)} · 시행 {formatDate(application.effective_date)}</small>
                       <span className="change-progress-copy">{summary.total_count}개 중 {summary.processed_count}개 처리 · {summary.percent}%</span>
-                      <span className="change-progress"><i style={{ width: `${summary.percent}%` }} /></span>
+                      <span className="change-progress meter"><i className="meter-fill" style={{ width: `${summary.percent}%` }} /></span>
                       <span className="change-card-counts">미적용 {summary.pending_count} · 해당 없음 {summary.not_applicable_count} · 범위 제외 {summary.scope_removed_count}</span>
                     </button>
                   )

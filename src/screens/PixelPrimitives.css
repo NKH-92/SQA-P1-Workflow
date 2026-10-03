@@ -1,6 +1,6 @@
 /* ==========================================================================
    Pixel UI · 공통 부품 층 (DESIGN.md §9 업무 화면 도트 디자인, §10 토큰·부품 표시)
-   Shell 뿌리에 data-ui="pixel"이 있을 때만 켜진다. 기존 화면을 고른 사람은 예전 디자인 그대로다.
+   문서 뿌리에 data-ui="pixel"이 있을 때만 켜진다. 기존 화면을 고른 사람은 예전 디자인 그대로다.
    화면 클래스 이름을 적지 않는다 — 부품(.section .modal-card .badge .empty-state …)과
    data-px 표시(panel card title chip hud)만 다룬다. 화면별 예외는 PixelScreens.css.
    ========================================================================== */
@@ -207,7 +207,8 @@
 @media (max-width: 640px) {
   /* 휴대폰: 장소 그림은 정수 배율을 지킬 폭이 없어 숨기고, [사무실로]는 하단 탭바의 홈과 겹쳐 숨긴다. */
   .office-place,
-  .place-plate-home {
+  .place-plate-home,
+  [data-ui='pixel'] .place-plate-name {
     display: none;
   }
 

@@ -15,6 +15,7 @@ import {
   type NavigateOptions,
 } from '../lib/navigation'
 import { preferredScrollBehavior } from '../lib/motion'
+import type { UiTheme } from '../lib/uiTheme'
 import type { HomeMode } from '../lib/homeMode'
 import type { AppNotification } from '../lib/notifications'
 import type { DesktopNotificationControls } from '../app/hooks/useDesktopNotifications'
@@ -173,6 +174,8 @@ export function Shell({
   onSignOut,
   onPreviewRoleChange,
   homeMode = 'classic',
+  uiTheme = homeMode === 'office' ? 'pixel' : 'classic',
+  onToggleUiTheme,
   onHomeModeChange,
   meetingBanner,
   presence,
@@ -204,6 +207,8 @@ export function Shell({
   onSignOut: () => void
   onPreviewRoleChange?: (role: Role) => void
   /** 홈 화면 방식. office면 홈에서 왼쪽 메뉴·상단바 대신 게임 화면 같은 위 메뉴(HUD)를 그린다. */
+  uiTheme?: UiTheme
+  onToggleUiTheme?: () => void
   homeMode?: HomeMode
   onHomeModeChange?: (mode: HomeMode) => void
   /** 어느 화면에서든 보이는 사무실 회의 안내 띠 */
@@ -255,7 +260,7 @@ export function Shell({
     section.items.push({ id: item.tab, label: item.sidebarLabel })
   }
   const headerLabel = tabHeaderLabel(activeTab, leaderMode)
-  const placePlate = homeMode === 'office' ? placePlateFor(activeTab) : null
+  const placePlate = uiTheme === 'pixel' ? placePlateFor(activeTab) : null
   const syncLabel = lastSyncedAt
     ? `마지막 동기화 ${formatClock(lastSyncedAt) ?? ''}`
     : null
@@ -459,7 +464,6 @@ export function Shell({
       className="app-shell brand-shell"
       data-bottom-bar={actionBarShown ? 'action' : 'tabs'}
       data-layout={officeLayout ? 'office' : undefined}
-      data-ui={homeMode === 'office' ? 'pixel' : undefined}
       data-visual-theme="brand-shell"
     >
       <a
@@ -556,6 +560,9 @@ export function Shell({
               <Rows3 aria-hidden="true" size={15} />
               촘촘하게 보기
             </button>
+            {onToggleUiTheme && <button aria-pressed={uiTheme === 'pixel'} className="sidebar-footer-button theme-toggle" onClick={onToggleUiTheme} type="button">
+              <LayoutGrid aria-hidden="true" size={15} /> 도트 화면
+            </button>}
             {/* 휴대폰에서는 상단바를 알림만 남기고 새로고침을 여기로 옮긴다(G-2). */}
             <button
               className="sidebar-footer-button sidebar-refresh"

@@ -528,6 +528,7 @@ export function drawWorldExtras(ctx: Ctx) {
   drawStatsMonitor(ctx)
   drawWindowBar(ctx)
   drawLounge(ctx)
+  drawMenuBoard(ctx)
   drawMeetingRoomFloor(ctx)
   drawPrinterCorner(ctx)
   drawEntranceGate(ctx)
@@ -539,4 +540,22 @@ export function drawWorldExtras(ctx: Ctx) {
   drawFloorPlant(ctx, 404, 132)
   drawFloorPlant(ctx, 270, WORLD_BOTTOM - 4)
   drawFloorPlant(ctx, WORLD_RIGHT - 26, WORLD_BOTTOM - 4)
+}
+
+/** 라운지 옆 원목 메뉴판. 종이와 요일 칸도 장면과 같은 정수 도트로 그린다. */
+function drawMenuBoard(ctx: Ctx) {
+  const x = 300
+  const y = 80
+  rect(ctx, x - 2, y + 32, 29, 2, '#b99d78')
+  rect(ctx, x + 2, y + 25, 3, 8, '#8e6541')
+  rect(ctx, x + 20, y + 25, 3, 8, '#8e6541')
+  rect(ctx, x, y, 25, 28, '#6b4a2f')
+  rect(ctx, x + 1, y + 1, 23, 26, '#caa07a')
+  rect(ctx, x + 3, y + 3, 19, 21, '#fffdf6')
+  rect(ctx, x + 8, y + 2, 9, 2, '#e2b84f')
+  rect(ctx, x + 5, y + 6, 15, 3, '#3f5f86')
+  for (let row = 0; row < 5; row += 1) {
+    rect(ctx, x + 5, y + 11 + row * 2, 3, 1, '#c7744a')
+    rect(ctx, x + 10, y + 11 + row * 2, 9 - row % 3, 1, '#9aa0a8')
+  }
 }

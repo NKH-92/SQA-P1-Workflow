@@ -132,6 +132,7 @@ export function seatStandSpot(seat: Pick<SceneSeat, 'x' | 'row'>): TripSpot {
 
 // ── 누르면 화면을 옮기는 기물 ────────────────────────────
 export type SceneHotspotId =
+  | 'menu'
   | 'projects'
   | 'cabinet'
   | 'kanban'
@@ -162,6 +163,7 @@ export const SCENE_HOTSPOTS: readonly SceneHotspot[] = [
   { id: 'kanban', x: 112, y: 4, w: 52, h: 29, sign: { x: 138, y: 5 } },
   { id: 'notice', x: 224, y: 3, w: 50, h: 31, sign: { x: 249, y: 4 } },
   { id: 'projects', x: 3, y: 41, w: 54, h: 58, sign: { x: 31, y: 43 } },
+  { id: 'menu', x: 298, y: 79, w: 28, h: 34, sign: { x: 312, y: 79 } },
   { id: 'meeting', x: -42, y: 146, w: 108, h: 108, sign: { x: 30, y: 146 } },
   { id: 'samples', x: 328, y: 154, w: 48, h: 54, sign: { x: 359, y: 155 } },
   { id: 'duties', x: 386, y: 154, w: 44, h: 52, sign: { x: 408, y: 155 } },

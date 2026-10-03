@@ -8,6 +8,112 @@ function switchPreviewRole(page: Page, role: '파트장' | '팀장' | '파트원
 /** 미리보기 계정. 데스크톱 기본 홈은 전체 화면 사무실이라, 기존 화면을 다루는 테스트는 기존 화면을 고른 사람으로 시작한다. */
 const PREVIEW_PROFILE_IDS = ['demo-leader', 'member-01', 'demo-team-leader']
 
+test('weekly menu accepts different screenshot ratios without cropping and survives reload', async ({ page }) => {
+  await startWithDefaultHome(page)
+  // Choose office explicitly so crossing the phone breakpoint does not switch
+  // the default home mode (and unmount its open dialog).
+  await page.getByRole('button', { name: '기존 화면' }).click()
+  await page.getByRole('button', { name: '크게 보기' }).click()
+  const appearance = (element: Element) => {
+    const properties = ['width', 'backgroundColor', 'borderRadius', 'borderWidth', 'borderColor', 'boxShadow', 'fontFamily', 'fontSize', 'padding', 'gap'] as const
+    return ['', '.modal-header', '.office-meeting-body', '.modal-footer', '.modal-footer .primary'].map((selector) => {
+      const target = selector ? element.querySelector(selector)! : element
+      const css = getComputedStyle(target)
+      return Object.fromEntries(properties.map((property) => [property, css[property]]))
+    })
+  }
+  await page.getByRole('button', { name: '회의실, 회의 열기' }).click()
+  const meetingAppearance = await page.getByRole('dialog', { name: '회의 열기' }).evaluate(appearance)
+  await page.getByRole('button', { name: '회의 창 닫기' }).click()
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.getByRole('button', { name: '메뉴판, 이번 주 메뉴 보기·사진 올리기' }).click()
+  const dialog = page.getByRole('dialog', { name: '이번 주 메뉴' })
+  // The primary action label changes its width, but every visual style is shared.
+  const menuAppearance = await dialog.evaluate(appearance)
+  delete (meetingAppearance[4] as Partial<typeof meetingAppearance[4]>).width
+  delete (menuAppearance[4] as Partial<typeof menuAppearance[4]>).width
+  expect(menuAppearance).toEqual(meetingAppearance)
+  const input = dialog.getByLabel('메뉴 사진 선택', { exact: true })
+  // Exercise the production image policy without allowing blob: URLs.
+  await page.evaluate(() => {
+    const policy = document.createElement('meta')
+    policy.httpEquiv = 'Content-Security-Policy'
+    policy.content = "img-src 'self' data:"
+    document.head.append(policy)
+  })
+  for (const [width, height] of [[1600, 650], [520, 1900], [900, 900]]) {
+    const replace = dialog.getByRole('button', { name: '메뉴 사진 바꾸기' })
+    if (await replace.isVisible()) await replace.click()
+    const capture = await page.evaluate(({ width, height }) => {
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')!
+      ctx.fillStyle = '#fffdf6'
+      ctx.fillRect(0, 0, width, height)
+      ctx.fillStyle = '#34497a'
+      ctx.font = '24px sans-serif'
+      ctx.fillText('테스트 메뉴표 (실제 식단 아님)', 16, 40)
+      for (let row = 0; row < 5; row += 1) {
+        ctx.fillText(['월요일 한식', '화요일 비빔밥', '수요일 국수', '목요일 생선구이', '금요일 카레'][row], 16, 90 + row * (height - 150) / 5)
+      }
+      ctx.fillRect(width - 12, height - 12, 12, 12)
+      return canvas.toDataURL('image/png').split(',')[1]
+    }, { width, height })
+    await expect(input).toBeEnabled()
+    await input.setInputFiles({ name: `capture-${width}.png`, mimeType: 'image/png', buffer: Buffer.from(capture, 'base64') })
+    await expect(dialog.getByText(`게시 전 미리보기 · ${width} × ${height}`)).toBeVisible()
+    const image = dialog.getByRole('img', { name: /메뉴/ })
+    await expect(image).toBeVisible()
+    await expect(image).toHaveAttribute('src', /^data:image\/png;base64,/)
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport)
+      const shape = await image.evaluate((img: HTMLImageElement) => ({
+        w: img.getBoundingClientRect().width, h: img.getBoundingClientRect().height,
+        nw: img.naturalWidth, nh: img.naturalHeight,
+        scroll: document.documentElement.scrollWidth, viewport: window.innerWidth,
+        fit: getComputedStyle(img).objectFit,
+      }))
+      expect(shape.w / shape.h).toBeCloseTo(width / height, 2)
+      expect(shape.nw).toBe(width)
+      expect(shape.nh).toBe(height)
+      expect(shape.fit).toBe('contain')
+      expect(shape.scroll).toBeLessThanOrEqual(shape.viewport)
+      const frame = await dialog.getByRole('region', { name: /메뉴 사진/ }).evaluate((element) => ({ height: element.clientHeight, content: element.scrollHeight }))
+      expect(frame.content).toBeLessThanOrEqual(frame.height + 1)
+    }
+    await dialog.getByRole('button', { name: '확대 보기' }).click()
+    await expect(dialog.getByRole('button', { name: '전체 보기' })).toHaveAttribute('aria-pressed', 'true')
+    expect(await image.evaluate((img) => img.getBoundingClientRect().width)).toBeGreaterThanOrEqual(width)
+    await dialog.getByRole('button', { name: '전체 보기' }).click()
+    await dialog.getByRole('button', { name: '이번 주 메뉴로 게시' }).click()
+    await expect(dialog.getByRole('status')).toHaveText('이 브라우저에 메뉴를 저장했어요.')
+    const storedCount = await page.evaluate(() => new Promise<number>((resolve, reject) => {
+      const request = indexedDB.open('sqa-weekly-menus', 2)
+      request.onsuccess = () => {
+        const db = request.result
+        const count = db.transaction('menus').objectStore('menus').count()
+        count.onsuccess = () => { resolve(count.result); db.close() }
+        count.onerror = () => { reject(count.error); db.close() }
+      }
+      request.onerror = () => reject(request.error)
+    }))
+    expect(storedCount).toBe(1)
+  }
+  await page.screenshot({ path: 'artifacts/weekly-menu/mobile.png', animations: 'disabled' })
+  await dialog.getByRole('button', { name: '닫기', exact: true }).click()
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await switchPreviewRole(page, '팀장')
+  await page.reload()
+  await page.getByRole('button', { name: '메뉴판, 이번 주 메뉴 보기·사진 올리기' }).click()
+  await expect(dialog.getByText('게시된 메뉴', { exact: true })).toBeVisible()
+  expect(await dialog.getByRole('img', { name: /메뉴/ }).evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(900)
+  await expect(dialog.getByRole('button', { name: '메뉴 사진 바꾸기' })).toBeEnabled()
+  await page.screenshot({ path: 'artifacts/weekly-menu/desktop.png', animations: 'disabled' })
+  expect(errors).toEqual([])
+})
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript((ids) => {
     // 테스트마다 한 번만 기존 화면을 골라 둔다(테스트 안에서 바꾼 방식은 새로고침해도 유지된다).

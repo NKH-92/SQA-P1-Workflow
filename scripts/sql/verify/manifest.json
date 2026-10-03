@@ -20,7 +20,8 @@
     "97_section_read_marks.sql",
     "98_office_meetings.sql",
     "99_member_presence.sql",
-    "99_ops_preflight_hardening.sql"
+    "99_ops_preflight_hardening.sql",
+    "99_weekly_menu.sql"
   ],
   "migrationVersions": [
     "202607020001",
@@ -106,6 +107,7 @@
     "20260927130000",
     "20260927135000",
     "20260927140000",
-    "20260928090000"
+    "20260928090000",
+    "20261002154002"
   ]
 }

@@ -306,6 +306,7 @@ export function TeamPanel({
               const openReviews = summary.reviews.filter((request) => request.status === 'pending')
               return (
                 <button
+                  data-px="panel"
                   aria-pressed={selected}
                   className={selected ? 'v2-team-card selected' : 'v2-team-card'}
                   key={summary.member.id}
@@ -316,12 +317,13 @@ export function TeamPanel({
                   type="button"
                 >
                   <div className="v2-team-head">
-                    <PersonFace name={summary.member.name} profileId={summary.member.id} size="md" />
+                    <PersonFace name={summary.member.name} profileId={summary.member.id} size="lg" />
                     <span>
                       <strong>{summary.member.name}</strong>
                       <small>{summary.member.email}</small>
                     </span>
                     <Badge>{roleLabels[summary.member.role]}</Badge>
+                    {data.officeLayout?.seats.find(seat => seat.profile_id === summary.member.id)?.seat_index && <span className="pixel-seat-chip" data-px="chip">{data.officeLayout.seats.find(seat => seat.profile_id === summary.member.id)!.seat_index}번 자리</span>}
                     {summary.member.is_active === false && <Badge status="withdrawn">비활성</Badge>}
                   </div>
                   {(() => {

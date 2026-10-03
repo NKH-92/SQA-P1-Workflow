@@ -62,7 +62,7 @@ export function InviteCard({
     })
 
   return (
-    <article className="master-card invite-card" data-status={linkedProfile ? (isActive ? 'active' : 'inactive') : 'pending'}>
+    <article data-px="panel" className="master-card invite-card" data-status={linkedProfile ? (isActive ? 'active' : 'inactive') : 'pending'}>
       {edit && !readOnly ? (
         <div className="project-edit-form">
           <label>

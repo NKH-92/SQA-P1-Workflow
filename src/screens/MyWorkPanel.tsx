@@ -80,7 +80,7 @@ export function MyWorkPanel({ profile, data }: { profile: Profile; data: AppData
   return (
     <div className="stack">
       <div className="page-intro">
-        <OfficePlace people={[{ profileId: profile.id, name: profile.name }]} place="nameplates" />
+        <OfficePlace people={[{ profileId: profile.id, name: profile.name }]} place={data.officeLayout?.seats.some(seat => seat.profile_id === profile.id) ? "my-desk" : "nameplates"} seatIndex={data.officeLayout?.seats.find(seat => seat.profile_id === profile.id)?.seat_index} />
         <div>
           <h1>내 담당</h1>
           <p>

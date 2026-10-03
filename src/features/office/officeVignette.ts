@@ -1,7 +1,8 @@
 import { gridToCanvas } from './officeCanvas'
 import type { OfficeLook } from './officeCharacter'
 import { WORLD_HEIGHT, WORLD_LEFT, WORLD_TOP, WORLD_WIDTH } from './officeGeometry'
-import { drawBackground, drawNoticeContent } from './officeScene'
+import { composeSeatedSprite } from './officeSprites'
+import { drawBackground, drawNoticeContent, SCENE_SEATS } from './officeScene'
 import { composeStandingSprite, STAND_FEET_ROW, type Facing, type HeldItem, type StandingPose } from './officeStandingSprites'
 import { drawBigWindowFrame, drawWindowFrontProps } from './officeWorld'
 
@@ -21,13 +22,15 @@ export type VignettePlace =
   | 'samples'
   | 'duties'
   | 'gate'
+  | 'my-desk'
 
-type Spot = { x: number; y: number; facing: Facing; pose: StandingPose; held?: HeldItem }
+type Spot = { x: number; y: number; facing: Facing; pose: StandingPose | 'seated'; held?: HeldItem }
 
 export type VignetteArea = { x: number; y: number; w: number; h: number; spots: readonly Spot[] }
 
 /** 잘라 보여 줄 곳(월드 좌표)과 사람이 서는 곳. 첫 자리는 나, 둘째 자리는 관련된 사람이다. */
 export const VIGNETTES: Record<VignettePlace, VignetteArea> = {
+  'my-desk': { x: 90, y: 40, w: 88, h: 50, spots: [] },
   notice: {
     x: 204, y: 2, w: 88, h: 50,
     spots: [
@@ -100,10 +103,17 @@ export const VIGNETTES: Record<VignettePlace, VignetteArea> = {
   },
 }
 
+export function vignetteArea(place: VignettePlace, seatIndex?: number): VignetteArea {
+  if (place !== 'my-desk') return VIGNETTES[place]
+  const seat = SCENE_SEATS.find(s => s.seatIndex === seatIndex)
+  if (!seat) return VIGNETTES.nameplates
+  return { x: seat.x - 44, y: seat.spriteY - 8, w: 88, h: 50, spots: [{ x: seat.spriteX, y: seat.spriteY, facing: 'down', pose: 'seated' }] }
+}
+
 let stillWorld: HTMLCanvasElement | null | undefined
 
 /** 사람 없는 사무실 한 장(벽·바닥·기물). 모든 장소 그림이 함께 쓴다. */
-function worldStill(): HTMLCanvasElement | null {
+export function worldStill(): HTMLCanvasElement | null {
   if (stillWorld !== undefined) return stillWorld
   stillWorld = null
   if (typeof document === 'undefined') return null
@@ -125,8 +135,8 @@ function worldStill(): HTMLCanvasElement | null {
  * 장소 그림을 target 캔버스에 그린다. scale은 논리 픽셀 한 칸의 캔버스 픽셀 수(정수)다.
  * 사람은 자리 순서대로 세우고, 자리보다 많으면 뺀다.
  */
-export function paintVignette(target: HTMLCanvasElement, place: VignettePlace, looks: readonly OfficeLook[], scale: number) {
-  const area = VIGNETTES[place]
+export function paintVignette(target: HTMLCanvasElement, place: VignettePlace, looks: readonly OfficeLook[], scale: number, seatIndex?: number) {
+  const area = vignetteArea(place, seatIndex)
   const world = worldStill()
   const ctx = target.getContext('2d')
   if (!world || !ctx) return
@@ -138,6 +148,12 @@ export function paintVignette(target: HTMLCanvasElement, place: VignettePlace, l
   composed.drawImage(world, area.x - WORLD_LEFT, area.y - WORLD_TOP, area.w, area.h, 0, 0, area.w, area.h)
   looks.slice(0, area.spots.length).forEach((look, index) => {
     const spot = area.spots[index]
+    if (spot.pose === 'seated') {
+      const seat = SCENE_SEATS.find(s => s.seatIndex === seatIndex)!
+      const sprite = gridToCanvas(composeSeatedSprite(look, { view: seat.view, pose: 'type', frame: 0, expression: 'normal' }))
+      if (sprite) composed.drawImage(sprite, spot.x - area.x, spot.y - area.y)
+      return
+    }
     const sprite = gridToCanvas(composeStandingSprite(look, {
       facing: spot.facing,
       pose: spot.pose,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { WORLD_BOTTOM, WORLD_LEFT, WORLD_RIGHT, WORLD_TOP } from './officeGeometry'
 import { HOTSPOT_TABS } from './officeNavigation'
-import { VIGNETTES } from './officeVignette'
+import { VIGNETTES, vignetteArea } from './officeVignette'
 import { SCENE_HOTSPOTS } from './officeScene'
 
 describe('office vignettes', () => {
@@ -35,4 +35,15 @@ describe('office vignettes', () => {
       expect(overlapsX && overlapsY, hotspot.id).toBe(true)
     }
   })
+})
+
+it('keeps every personal desk inside the world and falls back without a seat', () => {
+  for (let seat = 1; seat <= 8; seat++) {
+    const area = vignetteArea('my-desk', seat)
+    expect(area.x).toBeGreaterThanOrEqual(WORLD_LEFT)
+    expect(area.y).toBeGreaterThanOrEqual(WORLD_TOP)
+    expect(area.x + area.w).toBeLessThanOrEqual(WORLD_RIGHT)
+    expect(area.y + area.h).toBeLessThanOrEqual(WORLD_BOTTOM)
+  }
+  expect(vignetteArea('my-desk', 99)).toBe(VIGNETTES.nameplates)
 })

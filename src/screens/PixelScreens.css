@@ -52,3 +52,14 @@
   content: ''; position: absolute; top: -4px; left: calc(50% - 18px); width: 36px; height: 10px;
   background: var(--paper-pending-bg); opacity: .8; transform: rotate(-2deg); pointer-events: none;
 }
+
+[data-ui='pixel'] .activity-list { background-image: repeating-linear-gradient(transparent 0 31px, var(--paper-border) 31px 32px); }
+[data-ui='pixel'] .activity-row strong { display: flex; align-items: center; gap: 6px; }
+[data-ui='pixel'] .invite-card { position: relative; }
+[data-ui='pixel'] .invite-card[data-status='inactive']::after {
+  content: ''; position: absolute; top: 12px; right: 12px; width: 10px; height: 10px;
+  border-radius: var(--radius-full); background: var(--paper-bg);
+  border: var(--pixel-border-1) solid var(--pixel-frame); pointer-events: none;
+}
+.pixel-seat-chip { display: none; }
+[data-ui='pixel'] .pixel-seat-chip { display: inline-block; padding: 2px 6px; font-size: 11px; white-space: nowrap; }

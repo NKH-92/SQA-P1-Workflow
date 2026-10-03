@@ -1,3 +1,4 @@
+import { PersonFace } from '../features/office/components/PersonFace'
 import { TransferFaces } from '../features/office/components/TransferFaces'
 import { useEffect, useMemo, useRef } from 'react'
 import { FileClock, MessageSquare, RefreshCw, Search } from 'lucide-react'
@@ -167,9 +168,9 @@ export function ActivityPanel({ profile, data }: { profile?: Profile; data: AppD
                 />
               )
             ) : visibleLogs.map((log) => (
-              <article className="activity-row" key={log.id}>
+              <article className="activity-row" data-px="row" key={log.id}>
                 <div>
-                  <strong><TransferFaces metadata={log.metadata} people={data.profiles} />{toHaeyoSummary(log.summary)}</strong>
+                  <strong><PersonFace profileId={log.actor_id} name={data.profiles.find(p => p.id === log.actor_id)?.name} size="xs" /><TransferFaces metadata={log.metadata} people={data.profiles} />{toHaeyoSummary(log.summary)}</strong>
                   <small>
                     <time dateTime={log.created_at} title={formatDateTime(log.created_at)}>{relativeDateLabel(log.created_at)}</time>
                     {' · '}
@@ -199,9 +200,9 @@ export function ActivityPanel({ profile, data }: { profile?: Profile; data: AppD
             {visibleAudit.map((event) => {
               const fieldLabels = safeAuditFields(event).map(auditFieldLabel)
               return (
-                <article className="activity-row" key={event.id}>
+                <article className="activity-row" data-px="row" key={event.id}>
                   <div>
-                    <strong>{event.actor_name ?? '시스템'} · {activityEntityLabel(event.entity_type)} {activityActionLabel(event.action)}</strong>
+                    <strong><PersonFace name={event.actor_name} size="xs" />{event.actor_name ?? '시스템'} · {activityEntityLabel(event.entity_type)} {activityActionLabel(event.action)}</strong>
                     <small>
                       <time dateTime={event.changed_at} title={formatDateTime(event.changed_at)}>{relativeDateLabel(event.changed_at)}</time>
                       {' · '}

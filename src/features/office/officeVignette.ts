@@ -6,11 +6,21 @@ import { composeStandingSprite, STAND_FEET_ROW, type Facing, type HeldItem, type
 import { drawBigWindowFrame, drawWindowFrontProps } from './officeWorld'
 
 /**
- * 업무 화면 머리말의 ‘사무실 장소’ 그림. 사무실에서 그 화면으로 오는 기물(공지 화면·검토요청 칸반·변경관리 문서함·
- * 프로젝트 보드) 앞을 잘라 보여 주고, 앞에 사람(나, 그리고 관련된 사람)을 세운다. 한 장만 그린다(움직이지 않는다).
+ * 업무 화면 머리말의 ‘사무실 장소’ 그림. 사무실에서 그 화면으로 오는 기물(SCENE_HOTSPOTS의 열 가지) 앞을 잘라 보여 주고,
+ * 앞에 사람(나, 그리고 관련된 사람)을 세운다. 한 장만 그린다(움직이지 않는다). 영역은 월드 범위(WORLD_LEFT~, WORLD_TOP~) 안이어야 한다.
  */
 
-export type VignettePlace = 'notice' | 'kanban' | 'cabinet' | 'projects'
+export type VignettePlace =
+  | 'notice'
+  | 'kanban'
+  | 'cabinet'
+  | 'projects'
+  | 'nameplates'
+  | 'stats'
+  | 'logbook'
+  | 'samples'
+  | 'duties'
+  | 'gate'
 
 type Spot = { x: number; y: number; facing: Facing; pose: StandingPose; held?: HeldItem }
 
@@ -44,6 +54,48 @@ export const VIGNETTES: Record<VignettePlace, VignetteArea> = {
     spots: [
       { x: 68, y: 86, facing: 'down', pose: 'talk' },
       { x: 0, y: 86, facing: 'down', pose: 'stand', held: 'paper' },
+    ],
+  },
+  nameplates: {
+    x: -48, y: 2, w: 88, h: 50,
+    spots: [
+      { x: -25, y: 50, facing: 'down', pose: 'talk' },
+      { x: 24, y: 50, facing: 'down', pose: 'stand' },
+    ],
+  },
+  stats: {
+    x: -12, y: 2, w: 88, h: 50,
+    spots: [
+      { x: 32, y: 50, facing: 'up', pose: 'stand' },
+      { x: 64, y: 50, facing: 'down', pose: 'talk', held: 'cup' },
+    ],
+  },
+  logbook: {
+    x: 200, y: 192, w: 88, h: 50,
+    spots: [
+      { x: 255, y: 240, facing: 'up', pose: 'reach', held: 'paper' },
+      { x: 212, y: 240, facing: 'down', pose: 'stand' },
+    ],
+  },
+  samples: {
+    x: 316, y: 158, w: 88, h: 50,
+    spots: [
+      { x: 359, y: 208, facing: 'up', pose: 'reach' },
+      { x: 394, y: 208, facing: 'down', pose: 'stand', held: 'binder' },
+    ],
+  },
+  duties: {
+    x: 344, y: 158, w: 88, h: 50,
+    spots: [
+      { x: 408, y: 208, facing: 'up', pose: 'stand' },
+      { x: 356, y: 208, facing: 'down', pose: 'talk' },
+    ],
+  },
+  gate: {
+    x: 162, y: 206, w: 88, h: 50,
+    spots: [
+      { x: 206, y: 254, facing: 'up', pose: 'stand', held: 'paper' },
+      { x: 240, y: 254, facing: 'down', pose: 'talk' },
     ],
   },
 }

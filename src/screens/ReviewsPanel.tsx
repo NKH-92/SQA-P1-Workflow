@@ -641,7 +641,7 @@ function ReviewsWorkspace({
           {selectedReview && <div className="kanban-detail">{detail}</div>}
         </section>
       ) : (
-        <section aria-label="검토요청 작업 공간" className="review-workspace">
+        <section aria-label="검토요청 작업 공간" className="review-workspace" data-px="panel">
           <ReviewList
             decisionEvents={decisionEvents}
             loading={statusFilter === 'withdrawn' && archiveLoading && archivePage < 0}

@@ -35,6 +35,18 @@ export const HOTSPOT_LABELS: Record<SceneHotspotId, { name: string; destination:
   meeting: { name: '회의실', destination: '회의' },
 }
 
+const TAB_HOTSPOTS: Partial<Record<TabId, TabHotspotId>> = Object.fromEntries(
+  (Object.entries(HOTSPOT_TABS) as Array<[TabHotspotId, TabId]>).map(([hotspot, tab]) => [tab, hotspot]),
+)
+
+/** 업무 화면 상단바 장소 명판에 적는 ‘지금 서 있는 기물’. 기물이 없는 화면(내 담당)은 내 책상이다. */
+export function placePlateFor(tab: TabId): { name: string } | null {
+  if (tab === 'dashboard') return null
+  if (tab === 'work') return { name: '내 책상' }
+  const hotspot = TAB_HOTSPOTS[tab]
+  return hotspot ? { name: HOTSPOT_LABELS[hotspot].name } : null
+}
+
 export function isTabHotspot(id: SceneHotspotId): id is TabHotspotId {
   return id !== 'meeting' && id !== 'menu'
 }

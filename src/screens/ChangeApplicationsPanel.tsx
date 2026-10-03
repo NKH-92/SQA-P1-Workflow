@@ -557,7 +557,7 @@ export function ChangeApplicationsPanel({
       && task.assignee_id === profile.id
     const overdue = (daysUntil(actionItem.due_date) ?? 0) < 0
     return (
-      <article className="member-change-detail-card" data-overdue={overdue} key={task.id}>
+      <article className="member-change-detail-card" data-overdue={overdue} data-px="panel" key={task.id}>
         <header>
           <div>
             <span>{application.change_number}</span>
@@ -647,7 +647,7 @@ export function ChangeApplicationsPanel({
     tone?: 'warning' | 'success'
     onClick: () => void
   }) => (
-    <button aria-pressed={pressed} className="kpi-stat" data-tone={count > 0 ? tone : undefined} key={label} onClick={onClick} type="button">
+    <button aria-pressed={pressed} className="kpi-stat" data-px="panel" data-tone={count > 0 ? tone : undefined} key={label} onClick={onClick} type="button">
       <span className="kpi-stat-label">{label}{icon}</span>
       <strong className="kpi-stat-value">{count}<span className="unit">건</span></strong>
     </button>
@@ -950,7 +950,7 @@ export function ChangeApplicationsPanel({
                 const groupSelectable = groupSelectableIds.get(group.key) ?? []
                 const allSelected = groupSelectable.length > 0 && groupSelectable.every((taskId) => selectedTaskIds.has(taskId))
                 return (
-                  <article className="change-group" data-selectable={bulkSelectable || undefined} key={`${viewMode}-${group.key}`}>
+                  <article className="change-group" data-px="panel" data-selectable={bulkSelectable || undefined} key={`${viewMode}-${group.key}`}>
                     <header>
                       <div>
                         {groupSelectable.length > 0 && (

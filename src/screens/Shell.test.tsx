@@ -65,6 +65,7 @@ type RenderOptions = {
   onPreviewRoleChange?: (role: Profile['role']) => void
   onSignOut?: () => void
   onRefresh?: () => void
+  homeMode?: 'office' | 'classic'
   children?: ReactNode
 }
 
@@ -73,6 +74,7 @@ function shellElement(profile: Profile, leaderMode: boolean, options: RenderOpti
     <Shell
       activeTab={options.activeTab ?? 'dashboard'}
       data={options.data ?? emptyData()}
+      homeMode={options.homeMode}
       dataWarnings={options.dataWarnings ?? []}
       lastSyncedAt={null}
       leaderMode={leaderMode}
@@ -394,6 +396,24 @@ describe('Shell navigation metadata parity', () => {
 
     renderShell(member, false, { activeTab: 'announcements' })
     expect(document.querySelector('.topbar-title')).toHaveTextContent('내 업무 / 공지')
+  })
+
+  it('replaces the breadcrumb with the office object plate and a way back for office home users', () => {
+    const setActiveTab = vi.fn()
+    renderShell(leader, true, { activeTab: 'reviews', homeMode: 'office', setActiveTab })
+    const topbar = document.querySelector('.topbar')
+    expect(topbar).toHaveAttribute('data-px', 'hud')
+    expect(document.querySelector('.place-plate-name')).toHaveTextContent('검토요청 보드')
+    expect(document.querySelector('.topbar h1')).toBeNull()
+    expect(screen.getByText('워크스페이스 / 검토요청')).toHaveClass('sr-only')
+    fireEvent.click(screen.getByRole('button', { name: '사무실로' }))
+    expect(setActiveTab).toHaveBeenCalledWith('dashboard')
+    cleanup()
+
+    renderShell(leader, true, { activeTab: 'reviews', homeMode: 'classic' })
+    expect(document.querySelector('.topbar')).not.toHaveAttribute('data-px')
+    expect(document.querySelector('.place-plate-name')).toBeNull()
+    expect(document.querySelector('.topbar-title')).toHaveTextContent('워크스페이스 / 검토요청')
   })
 })
 

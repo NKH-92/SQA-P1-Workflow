@@ -1,4 +1,5 @@
 import { Badge, EmptyState, Rows, Section } from '../components/ui'
+import { OfficePlace } from '../features/office/components/OfficePlace'
 import type { RowItem } from '../components/ui/Rows'
 import type { AppData, Profile, ProductAssignment } from '../types'
 import { dueState } from '../lib/dates'
@@ -79,23 +80,26 @@ export function MyWorkPanel({ profile, data }: { profile: Profile; data: AppData
   return (
     <div className="stack">
       <div className="page-intro">
-        <h1>내 담당</h1>
-        <p>
-          {hasNothing ? (
-            '아직 배정받은 제품이나 업무가 없어요.'
-          ) : (
-            <>
-              담당 제품 <strong>{ownProducts.length}개</strong> · 정기 업무 <strong>{ownDuties.length}개</strong>를 맡고
-              있어요.
-              {pendingContexts.length > 0 && (
-                <>
-                  {' '}
-                  처리할 적용 업무가 <strong>{pendingContexts.length}건</strong> 있어요.
-                </>
-              )}
-            </>
-          )}
-        </p>
+        <OfficePlace people={[{ profileId: profile.id, name: profile.name }]} place="nameplates" />
+        <div>
+          <h1>내 담당</h1>
+          <p>
+            {hasNothing ? (
+              '아직 배정받은 제품이나 업무가 없어요.'
+            ) : (
+              <>
+                담당 제품 <strong>{ownProducts.length}개</strong> · 정기 업무 <strong>{ownDuties.length}개</strong>를 맡고
+                있어요.
+                {pendingContexts.length > 0 && (
+                  <>
+                    {' '}
+                    처리할 적용 업무가 <strong>{pendingContexts.length}건</strong> 있어요.
+                  </>
+                )}
+              </>
+            )}
+          </p>
+        </div>
       </div>
 
       {hasNothing ? (

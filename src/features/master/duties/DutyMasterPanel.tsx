@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { OfficePlace } from '../../office/components/OfficePlace'
 import { ClipboardList, Download, Plus, Search, Users } from 'lucide-react'
 import type { PendingAdminDelete } from '../../../app/types'
 import type { AuditedDeleteInput } from '../../../data/contracts'
@@ -289,6 +290,7 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
   return (
     <div className="stack">
       <div className="page-intro master-page-heading">
+        <OfficePlace people={[{ profileId: profile.id, name: profile.name }]} place="duties" />
         <div>
           <h1>업무 카테고리</h1>
           <p>

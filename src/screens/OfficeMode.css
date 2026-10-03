@@ -427,11 +427,6 @@
   margin-top: 8px;
 }
 
-[data-ui='pixel'] .team-presence {
-  border-radius: 3px;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 32%, transparent);
-}
-
 /* ── 내 상태 창 ─────────────────────────────────────────── */
 .modal-card.presence-dialog {
   width: min(560px, 100%);

@@ -27,8 +27,10 @@ import { useDensityPreference } from './useDensityPreference'
 import { OfficeHudBar } from './OfficeHudBar'
 import type { EffectivePresence } from '../data/validation/memberPresence'
 import { PresenceButton } from '../features/office/components/PresenceButton'
+import { placePlateFor } from '../features/office/officeNavigation'
 import './OfficeMode.css'
-import './PixelTheme.css'
+import './PixelPrimitives.css'
+import './PixelScreens.css'
 import {
   AlertTriangle,
   BarChart3,
@@ -253,6 +255,7 @@ export function Shell({
     section.items.push({ id: item.tab, label: item.sidebarLabel })
   }
   const headerLabel = tabHeaderLabel(activeTab, leaderMode)
+  const placePlate = homeMode === 'office' ? placePlateFor(activeTab) : null
   const syncLabel = lastSyncedAt
     ? `마지막 동기화 ${formatClock(lastSyncedAt) ?? ''}`
     : null
@@ -638,7 +641,7 @@ export function Shell({
               )}
           </OfficeHudBar>
         ) : (
-        <header className="topbar">
+        <header className="topbar" data-px={placePlate ? 'hud' : undefined}>
           <div className="topbar-left">
             <button
               ref={menuButtonRef}
@@ -653,7 +656,25 @@ export function Shell({
             </button>
             <div className="topbar-heading">
               {/* 화면 제목(h1)은 각 화면 머리말에 하나만 둔다. 여기는 지금 위치를 알려 주는 표시다. */}
-              <span className="topbar-title">{headerLabel}</span>
+              {placePlate ? (
+                <span className="place-plate">
+                  <button
+                    className="place-plate-home"
+                    onClick={() => {
+                      focusHeadingOnNavigateRef.current = true
+                      setActiveTab('dashboard')
+                    }}
+                    type="button"
+                  >
+                    <House aria-hidden="true" size={14} />
+                    사무실로
+                  </button>
+                  <span className="place-plate-name">{placePlate.name}</span>
+                  <span className="sr-only">{headerLabel}</span>
+                </span>
+              ) : (
+                <span className="topbar-title">{headerLabel}</span>
+              )}
               {readOnly && (
                 <span className="readonly-chip" title="파트 현황을 볼 수 있지만 수정할 수는 없어요.">읽기 전용</span>
               )}

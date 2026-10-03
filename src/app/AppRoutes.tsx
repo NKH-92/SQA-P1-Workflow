@@ -123,7 +123,7 @@ export function AppRoutes({
             onInitialSelectionApplied={() => setNavEntityId(null)}
           />
         )}
-        {activeTab === 'review-stats' && leaderMode && <ReviewStatsPanel data={data} />}
+        {activeTab === 'review-stats' && leaderMode && <ReviewStatsPanel data={data} profile={profile} />}
         {activeTab === 'change-applications' && (
           <ChangeApplicationsPanel
             profile={profile}
@@ -159,7 +159,7 @@ export function AppRoutes({
         {(activeTab === 'products' || activeTab === 'duties' || activeTab === 'invites') && leaderMode && (
           <MasterPanel profile={profile} data={data} mutate={mutate} setData={setData} masterView={activeTab} />
         )}
-        {activeTab === 'activity' && leaderMode && <ActivityPanel data={data} />}
+        {activeTab === 'activity' && leaderMode && <ActivityPanel data={data} profile={profile} />}
       </Suspense>
     </ErrorBoundary>
   )

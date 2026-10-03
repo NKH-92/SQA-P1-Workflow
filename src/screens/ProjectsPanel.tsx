@@ -402,7 +402,7 @@ export function ProjectsPanel({
           </button>
         )}
       </div>
-      <div className="section-toolbar projects-toolbar">
+      <div className="section-toolbar projects-toolbar" data-px="panel">
         <label className="search-field">
           <Search aria-hidden="true" size={16} />
           <input
@@ -454,12 +454,12 @@ export function ProjectsPanel({
       ) : (
         <div className="group-list project-member-groups">
           {memberGroups.map(({ member, assignments }) => (
-            <article className="group-card" key={member.id}>
+            <article className="group-card" data-px="panel" key={member.id}>
               <div className="group-header">
                 <div className="person-heading">
                   <PersonFace name={member.name} profileId={member.id} size="md" />
                   <div>
-                    <h2 className="group-title">{member.name}{member.id === profile.id ? ' (나)' : ''}</h2>
+                    <h2 className="group-title" data-px="title">{member.name}{member.id === profile.id ? ' (나)' : ''}</h2>
                     <span>{member.email}</span>
                   </div>
                 </div>

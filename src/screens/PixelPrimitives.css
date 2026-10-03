@@ -1,0 +1,224 @@
+/* ==========================================================================
+   Pixel UI · 공통 부품 층 (DESIGN.md §9 업무 화면 도트 디자인, §10 토큰·부품 표시)
+   Shell 뿌리에 data-ui="pixel"이 있을 때만 켜진다. 기존 화면을 고른 사람은 예전 디자인 그대로다.
+   화면 클래스 이름을 적지 않는다 — 부품(.section .modal-card .badge .empty-state …)과
+   data-px 표시(panel card title chip hud)만 다룬다. 화면별 예외는 PixelScreens.css.
+   ========================================================================== */
+
+/* ── 사람 ─────────────────────────────────────────────── */
+[data-ui='pixel'] .person-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  vertical-align: middle;
+}
+
+[data-ui='pixel'] .person-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.person-face-stack {
+  display: inline-flex;
+  flex: none;
+}
+
+.person-face-stack .person-face + .person-face {
+  margin-left: -5px;
+}
+
+/* ── 머리말 장소 그림 ──────────────────────────────────── */
+.office-place {
+  display: block;
+  flex: none;
+  overflow: hidden;
+  border: var(--pixel-border-2) solid var(--pixel-ink);
+  border-radius: var(--radius-px-panel);
+  background: var(--brand-navy-deep);
+  box-shadow: var(--pixel-step-shadow);
+}
+
+.office-place canvas {
+  display: block;
+  width: 176px;
+  height: 100px;
+  image-rendering: pixelated;
+}
+
+/* 장소 그림이 든 머리말: 그림 | 제목·설명 가로 배치 */
+[data-ui='pixel'] .page-intro:has(> .office-place) {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px;
+}
+
+[data-ui='pixel'] .page-intro:has(> .office-place) > .office-place + div {
+  flex: 1;
+  min-width: 0;
+}
+
+[data-ui='pixel'] .workspace-header > .office-place {
+  margin-right: 4px;
+}
+
+[data-ui='pixel'] .workspace-header > .office-place + .workspace-title {
+  margin-right: auto;
+  font-size: 24px;
+}
+
+/* ── 큰 판 ─────────────────────────────────────────────── */
+[data-ui='pixel'] :is([data-px='panel'], .modal-card) {
+  border: var(--pixel-border-2) solid var(--pixel-frame);
+  border-radius: var(--radius-px-panel);
+  box-shadow: var(--pixel-step-shadow);
+}
+
+[data-ui='pixel'] .modal-card {
+  border-color: var(--pixel-ink);
+}
+
+[data-ui='pixel'] button[data-px='panel']:hover,
+[data-ui='pixel'] a[data-px='panel']:hover,
+[data-ui='pixel'] [data-px='panel'][data-interactive]:hover {
+  border-color: var(--pixel-ink);
+}
+
+/* ── 작은 카드 ─────────────────────────────────────────── */
+[data-ui='pixel'] [data-px='card'] {
+  border: var(--pixel-border-1) solid var(--pixel-frame);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--pixel-step-shadow-sm);
+}
+
+/* ── 판 제목 앞 노란 도트 ──────────────────────────────── */
+[data-ui='pixel'] [data-px='title']::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 7px;
+  background: var(--brand-yellow);
+  box-shadow: 0 0 0 1.5px var(--pixel-ink);
+  vertical-align: 0.2em;
+}
+
+/* ── 칩·배지 ───────────────────────────────────────────── */
+[data-ui='pixel'] :is([data-px='chip'], .badge, .due-chip, .announcement-pin-badge, .readonly-chip) {
+  border-radius: var(--radius-px);
+  box-shadow: var(--pixel-chip-ring);
+}
+
+/* ── 버튼: 아래 테두리가 두꺼운 게임 버튼(큰 기본 버튼만) ── */
+[data-ui='pixel'] .content button.primary:not(.compact) {
+  border-radius: var(--radius-px-panel);
+  box-shadow: 0 3px 0 var(--pixel-yellow-edge);
+}
+
+[data-ui='pixel'] .content button.primary:not(.compact):active {
+  box-shadow: 0 1px 0 var(--pixel-yellow-edge);
+  transform: translateY(2px);
+}
+
+/* ── 고른 목록 줄: 노란 막대(게임 메뉴의 커서처럼) ─────── */
+[data-ui='pixel'] :is(.row, [data-px='card'], [data-px='panel'] [data-px='row']).selected {
+  box-shadow: inset 4px 0 0 var(--brand-yellow);
+}
+
+/* ── 빈 상태 ───────────────────────────────────────────── */
+[data-ui='pixel'] .empty-state {
+  border: var(--pixel-border-1) dashed var(--pixel-frame);
+  border-radius: var(--radius-px-panel);
+}
+
+/* ── 토스트: 말풍선 ────────────────────────────────────── */
+[data-ui='pixel'] .toast {
+  border-width: var(--pixel-border-2);
+  border-radius: var(--radius-px-panel);
+  box-shadow: var(--pixel-step-shadow);
+}
+
+/* ── 상단바 장소 명판(hud) ─────────────────────────────── */
+[data-ui='pixel'] .topbar[data-px='hud'] {
+  border-bottom: var(--pixel-border-2) solid var(--pixel-frame);
+}
+
+.place-plate {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.place-plate-home {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px 0 8px;
+  border: var(--pixel-border-1) solid var(--pixel-frame);
+  border-radius: var(--radius-px);
+  background: var(--paper-panel);
+  color: var(--paper-text);
+  font-size: 12.5px;
+  font-weight: 500;
+  box-shadow: var(--pixel-step-shadow-sm);
+  cursor: pointer;
+}
+
+.place-plate-home:hover {
+  border-color: var(--pixel-ink);
+  color: var(--paper-ink);
+}
+
+.place-plate-home:active {
+  box-shadow: none;
+  transform: translateY(2px);
+}
+
+.place-plate-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 12px;
+  border: var(--pixel-border-1) solid var(--pixel-ink);
+  border-radius: var(--radius-px);
+  background: var(--pixel-plate);
+  color: var(--brand-on-dark);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  white-space: nowrap;
+  box-shadow: var(--pixel-step-shadow-sm);
+}
+
+.place-plate-name::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  background: var(--brand-yellow);
+  box-shadow: 0 0 0 1.5px var(--pixel-ink);
+}
+
+@media (max-width: 640px) {
+  /* 휴대폰: 장소 그림은 정수 배율을 지킬 폭이 없어 숨기고, [사무실로]는 하단 탭바의 홈과 겹쳐 숨긴다. */
+  .office-place,
+  .place-plate-home {
+    display: none;
+  }
+
+  [data-ui='pixel'] .page-intro:has(> .office-place) {
+    display: grid;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-ui='pixel'] .content button.primary:not(.compact):active,
+  .place-plate-home:active {
+    transform: none;
+  }
+}

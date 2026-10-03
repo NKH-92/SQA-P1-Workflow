@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Profile } from '../../types'
-import { HOTSPOT_TABS, hotspotsForViewer, personDestination } from './officeNavigation'
+import { HOTSPOT_TABS, hotspotsForViewer, personDestination, placePlateFor } from './officeNavigation'
 import { SCENE_HOTSPOTS } from './officeScene'
 
 const leader: Profile = { id: 'leader', email: '', name: '파트장', role: 'leader' }
@@ -10,6 +10,13 @@ const colleague: Profile = { id: 'colleague', email: '', name: '동료', role: '
 const profiles = [leader, teamLeader, member, colleague]
 
 describe('office navigation', () => {
+  it('names the object a work screen stands in front of, and the desk for my work', () => {
+    expect(placePlateFor('reviews')).toEqual({ name: '검토요청 보드' })
+    expect(placePlateFor('invites')).toEqual({ name: '출입 게이트' })
+    expect(placePlateFor('work')).toEqual({ name: '내 책상' })
+    expect(placePlateFor('dashboard')).toBeNull()
+  })
+
   it('sends each object to its screen', () => {
     expect(HOTSPOT_TABS).toEqual({
       projects: 'projects',

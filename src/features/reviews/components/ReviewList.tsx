@@ -125,6 +125,7 @@ export const ReviewList = memo(function ReviewList({
           <button
             aria-pressed={selectedReviewId === request.id}
             className={selectedReviewId === request.id ? 'review-list-item selected' : 'review-list-item'}
+            data-px="row"
             data-status={request.status}
             key={request.id}
             onClick={() => onSelectReview(request.id)}

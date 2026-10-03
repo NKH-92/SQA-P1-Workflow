@@ -74,6 +74,14 @@
   --pixel-shadow: #c9d3e0;
   --pixel-frame: #8391a4;
   --pixel-yellow-edge: #c9921a;
+  /* 도트 테마 공통 부품 토큰(DESIGN.md §10). 두께·그림자·모서리만 두고 색은 위 팔레트를 쓴다. */
+  --pixel-border-1: 1.5px;
+  --pixel-border-2: 2px;
+  --pixel-step-shadow: 0 3px 0 var(--pixel-shadow);
+  --pixel-step-shadow-sm: 0 2px 0 var(--pixel-shadow);
+  --pixel-chip-ring: inset 0 0 0 1px color-mix(in srgb, currentColor 32%, transparent);
+  --radius-px: 3px;
+  --radius-px-panel: 6px;
 
   --shadow-xs: 0 1px 2px rgba(7, 27, 52, 0.04);
   --shadow-sm: 0 1px 2px rgba(7, 27, 52, 0.05), 0 1px 4px rgba(7, 27, 52, 0.07);

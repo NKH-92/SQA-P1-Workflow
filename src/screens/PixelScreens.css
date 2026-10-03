@@ -1,0 +1,29 @@
+/* ==========================================================================
+   Pixel UI · 화면 예외 층. 공통 부품(PixelPrimitives.css)으로 표현할 수 없는
+   화면별 줄맞춤만 둔다. 새 화면은 여기에 규칙을 더하지 말고 data-px 표시로 해결한다(DESIGN.md §10).
+   ========================================================================== */
+
+/* 파트원 카드: 얼굴이 이름 앞에 오면 이름 칸이 남는 폭을 채운다(기존 화면의 첫 칸 규칙과 같은 모양). */
+[data-ui='pixel'] .v2-team-head > .person-face {
+  display: inline-grid;
+  flex: none;
+  gap: 0;
+}
+
+[data-ui='pixel'] .v2-team-head > .person-face + span {
+  display: grid;
+  flex: 1;
+  gap: 1px;
+  min-width: 0;
+}
+
+/* 파트원 화면의 자리 상태 칩은 Badge가 아니라서 칩 모양을 따로 준다. */
+[data-ui='pixel'] .team-presence {
+  border-radius: var(--radius-px);
+  box-shadow: var(--pixel-chip-ring);
+}
+
+/* 검토 통계: KPI 칸이 지표 묶음이라 hover 반응이 없다(§6 — 누를 수 없는 요소). */
+[data-ui='pixel'] .kpi[data-px='panel'] {
+  box-shadow: var(--pixel-step-shadow-sm);
+}

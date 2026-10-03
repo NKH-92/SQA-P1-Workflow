@@ -20,6 +20,7 @@ import { canManageTeamData } from '../domain/permissions'
 import { businessDateKey } from '../lib/businessTime'
 import { presenceOf, presenceSummary } from '../data/validation/memberPresence'
 import { PersonFace } from '../features/office/components/PersonFace'
+import { OfficePlace } from '../features/office/components/OfficePlace'
 import { PresenceIcon } from '../features/office/components/PresenceIcon'
 
 /** 제품 화면의 담당 필터(products 도메인 소유). 파트원 화면에서는 이 세 값만 쓴다. */
@@ -260,10 +261,19 @@ export function TeamPanel({
   return (
     <div className="stack">
       <div className="page-intro">
-        <h1>파트원</h1>
-        <p>
-          파트원 <strong>{activeMemberCount}명</strong>의 담당 제품, 정기 업무, 프로젝트를 한눈에 봐요.
-        </p>
+        <OfficePlace
+          people={[
+            { profileId: profile.id, name: profile.name },
+            { profileId: selectedSummary?.member.id, name: selectedSummary?.member.name },
+          ]}
+          place="nameplates"
+        />
+        <div>
+          <h1>파트원</h1>
+          <p>
+            파트원 <strong>{activeMemberCount}명</strong>의 담당 제품, 정기 업무, 프로젝트를 한눈에 봐요.
+          </p>
+        </div>
       </div>
       <div className="section-toolbar">
         <label className="search-field">

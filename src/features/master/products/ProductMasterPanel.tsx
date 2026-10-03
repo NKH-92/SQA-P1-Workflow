@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { OfficePlace } from '../../office/components/OfficePlace'
 import { Download, Package, Plus, Search, Upload } from 'lucide-react'
 import type { AppData, ProductCategory } from '../../../types'
 import type { PendingAdminDelete } from '../../../app/types'
@@ -362,6 +363,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
   return (
     <div className="stack">
       <div className="page-intro master-page-heading">
+        <OfficePlace people={[{ profileId: profile.id, name: profile.name }]} place="samples" />
         <div>
           <h1>제품</h1>
           <p>등록 {data.products.length}개 · 담당자 없음 {unassignedProducts.length}개</p>

@@ -32,8 +32,11 @@
 | L3 | 신규 Supabase project 업무 복구 | L2 + Auth UUID/hash/identity + Auth settings + Realtime/extension 설정 manifest |
 | L4 | 완전 서비스 복구 | L3 + Storage 객체/설정 + Edge Functions + Worker/config + 실제 로그인/RLS smoke 증거 |
 
-상위 등급은 모든 하위 등급 조건을 포함한다. `storageObjectCount=0`은 “Storage를
-확인하지 않음”이 아니다. 현재 폐기된 Storage surface를 조회해 실제 0건임을 확인한 값이다.
+상위 등급은 모든 하위 등급 조건을 포함한다. `storageObjectCount`는 백업 시점에
+조회한 실제 Storage 객체 수를 기록한다. L2 패키지는 Storage 객체 파일을 포함하지
+않으므로 값이 0이 아니어도 데이터 추출·감사 보존 패키지로만 사용할 수 있으며,
+Storage 객체까지 복구할 수 있다고 주장하지 않는다. 신규 project 복구나 full DR은
+별도의 Storage 객체·설정 증거가 필요하다.
 
 현재 `backup.yml`은 **L2**만 생성한다. `authIdentityIncluded=false`이므로 L3/L4 또는
 “신규 project full DR”을 주장할 수 없다. `sourceSha`는 백업 workflow를 실행한 Git SHA이며,
@@ -106,8 +109,9 @@ validator를 실행한다. 모든 검증이 끝난 뒤 plaintext directory와 ta
 
 `source-evidence.json`은 원본 row, 이메일, password hash를 보관하지 않는다. 정렬된 Auth UUID
 집합과 핵심 table canonical row를 SHA-256으로 축약하고 row count, migration version 집합,
-extension/Realtime 집합, Storage object count, FK orphan count만 남긴다. Full DR workflow는
-target에서 같은 evidence를 다시 산출해 exact match를 요구한다.
+extension/Realtime 집합, Storage object count, FK orphan count만 남긴다. Storage object count가
+0보다 크면 해당 객체는 이 L2 패키지에 포함되지 않았다는 제한이 함께 적용된다. Full DR
+workflow는 target에서 같은 evidence를 다시 산출해 exact match를 요구한다.
 
 ## L3/L4 승격 조건
 

@@ -10,6 +10,8 @@ import type { Profile, Role } from '../types'
  * 알림 패널·서랍 메뉴는 Shell이 그대로 맡고, 여기서는 누른 것만 알린다.
  */
 export function OfficeHudBar({
+  onOpenProfile,
+  onOpenCalendar,
   profile,
   readOnly,
   busyLabel,
@@ -34,6 +36,8 @@ export function OfficeHudBar({
   onPreviewRoleChange,
   children,
 }: {
+  onOpenProfile?: () => void
+  onOpenCalendar?: () => void
   profile: Profile
   readOnly: boolean
   busyLabel: string | null
@@ -95,6 +99,7 @@ export function OfficeHudBar({
         {readOnly && <span className="readonly-chip">읽기 전용</span>}
       </div>
       <div className="office-hud-right">
+        {onOpenCalendar && <button className="office-hud-button" type="button" onClick={onOpenCalendar}>파트원 일정</button>}
         {busyLabel && (
           <span aria-label={busyLabel} aria-live="polite" className="office-hud-status" role="status">
             <RefreshCw className="spin" size={14} aria-hidden="true" />
@@ -153,7 +158,7 @@ export function OfficeHudBar({
             aria-expanded={profileOpen}
             aria-label={`${profile.name}, ${roleLabels[profile.role]}`}
             className="office-hud-avatar"
-            onClick={() => setProfileOpen((value) => !value)}
+            onClick={() => onOpenProfile ? onOpenProfile() : setProfileOpen((value) => !value)}
             title={profile.email}
             type="button"
           >

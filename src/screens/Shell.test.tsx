@@ -694,9 +694,11 @@ describe('Shell full-screen office home', () => {
     }
   })
 
-  it('keeps the usual side menu and top bar on other screens', () => {
+  it('keeps the top bar but opens the pixel side menu only on request', () => {
     renderOffice({ activeTab: 'reviews' })
     expect(document.querySelector('.topbar')).not.toBeNull()
+    expect(screen.queryByRole('navigation', { name: '주 메뉴 항목' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '메뉴 열기' }))
     expect(sidebarNav()).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '기존 화면' })).not.toBeInTheDocument()
   })

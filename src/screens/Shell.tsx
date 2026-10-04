@@ -1,3 +1,4 @@
+import { LazyTeamCalendar as TeamCalendarDialog } from './LazyTeamCalendar'
 import { officeCodeLoaded, subscribeRouteLoads } from '../app/routeLoading'
 import { Suspense, lazy, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { AppData, Profile, Role } from '../types'
@@ -39,6 +40,7 @@ import {
   Bell,
   Briefcase,
   Check,
+  Calendar,
   ClipboardPenLine,
   FolderKanban,
   House,
@@ -106,6 +108,8 @@ function buildSyncWarning(syncHealth: SyncHealth): { label: string; title: strin
 /** 알림 패널은 종을 눌렀을 때만 필요하다. 첫 화면 번들에서 빼고 한가할 때 미리 받아 둔다. */
 const loadNotificationPanel = () => import('../components/NotificationPanel')
 const NotificationPanel = lazy(() => loadNotificationPanel().then((module) => ({ default: module.NotificationPanel })))
+
+const ProfileDialog = lazy(() => import('./ProfileDialog').then(m => ({ default: m.ProfileDialog })))
 
 const PixelPreferences = lazy(() => import('./PixelPreferences').then(m => ({ default: m.PixelPreferences })))
 const OfficeMinimap = lazy(() => import('../features/office/components/OfficeMinimap').then(m => ({ default: m.OfficeMinimap })))
@@ -236,7 +240,9 @@ export function Shell({
   const [questOpen, setQuestOpen] = useState(false)
   useEffect(() => uiTheme === 'pixel' ? prefetchWhenIdle(loadQuestDrawer) : undefined, [uiTheme])
   const officeLayout = homeMode === 'office' && activeTab === 'dashboard'
-  const drawerMode = mobileSidebar || officeLayout
+  const drawerMode = mobileSidebar || officeLayout || uiTheme === 'pixel'
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [calendarOpen, setCalendarOpen] = useState(false)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const drawerOpenerRef = useRef<HTMLElement | null>(null)
   const sidebarRef = useRef<HTMLElement>(null)
@@ -470,78 +476,7 @@ export function Shell({
     setActiveTab(tab)
   }
 
-  return (
-    <div
-      className="app-shell brand-shell"
-      data-bottom-bar={actionBarShown ? 'action' : 'tabs'}
-      data-layout={officeLayout ? 'office' : undefined}
-      data-visual-theme="brand-shell"
-    >
-      <a
-        className="skip-link"
-        href="#main-content"
-        onClick={(event) => {
-          event.preventDefault()
-          document.getElementById('main-content')?.focus()
-        }}
-      >본문으로 건너뛰기</a>
-      <div
-        aria-hidden="true"
-        className={`overlay${sidebarOpen ? ' visible' : ''}`}
-        onClick={() => closeSidebar()}
-      />
-      <aside
-        ref={sidebarRef}
-        aria-hidden={drawerMode && !sidebarOpen ? true : undefined}
-        aria-label="주 메뉴"
-        className={`sidebar${sidebarOpen ? ' open' : ''}`}
-        id="primary-navigation"
-      >
-        <div className="sidebar-top">
-          {/* 브랜드 마크 'P'는 .brand::before가 그린다 */}
-          <div className="brand">
-            <div>
-              <strong>SQA P1</strong>
-              <span>Workflow</span>
-            </div>
-          </div>
-          <button aria-label="메뉴 닫기" className="sidebar-close" onClick={() => closeSidebar()} type="button">
-            <X aria-hidden="true" size={20} />
-          </button>
-        </div>
-        <button
-          className="sidebar-command"
-          onClick={() => {
-            closeSidebar(false)
-            onOpenCommandPalette()
-          }}
-          type="button"
-        >
-          <Search aria-hidden="true" size={16} />
-          <span>빠른 검색</span>
-        </button>
-        {uiTheme === 'pixel' && officeReady && officeData && <Suspense fallback={null}><OfficeMinimap profile={profile} data={officeData} activeTab={activeTab} navigate={setActiveTab} /></Suspense>}
-        <nav aria-label="주 메뉴 항목">
-          {navSections.map((section) => (
-            <div className="nav-group" key={section.label}>
-              <span className="nav-group-label">{section.label}</span>
-              {section.items.map((tab) => (
-                <button
-                  aria-current={activeTab === tab.id ? 'page' : undefined}
-                  aria-label={shellTabAccessibleName(tab.label, tabs[tab.id])}
-                  className={activeTab === tab.id ? 'nav-item active' : 'nav-item'}
-                  key={tab.id}
-                  onClick={() => navigateFromSidebar(tab.id)}
-                  type="button"
-                >
-                  {tabIcons[tab.id]}
-                  {tab.label}
-                  <NavBadges state={tabs[tab.id]} />
-                </button>
-              ))}
-            </div>
-          ))}
-        </nav>
+  const profileControls = (
         <div className="sidebar-footer">
           <div className="sidebar-footer-user" title={profile.email}>
             <div className="sidebar-footer-avatar" aria-hidden="true">
@@ -607,10 +542,88 @@ export function Shell({
             </div>
           )}
         </div>
+  )
+
+  return (
+    <div
+      className="app-shell brand-shell"
+      data-bottom-bar={actionBarShown ? 'action' : 'tabs'}
+      data-navigation={uiTheme === 'pixel' ? 'drawer' : undefined}
+      data-layout={officeLayout ? 'office' : undefined}
+      data-visual-theme="brand-shell"
+    >
+      <a
+        className="skip-link"
+        href="#main-content"
+        onClick={(event) => {
+          event.preventDefault()
+          document.getElementById('main-content')?.focus()
+        }}
+      >본문으로 건너뛰기</a>
+      <div
+        aria-hidden="true"
+        className={`overlay${sidebarOpen ? ' visible' : ''}`}
+        onClick={() => closeSidebar()}
+      />
+      <aside
+        ref={sidebarRef}
+        aria-hidden={drawerMode && !sidebarOpen ? true : undefined}
+        aria-label="주 메뉴"
+        className={`sidebar${sidebarOpen ? ' open' : ''}`}
+        id="primary-navigation"
+      >
+        <div className="sidebar-top">
+          {/* 브랜드 마크 'P'는 .brand::before가 그린다 */}
+          <div className="brand">
+            <div>
+              <strong>SQA P1</strong>
+              <span>Workflow</span>
+            </div>
+          </div>
+          <button aria-label="메뉴 닫기" className="sidebar-close" onClick={() => closeSidebar()} type="button">
+            <X aria-hidden="true" size={20} />
+          </button>
+        </div>
+        <button
+          className="sidebar-command"
+          onClick={() => {
+            closeSidebar(false)
+            onOpenCommandPalette()
+          }}
+          type="button"
+        >
+          <Search aria-hidden="true" size={16} />
+          <span>빠른 검색</span>
+        </button>
+        {uiTheme === 'pixel' && officeReady && officeData && <Suspense fallback={null}><OfficeMinimap profile={profile} data={officeData} activeTab={activeTab} navigate={navigateFromSidebar} /></Suspense>}
+        <nav aria-label="주 메뉴 항목">
+          {navSections.map((section) => (
+            <div className="nav-group" key={section.label}>
+              <span className="nav-group-label">{section.label}</span>
+              {section.items.map((tab) => (
+                <button
+                  aria-current={activeTab === tab.id ? 'page' : undefined}
+                  aria-label={shellTabAccessibleName(tab.label, tabs[tab.id])}
+                  className={activeTab === tab.id ? 'nav-item active' : 'nav-item'}
+                  key={tab.id}
+                  onClick={() => navigateFromSidebar(tab.id)}
+                  type="button"
+                >
+                  {tabIcons[tab.id]}
+                  {tab.label}
+                  <NavBadges state={tabs[tab.id]} />
+                </button>
+              ))}
+            </div>
+          ))}
+        </nav>
+        {uiTheme !== 'pixel' && profileControls}
       </aside>
       <main className="content" id="main-content" ref={mainRef} tabIndex={-1}>
         {officeLayout ? (
           <OfficeHudBar
+              onOpenProfile={uiTheme === 'pixel' ? () => setProfileOpen(true) : undefined}
+              onOpenCalendar={officeData ? () => setCalendarOpen(true) : undefined}
               busyLabel={busyLabel}
               menuButtonRef={menuButtonRef}
               menuOpen={sidebarOpen}
@@ -679,6 +692,7 @@ export function Shell({
                     className="place-plate-home"
                     onClick={() => {
                       focusHeadingOnNavigateRef.current = true
+                      onHomeModeChange?.('office')
                       setActiveTab('dashboard')
                     }}
                     type="button"
@@ -703,6 +717,8 @@ export function Shell({
             <span className="k">{shortcutHint()}</span>
           </button>
           <div className="topbar-actions">
+            {officeData && <button className="ghost compact calendar-open-button" type="button" onClick={() => setCalendarOpen(true)} aria-label="파트원 일정"><Calendar aria-hidden="true" size={16} /><span>파트원 일정</span></button>}
+            {uiTheme === 'pixel' && <button className="icon-button" type="button" aria-label="내 프로필" aria-haspopup="dialog" onClick={() => setProfileOpen(true)}><span aria-hidden="true">{profile.name.trim().charAt(0)}</span></button>}
             {uiTheme === 'pixel' && activeTab !== 'dashboard' && officeData && <button className="ghost compact quest-open-button" type="button" onClick={() => setQuestOpen(true)}><ListChecks aria-hidden="true" size={15} /> 오늘 할 일</button>}
             {syncLabel && <span className="sync-label">{syncLabel}</span>}
             {busyLabel && (
@@ -787,6 +803,8 @@ export function Shell({
           )}
         </header>
         )}
+        {profileOpen && <Suspense fallback={null}><ProfileDialog onClose={() => setProfileOpen(false)}>{profileControls}</ProfileDialog></Suspense>}
+        {calendarOpen && officeData && <Suspense fallback={null}><TeamCalendarDialog presence={officeData.memberPresence} onClose={() => setCalendarOpen(false)} onManage={presence?.onOpen} /></Suspense>}
         {meetingBanner}
         {dataWarnings.length > 0 && (
           <div className="data-stale-banner" role="status" aria-live="polite">

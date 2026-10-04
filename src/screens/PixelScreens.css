@@ -73,3 +73,18 @@
 
 .office-minimap { display: block; width: 220px; max-width: 100%; height: auto; flex: none; image-rendering: pixelated; cursor: pointer; }
 @media (max-width: 1080px) { .office-minimap { display: none; } }
+
+.app-shell[data-navigation='drawer'] .hamburger { display: inline-flex; }
+.modal-card.profile-dialog { width: min(400px, calc(100vw - 24px)); }
+.profile-dialog .sidebar-footer { margin: 0; padding: 20px; border: 0; gap: 16px; }
+.brand-shell .profile-dialog .sidebar-footer strong { color: var(--paper-ink); }
+.brand-shell .profile-dialog .sidebar-footer small { color: var(--paper-dim); }
+.profile-dialog .sidebar-footer-button { color: var(--paper-ink); border-color: var(--paper-border); background: var(--paper-panel); }
+.profile-dialog .sidebar-footer-actions { display: grid; gap: 8px; }
+.profile-dialog .sidebar-footer-button[aria-pressed='true'] { color: var(--paper-ink); background: var(--paper-pending-bg); border-color: var(--brand-yellow); }
+@media (max-width: 640px) { .calendar-open-button span { display: none; } }
+
+.brand-shell .profile-dialog .sidebar-footer .segmented button { color: var(--paper-ink); }
+.profile-dialog .presence-button { color: var(--paper-ink); background: var(--paper-bg); border-color: var(--paper-border); }
+.profile-dialog .sidebar-footer-avatar { color: var(--paper-ink); background: var(--paper-pending-bg); }
+.profile-dialog .sidebar-footer-button:hover { color: var(--paper-ink); background: var(--paper-hover); }

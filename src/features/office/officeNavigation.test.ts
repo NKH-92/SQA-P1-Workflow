@@ -34,7 +34,7 @@ describe('office navigation', () => {
 
   it('shows members only the objects for screens in their menu, and the meeting room to everyone', () => {
     const ids = SCENE_HOTSPOTS.map((hotspot) => hotspot.id)
-    expect(hotspotsForViewer(ids, member).sort()).toEqual(['cabinet', 'kanban', 'meeting', 'menu', 'notice', 'projects'])
+    expect(hotspotsForViewer(ids, member).sort()).toEqual(['cabinet', 'calendar', 'kanban', 'meeting', 'menu', 'notice', 'projects'])
     expect(hotspotsForViewer(ids, leader)).toEqual(ids)
     expect(hotspotsForViewer(ids, teamLeader)).toEqual(ids)
   })

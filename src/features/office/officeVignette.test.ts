@@ -28,7 +28,7 @@ describe('office vignettes', () => {
 
   it('frames the object the place is named after', () => {
     for (const hotspot of SCENE_HOTSPOTS) {
-      if (hotspot.id === 'meeting' || hotspot.id === 'menu') continue
+      if (hotspot.id === 'meeting' || hotspot.id === 'menu' || hotspot.id === 'calendar') continue
       const area = VIGNETTES[hotspot.id]
       const overlapsX = hotspot.x < area.x + area.w && hotspot.x + hotspot.w > area.x
       const overlapsY = hotspot.y < area.y + area.h && hotspot.y + hotspot.h > area.y

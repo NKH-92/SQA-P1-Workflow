@@ -41,7 +41,9 @@ if (args.includes('--compare')) {
         }
       }, { ids, theme })
       await page.goto(url)
+      if (theme === 'pixel') await page.getByRole('button', { name: '내 프로필', exact: true }).click()
       await page.getByRole('group', { name: '미리보기 역할' }).getByRole('button', { name: labels[role], exact: true }).click()
+      if (theme === 'pixel') await page.keyboard.press('Escape')
       await page.setViewportSize({ width, height: heights[width] })
       for (const tab of tabs) {
         if (!allTabs.includes(tab)) throw new Error(`Unknown tab: ${tab}`)

@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test'
 
-const previewBaseURL = 'http://127.0.0.1:4173'
+const previewBaseURL = process.env.PREVIEW_E2E_BASE_URL ?? 'http://127.0.0.1:4173'
 const remoteBaseURL = process.env.REMOTE_E2E_BASE_URL ?? 'http://127.0.0.1:4174'
 const remoteConfigured = Boolean(
   process.env.SUPABASE_URL
@@ -64,7 +64,7 @@ export default defineConfig({
         },
       }
     : {
-        command: 'npm run dev -- --host 127.0.0.1 --port 4173',
+        command: `npm run dev -- --host 127.0.0.1 --port ${new URL(previewBaseURL).port || 4173}`,
         url: previewBaseURL,
         reuseExistingServer: !process.env.CI,
         env: {

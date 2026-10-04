@@ -1,3 +1,4 @@
+import { placePlateFor } from '../features/office/officeNavigation'
 import type { TabId } from '../app/types'
 import { canManageTeamData } from '../domain/permissions'
 import { selectScopedReviewRequests } from '../features/reviews/review.selectors'
@@ -58,10 +59,12 @@ export function buildCommandItems({
   data,
   leaderMode,
   select,
+  pixel = false,
 }: {
   profile: Profile
   data: CommandPaletteData
   leaderMode: boolean
+  pixel?: boolean
   select: (tab: TabId, entityId?: string) => void
 }): CommandItem[] {
   const go = (tab: TabId, entityId?: string) => () => select(tab, entityId)
@@ -70,7 +73,7 @@ export function buildCommandItems({
     id: `nav-${nav.tab}`,
     group: '이동',
     title: nav.paletteLabel,
-    sub: `${nav.paletteLabel} 화면으로 이동`,
+    sub: pixel && placePlateFor(nav.tab) ? placePlateFor(nav.tab)!.name : `${nav.paletteLabel} 화면으로 이동`,
     icon: nav.paletteLabel.charAt(0),
     run: go(nav.tab),
   }))

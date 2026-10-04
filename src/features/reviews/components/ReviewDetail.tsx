@@ -6,6 +6,8 @@ import { ReviewEventHistory } from './ReviewEventHistory'
 import { ReviewRequestItem, type ReviewRequestItemHandlers } from './ReviewRequestItem'
 
 type ReviewDetailProps = ReviewRequestItemHandlers & {
+  decisionStamp?: 'approved' | 'rejected' | null
+  onOpenMeeting?: (request: ReviewRequest) => void
   detailRef?: Ref<HTMLDivElement>
   profile: Profile
   selectedReview: ReviewRequest | null
@@ -24,6 +26,7 @@ type ReviewDetailProps = ReviewRequestItemHandlers & {
  * 필요한 곳(목록에서 고른 뒤 등)에서 제목(h2)으로 포커스를 옮긴다.
  */
 export function ReviewDetail({
+  decisionStamp,
   detailRef,
   profile,
   selectedReview,
@@ -42,6 +45,7 @@ export function ReviewDetail({
       data-review-id={selectedReview?.id}
       ref={detailRef}
     >
+      {decisionStamp && <span aria-hidden="true" className="review-decision-stamp" data-status={decisionStamp}>{decisionStamp === 'approved' ? '승인' : '반려'}</span>}
       {selectedReview ? (
         <ReviewRequestItem
           {...handlers}
@@ -51,6 +55,7 @@ export function ReviewDetail({
               key={`history-${selectedReview.id}`}
               localEvents={localEvents}
               reviewRequestId={selectedReview.id}
+              requesterId={selectedReview.requester_id}
             />
           )}
           initialDraft={readDraft?.(selectedReview.id)}

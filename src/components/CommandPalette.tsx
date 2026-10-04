@@ -1,3 +1,4 @@
+import { usePixelUi } from '../features/office/pixelUiContext'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Search } from 'lucide-react'
 import type { Profile } from '../types'
@@ -26,6 +27,7 @@ export function CommandPalette({
   leaderMode: boolean
   setActiveTab: (tab: TabId, entityId?: string) => void
 }) {
+  const { enabled: pixel } = usePixelUi()
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -37,6 +39,7 @@ export function CommandPalette({
     // 닫혀 있는 동안에는 목록을 만들지 않는다 — App이 리렌더될 때마다 헛일하지 않도록.
     if (!open) return []
     return buildCommandItems({
+      pixel,
       profile,
       data,
       leaderMode,
@@ -45,7 +48,7 @@ export function CommandPalette({
         onClose()
       },
     })
-  }, [data, leaderMode, onClose, open, profile, setActiveTab])
+  }, [data, leaderMode, onClose, open, profile, setActiveTab, pixel])
 
   const filtered = useMemo(() => filterCommandItems(items, query), [items, query])
 

@@ -36,6 +36,8 @@ function minutesAgo(value: string, now: number) {
  * 사무실에 앉은 사람만 부를 수 있고, 그날 휴가·출장 중인 사람은 고를 수 없다. 팀장은 보기만 한다.
  */
 export function OfficeMeetingDialog({
+  initialTitle = '',
+  initialInvitees = [],
   profile,
   meeting,
   occupants,
@@ -46,6 +48,8 @@ export function OfficeMeetingDialog({
   onEnd,
   onClose,
 }: {
+  initialTitle?: string
+  initialInvitees?: readonly string[]
   profile: Profile
   meeting: OfficeMeeting | null | undefined
   /** 사무실에 앉은 사람(부를 수 있는 사람) */
@@ -64,8 +68,12 @@ export function OfficeMeetingDialog({
   const [openedAt] = useState(() => Date.now())
   const now = Math.max(liveNow ?? openedAt, openedAt)
   const slots = useMemo(() => meetingTimeSlots(openedAt), [openedAt])
-  const [title, setTitle] = useState('')
-  const [selected, setSelected] = useState<string[]>([])
+  const [title, setTitle] = useState(() => initialTitle.slice(0, OFFICE_MEETING_TITLE_MAX))
+  const [selected, setSelected] = useState<string[]>(() => [...new Set(initialInvitees)].filter(id => {
+    const person = occupants.find(p => p.profileId === id)
+    const status = presenceOf(presence, id, businessDateKey(new Date(openedAt)))
+    return person && person.role !== 'team_leader' && id !== profile.id && !status?.leave
+  }).slice(0, OFFICE_MEETING_MAX_INVITEES))
   const [when, setWhen] = useState<'now' | 'later'>('now')
   const [slot, setSlot] = useState(() => slots[2]?.value ?? slots[0]?.value ?? '')
   const [placeKind, setPlaceKind] = useState<'room' | 'other'>('room')

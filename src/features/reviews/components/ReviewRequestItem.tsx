@@ -33,6 +33,7 @@ export type ReviewRequestItemHandlers = {
 }
 
 type ReviewRequestItemProps = ReviewRequestItemHandlers & {
+  onOpenMeeting?: (request: ReviewRequest) => void
   request: ReviewRequest
   profile: Profile
   /** 검토 이력 창처럼 기록만 보는 곳: 피드백 작성·수정을 숨긴다. */
@@ -70,6 +71,7 @@ function dueChipTone(tone: 'urgent' | 'warning' | 'normal' | 'done') {
 }
 
 export function ReviewRequestItem({
+  onOpenMeeting,
   request,
   profile,
   readOnly = false,
@@ -275,6 +277,7 @@ export function ReviewRequestItem({
   const overflowItems: OverflowMenuItem[] = [
     { label: '링크 복사', onSelect: () => void copyShareLink(), icon: <Link2 aria-hidden="true" size={14} /> },
     ...withdrawItems,
+    ...(!readOnly && profile.role !== 'team_leader' && onOpenMeeting ? [{ label: '이 건으로 회의 열기', onSelect: () => onOpenMeeting(request) }] : []),
   ]
 
   const renderAction = (action: Action, placement: 'topline' | 'bar') => {
@@ -314,7 +317,7 @@ export function ReviewRequestItem({
         <Badge status={request.status}>{model.statusLabel}</Badge>
         {model.showRejectionCount && <span className="review-history-chip">반려 {model.rejectionCount}회</span>}
         <span className="request-meta-inline">
-          <PersonFace name={requesterName} profileId={request.requester_id} size="xs" />
+          <PersonFace name={requesterName} profileId={request.requester_id} size="md" />
           {requesterName} · <time dateTime={requestedAt ?? undefined} title={formatDate(requestedAt)}>
             {relativeDateLabel(requestedAt)}
           </time> {(request.review_round ?? 1) > 1 ? '재요청' : '요청'}

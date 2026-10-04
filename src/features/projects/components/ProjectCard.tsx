@@ -64,6 +64,8 @@ export function ProjectCard({
       aria-labelledby={titleId}
       className={highlighted ? 'project-card deeplink-target' : 'project-card'}
       data-due-tone={due.tone}
+      data-interactive=""
+      data-px="panel"
       data-project-id={project.id}
     >
       <div className="project-card-top">

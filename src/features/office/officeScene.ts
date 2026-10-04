@@ -132,6 +132,7 @@ export function seatStandSpot(seat: Pick<SceneSeat, 'x' | 'row'>): TripSpot {
 
 // ── 누르면 화면을 옮기는 기물 ────────────────────────────
 export type SceneHotspotId =
+  | 'calendar'
   | 'menu'
   | 'projects'
   | 'cabinet'
@@ -161,6 +162,7 @@ export const SCENE_HOTSPOTS: readonly SceneHotspot[] = [
   { id: 'stats', x: 10, y: 3, w: 44, h: 33, sign: { x: 32, y: 4 } },
   { id: 'cabinet', x: 64, y: 5, w: 34, h: 41, sign: { x: 81, y: 11 } },
   { id: 'kanban', x: 112, y: 4, w: 52, h: 29, sign: { x: 138, y: 5 } },
+  { id: 'calendar', x: 172, y: 3, w: 22, h: 29, sign: { x: 183, y: 4 } },
   { id: 'notice', x: 224, y: 3, w: 50, h: 31, sign: { x: 249, y: 4 } },
   { id: 'projects', x: 3, y: 41, w: 54, h: 58, sign: { x: 31, y: 43 } },
   { id: 'menu', x: 298, y: 79, w: 28, h: 34, sign: { x: 312, y: 79 } },
@@ -244,21 +246,8 @@ function drawKanban(ctx: Ctx, x: number, y: number) {
   rect(ctx, x + 15, y + 23, 4, 1, '#e2554b')
 }
 
-/** 품질(Quality) 체크 네온 */
-function drawNeonCheck(ctx: Ctx, x: number, y: number) {
-  const glow = '#fff3c4'
-  const tube = '#ffd23f'
-  const points = [
-    [0, 8], [1, 9], [2, 10], [3, 11], [4, 12], [5, 11], [6, 10], [7, 9], [8, 8], [9, 7], [10, 6], [11, 5], [12, 4], [13, 3], [14, 2],
-  ]
-  for (const [px, py] of points) rect(ctx, x + px - 1, y + py - 1, 3, 3, glow)
-  for (const [px, py] of points) rect(ctx, x + px, y + py, 2, 2, tube)
-  rect(ctx, x + 2, y + 16, 12, 1, '#c9c3b8')
-}
-
 const NOTICE_SCREEN = { x: 226, y: 5 }
 
-/** 공지 화면(벽걸이 디스플레이)의 틀. 안쪽 내용은 drawNoticeContent가 그린다. */
 function drawNoticeFrame(ctx: Ctx) {
   const { x, y } = NOTICE_SCREEN
   rect(ctx, x, y, 46, 27, '#1d2027')
@@ -361,11 +350,22 @@ function drawFloor(ctx: Ctx) {
  * 벽·바닥·뒤쪽 가구(사람보다 늘 뒤). 한 번만 그린다.
  * 통창 유리 자리는 비워 두고, 하늘은 렌더러가 시각에 맞춰 장마다 그린다(officeSky).
  */
+function drawWallCalendar(ctx: Ctx, x: number, y: number) {
+  rect(ctx, x + 1, y + 1, 20, 24, '#1b2d4f')
+  rect(ctx, x, y, 20, 24, '#f7f7f5')
+  rect(ctx, x, y, 20, 5, '#3d7bd8')
+  rect(ctx, x + 4, y - 2, 2, 4, '#1b2d4f')
+  rect(ctx, x + 14, y - 2, 2, 4, '#1b2d4f')
+  for (let row = 0; row < 3; row++) for (let col = 0; col < 4; col++) {
+    rect(ctx, x + 3 + col * 4, y + 8 + row * 5, 2, 2, row === 1 && col === 2 ? '#ffcc3d' : '#9fb4d6')
+  }
+}
+
 export function drawBackground(ctx: Ctx) {
   drawWall(ctx)
   drawWindowWallBase(ctx)
   drawKanban(ctx, 114, 6)
-  drawNeonCheck(ctx, 172, 9)
+  drawWallCalendar(ctx, 173, 6)
   drawClockFace(ctx, 200, 15)
   drawNoticeFrame(ctx)
   drawFloor(ctx)

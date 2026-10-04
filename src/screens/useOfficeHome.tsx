@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { LazyTeamCalendar as TeamCalendarDialog } from './LazyTeamCalendar'
+import { fromOffice, prefetchRoute } from '../app/routeLoading'
+import { prefetchWhenIdle } from '../lib/prefetch'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import type { MutationRunner } from '../app/hooks/useMutationRunner'
 import type { TabId } from '../app/types'
 import type { AppDataUpdater } from '../data/repositories/appDataUpdater'
@@ -28,6 +31,7 @@ import { withJosa } from '../lib/korean'
 import type { AppData, Profile } from '../types'
 
 /** 프로젝트 화면의 보기 상태(useViewState 'projects.leader.*') — 사람별 보기로 그 사람을 찾아 둔다. */
+
 const PROJECTS_VIEW_KEY = 'sqa.view.projects.leader.view'
 const PROJECTS_QUERY_KEY = 'sqa.view.projects.leader.query'
 /** 자정(휴가 시작·끝)과 회의 시작을 놓치지 않게 화면 시각을 가끔 새로 읽는다. */
@@ -87,10 +91,15 @@ export function useOfficeHome({
   mutate?: MutationRunner
   setData?: AppDataUpdater
 }) {
+  useEffect(() => prefetchWhenIdle(async () => {
+    const ids = hotspotsForViewer(SCENE_HOTSPOTS.map(h => h.id), profile)
+    for (const id of ids) if (id !== 'meeting' && id !== 'menu' && id !== 'calendar') await prefetchRoute(HOTSPOT_TABS[id])
+  }), [profile])
   const layout = data.officeLayout
   const occupants = useMemo(() => sceneOccupants(layout), [layout])
   const [editing, setEditing] = useState(false)
   const [meetingOpen, setMeetingOpen] = useState(false)
+  const [calendarOpen, setCalendarOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const controller = useOfficeController(profile, data, setData ?? ignoreDataUpdate)
   const canEdit = canManageTeamData(profile) && Boolean(mutate && setData)
@@ -138,6 +147,7 @@ export function useOfficeHome({
 
   const hotspots = hotspotsForViewer(SCENE_HOTSPOTS.map((area) => area.id), profile).map((id): OfficeHotspotLink => {
     const { name, destination } = HOTSPOT_LABELS[id]
+    if (id === 'calendar') return { id, sign: '파트원 일정', label: '일정 달력, 파트원 일정 보기', onSelect: () => setCalendarOpen(true) }
     if (id === 'menu') return { id, sign: '메뉴판', label: '메뉴판, 이번 주 메뉴 보기·사진 올리기', onSelect: () => setMenuOpen(true) }
     if (id === 'meeting') {
       const clock = meeting ? formatClock(meeting.starts_at) : null
@@ -163,7 +173,7 @@ export function useOfficeHome({
       label: [name, alert?.description, `${withJosa(destination, '으로/로')} 이동`].filter(Boolean).join(', '),
       alert,
       // 새로 온 게 있으면 그 항목을 바로 열어 준다.
-      onSelect: () => (alert?.targetId ? setActiveTab(tab, alert.targetId) : setActiveTab(tab)),
+      onSelect: () => fromOffice(tab, () => alert?.targetId ? setActiveTab(tab, alert.targetId) : setActiveTab(tab)),
     }
   })
 
@@ -211,6 +221,7 @@ export function useOfficeHome({
 
   const dialogs = (
     <>
+      {calendarOpen && <Suspense fallback={null}><TeamCalendarDialog presence={data.memberPresence} onClose={() => setCalendarOpen(false)} /></Suspense>}
       {menuOpen && <WeeklyMenuDialog profile={profile} onClose={() => setMenuOpen(false)} />}
       {editing && canEdit && (
         <OfficeSeatEditor layout={layout} onClose={() => setEditing(false)} onSave={saveSeats} profiles={data.profiles} />

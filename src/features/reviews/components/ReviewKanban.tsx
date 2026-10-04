@@ -66,9 +66,9 @@ export const ReviewKanban = memo(function ReviewKanban({
         const isExpanded = expanded[status]
         const visibleItems = isExpanded ? items : items.slice(0, COLLAPSED_ITEM_COUNT)
         return (
-          <section aria-label={`${reviewStatusLabels[status]} ${items.length}건`} className="kanban-col" data-status={status} key={status}>
+          <section aria-label={`${reviewStatusLabels[status]} ${items.length}건`} className="kanban-col" data-px="panel" data-status={status} key={status}>
             <div className="kanban-col-head">
-              <strong>{reviewStatusLabels[status]}</strong>
+              <strong data-px="title">{reviewStatusLabels[status]}</strong>
               <span className="count">{items.length}</span>
             </div>
             {items.length === 0 && <p className="kanban-col-empty">요청이 없어요</p>}
@@ -78,6 +78,7 @@ export const ReviewKanban = memo(function ReviewKanban({
                 <button
                   aria-pressed={selectedReviewId === request.id}
                   className={selectedReviewId === request.id ? 'kanban-card selected' : 'kanban-card'}
+                  data-px="card"
                   data-urgency={tag.tone || 'normal'}
                   key={request.id}
                   onClick={() => onSelectReview(request.id)}

@@ -1,3 +1,4 @@
+import { OverflowMenu } from '../components/ui'
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { ArrowLeft, ArrowRight, Download, Search, SlidersHorizontal, StickyNote, UserPlus } from 'lucide-react'
@@ -20,6 +21,7 @@ import { canManageTeamData } from '../domain/permissions'
 import { businessDateKey } from '../lib/businessTime'
 import { presenceOf, presenceSummary } from '../data/validation/memberPresence'
 import { PersonFace } from '../features/office/components/PersonFace'
+import { OfficePlace } from '../features/office/components/OfficePlace'
 import { PresenceIcon } from '../features/office/components/PresenceIcon'
 
 /** 제품 화면의 담당 필터(products 도메인 소유). 파트원 화면에서는 이 세 값만 쓴다. */
@@ -127,6 +129,7 @@ function TeamNoteModal({
 }
 
 export function TeamPanel({
+  onFindInOffice,
   profile,
   data,
   mutate,
@@ -136,6 +139,7 @@ export function TeamPanel({
   onInitialSelectionApplied,
   onOpenPresence,
 }: {
+  onFindInOffice?: (id: string) => void
   profile: Profile
   data: AppData
   mutate: MutateFn
@@ -260,10 +264,19 @@ export function TeamPanel({
   return (
     <div className="stack">
       <div className="page-intro">
-        <h1>파트원</h1>
-        <p>
-          파트원 <strong>{activeMemberCount}명</strong>의 담당 제품, 정기 업무, 프로젝트를 한눈에 봐요.
-        </p>
+        <OfficePlace
+          people={[
+            { profileId: profile.id, name: profile.name },
+            { profileId: selectedSummary?.member.id, name: selectedSummary?.member.name },
+          ]}
+          place="nameplates"
+        />
+        <div>
+          <h1>파트원</h1>
+          <p>
+            파트원 <strong>{activeMemberCount}명</strong>의 담당 제품, 정기 업무, 프로젝트를 한눈에 봐요.
+          </p>
+        </div>
       </div>
       <div className="section-toolbar">
         <label className="search-field">
@@ -296,6 +309,7 @@ export function TeamPanel({
               const openReviews = summary.reviews.filter((request) => request.status === 'pending')
               return (
                 <button
+                  data-px="panel"
                   aria-pressed={selected}
                   className={selected ? 'v2-team-card selected' : 'v2-team-card'}
                   key={summary.member.id}
@@ -306,12 +320,13 @@ export function TeamPanel({
                   type="button"
                 >
                   <div className="v2-team-head">
-                    <PersonFace name={summary.member.name} profileId={summary.member.id} size="md" />
+                    <PersonFace name={summary.member.name} profileId={summary.member.id} size="lg" />
                     <span>
                       <strong>{summary.member.name}</strong>
                       <small>{summary.member.email}</small>
                     </span>
                     <Badge>{roleLabels[summary.member.role]}</Badge>
+                    {data.officeLayout?.seats.find(seat => seat.profile_id === summary.member.id)?.seat_index && <span className="pixel-seat-chip" data-px="chip">{data.officeLayout.seats.find(seat => seat.profile_id === summary.member.id)!.seat_index}번 자리</span>}
                     {summary.member.is_active === false && <Badge status="withdrawn">비활성</Badge>}
                   </div>
                   {(() => {
@@ -373,6 +388,7 @@ export function TeamPanel({
                 <span>선택 파트원</span>
                 <div className="detail-header-title-row">
                   <h2 data-detail-title>{selectedSummary.member.name}</h2>
+                  {onFindInOffice && data.officeLayout?.seats.some(s => s.profile_id === selectedSummary.member.id) && <OverflowMenu label={`${selectedSummary.member.name} 더보기`} items={[{ label: '사무실에서 찾기', onSelect: () => onFindInOffice(selectedSummary.member.id) }]} />}
                   {canManage && (
                     <button className="ghost compact" onClick={() => setNoteModalOpen(true)} type="button">
                       <StickyNote size={15} aria-hidden="true" />

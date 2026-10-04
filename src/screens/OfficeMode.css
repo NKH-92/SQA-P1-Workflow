@@ -1,6 +1,7 @@
 /* 전체 화면 사무실 홈(DESIGN.md §9): 왼쪽 메뉴는 ‘전체 메뉴’로 여는 서랍이 되고,
    상단바 대신 게임 화면 같은 위 메뉴(HUD)를 둔다. 사무실 회의 안내 띠는 모든 화면에 쓴다. */
 
+.app-shell[data-navigation='drawer'] .sidebar,
 .app-shell[data-layout='office'] .sidebar {
   position: fixed;
   top: 0;
@@ -12,15 +13,18 @@
   box-shadow: none;
 }
 
+.app-shell[data-navigation='drawer'] .sidebar.open,
 .app-shell[data-layout='office'] .sidebar.open {
   transform: translateX(0);
   box-shadow: var(--shadow-lg);
 }
 
+.app-shell[data-navigation='drawer'] .sidebar-close,
 .app-shell[data-layout='office'] .sidebar-close {
   display: inline-grid;
 }
 
+.app-shell[data-navigation='drawer'] .sidebar-command,
 .app-shell[data-layout='office'] .sidebar-command {
   display: flex;
 }
@@ -425,11 +429,6 @@
   align-items: center;
   gap: 8px;
   margin-top: 8px;
-}
-
-[data-ui='pixel'] .team-presence {
-  border-radius: 3px;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 32%, transparent);
 }
 
 /* ── 내 상태 창 ─────────────────────────────────────────── */

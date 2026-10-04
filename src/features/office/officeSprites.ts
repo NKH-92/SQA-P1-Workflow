@@ -1098,3 +1098,9 @@ export function allPixelMapsForTest(): Array<[string, PixelMap]> {
   for (const [name, raised] of Object.entries(RAISED_BACK)) entries.push([`RAISED_BACK.${name}`, raised.map])
   return entries
 }
+
+/** 책상 서류 한 묶음. 사무실의 기존 종이·프레임 팔레트를 쓴다. */
+export const DESK_PAPERS: PixelGrid = {
+  width: 12, height: 8,
+  pixels: ['............', '.kkkkkkkkkk.', '.kwwwwwwwwk.', '.kkkkkkkkkk.', '.kwwwwwwwwk.', '.kkkkkkkkkk.', '............', '............'].join('').split('').map(c => c === 'k' ? OUTLINE_COLOR : c === 'w' ? WHITE_COLOR : null),
+}

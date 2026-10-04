@@ -15,7 +15,7 @@ test('weekly menu accepts different screenshot ratios without cropping and survi
   await page.getByRole('button', { name: '기존 화면' }).click()
   await page.getByRole('button', { name: '크게 보기' }).click()
   const appearance = (element: Element) => {
-    const properties = ['width', 'backgroundColor', 'borderRadius', 'borderWidth', 'borderColor', 'boxShadow', 'fontFamily', 'fontSize', 'padding', 'gap'] as const
+    const properties = ['backgroundColor', 'borderRadius', 'borderWidth', 'borderColor', 'boxShadow', 'fontFamily', 'fontSize', 'padding', 'gap'] as const
     return ['', '.modal-header', '.office-meeting-body', '.modal-footer', '.modal-footer .primary'].map((selector) => {
       const target = selector ? element.querySelector(selector)! : element
       const css = getComputedStyle(target)
@@ -29,10 +29,8 @@ test('weekly menu accepts different screenshot ratios without cropping and survi
   page.on('pageerror', (error) => errors.push(error.message))
   await page.getByRole('button', { name: '메뉴판, 이번 주 메뉴 보기·사진 올리기' }).click()
   const dialog = page.getByRole('dialog', { name: '이번 주 메뉴' })
-  // The primary action label changes its width, but every visual style is shared.
+  // The menu uses a wider layout while keeping the shared visual style.
   const menuAppearance = await dialog.evaluate(appearance)
-  delete (meetingAppearance[4] as Partial<typeof meetingAppearance[4]>).width
-  delete (menuAppearance[4] as Partial<typeof menuAppearance[4]>).width
   expect(menuAppearance).toEqual(meetingAppearance)
   const input = dialog.getByLabel('메뉴 사진 선택', { exact: true })
   // Exercise the production image policy without allowing blob: URLs.

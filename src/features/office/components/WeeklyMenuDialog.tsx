@@ -103,7 +103,7 @@ export function WeeklyMenuDialog({ profile, onClose }: { profile: Profile; onClo
 
   return (
     <Modal open title="이번 주 메뉴" eyebrow="우리 회사 메뉴판" description={menuWeekLabel(week)} icon={<ImageIcon aria-hidden="true" size={18} />}
-      className="office-meeting-dialog" closeLabel="메뉴판 닫기" onClose={() => { if (!busy) onClose() }} dirty={Boolean(draft)} onPaste={paste}>
+      className="office-meeting-dialog weekly-menu-dialog" closeLabel="메뉴판 닫기" onClose={() => { if (!busy) onClose() }} dirty={Boolean(draft)} onPaste={paste}>
       <div className="office-meeting-body weekly-menu-body" onDragOver={(event) => event.preventDefault()} onDrop={drop}>
         <p className="office-meeting-note">누구나 이번 주 메뉴 캡처를 올릴 수 있어요. 새 사진을 게시하면 기존 사진은 교체돼요.</p>
         {isPreviewMode && <p className="office-meeting-note">미리보기에서는 이 브라우저에만 저장돼요.</p>}

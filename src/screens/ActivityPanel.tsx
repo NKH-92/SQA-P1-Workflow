@@ -1,7 +1,10 @@
+import { PersonFace } from '../features/office/components/PersonFace'
+import { TransferFaces } from '../features/office/components/TransferFaces'
 import { useEffect, useMemo, useRef } from 'react'
 import { FileClock, MessageSquare, RefreshCw, Search } from 'lucide-react'
 import { Badge, EmptyState, Section } from '../components/ui'
-import type { AppData, AuditEvent } from '../types'
+import { OfficePlace } from '../features/office/components/OfficePlace'
+import type { AppData, AuditEvent, Profile } from '../types'
 import { formatDateTime } from '../lib/format'
 import { relativeDateLabel } from '../lib/dates'
 import {
@@ -61,7 +64,7 @@ function AuditEventDetails({ event }: { event: AuditEvent }) {
   )
 }
 
-export function ActivityPanel({ data }: { data: AppData }) {
+export function ActivityPanel({ profile, data }: { profile?: Profile; data: AppData }) {
   const [query, setQuery] = useViewState('activity.leader.query', '', isString)
   const [mode, setMode] = useViewState<HistoryMode>('activity.leader.mode', 'activity', isHistoryMode)
   const { events: auditEvents, loading: auditLoading, error: auditError, load: loadAudit } = useAuditFeed(data.auditEvents ?? [])
@@ -120,8 +123,17 @@ export function ActivityPanel({ data }: { data: AppData }) {
   return (
     <div className="stack">
       <div className="page-intro">
-        <h1>활동 로그</h1>
-        <p>팀에서 한 일과, 누가 어떤 값을 바꿨는지 남긴 변경 기록을 나눠서 볼 수 있어요.</p>
+        <OfficePlace
+          people={[
+            ...(profile ? [{ profileId: profile.id, name: profile.name }] : []),
+            { profileId: data.activityLogs[0]?.actor_id, name: data.profiles.find((item) => item.id === data.activityLogs[0]?.actor_id)?.name },
+          ]}
+          place="logbook"
+        />
+        <div>
+          <h1>활동 로그</h1>
+          <p>팀에서 한 일과, 누가 어떤 값을 바꿨는지 남긴 변경 기록을 나눠서 볼 수 있어요.</p>
+        </div>
       </div>
       <div className="workspace-view-toggle" role="group" aria-label="기록 종류">
         <button aria-pressed={mode === 'activity'} className={mode === 'activity' ? 'selected' : ''} onClick={() => setMode('activity')} type="button">최근 활동</button>
@@ -156,9 +168,9 @@ export function ActivityPanel({ data }: { data: AppData }) {
                 />
               )
             ) : visibleLogs.map((log) => (
-              <article className="activity-row" key={log.id}>
+              <article className="activity-row" data-px="row" key={log.id}>
                 <div>
-                  <strong>{toHaeyoSummary(log.summary)}</strong>
+                  <strong><PersonFace profileId={log.actor_id} name={data.profiles.find(p => p.id === log.actor_id)?.name} size="xs" /><TransferFaces metadata={log.metadata} people={data.profiles} />{toHaeyoSummary(log.summary)}</strong>
                   <small>
                     <time dateTime={log.created_at} title={formatDateTime(log.created_at)}>{relativeDateLabel(log.created_at)}</time>
                     {' · '}
@@ -188,9 +200,9 @@ export function ActivityPanel({ data }: { data: AppData }) {
             {visibleAudit.map((event) => {
               const fieldLabels = safeAuditFields(event).map(auditFieldLabel)
               return (
-                <article className="activity-row" key={event.id}>
+                <article className="activity-row" data-px="row" key={event.id}>
                   <div>
-                    <strong>{event.actor_name ?? '시스템'} · {activityEntityLabel(event.entity_type)} {activityActionLabel(event.action)}</strong>
+                    <strong><PersonFace name={event.actor_name} size="xs" />{event.actor_name ?? '시스템'} · {activityEntityLabel(event.entity_type)} {activityActionLabel(event.action)}</strong>
                     <small>
                       <time dateTime={event.changed_at} title={formatDateTime(event.changed_at)}>{relativeDateLabel(event.changed_at)}</time>
                       {' · '}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { OfficePlace } from '../features/office/components/OfficePlace'
 import {
   AlertTriangle,
   BarChart3,
@@ -35,7 +36,7 @@ import { ZERO_REVIEW_STATS_V2_KPIS, loadReviewStatsV2View, type ReviewStatsV2Vie
 import { useBusinessToday } from '../hooks/useBusinessToday'
 import { GENERIC_FAILURE_MESSAGE, toUserMessage } from '../lib/errors'
 import { reviewStatusLabels } from '../lib/format'
-import type { AppData } from '../types'
+import type { AppData, Profile } from '../types'
 import './ReviewStatsPanel.css'
 
 /**
@@ -64,7 +65,7 @@ function requesterLabel(name: string, inactive: boolean) {
   return inactive ? `${name} (비활성)` : name
 }
 
-export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
+export function ReviewStatsPanel({ profile, data, now }: { profile?: Profile; data: AppData; now?: Date }) {
   // 날짜 경계는 필터 조작 중 흔들리지 않되, 화면을 밤새 열어 둔 경우 다음 서울 날짜에 갱신한다.
   // now를 넘기면(테스트) 처음 값에 고정한다.
   const [fixedNow] = useState(now)
@@ -170,10 +171,13 @@ export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
   return (
     <div className="stack review-stats-page">
       <div className="page-intro">
-        <h1>검토 통계</h1>
-        <p>
-          <strong>{rangeLabel}</strong> 동안의 검토요청과 처리 결과예요.
-        </p>
+        <OfficePlace people={profile ? [{ profileId: profile.id, name: profile.name }] : []} place="stats" />
+        <div>
+          <h1>검토 통계</h1>
+          <p>
+            <strong>{rangeLabel}</strong> 동안의 검토요청과 처리 결과예요.
+          </p>
+        </div>
       </div>
 
       <section aria-labelledby="review-stats-filter-title" className="review-stats-filter-panel">
@@ -318,14 +322,14 @@ export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
             className="stats-kpi-grid review-stats-kpi-grid"
             role="region"
           >
-            <article aria-label={`요청 건수 ${formatCount(kpis.requestCount)}건`} className="kpi">
+            <article aria-label={`요청 건수 ${formatCount(kpis.requestCount)}건`} className="kpi" data-px="panel">
               <div className="kpi-label">요청 건수</div>
               <div className="kpi-value">
                 {formatCount(kpis.requestCount)}
                 <span className="unit">건</span>
               </div>
             </article>
-            <article aria-label={`요청 횟수 ${formatCount(kpis.submissionCount)}회`} className="kpi">
+            <article aria-label={`요청 횟수 ${formatCount(kpis.submissionCount)}회`} className="kpi" data-px="panel">
               <div className="kpi-label">
                 요청 횟수
                 <small>재요청 포함</small>
@@ -335,28 +339,28 @@ export function ReviewStatsPanel({ data, now }: { data: AppData; now?: Date }) {
                 <span className="unit">회</span>
               </div>
             </article>
-            <article aria-label={`재요청 ${formatCount(kpis.resubmissionCount)}회`} className="kpi">
+            <article aria-label={`재요청 ${formatCount(kpis.resubmissionCount)}회`} className="kpi" data-px="panel">
               <div className="kpi-label">재요청</div>
               <div className="kpi-value">
                 {formatCount(kpis.resubmissionCount)}
                 <span className="unit">회</span>
               </div>
             </article>
-            <article aria-label={`${reviewStatusLabels.pending} ${formatCount(kpis.pendingCount)}건`} className="kpi" data-tone="pending">
+            <article aria-label={`${reviewStatusLabels.pending} ${formatCount(kpis.pendingCount)}건`} className="kpi" data-px="panel" data-tone="pending">
               <div className="kpi-label">{reviewStatusLabels.pending}</div>
               <div className="kpi-value">
                 {formatCount(kpis.pendingCount)}
                 <span className="unit">건</span>
               </div>
             </article>
-            <article aria-label={`${reviewStatusLabels.approved} ${formatCount(kpis.approvedCount)}건`} className="kpi" data-tone="approved">
+            <article aria-label={`${reviewStatusLabels.approved} ${formatCount(kpis.approvedCount)}건`} className="kpi" data-px="panel" data-tone="approved">
               <div className="kpi-label">{reviewStatusLabels.approved}</div>
               <div className="kpi-value">
                 {formatCount(kpis.approvedCount)}
                 <span className="unit">건</span>
               </div>
             </article>
-            <article aria-label={`${reviewStatusLabels.rejected} ${formatCount(kpis.rejectedCount)}건`} className="kpi" data-tone="rejected">
+            <article aria-label={`${reviewStatusLabels.rejected} ${formatCount(kpis.rejectedCount)}건`} className="kpi" data-px="panel" data-tone="rejected">
               <div className="kpi-label">{reviewStatusLabels.rejected}</div>
               <div className="kpi-value">
                 {formatCount(kpis.rejectedCount)}

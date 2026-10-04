@@ -51,10 +51,19 @@ export async function signIn(page: Page, email: string, password: string) {
 export async function expectAppShell(page: Page) {
   const home = page.getByRole('button', { name: '홈', exact: true })
   const classicHome = page.getByRole('button', { name: '기존 화면' })
-  await expect(home.or(classicHome)).toBeVisible({ timeout: 45_000 })
-  // 데스크톱 기본 홈은 전체 화면 사무실이다. 기존 화면 흐름을 확인하는 테스트는 사람이 하듯 기존 화면으로 바꿔 둔다.
-  if (await classicHome.isVisible()) await classicHome.click()
-  await expect(home).toBeVisible({ timeout: 45_000 })
+  const brief = page.getByRole('dialog', { name: '아침 조회', exact: true })
+  // 첫 로그인 안내는 실제 사용자처럼 확인한다. 데이터가 늦게 도착해도 클릭을 막지 않게 한다.
+  await page.addLocatorHandler(brief, async () => {
+    await brief.getByRole('button', { name: '확인하기', exact: true }).click()
+  })
+  try {
+    await expect(home.or(classicHome)).toBeVisible({ timeout: 45_000 })
+    // 데스크톱 기본 홈은 전체 화면 사무실이다. 기존 화면 흐름을 확인하는 테스트는 사람이 하듯 기존 화면으로 바꿔 둔다.
+    if (await classicHome.isVisible()) await classicHome.click()
+    await expect(home).toBeVisible({ timeout: 45_000 })
+  } finally {
+    await page.removeLocatorHandler(brief)
+  }
 }
 
 export async function expectAccessBlocked(page: Page) {

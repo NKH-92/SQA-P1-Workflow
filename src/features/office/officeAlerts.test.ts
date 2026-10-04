@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createPreviewData, previewLeader, previewMember } from '../../demoData'
 import type { AppData } from '../../types'
-import { buildOfficeAlerts } from './officeAlerts'
+import { buildOfficeAlerts, buildDeskCounts, deskPileLevel } from './officeAlerts'
 
 const NOW = Date.parse('2026-09-27T03:00:00.000Z')
 
@@ -128,4 +128,13 @@ describe('office alerts', () => {
     expect(alerts.notice).toBeUndefined()
     expect(alerts.projects?.level).not.toBe('new')
   })
+})
+
+it('counts only the viewers desk and never team leader piles', () => {
+  const data = createPreviewData()
+  const own = data.officeLayout?.seats.find(s => s.profile_id === previewMember.id)
+  const counts = buildDeskCounts(previewMember, data)
+  expect([...counts.keys()]).toEqual(own ? [own.seat_index] : [])
+  expect(buildDeskCounts({ ...previewLeader, role: 'team_leader' }, data).size).toBe(0)
+  expect([0, 1, 2, 3, 5, 6, 20].map(deskPileLevel)).toEqual([0, 1, 1, 2, 2, 3, 3])
 })

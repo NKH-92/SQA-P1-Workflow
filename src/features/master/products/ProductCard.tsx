@@ -82,7 +82,7 @@ export function ProductCard({
     })
 
   return (
-    <article className={needsAssignee ? 'master-card unassigned' : 'master-card'} data-product-id={product.id}>
+    <article data-px="panel" className={needsAssignee ? 'master-card unassigned' : 'master-card'} data-product-id={product.id}>
       {edit && !readOnly ? (
         <div className="project-edit-form product-edit-form">
           <label>

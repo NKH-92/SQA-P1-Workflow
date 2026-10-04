@@ -14,11 +14,11 @@ export function Section({
   children: ReactNode
 }) {
   return (
-    <section className={flush ? 'section flush' : 'section'}>
+    <section className={flush ? 'section flush' : 'section'} data-px="panel">
       <header>
         <div>
           {icon}
-          <h2>{title}</h2>
+          <h2 data-px="title">{title}</h2>
         </div>
         {aside && <span className="section-aside">{aside}</span>}
       </header>

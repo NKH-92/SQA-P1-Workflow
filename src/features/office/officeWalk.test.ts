@@ -178,3 +178,10 @@ describe('office meeting trips', () => {
     expect(destinationNodeId('lounge')).toBe('dest:lounge')
   })
 })
+
+it('carries a delivered paper through the existing walking pose', () => {
+  const trip = planTrip(2, 'kanban', 0)!
+  trip.held = 'paper'
+  trip.phase = 'out'
+  expect(tripPose(trip, 500).held).toBe('paper')
+})

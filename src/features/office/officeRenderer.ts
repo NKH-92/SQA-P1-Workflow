@@ -1,3 +1,4 @@
+import { prefersReducedMotion } from '../../lib/motion'
 import type { PresenceKind } from '../../data/validation/memberPresence'
 import { actorPose, advanceActor, createActor, staticPose, type ActorPose, type OfficeAction, type OfficeActor } from './officeBehavior'
 import { gridToCanvas, paintGrid } from './officeCanvas'
@@ -33,7 +34,7 @@ import {
   type TripDestination,
 } from './officeScene'
 import { createSkyPainter, rgbText, type SkyPeriod, type SkyState } from './officeSky'
-import { composeSeatedSprite, HEAD_Y } from './officeSprites'
+import { composeSeatedSprite, DESK_PAPERS, HEAD_Y } from './officeSprites'
 import { composeStandingSprite, STAND_FEET_ROW, type StandingFrame } from './officeStandingSprites'
 import {
   advanceTrip,
@@ -103,6 +104,9 @@ export type ActorAnchor = {
 }
 
 export type OfficeRenderer = {
+  setDeskPiles(piles: Map<number, 0 | 1 | 2 | 3>): void
+  announceWork(seatIndex: number, now: number): void
+  deliverPaper(seatIndex: number, now: number): void
   setOccupants(occupants: readonly OfficeOccupant[]): void
   setViewport(viewport: OfficeViewport): void
   /** 화면에 담을 영역. 전체 화면 사무실이면 아래쪽 목적지까지 다녀온다. */
@@ -380,6 +384,7 @@ export function createOfficeRenderer(
   /** 회의실에서 선 자리(자리 번호 → MEETING_SPOTS 번호). 이미 선 사람은 새 사람이 와도 자리를 옮기지 않는다. */
   const roomSpots = new Map<number, number>()
   let actors: Actor[] = []
+  let deskPiles = new Map<number, 0 | 1 | 2 | 3>()
   let lastSky: SkyState | null = null
   const spriteCache = new Map<string, HTMLCanvasElement | null>()
   let bubbles: Array<OfficeBubble & { until: number }> = []
@@ -514,6 +519,22 @@ export function createOfficeRenderer(
   }
 
   const renderer: OfficeRenderer = {
+    setDeskPiles(piles) { deskPiles = piles },
+    announceWork(seatIndex, now) {
+      if (prefersReducedMotion() || absences.has(seatIndex) || attendees.includes(seatIndex) || bubbles.length >= MAX_BUBBLES || bubbles.some(b => b.seatIndex === seatIndex)) return
+      bubbleSeq += 1
+      bubbles = [...bubbles, { id: bubbleSeq, seatIndex, text: '새 업무예요', until: now + 6000 }]
+      publishBubbles()
+    },
+    deliverPaper(seatIndex, now) {
+      if (prefersReducedMotion()) return
+      const entry = actors.find(a => a.seat.seatIndex === seatIndex)
+      const present = actors.filter(a => !isAway(a))
+      const limit = present.length - attendees.length <= 3 ? 1 : 2
+      if (!entry || entry.trip || isAway(entry) || attendees.includes(seatIndex) || present.filter(a => a.trip && a.trip.destination !== 'room').length >= limit || actors.some(a => a.trip?.destination === 'kanban')) return
+      const trip = planTrip(seatIndex, 'kanban', now)
+      if (trip) { trip.held = 'paper'; entry.trip = trip }
+    },
     setOccupants(occupants) {
       const now = performance.now()
       const bySeat = new Map(SCENE_SEATS.map((seat) => [seat.seatIndex, seat]))
@@ -719,6 +740,11 @@ export function createOfficeRenderer(
       }
       layers.sort((left, right) => left.baseY - right.baseY || left.order - right.order)
       for (const layer of layers) layer.paint()
+      for (const [seatIndex, level] of deskPiles) {
+        const seat = SCENE_SEATS.find(s => s.seatIndex === seatIndex)
+        if (!seat) continue
+        for (let i = 0; i < level; i++) paintGrid(ctx, DESK_PAPERS, seat.x + 8, (seat.row === 'window' ? 64 : 88) - i * 2)
+      }
 
       if (animate) {
         for (const entry of actors) {

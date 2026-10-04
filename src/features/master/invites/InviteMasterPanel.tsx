@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { OfficePlace } from '../../office/components/OfficePlace'
 import { Download, Search, Upload, UserPlus, Users } from 'lucide-react'
 import type { PendingAdminDelete } from '../../../app/types'
 import type { AuditedDeleteInput } from '../../../data/contracts'
@@ -257,6 +258,7 @@ export function InviteMasterPanel({ profile, data, mutate, setData }: MasterSubP
   return (
     <div className="stack">
       <div className="page-intro master-page-heading">
+        <OfficePlace people={[{ profileId: profile.id, name: profile.name }]} place="gate" />
         <div>
           <h1>계정 관리</h1>
           <p>

@@ -2,6 +2,8 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { OfficeLayout } from '../../../types'
+import { HOTSPOT_TABS } from '../officeNavigation'
+import type { VignettePlace } from '../officeVignette'
 import { OfficePlace } from './OfficePlace'
 import { PersonFace } from './PersonFace'
 import { PixelUiProvider } from './PixelUiProvider'
@@ -49,5 +51,22 @@ describe('pixel faces follow the chosen home style', () => {
     for (const face of faces) expect(face).toHaveAttribute('aria-hidden', 'true')
     expect(container.querySelector('.pixel-icon')).not.toBeNull()
     expect(container.querySelector('.office-place[data-place="notice"]')).toHaveAttribute('aria-hidden', 'true')
+  })
+})
+
+describe('office places cover every work screen', () => {
+  it('renders a hidden place picture for each clickable office object, with or without people', () => {
+    const places = Object.keys(HOTSPOT_TABS) as VignettePlace[]
+    const { container } = render(
+      <PixelUiProvider enabled layout={layout}>
+        {places.map((place) => (
+          <OfficePlace key={place} people={place === 'stats' ? [] : [{ profileId: 'member-01', name: '파트원 A' }]} place={place} />
+        ))}
+      </PixelUiProvider>,
+    )
+    for (const place of places) {
+      expect(container.querySelector(`.office-place[data-place="${place}"] canvas`), place).not.toBeNull()
+    }
+    expect(container.querySelectorAll('.office-place[aria-hidden="true"]')).toHaveLength(places.length)
   })
 })

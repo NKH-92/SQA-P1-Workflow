@@ -4,7 +4,7 @@ import type { Profile } from '../../types'
 import type { SceneHotspotId } from './officeScene'
 
 /** 회의실은 화면을 옮기지 않고 회의 창을 연다. 나머지 기물은 누르면 그 화면으로 간다. */
-export type TabHotspotId = Exclude<SceneHotspotId, 'meeting' | 'menu'>
+export type TabHotspotId = Exclude<SceneHotspotId, 'meeting' | 'menu' | 'calendar'>
 
 /** 사무실 기물을 누르면 가는 화면 */
 export const HOTSPOT_TABS: Record<TabHotspotId, TabId> = {
@@ -21,6 +21,7 @@ export const HOTSPOT_TABS: Record<TabHotspotId, TabId> = {
 }
 
 export const HOTSPOT_LABELS: Record<SceneHotspotId, { name: string; destination: string }> = {
+  calendar: { name: '일정 달력', destination: '파트원 일정' },
   menu: { name: '메뉴판', destination: '이번 주 메뉴' },
   projects: { name: '프로젝트 보드', destination: '프로젝트' },
   cabinet: { name: '변경관리 문서함', destination: '변경 적용' },
@@ -35,8 +36,20 @@ export const HOTSPOT_LABELS: Record<SceneHotspotId, { name: string; destination:
   meeting: { name: '회의실', destination: '회의' },
 }
 
+const TAB_HOTSPOTS: Partial<Record<TabId, TabHotspotId>> = Object.fromEntries(
+  (Object.entries(HOTSPOT_TABS) as Array<[TabHotspotId, TabId]>).map(([hotspot, tab]) => [tab, hotspot]),
+)
+
+/** 업무 화면 상단바 장소 명판에 적는 ‘지금 서 있는 기물’. 기물이 없는 화면(내 담당)은 내 책상이다. */
+export function placePlateFor(tab: TabId): { name: string } | null {
+  if (tab === 'dashboard') return null
+  if (tab === 'work') return { name: '내 책상' }
+  const hotspot = TAB_HOTSPOTS[tab]
+  return hotspot ? { name: HOTSPOT_LABELS[hotspot].name } : null
+}
+
 export function isTabHotspot(id: SceneHotspotId): id is TabHotspotId {
-  return id !== 'meeting' && id !== 'menu'
+  return id !== 'meeting' && id !== 'menu' && id !== 'calendar'
 }
 
 /**

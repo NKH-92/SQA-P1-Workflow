@@ -1,4 +1,5 @@
 import { Badge, EmptyState, Rows, Section } from '../components/ui'
+import { OfficePlace } from '../features/office/components/OfficePlace'
 import type { RowItem } from '../components/ui/Rows'
 import type { AppData, Profile, ProductAssignment } from '../types'
 import { dueState } from '../lib/dates'
@@ -79,27 +80,30 @@ export function MyWorkPanel({ profile, data }: { profile: Profile; data: AppData
   return (
     <div className="stack">
       <div className="page-intro">
-        <h1>내 담당</h1>
-        <p>
-          {hasNothing ? (
-            '아직 배정받은 제품이나 업무가 없어요.'
-          ) : (
-            <>
-              담당 제품 <strong>{ownProducts.length}개</strong> · 정기 업무 <strong>{ownDuties.length}개</strong>를 맡고
-              있어요.
-              {pendingContexts.length > 0 && (
-                <>
-                  {' '}
-                  처리할 적용 업무가 <strong>{pendingContexts.length}건</strong> 있어요.
-                </>
-              )}
-            </>
-          )}
-        </p>
+        <OfficePlace people={[{ profileId: profile.id, name: profile.name }]} place={data.officeLayout?.seats.some(seat => seat.profile_id === profile.id) ? "my-desk" : "nameplates"} seatIndex={data.officeLayout?.seats.find(seat => seat.profile_id === profile.id)?.seat_index} />
+        <div>
+          <h1>내 담당</h1>
+          <p>
+            {hasNothing ? (
+              '아직 배정받은 제품이나 업무가 없어요.'
+            ) : (
+              <>
+                담당 제품 <strong>{ownProducts.length}개</strong> · 정기 업무 <strong>{ownDuties.length}개</strong>를 맡고
+                있어요.
+                {pendingContexts.length > 0 && (
+                  <>
+                    {' '}
+                    처리할 적용 업무가 <strong>{pendingContexts.length}건</strong> 있어요.
+                  </>
+                )}
+              </>
+            )}
+          </p>
+        </div>
       </div>
 
       {hasNothing ? (
-        <EmptyState
+        <EmptyState art="desk"
           icon={<Package size={22} />}
           title="아직 맡은 제품이나 업무가 없어요"
           description="파트장이 담당을 정하면 여기에 모여요. 담당이 필요하면 파트장에게 알려 주세요."

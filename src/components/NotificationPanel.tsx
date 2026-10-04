@@ -1,3 +1,5 @@
+import { OfficeEmptyArt } from '../features/office/officeEmptyArt'
+import { usePixelUi } from '../features/office/pixelUiContext'
 import { useEffect, useId, useRef } from 'react'
 import { Bell, Monitor } from 'lucide-react'
 import type { AppNotification } from '../lib/notifications'
@@ -18,6 +20,7 @@ export function NotificationPanel({
   onMarkAllRead: () => void
   onSelect: (tab: TabId, entityId?: string) => void
 }) {
+  const pixel = usePixelUi()
   const panelRef = useRef<HTMLDivElement>(null)
   const newsHeadingId = useId()
   const reminderHeadingId = useId()
@@ -52,6 +55,7 @@ export function NotificationPanel({
   const renderItem = (item: AppNotification) => (
     <button
       className={item.unread ? 'notif-item unread' : 'notif-item'}
+      data-px={item.unread ? 'row' : undefined}
       data-urgency={item.urgency}
       key={item.id}
       onClick={() => {
@@ -79,7 +83,7 @@ export function NotificationPanel({
     <div className="notif-panel" ref={panelRef} role="dialog" aria-label="알림" tabIndex={-1}>
       <div className="notif-head">
         <h2 className="notif-title">
-          <Bell size={15} aria-hidden="true" />
+          <>{pixel.enabled ? <OfficeEmptyArt kind="mailbox" /> : <Bell size={15} aria-hidden="true" />}</>
           알림
           {unread > 0 && <span className="n" aria-label={`읽지 않은 소식 ${unread}건`}>{unread}</span>}
         </h2>

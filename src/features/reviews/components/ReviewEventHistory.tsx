@@ -9,12 +9,13 @@ import { reviewEventLabel } from '../reviewEventPresentation'
 import { PersonFace } from '../../office/components/PersonFace'
 
 type ReviewEventHistoryProps = {
+  requesterId?: string
   reviewRequestId: string
   /** Preview/local mode already has events in AppData; pass them when remote bootstrap is unused. */
   localEvents?: ReviewEvent[]
 }
 
-export function ReviewEventHistory({ reviewRequestId, localEvents = [] }: ReviewEventHistoryProps) {
+export function ReviewEventHistory({ requesterId, reviewRequestId, localEvents = [] }: ReviewEventHistoryProps) {
   const [events, setEvents] = useState<ReviewEvent[]>([])
   const [beforeId, setBeforeId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -75,7 +76,7 @@ export function ReviewEventHistory({ reviewRequestId, localEvents = [] }: Review
           ) : (
             <ol className="review-event-history-list">
               {events.map((event) => (
-                <li key={String(event.id)}>
+                <li className="review-event" data-side={event.actor_id === requesterId ? 'requester' : 'leader'} key={String(event.id)}>
                   <strong>{reviewEventLabel(event.event_type)}</strong>
                   <time dateTime={event.occurred_at}>{formatDateTime(event.occurred_at)}</time>
                   {event.actor_name_snapshot ? (

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { usePixelUi } from '../features/office/pixelUiContext'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import type { AppData, Profile, ReviewRequest } from '../types'
 import type { ReviewStatusFilter, MutateFn } from '../app/types'
@@ -41,6 +42,8 @@ import { useSelectionHashSync } from '../app/hooks/useHashNavigation'
 import { Archive, LayoutGrid, List, Search, Send } from 'lucide-react'
 import { canViewTeamData } from '../domain/permissions'
 import { OfficePlace } from '../features/office/components/OfficePlace'
+
+const ReviewMeetingDialog = lazy(() => import('../features/office/components/ReviewMeetingDialog').then(m => ({ default: m.ReviewMeetingDialog })))
 
 type ReviewsPanelProps = {
   profile: Profile
@@ -428,12 +431,24 @@ function ReviewsWorkspace({
     setSelectedReviewId(nextId)
   }
 
+  const [meetingReview, setMeetingReview] = useState<ReviewRequest | null>(null)
+  const pixel = usePixelUi()
+  const [decisionStamp, setDecisionStamp] = useState<'approved' | 'rejected' | null>(null)
+  const stampTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(stampTimer.current), [])
+  const showDecisionStamp = (status: 'approved' | 'rejected') => {
+    if (!pixel.enabled) return
+    clearTimeout(stampTimer.current)
+    setDecisionStamp(status)
+    stampTimer.current = setTimeout(() => setDecisionStamp(null), 300)
+  }
+
   const approveReview = async (request: ReviewRequest, expectedUpdatedAt?: string): Promise<boolean> => {
     const order = visibleReviewRequests
     const ok = await mutate(async () => {
       await controller.updateStatus(request.id, 'approved', expectedUpdatedAt)
     }, `${quotedWithJosa(request.title, '을/를')} 승인했어요.`)
-    if (ok) advanceAfterDecision(request.id, order)
+    if (ok) { showDecisionStamp('approved'); advanceAfterDecision(request.id, order) }
     return ok
   }
 
@@ -443,6 +458,7 @@ function ReviewsWorkspace({
       await controller.reject(request.id, reason.trim(), expectedUpdatedAt)
     }, `${quotedWithJosa(request.title, '을/를')} 반려했어요.`)
     if (ok) {
+      showDecisionStamp('rejected')
       // 보낸 사유 그대로면 초안을 지운다(보내는 동안 더 고쳐 쓴 글은 남긴다).
       if (feedbackDraftsRef.current.get(request.id)?.trim() === reason.trim()) storeFeedbackDraft(request.id, '')
       advanceAfterDecision(request.id, order)
@@ -497,6 +513,8 @@ function ReviewsWorkspace({
   const detail = (
     <ReviewDetail
       {...detailHandlers}
+      onOpenMeeting={setMeetingReview}
+      decisionStamp={pixel.enabled ? decisionStamp : null}
       // 휴대폰에서 상세를 연 동안에만 처리 버튼을 화면 아래 줄로 옮긴다(목록을 볼 때는 하단 탭바를 가리지 않게).
       compact={compact && mobileDetailOpen}
       detailRef={reviewDetailRef}
@@ -517,6 +535,7 @@ function ReviewsWorkspace({
       data-mobile-detail={mobileDetailOpen ? 'open' : undefined}
       ref={rootRef}
     >
+      {meetingReview && <Suspense fallback={null}><ReviewMeetingDialog profile={profile} data={data} mutate={mutate} setData={setData} title={meetingReview.title} requesterId={meetingReview.requester_id} onClose={() => setMeetingReview(null)} /></Suspense>}
       {profile.role === 'member' && (
         <div className="composer-callout">
           <div>
@@ -641,7 +660,7 @@ function ReviewsWorkspace({
           {selectedReview && <div className="kanban-detail">{detail}</div>}
         </section>
       ) : (
-        <section aria-label="검토요청 작업 공간" className="review-workspace">
+        <section aria-label="검토요청 작업 공간" className="review-workspace" data-px="panel">
           <ReviewList
             decisionEvents={decisionEvents}
             loading={statusFilter === 'withdrawn' && archiveLoading && archivePage < 0}

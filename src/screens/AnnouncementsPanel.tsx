@@ -469,6 +469,7 @@ export function AnnouncementsPanel({
             : 'announcement-list-item'
         }
         data-pinned={announcement.is_pinned ? 'true' : 'false'}
+        data-px="row"
         key={announcement.id}
         onClick={() => selectAnnouncement(announcement.id)}
         type="button"
@@ -538,11 +539,11 @@ export function AnnouncementsPanel({
         )}
       </div>
 
-      <section className="announcement-board" data-mobile-detail={mobileDetailOpen ? 'open' : 'closed'}>
+      <section className="announcement-board" data-px="panel" data-mobile-detail={mobileDetailOpen ? 'open' : 'closed'}>
         <aside aria-label="공지 목록" className="announcement-list-pane">
           <div className="announcement-list-head">
             <div>
-              <h2>공지 게시판</h2>
+              <h2 data-px="title">공지 게시판</h2>
               <span>{filteredAnnouncements.length}건</span>
             </div>
             <label className="announcement-search">

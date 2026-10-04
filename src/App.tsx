@@ -5,6 +5,7 @@ import { useSectionReadMarker } from './app/hooks/useSectionReadMarker'
 import { useOfficeLiveSync } from './app/hooks/useOfficeLiveSync'
 import { useOfficeMeetingActions } from './app/hooks/useOfficeMeetingActions'
 import { usePresenceActions } from './app/hooks/usePresenceActions'
+import { useUiTheme } from './app/hooks/useUiTheme'
 import { useHomeMode } from './app/hooks/useHomeMode'
 import { OfficeMeetingBanner } from './components/OfficeMeetingBanner'
 import { presenceOf } from './data/validation/memberPresence'
@@ -201,6 +202,12 @@ function App() {
   useSectionReadMarker(commandPaletteAvailable ? profile : null, data, setData, navigation.activeTab)
   // 홈 화면 방식(전체 화면 사무실 / 기존 화면)은 사람마다 기억한다.
   const homeMode = useHomeMode(profile?.id ?? null)
+  const uiTheme = useUiTheme(profile?.id ?? null, homeMode.mode)
+  useEffect(() => {
+    if (profile && uiTheme.theme === 'pixel') document.documentElement.dataset.ui = 'pixel'
+    else delete document.documentElement.dataset.ui
+    return () => { delete document.documentElement.dataset.ui }
+  }, [profile, uiTheme.theme])
   const meetingActions = useOfficeMeetingActions(profile, data, setData, mutate)
   // 개인 상태(잠깐 비움·휴가·출장)는 어느 화면에서든 연다. 기존 화면·사무실 화면 모두 같은 기능이다.
   const presenceActions = usePresenceActions(profile, data, setData, mutate)
@@ -279,8 +286,9 @@ function App() {
   }
 
   return (
-    <PixelUiProvider enabled={homeMode.mode === 'office'} layout={data.officeLayout}>
+    <PixelUiProvider enabled={uiTheme.theme === 'pixel'} layout={data.officeLayout}>
       <Shell
+        officeData={data}
         activeTab={navigation.activeTab}
         setActiveTab={setActiveTab}
         profile={profile}
@@ -304,6 +312,8 @@ function App() {
         }}
         onSignOut={() => void handleSignOut()}
         onPreviewRoleChange={previewRoleChange}
+        uiTheme={uiTheme.theme}
+        onToggleUiTheme={() => uiTheme.setTheme(uiTheme.theme === 'pixel' ? 'classic' : 'pixel')}
         homeMode={homeMode.mode}
         onHomeModeChange={homeMode.setMode}
         presence={presenceActions.canEdit ? { current: myPresence, onOpen: () => presenceActions.open() } : undefined}

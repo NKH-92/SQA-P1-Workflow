@@ -158,3 +158,9 @@ describe('OfficeMeetingDialog', () => {
     expect(screen.queryByRole('button', { name: '회의 시작' })).not.toBeInTheDocument()
   })
 })
+
+it('prefills a review title and only eligible invitees', () => {
+  renderDialog({ profile: previewLeader, initialTitle: '검토 제목', initialInvitees: [previewMember.id, previewLeader.id, 'missing'] })
+  expect(screen.getByPlaceholderText('예: 일탈 보고서 5분 논의')).toHaveValue('검토 제목')
+  expect(screen.getByRole('checkbox', { name: /파트원 A/ })).toBeChecked()
+})

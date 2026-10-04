@@ -1,0 +1,90 @@
+/* ==========================================================================
+   Pixel UI · 화면 예외 층. 공통 부품(PixelPrimitives.css)으로 표현할 수 없는
+   화면별 줄맞춤만 둔다. 새 화면은 여기에 규칙을 더하지 말고 data-px 표시로 해결한다(DESIGN.md §10).
+   ========================================================================== */
+
+/* 파트원 카드: 얼굴이 이름 앞에 오면 이름 칸이 남는 폭을 채운다(기존 화면의 첫 칸 규칙과 같은 모양). */
+[data-ui='pixel'] .v2-team-head > .person-face {
+  display: inline-grid;
+  flex: none;
+  gap: 0;
+}
+
+[data-ui='pixel'] .v2-team-head > .person-face + span {
+  display: grid;
+  flex: 1;
+  gap: 1px;
+  min-width: 0;
+}
+
+/* 파트원 화면의 자리 상태 칩은 Badge가 아니라서 칩 모양을 따로 준다. */
+[data-ui='pixel'] .team-presence {
+  border-radius: var(--radius-px);
+  box-shadow: var(--pixel-chip-ring);
+}
+
+/* 검토 통계: KPI 칸이 지표 묶음이라 hover 반응이 없다(§6 — 누를 수 없는 요소). */
+[data-ui='pixel'] .kpi[data-px='panel'] {
+  box-shadow: var(--pixel-step-shadow-sm);
+}
+
+[data-ui='pixel'] .review-list-item[data-px='row']::after {
+  content: ''; position: absolute; top: 0; left: 12px; width: 18px; height: 6px;
+  background: var(--pixel-frame); pointer-events: none;
+}
+[data-ui='pixel'] .review-detail-pane { position: relative; }
+[data-ui='pixel'] .review-decision-stamp {
+  position: absolute; top: 12px; right: 16px; z-index: 2; pointer-events: none;
+  border: var(--pixel-border-2) solid currentColor; border-radius: var(--radius-px);
+  padding: 6px 12px; background: var(--paper-panel); color: var(--paper-done); font-weight: 800;
+  animation: review-stamp var(--dur-normal) var(--ease-deep) both;
+}
+[data-ui='pixel'] .review-decision-stamp[data-status='rejected'] { color: var(--paper-reject); }
+[data-ui='pixel'] .review-event[data-side='leader'] { margin-left: 24px; }
+@keyframes review-stamp { from { transform: scale(1.4) rotate(-8deg); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+[data-ui='pixel'] .change-group[data-px='panel'] { position: relative; }
+[data-ui='pixel'] .change-group[data-px='panel']::before {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 6px;
+  background: var(--pixel-plate); pointer-events: none;
+}
+[data-ui='pixel'] .project-card[data-px='panel']::after {
+  content: ''; position: absolute; top: -4px; left: calc(50% - 18px); width: 36px; height: 10px;
+  background: var(--paper-pending-bg); opacity: .8; transform: rotate(-2deg); pointer-events: none;
+}
+
+[data-ui='pixel'] .activity-list { background-image: repeating-linear-gradient(transparent 0 31px, var(--paper-border) 31px 32px); }
+[data-ui='pixel'] .activity-row strong { display: flex; align-items: center; gap: 6px; }
+[data-ui='pixel'] .invite-card { position: relative; }
+[data-ui='pixel'] .invite-card[data-status='inactive']::after {
+  content: ''; position: absolute; top: 12px; right: 12px; width: 10px; height: 10px;
+  border-radius: var(--radius-full); background: var(--paper-bg);
+  border: var(--pixel-border-1) solid var(--pixel-frame); pointer-events: none;
+}
+.pixel-seat-chip { display: none; }
+[data-ui='pixel'] .pixel-seat-chip { display: inline-block; padding: 2px 6px; font-size: 11px; white-space: nowrap; }
+
+.office-person[data-focused='true'] { outline: var(--pixel-border-2) solid var(--brand-yellow); outline-offset: 4px; }
+
+.quest-drawer .office-quest { position: static; width: 100%; max-height: none; border: 0; box-shadow: none; }
+.morning-brief-list { display: grid; gap: 16px; padding: 20px 32px; margin: 0; }
+.morning-brief-list ul { margin-top: 8px; padding-left: 20px; color: var(--paper-dim); }
+@media (max-width: 1080px) { .brand-shell .topbar-actions .quest-open-button { display: none; } }
+
+.office-minimap { display: block; width: 220px; max-width: 100%; height: auto; flex: none; image-rendering: pixelated; cursor: pointer; }
+@media (max-width: 1080px) { .office-minimap { display: none; } }
+
+.app-shell[data-navigation='drawer'] .hamburger { display: inline-flex; }
+.modal-card.profile-dialog { width: min(400px, calc(100vw - 24px)); }
+.profile-dialog .sidebar-footer { margin: 0; padding: 20px; border: 0; gap: 16px; }
+.brand-shell .profile-dialog .sidebar-footer strong { color: var(--paper-ink); }
+.brand-shell .profile-dialog .sidebar-footer small { color: var(--paper-dim); }
+.profile-dialog .sidebar-footer-button { color: var(--paper-ink); border-color: var(--paper-border); background: var(--paper-panel); }
+.profile-dialog .sidebar-footer-actions { display: grid; gap: 8px; }
+.profile-dialog .sidebar-footer-button[aria-pressed='true'] { color: var(--paper-ink); background: var(--paper-pending-bg); border-color: var(--brand-yellow); }
+@media (max-width: 640px) { .calendar-open-button span { display: none; } }
+
+.brand-shell .profile-dialog .sidebar-footer .segmented button { color: var(--paper-ink); }
+.profile-dialog .presence-button { color: var(--paper-ink); background: var(--paper-bg); border-color: var(--paper-border); }
+.profile-dialog .sidebar-footer-avatar { color: var(--paper-ink); background: var(--paper-pending-bg); }
+.profile-dialog .sidebar-footer-button:hover { color: var(--paper-ink); background: var(--paper-hover); }

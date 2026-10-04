@@ -1,3 +1,6 @@
+import type { AppData, Profile } from '../../../types'
+import { buildDeskCounts, deskPileLevel, buildOfficeAlerts, newOfficeAssignmentKeys } from '../officeAlerts'
+import { prefersReducedMotion } from '../../../lib/motion'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { PresenceKind } from '../../../data/validation/memberPresence'
 import { businessDateParts } from '../../../lib/businessTime'
@@ -71,10 +74,6 @@ function seoulClock(): OfficeClock {
   return { hour: parts.hour, minute: parts.minute }
 }
 
-function prefersReducedMotion() {
-  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-}
-
 function horizontalPadding(element: HTMLElement) {
   const style = window.getComputedStyle(element)
   return (Number.parseFloat(style.paddingLeft) || 0) + (Number.parseFloat(style.paddingRight) || 0)
@@ -107,7 +106,11 @@ export function OfficeScene({
   meeting,
   absences = NO_ABSENCES,
   children,
+  workflow,
+  focusedProfileId,
 }: {
+  workflow?: { profile: Profile; data: AppData }
+  focusedProfileId?: string | null
   occupants: readonly SceneOccupant[]
   currentProfileId: string
   hotspots?: readonly OfficeHotspotLink[]
@@ -123,6 +126,10 @@ export function OfficeScene({
   /** 장면 위에 겹쳐 보여 줄 안내(빈 사무실 등) */
   children?: ReactNode
 }) {
+  const previousViewer = useRef<string | null>(null)
+  const previousWorkKeys = useRef<string[]>([])
+  const previousAlerts = useRef<ReturnType<typeof buildOfficeAlerts> | null>(null)
+  const deskCounts = workflow ? buildDeskCounts(workflow.profile, workflow.data) : new Map<number, number>()
   const cameraRef = useRef(camera)
   const attendeeSeats = meeting?.attendeeSeats ?? NO_SEATS
   const invitedSeats = meeting?.invitedSeats ?? NO_SEATS
@@ -248,7 +255,9 @@ export function OfficeScene({
       if (!animate) redrawRef.current()
     }, 30_000)
 
-    return () => {
+
+
+  return () => {
       stop()
       window.clearInterval(staticClock)
       intersection?.disconnect()
@@ -361,6 +370,39 @@ export function OfficeScene({
     return area && intersectsCamera(camera, area) ? [{ hotspot, area }] : []
   })
 
+  useEffect(() => {
+    const renderer = rendererRef.current
+    if (!renderer || !workflow) return
+    const counts = buildDeskCounts(workflow.profile, workflow.data)
+    renderer.setDeskPiles(new Map([...counts].map(([seat, count]) => [seat, deskPileLevel(count)])))
+    redrawRef.current()
+    const next = buildOfficeAlerts(workflow.profile, workflow.data)
+    const keys = newOfficeAssignmentKeys(workflow.profile, workflow.data)
+    const previous = previousViewer.current === workflow.profile.id ? previousAlerts.current : null
+    const oldKeys = previousWorkKeys.current
+    previousViewer.current = workflow.profile.id
+    previousWorkKeys.current = keys
+    previousAlerts.current = workflow.data.sectionReadMarks === undefined ? null : next
+    if (!previous) return
+    const ownSeat = occupants.find(o => o.profileId === workflow.profile.id)?.seatIndex
+    if (ownSeat && keys.some(key => !oldKeys.includes(key))) renderer.announceWork(ownSeat, performance.now())
+    if (workflow.profile.role === 'leader' && !previous.kanban && next.kanban?.level === 'new') {
+      const request = workflow.data.reviewRequests.find(r => r.id === next.kanban?.targetId && r.status === 'pending')
+      const seat = occupants.find(o => o.profileId === request?.requester_id)?.seatIndex
+      if (seat) renderer.deliverPaper(seat, performance.now())
+    }
+  }, [workflow, occupants])
+  useEffect(() => {
+    if (!focusedProfileId) return
+    const seat = occupants.find(o => o.profileId === focusedProfileId)
+    const element = seat ? containerRef.current?.querySelector<HTMLElement>(`[data-seat="${seat.seatIndex}"]`) : null
+    if (!element) return
+    element.dataset.focused = 'true'
+    element.focus({ preventScroll: true })
+    const timer = setTimeout(() => { delete element.dataset.focused }, 2000)
+    return () => { clearTimeout(timer); delete element.dataset.focused }
+  }, [focusedProfileId, occupants])
+
   return (
     <div className="office-scene-wrap" data-fit={fit} data-sky={skyPeriod}>
       <p className="sr-only">{`지금 창밖은 ${skyPeriod} 하늘이에요.`}</p>
@@ -429,6 +471,7 @@ export function OfficeScene({
                     data-away={absence ? absence.kind : undefined}
                     data-invited={invited.has(occupant.seatIndex) ? 'true' : undefined}
                     data-label={seat.row === 'aisle' ? 'below' : 'above'}
+                    tabIndex={-1}
                     data-seat={occupant.seatIndex}
                     key={occupant.seatIndex}
                     ref={registerPerson(occupant.seatIndex)}
@@ -453,6 +496,7 @@ export function OfficeScene({
                       {`, ${occupant.seatIndex}번 자리 · ${seatRowLabel(occupant.seatIndex)} · ${occupant.character.personality.label}`}
                       {attendeeSeats.includes(occupant.seatIndex) ? ' · 회의 중' : invited.has(occupant.seatIndex) ? ' · 회의 요청 받음' : ''}
                       {absence ? ` · ${absence.summary}` : ''}
+                      {deskCounts.get(occupant.seatIndex) ? ` · 대기 ${deskCounts.get(occupant.seatIndex)}건` : ''}
                     </span>
                     {absence && (
                       <span aria-hidden="true" className="office-away-chip" data-kind={absence.kind}>

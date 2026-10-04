@@ -1,5 +1,7 @@
-import { Suspense, lazy, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import type { Profile, Role } from '../types'
+import { LazyTeamCalendar as TeamCalendarDialog } from './LazyTeamCalendar'
+import { officeCodeLoaded, subscribeRouteLoads } from '../app/routeLoading'
+import { Suspense, lazy, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import type { AppData, Profile, Role } from '../types'
 import type { TabId, ToastMessage } from '../app/types'
 import type { SyncHealth } from '../app/hooks/useSyncHealth'
 import { canManageTeamData } from '../domain/permissions'
@@ -15,6 +17,7 @@ import {
   type NavigateOptions,
 } from '../lib/navigation'
 import { preferredScrollBehavior } from '../lib/motion'
+import type { UiTheme } from '../lib/uiTheme'
 import type { HomeMode } from '../lib/homeMode'
 import type { AppNotification } from '../lib/notifications'
 import type { DesktopNotificationControls } from '../app/hooks/useDesktopNotifications'
@@ -27,14 +30,17 @@ import { useDensityPreference } from './useDensityPreference'
 import { OfficeHudBar } from './OfficeHudBar'
 import type { EffectivePresence } from '../data/validation/memberPresence'
 import { PresenceButton } from '../features/office/components/PresenceButton'
+import { placePlateFor } from '../features/office/officeNavigation'
 import './OfficeMode.css'
-import './PixelTheme.css'
+import './PixelPrimitives.css'
+import './PixelScreens.css'
 import {
   AlertTriangle,
   BarChart3,
   Bell,
   Briefcase,
   Check,
+  Calendar,
   ClipboardPenLine,
   FolderKanban,
   House,
@@ -103,6 +109,13 @@ function buildSyncWarning(syncHealth: SyncHealth): { label: string; title: strin
 const loadNotificationPanel = () => import('../components/NotificationPanel')
 const NotificationPanel = lazy(() => loadNotificationPanel().then((module) => ({ default: module.NotificationPanel })))
 
+const ProfileDialog = lazy(() => import('./ProfileDialog').then(m => ({ default: m.ProfileDialog })))
+
+const PixelPreferences = lazy(() => import('./PixelPreferences').then(m => ({ default: m.PixelPreferences })))
+const OfficeMinimap = lazy(() => import('../features/office/components/OfficeMinimap').then(m => ({ default: m.OfficeMinimap })))
+const loadQuestDrawer = () => import('./QuestDrawer')
+const QuestDrawer = lazy(() => loadQuestDrawer().then(m => ({ default: m.QuestDrawer })))
+
 const noopDismiss = () => {}
 
 /** 하단 탭바(640px 이하)에 두는 자주 가는 화면. 나머지는 ‘전체’로 서랍 메뉴를 연다(토스 TB-1·TB-2). */
@@ -149,6 +162,7 @@ function NavBadges({ state }: { state?: ShellTabState }) {
 }
 
 export function Shell({
+  officeData,
   activeTab,
   setActiveTab,
   profile,
@@ -171,11 +185,14 @@ export function Shell({
   onSignOut,
   onPreviewRoleChange,
   homeMode = 'classic',
+  uiTheme = homeMode === 'office' ? 'pixel' : 'classic',
+  onToggleUiTheme,
   onHomeModeChange,
   meetingBanner,
   presence,
   children,
 }: {
+  officeData?: AppData
   activeTab: TabId
   setActiveTab: (tab: TabId, entityId?: string, options?: NavigateOptions) => void
   profile: Profile
@@ -202,6 +219,8 @@ export function Shell({
   onSignOut: () => void
   onPreviewRoleChange?: (role: Role) => void
   /** 홈 화면 방식. office면 홈에서 왼쪽 메뉴·상단바 대신 게임 화면 같은 위 메뉴(HUD)를 그린다. */
+  uiTheme?: UiTheme
+  onToggleUiTheme?: () => void
   homeMode?: HomeMode
   onHomeModeChange?: (mode: HomeMode) => void
   /** 어느 화면에서든 보이는 사무실 회의 안내 띠 */
@@ -217,8 +236,13 @@ export function Shell({
   const [mobileSidebar, setMobileSidebar] = useState(false)
   const [actionBarShown, setActionBarShown] = useState(false)
   /** 전체 화면 사무실 홈: 왼쪽 메뉴는 위 메뉴의 ‘전체 메뉴’로 여는 서랍이 된다. */
+  const officeReady = useSyncExternalStore(subscribeRouteLoads, officeCodeLoaded, () => false)
+  const [questOpen, setQuestOpen] = useState(false)
+  useEffect(() => uiTheme === 'pixel' ? prefetchWhenIdle(loadQuestDrawer) : undefined, [uiTheme])
   const officeLayout = homeMode === 'office' && activeTab === 'dashboard'
-  const drawerMode = mobileSidebar || officeLayout
+  const drawerMode = mobileSidebar || officeLayout || uiTheme === 'pixel'
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [calendarOpen, setCalendarOpen] = useState(false)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const drawerOpenerRef = useRef<HTMLElement | null>(null)
   const sidebarRef = useRef<HTMLElement>(null)
@@ -253,6 +277,7 @@ export function Shell({
     section.items.push({ id: item.tab, label: item.sidebarLabel })
   }
   const headerLabel = tabHeaderLabel(activeTab, leaderMode)
+  const placePlate = uiTheme === 'pixel' ? placePlateFor(activeTab) : null
   const syncLabel = lastSyncedAt
     ? `마지막 동기화 ${formatClock(lastSyncedAt) ?? ''}`
     : null
@@ -451,12 +476,80 @@ export function Shell({
     setActiveTab(tab)
   }
 
+  const profileControls = (
+        <div className="sidebar-footer">
+          <div className="sidebar-footer-user" title={profile.email}>
+            <div className="sidebar-footer-avatar" aria-hidden="true">
+              {profile.name.trim().charAt(0) || '?'}
+            </div>
+            <div className="sidebar-footer-info">
+              <strong>{profile.name}</strong>
+              <small>{roleLabels[profile.role]}{readOnly ? ' · 읽기 전용' : ''}</small>
+            </div>
+          </div>
+          {presence && (
+            <PresenceButton
+              current={presence.current}
+              onOpen={() => {
+                closeSidebar(false)
+                presence.onOpen()
+              }}
+              variant="sidebar"
+            />
+          )}
+          <div className="sidebar-footer-actions">
+            <button
+              aria-pressed={density === 'compact'}
+              className="sidebar-footer-button density-toggle"
+              onClick={toggleDensity}
+              type="button"
+            >
+              <Rows3 aria-hidden="true" size={15} />
+              촘촘하게 보기
+            </button>
+            <Suspense fallback={null}><PixelPreferences profileId={profile.id} readOnly={profile.role === 'team_leader'} uiTheme={uiTheme} onToggleUiTheme={onToggleUiTheme} /></Suspense>
+            {/* 휴대폰에서는 상단바를 알림만 남기고 새로고침을 여기로 옮긴다(G-2). */}
+            <button
+              className="sidebar-footer-button sidebar-refresh"
+              disabled={refreshing || saving}
+              onClick={() => {
+                closeSidebar(false)
+                onRefresh()
+              }}
+              type="button"
+            >
+              <RefreshCw aria-hidden="true" className={refreshing ? 'spin' : undefined} size={15} />
+              {refreshing ? '새로고침 중…' : '새로고침'}
+            </button>
+            <button className="sidebar-footer-button" onClick={onSignOut} type="button">
+              <LogOut aria-hidden="true" size={15} />
+              로그아웃
+            </button>
+          </div>
+          {onPreviewRoleChange && (
+            <div className="segmented role-switch" role="group" aria-label="미리보기 역할">
+              {PREVIEW_ROLES.map(({ role, label }) => (
+                <button
+                  aria-pressed={profile.role === role}
+                  className={profile.role === role ? 'selected' : ''}
+                  key={role}
+                  onClick={() => onPreviewRoleChange(role)}
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+  )
+
   return (
     <div
       className="app-shell brand-shell"
       data-bottom-bar={actionBarShown ? 'action' : 'tabs'}
+      data-navigation={uiTheme === 'pixel' ? 'drawer' : undefined}
       data-layout={officeLayout ? 'office' : undefined}
-      data-ui={homeMode === 'office' ? 'pixel' : undefined}
       data-visual-theme="brand-shell"
     >
       <a
@@ -502,6 +595,7 @@ export function Shell({
           <Search aria-hidden="true" size={16} />
           <span>빠른 검색</span>
         </button>
+        {uiTheme === 'pixel' && officeReady && officeData && <Suspense fallback={null}><OfficeMinimap profile={profile} data={officeData} activeTab={activeTab} navigate={navigateFromSidebar} /></Suspense>}
         <nav aria-label="주 메뉴 항목">
           {navSections.map((section) => (
             <div className="nav-group" key={section.label}>
@@ -523,74 +617,13 @@ export function Shell({
             </div>
           ))}
         </nav>
-        <div className="sidebar-footer">
-          <div className="sidebar-footer-user" title={profile.email}>
-            <div className="sidebar-footer-avatar" aria-hidden="true">
-              {profile.name.trim().charAt(0) || '?'}
-            </div>
-            <div className="sidebar-footer-info">
-              <strong>{profile.name}</strong>
-              <small>{roleLabels[profile.role]}{readOnly ? ' · 읽기 전용' : ''}</small>
-            </div>
-          </div>
-          {presence && (
-            <PresenceButton
-              current={presence.current}
-              onOpen={() => {
-                closeSidebar(false)
-                presence.onOpen()
-              }}
-              variant="sidebar"
-            />
-          )}
-          <div className="sidebar-footer-actions">
-            <button
-              aria-pressed={density === 'compact'}
-              className="sidebar-footer-button density-toggle"
-              onClick={toggleDensity}
-              type="button"
-            >
-              <Rows3 aria-hidden="true" size={15} />
-              촘촘하게 보기
-            </button>
-            {/* 휴대폰에서는 상단바를 알림만 남기고 새로고침을 여기로 옮긴다(G-2). */}
-            <button
-              className="sidebar-footer-button sidebar-refresh"
-              disabled={refreshing || saving}
-              onClick={() => {
-                closeSidebar(false)
-                onRefresh()
-              }}
-              type="button"
-            >
-              <RefreshCw aria-hidden="true" className={refreshing ? 'spin' : undefined} size={15} />
-              {refreshing ? '새로고침 중…' : '새로고침'}
-            </button>
-            <button className="sidebar-footer-button" onClick={onSignOut} type="button">
-              <LogOut aria-hidden="true" size={15} />
-              로그아웃
-            </button>
-          </div>
-          {onPreviewRoleChange && (
-            <div className="segmented role-switch" role="group" aria-label="미리보기 역할">
-              {PREVIEW_ROLES.map(({ role, label }) => (
-                <button
-                  aria-pressed={profile.role === role}
-                  className={profile.role === role ? 'selected' : ''}
-                  key={role}
-                  onClick={() => onPreviewRoleChange(role)}
-                  type="button"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        {uiTheme !== 'pixel' && profileControls}
       </aside>
       <main className="content" id="main-content" ref={mainRef} tabIndex={-1}>
         {officeLayout ? (
           <OfficeHudBar
+              onOpenProfile={uiTheme === 'pixel' ? () => setProfileOpen(true) : undefined}
+              onOpenCalendar={officeData ? () => setCalendarOpen(true) : undefined}
               busyLabel={busyLabel}
               menuButtonRef={menuButtonRef}
               menuOpen={sidebarOpen}
@@ -638,7 +671,7 @@ export function Shell({
               )}
           </OfficeHudBar>
         ) : (
-        <header className="topbar">
+        <header className="topbar" data-px={placePlate ? 'hud' : undefined}>
           <div className="topbar-left">
             <button
               ref={menuButtonRef}
@@ -653,7 +686,26 @@ export function Shell({
             </button>
             <div className="topbar-heading">
               {/* 화면 제목(h1)은 각 화면 머리말에 하나만 둔다. 여기는 지금 위치를 알려 주는 표시다. */}
-              <span className="topbar-title">{headerLabel}</span>
+              {placePlate ? (
+                <span className="place-plate">
+                  <button
+                    className="place-plate-home"
+                    onClick={() => {
+                      focusHeadingOnNavigateRef.current = true
+                      onHomeModeChange?.('office')
+                      setActiveTab('dashboard')
+                    }}
+                    type="button"
+                  >
+                    <House aria-hidden="true" size={14} />
+                    사무실로
+                  </button>
+                  <span className="place-plate-name">{placePlate.name}</span>
+                  <span className="sr-only">{headerLabel}</span>
+                </span>
+              ) : (
+                <span className="topbar-title">{headerLabel}</span>
+              )}
               {readOnly && (
                 <span className="readonly-chip" title="파트 현황을 볼 수 있지만 수정할 수는 없어요.">읽기 전용</span>
               )}
@@ -665,6 +717,9 @@ export function Shell({
             <span className="k">{shortcutHint()}</span>
           </button>
           <div className="topbar-actions">
+            {officeData && <button className="ghost compact calendar-open-button" type="button" onClick={() => setCalendarOpen(true)} aria-label="파트원 일정"><Calendar aria-hidden="true" size={16} /><span>파트원 일정</span></button>}
+            {uiTheme === 'pixel' && <button className="icon-button" type="button" aria-label="내 프로필" aria-haspopup="dialog" onClick={() => setProfileOpen(true)}><span aria-hidden="true">{profile.name.trim().charAt(0)}</span></button>}
+            {uiTheme === 'pixel' && activeTab !== 'dashboard' && officeData && <button className="ghost compact quest-open-button" type="button" onClick={() => setQuestOpen(true)}><ListChecks aria-hidden="true" size={15} /> 오늘 할 일</button>}
             {syncLabel && <span className="sync-label">{syncLabel}</span>}
             {busyLabel && (
               <span aria-label={busyLabel} aria-live="polite" className="saving" role="status">
@@ -748,6 +803,8 @@ export function Shell({
           )}
         </header>
         )}
+        {profileOpen && <Suspense fallback={null}><ProfileDialog onClose={() => setProfileOpen(false)}>{profileControls}</ProfileDialog></Suspense>}
+        {calendarOpen && officeData && <Suspense fallback={null}><TeamCalendarDialog presence={officeData.memberPresence} onClose={() => setCalendarOpen(false)} onManage={presence?.onOpen} /></Suspense>}
         {meetingBanner}
         {dataWarnings.length > 0 && (
           <div className="data-stale-banner" role="status" aria-live="polite">
@@ -799,6 +856,7 @@ export function Shell({
         </button>
       </nav>
       {/* 성공은 3초(행동 버튼이 있으면 5초) 뒤 사라지고, 경고·오류는 사용자가 닫을 때까지 유지한다. */}
+      {questOpen && officeData && uiTheme === 'pixel' && <Suspense fallback={null}><QuestDrawer profile={profile} data={officeData} leaderMode={leaderMode} setActiveTab={setActiveTab} onClose={() => setQuestOpen(false)} /></Suspense>}
       <ToastViewport onDismiss={onDismissToast ?? noopDismiss} toasts={toasts} />
     </div>
   )

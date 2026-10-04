@@ -67,8 +67,8 @@ export function buildDatabaseEvidence({
     assertStringRows(rows, table)
     tables[table] = { rowCount: rows.length, canonicalSha256: sha256Rows(rows) }
   }
-  if (!Number.isSafeInteger(storageObjectCount) || storageObjectCount !== 0) {
-    fail('SQA_DR_CAPTURE_STORAGE_NOT_EMPTY', String(storageObjectCount))
+  if (!Number.isSafeInteger(storageObjectCount) || storageObjectCount < 0) {
+    fail('SQA_DR_CAPTURE_STORAGE_COUNT_INVALID', String(storageObjectCount))
   }
   if (!foreignKeyOrphans || typeof foreignKeyOrphans !== 'object'
     || Array.isArray(foreignKeyOrphans) || Object.keys(foreignKeyOrphans).length === 0) {

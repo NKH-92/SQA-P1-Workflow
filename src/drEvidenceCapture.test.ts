@@ -33,7 +33,7 @@ describe('DR database evidence capture', () => {
     expect(JSON.stringify(evidence)).not.toContain('user-a')
   })
 
-  it('rejects unordered, duplicate, malformed, or non-zero source orphan evidence', () => {
+  it('rejects unordered, duplicate, malformed, or negative source evidence', () => {
     const base = {
       capturedAt: '2026-07-20T00:00:00.000Z',
       authRows: ['user-a'],
@@ -54,6 +54,8 @@ describe('DR database evidence capture', () => {
       mutate(input)
       expect(() => buildDatabaseEvidence(input)).toThrow(/SQA_DR_CAPTURE_/)
     }
+
+    expect(() => buildDatabaseEvidence({ ...base, storageObjectCount: 1 })).not.toThrow()
   })
 
   it('binds direct and pooler database URLs to the expected target project ref', () => {

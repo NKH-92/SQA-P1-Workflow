@@ -78,7 +78,7 @@ OS 데스크톱 알림은 화면이 잠겨 있어도(또는 다른 사람이 옆
 
 ### 자동 백업 (기본) — GitHub Actions
 
-`.github/workflows/backup.yml`이 **매일 05:17 KST**(cron `17 20 * * *`, UTC)에 roles·application schema/data·migration history를 분리해 **L2 DR package**를 만듭니다. 파일별 SHA-256과 필수 audit 객체, 폐기된 Storage surface의 실제 object count 0을 검증한 뒤 AES-256 GPG 대칭 암호화(`.gpg`)와 전환 기간용 OpenSSL 형식(`.enc`)으로 만듭니다. 두 암호문을 실제 복호화해 `dr-manifest.json`과 checksum을 다시 검증하고 plaintext를 삭제한 뒤에만 워크플로 아티팩트(보존 90일)로 업로드합니다. Actions 탭에서 **Backup DB > Run workflow**로 수동 실행도 가능합니다. 상세 등급 계약은 [DR_CONTRACT.md](./DR_CONTRACT.md)를 따릅니다.
+`.github/workflows/backup.yml`이 **매일 05:17 KST**(cron `17 20 * * *`, UTC)에 roles·application schema/data·migration history를 분리해 **L2 DR package**를 만듭니다. 파일별 SHA-256과 필수 audit 객체, 백업 시점의 Storage object count를 검증한 뒤 AES-256 GPG 대칭 암호화(`.gpg`)와 전환 기간용 OpenSSL 형식(`.enc`)으로 만듭니다. L2 패키지는 Storage 객체 파일을 포함하지 않으므로 object count가 0보다 크면 그 제한을 manifest에 보존하며 full DR로 사용하지 않습니다. 두 암호문을 실제 복호화해 `dr-manifest.json`과 checksum을 다시 검증하고 plaintext를 삭제한 뒤에만 워크플로 아티팩트(보존 90일)로 업로드합니다. Actions 탭에서 **Backup DB > Run workflow**로 수동 실행도 가능합니다. 상세 등급 계약은 [DR_CONTRACT.md](./DR_CONTRACT.md)를 따릅니다.
 
 이 artifact는 `authIdentityIncluded=false`인 **L2**다. Auth UUID/password hash와 Auth 설정을 포함하지 않으므로 L3, L4, 신규 Supabase project full DR이라고 부르지 않습니다. Backup DB, DB Migrate, Deploy Worker는 공통 `sqa-production-release` concurrency group을 사용하며, DB Migrate는 동일 `main` SHA의 성공한 CI와 24시간 이내 **schedule 또는 수동 실행**으로 성공한 백업이 없으면 DB 접속 전에 중단됩니다.
 

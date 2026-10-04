@@ -724,12 +724,12 @@ test('25 desktop home opens the full-screen office and remembers the classic vie
   const objects = page.getByRole('group', { name: '사무실 바로가기' })
   await objects.getByRole('button', { name: '출입 기록부, 활동 로그로 이동' }).click()
   await expect(page).toHaveURL(/#\/activity/)
-  await page.getByRole('button', { name: '홈', exact: true }).click()
+  await page.getByRole('button', { name: '사무실로', exact: true }).click()
   await expect(page.getByRole('heading', { level: 1, name: '우리 파트 사무실' })).toBeAttached()
   await page.getByRole('button', { name: '전체 메뉴' }).click()
   await page.getByRole('navigation', { name: '주 메뉴 항목' }).getByRole('button', { name: /^검토 통계/ }).click()
   await expect(page).toHaveURL(/#\/review-stats/)
-  await page.getByRole('button', { name: '홈', exact: true }).click()
+  await page.getByRole('button', { name: '사무실로', exact: true }).click()
 
   // 기존 화면으로 바꾸면 이 사람에게는 새로고침해도 기존 화면이다.
   await page.getByRole('button', { name: '기존 화면' }).click()

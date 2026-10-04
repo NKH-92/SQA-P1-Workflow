@@ -9,6 +9,7 @@ import type { MutateFn } from '../app/types'
 import type { AppData, Profile, ReviewRequest } from '../types'
 import { reviewDraftStorageKey } from '../features/reviews/useReviewDraft'
 import { ReviewsPanel } from './ReviewsPanel'
+import { PixelUiProvider } from '../features/office/components/PixelUiProvider'
 
 function memberDataWithPendingReview(): AppData {
   const data = createPreviewData()
@@ -430,7 +431,9 @@ describe('ReviewsPanel', () => {
     const mutate = passthroughMutate()
 
     render(
-      <ReviewsPanel profile={previewLeader} data={createPreviewData()} mutate={mutate} setData={() => undefined} />,
+      <PixelUiProvider enabled layout={createPreviewData().officeLayout}>
+        <ReviewsPanel profile={previewLeader} data={createPreviewData()} mutate={mutate} setData={() => undefined} />
+      </PixelUiProvider>,
     )
 
     await user.click(within(screen.getByRole('article')).getByRole('button', { name: '승인하기' }))
@@ -439,6 +442,7 @@ describe('ReviewsPanel', () => {
 
     await waitFor(() => expect(mutate).toHaveBeenCalledWith(expect.any(Function), '‘파트너 API 전환 검토’를 승인했어요.'))
     const nextTitle = await screen.findByRole('heading', { level: 2, name: '모바일 알림 고도화 정책 검토' })
+    expect(document.querySelector('.review-decision-stamp')).toBeNull()
     await waitFor(() => expect(nextTitle).toHaveFocus())
     expect(document.querySelector('.interaction-toast, .confetti-lite')).toBeNull()
   })

@@ -366,6 +366,58 @@ $verify$;
       }
     }
 
+    // Exercise the actual scheduled reset on local fixtures only. The intentional
+    // subtransaction rollback preserves all rows after the contract probe.
+    const presenceProbeSql = resolve(temporaryDirectory, 'member-presence-reset-probe.sql')
+    writeFileSync(presenceProbeSql, `
+do $verify$
+declare
+  probe_status text;
+  rollback_message text;
+  before_count integer;
+  boundary_count integer;
+  late_count integer;
+begin
+  begin
+    delete from public.member_statuses;
+    delete from public.member_leaves;
+    insert into public.member_leaves (profile_id, kind, starts_on, ends_on, vacation_unit, day_period)
+    values
+      ('${retentionRequesterId}'::uuid, 'vacation', '2026-10-14', '2026-10-15', 'full', null),
+      ('${retentionLeaderId}'::uuid, 'trip', '2026-10-16', '2026-10-17', 'full', null),
+      ('${retentionLeaderId}'::uuid, 'vacation', '2026-10-14', '2026-10-14', 'quarter', 'am');
+    insert into public.member_statuses (profile_id, status, updated_at)
+    values ('${retentionLeaderId}'::uuid, 'lab', '2026-10-13 21:00:00+00');
+
+    foreach probe_status in array array['meeting', 'field', 'lab', 'away'] loop
+      insert into public.member_statuses (profile_id, status, updated_at)
+      values ('${retentionRequesterId}'::uuid, probe_status, '2026-10-13 20:59:59.999+00');
+      before_count := private.reset_member_statuses_daily('2026-10-13 20:59:59.999+00');
+      boundary_count := private.reset_member_statuses_daily('2026-10-13 21:00:00+00');
+      late_count := private.reset_member_statuses_daily('2026-10-14 01:00:00+00');
+      if before_count <> 0 or boundary_count <> 1 or late_count <> 0
+         or (select count(*) from public.member_statuses) <> 1
+         or (select count(*) from public.member_leaves) <> 3 then
+        raise exception 'SQA_RLS_MEMBER_STATUS_RESET_FAILED: %', probe_status;
+      end if;
+    end loop;
+    boundary_count := private.reset_member_statuses_daily('2026-10-14 21:00:00+00');
+    if boundary_count <> 1
+       or (select count(*) from public.member_leaves) <> 3 then
+      raise exception 'SQA_RLS_MEMBER_STATUS_RESET_NEXT_DAY_FAILED';
+    end if;
+    raise exception using errcode = 'P0002', message = 'SQA_RLS_EXPECTED_PRESENCE_PROBE_ROLLBACK';
+  exception when sqlstate 'P0002' then
+    get stacked diagnostics rollback_message = message_text;
+    if rollback_message <> 'SQA_RLS_EXPECTED_PRESENCE_PROBE_ROLLBACK' then
+      raise exception 'SQA_RLS_MEMBER_STATUS_RESET_WRONG_ROLLBACK: %', rollback_message;
+    end if;
+  end;
+end
+$verify$;
+`)
+    runSupabase(['db', 'query', '--local', '--file', toRootRelativePath(presenceProbeSql)])
+
     // This destructive contract probe is local-only and runs in a PL/pgSQL
     // subtransaction that deliberately rolls back every fixture row. Canonical
     // production readiness below remains static and never creates or deletes data.

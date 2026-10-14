@@ -5,11 +5,10 @@ import type { MemberPresence } from '../types'
 import { useBusinessToday } from '../hooks/useBusinessToday'
 import { businessDateKey } from '../lib/businessTime'
 import { leavesOnDay, monthDays, moveMonth } from '../features/office/teamCalendar'
-import { leavePeriodLabel } from '../data/validation/memberPresence'
+import { leavePeriodLabel, leaveTypeLabel } from '../data/validation/memberPresence'
 import './TeamCalendar.css'
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
-const kindLabel = { vacation: '휴가', trip: '출장' }
 
 export function TeamCalendarDialog({ presence, onClose, onManage }: {
   presence?: MemberPresence
@@ -52,7 +51,7 @@ export function TeamCalendarDialog({ presence, onClose, onManage }: {
               aria-pressed={selected === day} aria-label={`${Number(day.slice(5, 7))}월 ${Number(day.slice(8))}일${day === today ? ', 오늘' : ''}, ${events.length}건`}
               onClick={() => setSelected(day)}>
               <span className="team-calendar-day">{Number(day.slice(8))}</span>
-              {events.slice(0, 3).map(leave => <span className="team-calendar-event" data-kind={leave.kind} key={leave.id}>{leave.name} · {kindLabel[leave.kind]}</span>)}
+              {events.slice(0, 3).map(leave => <span className="team-calendar-event" data-kind={leave.kind} key={leave.id}>{leave.name} · {leaveTypeLabel(leave)}</span>)}
               {events.length > 3 && <small>외 {events.length - 3}건</small>}
             </button>}</td>
           })}</tr>)}</tbody>
@@ -60,7 +59,7 @@ export function TeamCalendarDialog({ presence, onClose, onManage }: {
         <section className="team-calendar-detail" aria-label="선택한 날짜 일정" data-px="panel">
           <h3 data-px="title">{Number(selected.slice(5, 7))}월 {Number(selected.slice(8))}일</h3>
           {selectedLeaves.length ? <ul>{selectedLeaves.map(leave => <li data-px="row" key={leave.id}>
-            <span className="team-calendar-event" data-kind={leave.kind}>{kindLabel[leave.kind]}</span><strong>{leave.name}</strong><span>{leavePeriodLabel(leave)}</span>
+            <span className="team-calendar-event" data-kind={leave.kind}>{leaveTypeLabel(leave)}</span><strong>{leave.name}</strong><span>{leavePeriodLabel(leave)}</span>
           </li>)}</ul> : <p>등록된 휴가·출장이 없어요.</p>}
         </section>
       </>}

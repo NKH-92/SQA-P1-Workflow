@@ -40,6 +40,20 @@ function renderDialog(people = [me], initialProfileId = me.id) {
 }
 
 describe('MemberPresenceDialog', () => {
+  it.each([
+    ['half', 'am'], ['half', 'pm'], ['quarter', 'am'], ['quarter', 'pm'],
+  ] as const)('registers a one-day %s vacation for %s', async (vacationUnit, dayPeriod) => {
+    const { onAddLeave } = renderDialog()
+    fireEvent.change(screen.getByLabelText('휴가 종류'), { target: { value: vacationUnit } })
+    fireEvent.change(screen.getByLabelText('오전·오후'), { target: { value: dayPeriod } })
+    expect(screen.queryByLabelText('마지막 날')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('시작일'), { target: { value: day(3) } })
+    fireEvent.click(screen.getByRole('button', { name: '등록' }))
+    await waitFor(() => expect(onAddLeave).toHaveBeenCalledWith(me, {
+      profileId: me.id, kind: 'vacation', startsOn: day(3), endsOn: day(3), note: '', vacationUnit, dayPeriod,
+    }))
+  })
+
   it('shows my current status and switches it with one press', async () => {
     const { onSetStatus } = renderDialog()
     const dialog = screen.getByRole('dialog', { name: '내 상태' })

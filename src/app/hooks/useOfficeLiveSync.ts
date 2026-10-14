@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { fetchMemberPresence, fetchOfficeMeeting } from '../../data'
 import type { AppDataUpdater } from '../../data/repositories/appDataUpdater'
-import { supabase } from '../../lib/supabase'
+import { resetMemberStatuses } from '../../data/validation/memberPresence'
+import { isPreviewMode, supabase } from '../../lib/supabase'
 import type { AppData, MemberPresence, OfficeMeeting } from '../../types'
 
 type LiveSlice = 'meeting' | 'presence'
@@ -42,6 +43,20 @@ export function useOfficeLiveSync(enabled: boolean, setData: AppDataUpdater) {
   })
 
   useEffect(() => {
+    if (isPreviewMode) {
+      const reset = () => setDataRef.current((current) => {
+        if (!current.memberPresence) return current
+        const presence = resetMemberStatuses(current.memberPresence, new Date())
+        return presence === current.memberPresence ? current : { ...current, memberPresence: presence }
+      })
+      reset()
+      const poll = window.setInterval(reset, LIVE_POLL_MS)
+      document.addEventListener('visibilitychange', reset)
+      return () => {
+        window.clearInterval(poll)
+        document.removeEventListener('visibilitychange', reset)
+      }
+    }
     if (!enabled || !supabase) return
     let cancelled = false
     const inFlight: Record<LiveSlice, boolean> = { meeting: false, presence: false }

@@ -19,5 +19,5 @@ export function moveMonth(month: string, delta: number): string {
 
 export function leavesOnDay(leaves: readonly MemberLeave[], day: string): MemberLeave[] {
   return leaves.filter(leave => leave.starts_on <= day && leave.ends_on >= day)
-    .sort((a, b) => a.name.localeCompare(b.name, 'ko') || a.id.localeCompare(b.id))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ko') || (a.day_period ?? '').localeCompare(b.day_period ?? '') || a.id.localeCompare(b.id))
 }

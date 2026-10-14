@@ -24,7 +24,10 @@ const MAX_CHUNK_BYTES = 560 * 1024
 // 2026-09 ops preflight fixes: 158,613 B → 150,167 B measured after dropping the preview-only local repositories and
 // demo-data work from production bundles. The cap is re-tightened to 150 KiB: about 3.3 KiB of headroom, so a small
 // hotfix does not fail CI/Deploy builds (the old cap left ~1 KiB), while still catching real growth.
-const MAX_INITIAL_GZIP_BYTES = 150 * 1024
+// 2026-10 partial vacations: 153,575 B -> 153,942 B measured. Shared presence
+// parsing/labels now retain half/quarter-day AM/PM fields on every screen.
+// Allow one additional KiB for this feature; keep route and total-size gates.
+const MAX_INITIAL_GZIP_BYTES = 151 * 1024
 // The change-application route lazy-loads the browser-only XLSX reader when a
 // leader selects a file. This raises the all-routes sum while keeping initial
 // navigation unchanged, so retain a narrow cap around the measured surface.

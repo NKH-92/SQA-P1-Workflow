@@ -58,6 +58,8 @@ export type {
   OfficeMeetingParticipant,
   MemberStatusKind,
   MemberLeaveKind,
+  MemberVacationUnit,
+  MemberDayPeriod,
   MemberStatus,
   MemberLeave,
   MemberPresence,

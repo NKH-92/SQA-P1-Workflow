@@ -58,6 +58,7 @@ export function createLocalPresenceRepository(ctx: RepositoryDeps): PresenceRepo
                 profile_id: leave.profileId,
                 name: target.name,
                 kind: leave.kind,
+                ...(leave.vacationUnit ? { vacation_unit: leave.vacationUnit, day_period: leave.dayPeriod ?? null } : {}),
                 starts_on: leave.startsOn,
                 ends_on: leave.endsOn,
                 note: leave.note,

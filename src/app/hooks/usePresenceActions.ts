@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { addMemberLeave, createRepositoryContext, deleteMemberLeave, setMemberStatus, type MemberLeaveInput } from '../../data'
 import type { AppDataUpdater } from '../../data/repositories/appDataUpdater'
-import { canEditPresence, hasPresence, leavePeriodLabel, PRESENCE_TEXT } from '../../data/validation/memberPresence'
+import { canEditPresence, hasPresence, leavePeriodLabel, leaveTypeLabel, PRESENCE_TEXT } from '../../data/validation/memberPresence'
 import { quotedWithJosa, withJosa } from '../../lib/korean'
 import type { AppData, MemberLeaveKind, MemberStatusKind, Profile } from '../../types'
 import type { MutationRunner } from './useMutationRunner'
@@ -52,7 +52,7 @@ export function usePresenceActions(
 
   const addLeave = useCallback((person: PresencePerson, input: MemberLeaveInput) => {
     if (!profile) return Promise.resolve(false)
-    const label = PRESENCE_TEXT[input.kind].short
+    const label = leaveTypeLabel({ kind: input.kind, vacation_unit: input.vacationUnit, day_period: input.dayPeriod })
     return mutate(async () => {
       await addMemberLeave(context(), input)
     }, `${whose(profile, person)} ${withJosa(label, '을/를')} 등록했어요. ${leavePeriodLabel({ starts_on: input.startsOn, ends_on: input.endsOn })}`, PRESENCE_MUTATION)

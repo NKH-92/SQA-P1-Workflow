@@ -12,7 +12,7 @@ function requiredEnv(name: string) {
 
 type Presence = {
   statuses: Array<{ profile_id: string; name: string; status: string; updated_at: string }>
-  leaves: Array<{ id: string; profile_id: string; name: string; kind: string; starts_on: string; ends_on: string; note: string }>
+  leaves: Array<{ id: string; profile_id: string; name: string; kind: string; starts_on: string; ends_on: string; note: string; vacation_unit: string; day_period: string | null }>
 }
 
 function detailOf(error: { details?: string; message?: string } | null) {
@@ -144,6 +144,44 @@ suite(`RLS member presence (${RLS_SKIP_NOTE})`, () => {
     // 오늘 끝나는 기간은 등록할 수 있다(이미 시작한 휴가를 늦게 적는 경우).
     const started = await memberA.rpc('add_member_leave', leaveArgs(memberAId, 'trip', seoulDay(-2), seoulDay(0)))
     expect(started.error).toBeNull()
+  })
+
+  it('stores all four partial vacation choices and permits opposite periods while rejecting overlaps', async () => {
+    const profileId = requiredEnv('RLS_MEMBER_A_USER_ID')
+    for (const [index, [unit, period]] of [['half', 'am'], ['half', 'pm'], ['quarter', 'am'], ['quarter', 'pm']].entries()) {
+      const day = seoulDay(index + 5)
+      const args = { ...leaveArgs(profileId, 'vacation', day, day), p_vacation_unit: unit, p_day_period: period }
+      const result = await memberA.rpc('add_member_leave_v2', args)
+      expect(result.error).toBeNull()
+      expect((await presence(memberB)).leaves).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: result.data, vacation_unit: unit, day_period: period, starts_on: day, ends_on: day }),
+      ]))
+      const duplicate = await memberA.rpc('add_member_leave_v2', { ...args, p_vacation_unit: unit === 'half' ? 'quarter' : 'half' })
+      expect(detailOf(duplicate.error)).toContain('SQA_MEMBER_LEAVE_OVERLAP')
+      expect((await memberA.rpc('add_member_leave_v2', { ...args, p_day_period: period === 'am' ? 'pm' : 'am' })).error).toBeNull()
+      const full = await memberA.rpc('add_member_leave', leaveArgs(profileId, 'vacation', day, day))
+      expect(detailOf(full.error)).toContain('SQA_MEMBER_LEAVE_OVERLAP')
+    }
+  })
+
+  it('rejects malformed partial vacations and preserves the existing presence writer permissions', async () => {
+    const profileId = requiredEnv('RLS_MEMBER_A_USER_ID')
+    const args = { ...leaveArgs(profileId, 'vacation', seoulDay(5), seoulDay(5)), p_vacation_unit: 'half', p_day_period: 'am' }
+    for (const changes of [
+      { p_day_period: null }, { p_day_period: 'evening' }, { p_vacation_unit: 'full' },
+      { p_kind: 'trip' }, { p_ends_on: seoulDay(6) }, { p_vacation_unit: 'unknown' },
+    ]) {
+      const result = await memberA.rpc('add_member_leave_v2', { ...args, ...changes })
+      expect(detailOf(result.error)).toContain('SQA_MEMBER_PARTIAL_LEAVE_INVALID')
+    }
+    expect((await anonymous.rpc('add_member_leave_v2', args)).error).not.toBeNull()
+    expect((await teamLeader.rpc('add_member_leave_v2', args)).error).not.toBeNull()
+    expect(detailOf((await memberB.rpc('add_member_leave_v2', args)).error)).toContain('SQA_MEMBER_PRESENCE_FORBIDDEN')
+    expect((await leader.rpc('add_member_leave_v2', args)).error).toBeNull()
+    const invalidTableWrite = await admin.from('member_leaves').insert({
+      profile_id: profileId, kind: 'vacation', starts_on: seoulDay(10), ends_on: seoulDay(10), vacation_unit: 'quarter', day_period: null,
+    })
+    expect(invalidTableWrite.error?.code).toBe('23514')
   })
 
   it('lets only the person or the leader cancel a leave, and hides leaves that already ended', async () => {

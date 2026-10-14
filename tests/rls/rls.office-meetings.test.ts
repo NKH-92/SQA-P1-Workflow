@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { isSupabaseRlsTargetConfigured, RLS_SKIP_NOTE } from './helpers'
+import { memberDayPeriod } from '../../src/data/validation/memberPresence'
 
 const suite = isSupabaseRlsTargetConfigured() ? describe : describe.skip
 
@@ -97,6 +98,27 @@ suite(`RLS office meetings (${RLS_SKIP_NOTE})`, () => {
   afterAll(async () => {
     await clearMeetings()
     await admin.from('office_seats').delete().gte('seat_index', 1)
+  })
+
+  it('invites people on opposite-period partial leave and rejects leave in the meeting period', async () => {
+    const profileId = requiredEnv('RLS_MEMBER_B_USER_ID')
+    const now = new Date()
+    const currentPeriod = memberDayPeriod(now)
+    const day = seoulDay(now)
+    const args = { p_profile_id: profileId, p_kind: 'vacation', p_starts_on: day, p_ends_on: day, p_note: '', p_vacation_unit: 'quarter', p_day_period: currentPeriod === 'am' ? 'pm' : 'am' }
+    const leave = await memberB.rpc('add_member_leave_v2', args)
+    expect(leave.error).toBeNull()
+    try {
+      expect((await memberA.rpc('start_office_meeting', startArgs('Opposite-period leave', [profileId]))).error).toBeNull()
+      expect((await clearMeetings()).error).toBeNull()
+      expect((await memberB.rpc('delete_member_leave', { p_leave_id: leave.data })).error).toBeNull()
+      const blocked = await memberB.rpc('add_member_leave_v2', { ...args, p_day_period: currentPeriod })
+      expect(blocked.error).toBeNull()
+      const meeting = await memberA.rpc('start_office_meeting', startArgs('Same-period leave', [profileId]))
+      expect(detailOf(meeting.error)).toContain('SQA_OFFICE_MEETING_PARTICIPANT_AWAY')
+    } finally {
+      expect((await admin.from('member_leaves').delete().eq('profile_id', profileId)).error).toBeNull()
+    }
   })
 
   it('lets a member open the room for seated people, with the organizer already confirmed', async () => {

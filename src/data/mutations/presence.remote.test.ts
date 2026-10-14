@@ -43,6 +43,14 @@ describe('member presence RPCs (remote)', () => {
       name === 'get_member_presence' ? { data: presence, error: null } : { data: 'ok', error: null })
   })
 
+  it('sends partial vacation classification as dedicated RPC fields', async () => {
+    const date = futureDay(3)
+    await addMemberLeave(remoteContext(), { profileId: MEMBER, kind: 'vacation', startsOn: date, endsOn: date, note: '', vacationUnit: 'quarter', dayPeriod: 'pm' })
+    expect(mocks.rpc).toHaveBeenNthCalledWith(1, 'add_member_leave_v2', {
+      p_profile_id: MEMBER, p_kind: 'vacation', p_starts_on: date, p_ends_on: date, p_note: '', p_vacation_unit: 'quarter', p_day_period: 'pm',
+    })
+  })
+
   it('sets my status, then reloads everyone’s presence', async () => {
     const ctx = remoteContext()
     await setMemberStatus(ctx, MEMBER, 'lab')

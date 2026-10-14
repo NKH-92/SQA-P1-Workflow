@@ -48,12 +48,13 @@ export function createSupabasePresenceRepository(ctx: RepositoryDeps): PresenceR
     async addLeave(input) {
       assertEditable(input.profileId)
       const leave = validateMemberLeave(input, ctx.data.memberPresence)
-      const { error } = await supabase!.rpc('add_member_leave', {
+      const { error } = await supabase!.rpc(leave.vacationUnit ? 'add_member_leave_v2' : 'add_member_leave', {
         p_profile_id: leave.profileId,
         p_kind: leave.kind,
         p_starts_on: leave.startsOn,
         p_ends_on: leave.endsOn,
         p_note: leave.note,
+        ...(leave.vacationUnit ? { p_vacation_unit: leave.vacationUnit, p_day_period: leave.dayPeriod ?? null } : {}),
       })
       if (error) throw translateMemberPresenceError(error)
       await refresh()

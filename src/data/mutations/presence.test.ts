@@ -31,6 +31,17 @@ function inDays(days: number) {
 const memberB = 'member-02'
 
 describe('local presence parity', () => {
+  it('stores AM and PM partial vacations separately and rejects another entry in the same period', async () => {
+    const room = office()
+    const input = { profileId: previewMember.id, kind: 'vacation' as const, startsOn: inDays(5), endsOn: inDays(5), note: '', vacationUnit: 'half' as const, dayPeriod: 'am' as const }
+    await addMemberLeave(room.as(previewMember), input)
+    await addMemberLeave(room.as(previewMember), { ...input, vacationUnit: 'quarter', dayPeriod: 'pm' })
+    expect(room.data().memberPresence!.leaves.filter(leave => leave.profile_id === previewMember.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ vacation_unit: 'half', day_period: 'am' }),
+      expect.objectContaining({ vacation_unit: 'quarter', day_period: 'pm' }),
+    ]))
+    await expect(addMemberLeave(room.as(previewMember), { ...input, vacationUnit: 'quarter' })).rejects.toThrow(MEMBER_LEAVE_OVERLAP_MESSAGE)
+  })
   it('sets and clears my own short status', async () => {
     const room = office()
     await setMemberStatus(room.as(previewMember), previewMember.id, 'field')

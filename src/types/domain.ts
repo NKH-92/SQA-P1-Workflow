@@ -426,10 +426,12 @@ export interface OfficeMeeting {
   participants: OfficeMeetingParticipant[]
 }
 
-/** 하루 중 잠깐 자리를 비운 상태(해제할 때까지 유지). 기본 상태(자리에 있음)는 행이 없다. */
+/** 하루 중 잠깐 자리를 비운 상태(다음 서울 오전 6시까지 유지). 기본 상태(자리에 있음)는 행이 없다. */
 export type MemberStatusKind = 'meeting' | 'field' | 'lab' | 'away'
 /** 기간을 정해 두는 부재 */
 export type MemberLeaveKind = 'vacation' | 'trip'
+export type MemberVacationUnit = 'full' | 'half' | 'quarter'
+export type MemberDayPeriod = 'am' | 'pm'
 
 /** public.get_member_presence의 짧은 상태 한 줄 */
 export interface MemberStatus {
@@ -446,6 +448,9 @@ export interface MemberLeave {
   profile_id: string
   name: string
   kind: MemberLeaveKind
+  /** 기존 휴가는 종일. 반차·반반차는 하루 날짜와 오전·오후를 지정한다. */
+  vacation_unit?: MemberVacationUnit
+  day_period?: MemberDayPeriod | null
   /** 서울 날짜 YYYY-MM-DD(첫날·마지막 날 포함) */
   starts_on: string
   ends_on: string

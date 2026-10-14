@@ -50,24 +50,24 @@ begin
 
   if to_regprocedure('public.get_member_presence()') is null
      or to_regprocedure('public.set_member_status(uuid,text)') is null
-     or to_regprocedure('public.add_member_leave(uuid,text,date,date,text)') is null
+     or to_regprocedure('public.add_member_leave_v2(uuid,text,date,date,text,text,text)') is null
      or to_regprocedure('public.delete_member_leave(uuid)') is null
      or to_regprocedure('private.assert_member_presence_writer(uuid)') is null
      or has_function_privilege('anon', 'public.get_member_presence()', 'EXECUTE')
      or has_function_privilege('anon', 'public.set_member_status(uuid,text)', 'EXECUTE')
-     or has_function_privilege('anon', 'public.add_member_leave(uuid,text,date,date,text)', 'EXECUTE')
+     or has_function_privilege('anon', 'public.add_member_leave_v2(uuid,text,date,date,text,text,text)', 'EXECUTE')
      or has_function_privilege('anon', 'public.delete_member_leave(uuid)', 'EXECUTE')
      or has_function_privilege('authenticated', 'private.assert_member_presence_writer(uuid)', 'EXECUTE')
      or not has_function_privilege('authenticated', 'public.get_member_presence()', 'EXECUTE')
      or not has_function_privilege('authenticated', 'public.set_member_status(uuid,text)', 'EXECUTE')
-     or not has_function_privilege('authenticated', 'public.add_member_leave(uuid,text,date,date,text)', 'EXECUTE')
+     or not has_function_privilege('authenticated', 'public.add_member_leave_v2(uuid,text,date,date,text,text,text)', 'EXECUTE')
      or not has_function_privilege('authenticated', 'public.delete_member_leave(uuid)', 'EXECUTE')
      or exists (
        select 1 from pg_proc
         where oid in (
           to_regprocedure('public.get_member_presence()'),
           to_regprocedure('public.set_member_status(uuid,text)'),
-          to_regprocedure('public.add_member_leave(uuid,text,date,date,text)'),
+          to_regprocedure('public.add_member_leave_v2(uuid,text,date,date,text,text,text)'),
           to_regprocedure('public.delete_member_leave(uuid)'),
           to_regprocedure('private.assert_member_presence_writer(uuid)')
         )
@@ -76,9 +76,9 @@ begin
      or position('public.can_manage_team_data()' in pg_get_functiondef(to_regprocedure('private.assert_member_presence_writer(uuid)'))) = 0
      or position('SQA_TEAM_LEADER_READ_ONLY' in pg_get_functiondef(to_regprocedure('private.assert_member_presence_writer(uuid)'))) = 0
      or position('private.assert_member_presence_writer' in pg_get_functiondef(to_regprocedure('public.set_member_status(uuid,text)'))) = 0
-     or position('private.assert_member_presence_writer' in pg_get_functiondef(to_regprocedure('public.add_member_leave(uuid,text,date,date,text)'))) = 0
-     or position('SQA_MEMBER_LEAVE_OVERLAP' in pg_get_functiondef(to_regprocedure('public.add_member_leave(uuid,text,date,date,text)'))) = 0
-     or position('pg_advisory_xact_lock' in pg_get_functiondef(to_regprocedure('public.add_member_leave(uuid,text,date,date,text)'))) = 0
+     or position('private.assert_member_presence_writer' in pg_get_functiondef(to_regprocedure('public.add_member_leave_v2(uuid,text,date,date,text,text,text)'))) = 0
+     or position('SQA_MEMBER_LEAVE_OVERLAP' in pg_get_functiondef(to_regprocedure('public.add_member_leave_v2(uuid,text,date,date,text,text,text)'))) = 0
+     or position('pg_advisory_xact_lock' in pg_get_functiondef(to_regprocedure('public.add_member_leave_v2(uuid,text,date,date,text,text,text)'))) = 0
      or position('public.can_manage_team_data()' in pg_get_functiondef(to_regprocedure('public.delete_member_leave(uuid)'))) = 0 then
     raise exception 'SQA_DB_READY_MEMBER_PRESENCE_RPC';
   end if;
@@ -93,4 +93,66 @@ begin
     raise exception 'SQA_DB_READY_MEMBER_PRESENCE_REALTIME';
   end if;
 end;
+$verify$;
+
+do $verify$
+begin
+  if not exists (select 1 from supabase_migrations.schema_migrations where version = '20261014031117')
+     or not exists (
+       select 1 from pg_constraint
+        where conrelid = 'public.member_leaves'::regclass
+          and conname = 'member_leaves_vacation_unit_check' and convalidated
+     )
+     or to_regprocedure('public.add_member_leave(uuid,text,date,date,text)') is null
+     or has_function_privilege('anon', 'public.add_member_leave(uuid,text,date,date,text)', 'EXECUTE')
+     or not has_function_privilege('authenticated', 'public.add_member_leave(uuid,text,date,date,text)', 'EXECUTE')
+     or (select pronargdefaults from pg_proc where oid = 'public.add_member_leave_v2(uuid,text,date,date,text,text,text)'::regprocedure) <> 0
+     or position('private.assert_member_presence_writer' in pg_get_functiondef('public.add_member_leave(uuid,text,date,date,text)'::regprocedure)) = 0
+     or position('public.add_member_leave' in pg_get_functiondef('public.add_member_leave(uuid,text,date,date,text)'::regprocedure)) = 0
+     or position('SQA_MEMBER_PARTIAL_LEAVE_INVALID' in pg_get_functiondef('public.add_member_leave_v2(uuid,text,date,date,text,text,text)'::regprocedure)) = 0
+     or position('vacation_unit' in pg_get_functiondef('public.get_member_presence()'::regprocedure)) = 0
+     or position('day_period' in pg_get_functiondef('public.get_member_presence()'::regprocedure)) = 0 then
+    raise exception 'SQA_DB_READY_MEMBER_PARTIAL_VACATIONS';
+  end if;
+  if position('leave.day_period' in pg_get_functiondef('public.start_office_meeting(text,uuid[],timestamp with time zone,text)'::regprocedure)) = 0 then
+    raise exception 'SQA_DB_READY_MEMBER_PARTIAL_VACATION_MEETING';
+  end if;
+end
+$verify$;
+
+-- The daily reset is server-side and cannot be invoked by app users.
+do $verify$
+begin
+  if not exists (select 1 from supabase_migrations.schema_migrations where version = '20261014025501')
+     or to_regprocedure('private.reset_member_statuses_daily(timestamptz)') is null
+     or to_regprocedure('private.member_status_reset_cutoff(timestamptz)') is null then
+    raise exception 'SQA_DB_READY_MEMBER_STATUS_RESET_MIGRATION';
+  end if;
+
+  if has_function_privilege('anon', 'private.reset_member_statuses_daily(timestamptz)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'private.reset_member_statuses_daily(timestamptz)', 'EXECUTE')
+     or not has_function_privilege('postgres', 'private.reset_member_statuses_daily(timestamptz)', 'EXECUTE')
+     or (select prosecdef from pg_proc where oid = 'private.reset_member_statuses_daily(timestamptz)'::regprocedure)
+     or position('private.member_status_reset_cutoff(v_now)' in pg_get_functiondef('public.get_member_presence()'::regprocedure)) = 0 then
+    raise exception 'SQA_DB_READY_MEMBER_STATUS_RESET_CONTRACT';
+  end if;
+
+  if private.member_status_reset_cutoff('2026-10-13 20:59:59.999+00'::timestamptz) <> '2026-10-12 21:00:00+00'::timestamptz
+     or private.member_status_reset_cutoff('2026-10-13 21:00:00+00'::timestamptz) <> '2026-10-13 21:00:00+00'::timestamptz
+     or private.member_status_reset_cutoff('2027-01-01 00:00:00+00'::timestamptz) <> '2026-12-31 21:00:00+00'::timestamptz then
+    raise exception 'SQA_DB_READY_MEMBER_STATUS_RESET_BOUNDARY';
+  end if;
+
+  if coalesce(current_setting('cron.timezone', true), 'GMT') not in ('GMT', 'UTC', 'Etc/UTC')
+     or not exists (
+       select 1 from cron.job
+        where jobname = 'sqa-member-status-reset-daily'
+          and schedule = '0 21 * * *'
+          and command = 'select private.reset_member_statuses_daily();'
+          and username = 'postgres'
+          and active
+     ) then
+    raise exception 'SQA_DB_READY_MEMBER_STATUS_RESET_CRON';
+  end if;
+end
 $verify$;

@@ -1,11 +1,11 @@
-import { businessDateKey } from '../../lib/businessTime'
+import { businessDateKey, businessDateParts } from '../../lib/businessTime'
 import { dateOnlyTime } from '../../lib/dates'
 import { PERMISSION_MESSAGE, UserFacingError } from '../../lib/errors'
 import { formatMonthDay } from '../../lib/format'
-import type { MemberLeave, MemberLeaveKind, MemberPresence, MemberStatus, MemberStatusKind, Profile } from '../../types'
+import type { MemberDayPeriod, MemberLeave, MemberLeaveKind, MemberPresence, MemberStatus, MemberStatusKind, MemberVacationUnit, Profile } from '../../types'
 
 /**
- * 자리 상태(개인 상태). 하루 중 잠깐 비운 상태(회의·현장·실험실·기타 부재)는 해제할 때까지 유지하고,
+ * 자리 상태(개인 상태). 하루 중 잠깐 비운 상태(회의·현장·실험실·기타 부재)는 다음 서울 오전 6시까지 유지하고,
  * 휴가·출장은 서울 날짜로 기간을 정한다. 같은 날 둘 다 있으면 휴가·출장이 앞선다.
  * 서버 RPC(get_member_presence·set_member_status·add_member_leave·delete_member_leave)와 규칙을 맞춘다.
  */
@@ -33,10 +33,24 @@ export const MEMBER_PRESENCE_INVALID_MESSAGE = '상태를 다시 골라 주세�
 export const MEMBER_LEAVE_INVALID_MESSAGE = `기간을 다시 확인해 주세요. 오늘부터 1년 안에 시작하는 최대 ${MEMBER_LEAVE_MAX_DAYS}일까지 등록할 수 있어요.`
 export const MEMBER_LEAVE_NOTE_MESSAGE = `메모는 ${MEMBER_LEAVE_NOTE_MAX}자까지 쓸 수 있어요.`
 export const MEMBER_LEAVE_OVERLAP_MESSAGE = '이미 등록한 휴가·출장과 기간이 겹쳐요.'
+export const MEMBER_PARTIAL_LEAVE_MESSAGE = '반차·반반차는 하루 날짜와 오전·오후를 골라 주세요.'
 export const MEMBER_PRESENCE_FORBIDDEN_MESSAGE = '다른 사람의 상태는 파트장만 바꿀 수 있어요.'
 export const MEMBER_PRESENCE_TARGET_MESSAGE = '파트장·파트원의 상태만 바꿀 수 있어요.'
 
 const DAY_MS = 86_400_000
+
+/** 가장 최근 서울 오전 6시(UTC 21시). 서버의 member_status_reset_cutoff와 맞춘다. */
+export function memberStatusResetCutoff(now: Date): number {
+  const day = businessDateKey(new Date(now.getTime() - 6 * 3_600_000))
+  return Date.parse(`${day}T06:00:00+09:00`)
+}
+
+/** 미리보기에서도 지난 ‘지금 상태’를 초기화한다. 휴가·출장 일정은 그대로 둔다. */
+export function resetMemberStatuses(presence: MemberPresence, now: Date): MemberPresence {
+  const cutoff = memberStatusResetCutoff(now)
+  const statuses = presence.statuses.filter((status) => Date.parse(status.updated_at) >= cutoff)
+  return statuses.length === presence.statuses.length ? presence : { ...presence, statuses }
+}
 
 /** 상태를 가질 수 있는 사람: 활성 파트장·파트원. 팀장은 읽기 전용이라 상태가 없다. */
 export function hasPresence(profile: Pick<Profile, 'role' | 'is_active'> | undefined): boolean {
@@ -52,13 +66,23 @@ export function canEditPresence(actor: Profile, target: Pick<Profile, 'id' | 'ro
   return actor.role === 'leader' && hasPresence(target)
 }
 
+export function memberDayPeriod(now: Date): MemberDayPeriod {
+  return businessDateParts(now).hour < 12 ? 'am' : 'pm'
+}
+
+export function memberPresencePeriodKey(now: Date): string {
+  return `${businessDateKey(now)}:${memberDayPeriod(now)}`
+}
+
 function coversDate(leave: Pick<MemberLeave, 'starts_on' | 'ends_on'>, dateKey: string) {
   return leave.starts_on <= dateKey && dateKey <= leave.ends_on
 }
 
 /** 그 날(서울 날짜) 휴가·출장 중이면 그 기간 */
-export function leaveOn(presence: MemberPresence | undefined, profileId: string, dateKey: string): MemberLeave | undefined {
-  return presence?.leaves.find((leave) => leave.profile_id === profileId && coversDate(leave, dateKey))
+export function leaveOn(presence: MemberPresence | undefined, profileId: string, dateKey: string, now: Date = new Date()): MemberLeave | undefined {
+  const period = memberDayPeriod(now)
+  return presence?.leaves.find((leave) => leave.profile_id === profileId && coversDate(leave, dateKey)
+    && (!leave.day_period || leave.day_period === period))
 }
 
 export function statusOf(presence: MemberPresence | undefined, profileId: string): MemberStatus | undefined {
@@ -85,8 +109,9 @@ export function presenceOf(
   presence: MemberPresence | undefined,
   profileId: string,
   todayKey: string = businessDateKey(new Date()),
+  now: Date = new Date(),
 ): EffectivePresence | null {
-  const leave = leaveOn(presence, profileId, todayKey)
+  const leave = leaveOn(presence, profileId, todayKey, now)
   if (leave) return { kind: leave.kind, leave }
   const status = statusOf(presence, profileId)
   return status ? { kind: status.status, since: status.updated_at } : null
@@ -106,9 +131,14 @@ export function leavePeriodLabel(leave: Pick<MemberLeave, 'starts_on' | 'ends_on
   return `${start}~${formatMonthDay(leave.ends_on) ?? leave.ends_on}`
 }
 
+export function leaveTypeLabel(leave: Pick<MemberLeave, 'kind' | 'vacation_unit' | 'day_period'>): string {
+  if (leave.kind !== 'vacation' || !leave.vacation_unit || leave.vacation_unit === 'full') return PRESENCE_TEXT[leave.kind].short
+  return `${leave.day_period === 'am' ? '오전' : '오후'} ${leave.vacation_unit === 'half' ? '반차' : '반반차'}`
+}
+
 /** 사무실 자리 칩처럼 아주 좁은 곳: ‘출장 ~9/29’, ‘휴가 오늘까지’, ‘실험실’ */
 export function presenceChipLabel(effective: EffectivePresence, todayKey: string): string {
-  const text = PRESENCE_TEXT[effective.kind].short
+  const text = effective.leave ? leaveTypeLabel(effective.leave) : PRESENCE_TEXT[effective.kind].short
   if (!effective.leave) return text
   if (effective.leave.ends_on === todayKey) return `${text} 오늘까지`
   const [, month, day] = effective.leave.ends_on.split('-').map(Number)
@@ -117,7 +147,7 @@ export function presenceChipLabel(effective: EffectivePresence, todayKey: string
 
 /** 이름표·목록에 붙이는 짧은 설명: ‘휴가 · 10월 2일까지’, ‘실험실’ */
 export function presenceSummary(effective: EffectivePresence, todayKey: string): string {
-  const text = PRESENCE_TEXT[effective.kind].short
+  const text = effective.leave ? leaveTypeLabel(effective.leave) : PRESENCE_TEXT[effective.kind].short
   if (!effective.leave) return text
   const until = leaveUntilLabel(effective.leave, todayKey)
   return until ? `${text} · ${until}` : text
@@ -134,6 +164,8 @@ export function isMemberLeaveKind(value: unknown): value is MemberLeaveKind {
 export type MemberLeaveInput = {
   profileId: string
   kind: MemberLeaveKind
+  vacationUnit?: MemberVacationUnit
+  dayPeriod?: MemberDayPeriod | null
   /** YYYY-MM-DD(서울 날짜) */
   startsOn: string
   endsOn: string
@@ -157,8 +189,16 @@ export function validateMemberLeave(
   if (end < start || (end - start) / DAY_MS > MEMBER_LEAVE_MAX_DAYS - 1 || end < today || (start - today) / DAY_MS > MEMBER_LEAVE_MAX_LEAD_DAYS) {
     throw new UserFacingError(MEMBER_LEAVE_INVALID_MESSAGE)
   }
+  const unit = input.vacationUnit ?? 'full'
+  const period = input.dayPeriod ?? null
+  if (!['full', 'half', 'quarter'].includes(unit)
+    || (unit === 'full' && period !== null)
+    || (unit !== 'full' && (input.kind !== 'vacation' || start !== end || (period !== 'am' && period !== 'pm')))) {
+    throw new UserFacingError(MEMBER_PARTIAL_LEAVE_MESSAGE)
+  }
   const overlaps = (presence?.leaves ?? []).some((leave) =>
-    leave.profile_id === input.profileId && leave.starts_on <= input.endsOn && leave.ends_on >= input.startsOn)
+    leave.profile_id === input.profileId && leave.starts_on <= input.endsOn && leave.ends_on >= input.startsOn
+    && (unit === 'full' || (leave.vacation_unit ?? 'full') === 'full' || leave.day_period === period))
   if (overlaps) throw new UserFacingError(MEMBER_LEAVE_OVERLAP_MESSAGE)
   return { ...input, note }
 }
@@ -177,11 +217,17 @@ function parseLeave(value: unknown): MemberLeave | null {
   const text = ['id', 'profile_id', 'name', 'starts_on', 'ends_on', 'note'] as const
   if (text.some((key) => typeof row[key] !== 'string') || !isMemberLeaveKind(row.kind)) return null
   if (dateOnlyTime(row.starts_on as string) == null || dateOnlyTime(row.ends_on as string) == null) return null
+  const unit = row.vacation_unit ?? 'full'
+  const period = row.day_period ?? null
+  if (!['full', 'half', 'quarter'].includes(unit as string)
+    || (unit === 'full' && period !== null)
+    || (unit !== 'full' && (row.kind !== 'vacation' || row.starts_on !== row.ends_on || (period !== 'am' && period !== 'pm')))) return null
   return {
     id: row.id as string,
     profile_id: row.profile_id as string,
     name: row.name as string,
     kind: row.kind,
+    ...(row.vacation_unit !== undefined ? { vacation_unit: unit as MemberVacationUnit, day_period: period as MemberDayPeriod | null } : {}),
     starts_on: (row.starts_on as string).slice(0, 10),
     ends_on: (row.ends_on as string).slice(0, 10),
     note: row.note as string,
@@ -204,6 +250,7 @@ export function parseMemberPresence(value: unknown): MemberPresence | null {
 export function translateMemberPresenceError<T extends { message?: string; details?: string }>(error: T): T | UserFacingError {
   const text = `${error.message ?? ''} ${error.details ?? ''}`
   if (text.includes('SQA_MEMBER_LEAVE_OVERLAP')) return new UserFacingError(MEMBER_LEAVE_OVERLAP_MESSAGE)
+  if (text.includes('SQA_MEMBER_PARTIAL_LEAVE_INVALID')) return new UserFacingError(MEMBER_PARTIAL_LEAVE_MESSAGE)
   if (text.includes('SQA_MEMBER_PRESENCE_FORBIDDEN')) return new UserFacingError(MEMBER_PRESENCE_FORBIDDEN_MESSAGE)
   if (text.includes('SQA_MEMBER_PRESENCE_TARGET_INVALID')) return new UserFacingError(MEMBER_PRESENCE_TARGET_MESSAGE)
   if (text.includes('SQA_MEMBER_PRESENCE_INVALID')) return new UserFacingError(MEMBER_LEAVE_INVALID_MESSAGE)

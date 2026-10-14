@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => {
     subscribe: vi.fn(() => channel),
   }
   return {
+    preview: false,
     handlers,
     channel,
     fetchOfficeMeeting: vi.fn(),
@@ -32,7 +33,7 @@ const mocks = vi.hoisted(() => {
   }
 })
 
-vi.mock('../../lib/supabase', () => ({ supabase: mocks.supabase }))
+vi.mock('../../lib/supabase', () => ({ supabase: mocks.supabase, get isPreviewMode() { return mocks.preview } }))
 vi.mock('../../data', () => ({
   fetchOfficeMeeting: mocks.fetchOfficeMeeting,
   fetchMemberPresence: mocks.fetchMemberPresence,
@@ -64,6 +65,7 @@ async function flush() {
 
 describe('useOfficeLiveSync', () => {
   beforeEach(() => {
+    mocks.preview = false
     vi.useFakeTimers()
     mocks.handlers.clear()
     mocks.fetchOfficeMeeting.mockReset()
@@ -72,6 +74,40 @@ describe('useOfficeLiveSync', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('resets preview quick statuses across 06:00 and on tab resume, keeping vacation and trips', () => {
+    mocks.preview = true
+    vi.setSystemTime(new Date('2026-10-13T20:59:30Z'))
+    const initial: MemberPresence = {
+      statuses: [{ profile_id: 'a', name: 'A', status: 'lab', updated_at: new Date().toISOString() }],
+      leaves: [
+        { id: 'v', profile_id: 'a', name: 'A', kind: 'vacation', starts_on: '2026-10-14', ends_on: '2026-10-15', note: '' },
+        { id: 't', profile_id: 'b', name: 'B', kind: 'trip', starts_on: '2026-10-14', ends_on: '2026-10-16', note: '' },
+      ],
+    }
+    const sync = renderSync({ memberPresence: initial })
+    expect(sync.current().memberPresence).toBe(initial)
+    act(() => vi.advanceTimersByTime(30_000))
+    expect(sync.current().memberPresence?.statuses).toEqual([])
+    expect(sync.current().memberPresence?.leaves).toBe(initial.leaves)
+    act(() => sync.setData({ memberPresence: initial } as AppData))
+    act(() => document.dispatchEvent(new Event('visibilitychange')))
+    expect(sync.current().memberPresence?.statuses).toEqual([])
+    sync.unmount()
+  })
+
+  it('refreshes presence at the AM/PM boundary even when the server data did not change', async () => {
+    vi.setSystemTime(new Date('2026-10-14T02:59:30Z'))
+    mocks.fetchOfficeMeeting.mockResolvedValue(null)
+    mocks.fetchMemberPresence.mockResolvedValue(presence)
+    const sync = renderSync({ memberPresence: presence, officeMeeting: null })
+    act(() => vi.advanceTimersByTime(30_000))
+    await flush()
+    expect(sync.current().memberPresence).toEqual(presence)
+    expect(sync.current().memberPresence).not.toBe(presence)
+    expect(sync.changes).toHaveLength(1)
+    sync.unmount()
   })
 
   it('keeps the same data object when the 30-second check finds nothing new, and applies both parts at once', async () => {

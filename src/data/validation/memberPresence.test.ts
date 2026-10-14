@@ -11,10 +11,14 @@ import {
   MEMBER_LEAVE_NOTE_MESSAGE,
   MEMBER_LEAVE_OVERLAP_MESSAGE,
   MEMBER_PRESENCE_FORBIDDEN_MESSAGE,
+  MEMBER_PARTIAL_LEAVE_MESSAGE,
+  leaveTypeLabel,
+  memberStatusResetCutoff,
   parseMemberPresence,
   presenceChipLabel,
   presenceOf,
   presenceSummary,
+  resetMemberStatuses,
   translateMemberPresenceError,
   upcomingLeaves,
   validateMemberLeave,
@@ -42,6 +46,69 @@ function leave(overrides: Partial<MemberLeaveInput>): MemberLeaveInput {
 }
 
 describe('member presence rules', () => {
+  it('selects the matching AM/PM leave rather than whichever UUID was returned first', () => {
+    const morning = { ...presence.leaves[1], id: 'z', profile_id: 'c', starts_on: TODAY, ends_on: TODAY, vacation_unit: 'half' as const, day_period: 'am' as const }
+    const afternoon = { ...morning, id: 'a', vacation_unit: 'quarter' as const, day_period: 'pm' as const }
+    const both = { statuses: [], leaves: [afternoon, morning] }
+    expect(presenceOf(both, 'c', TODAY, new Date('2026-09-27T02:59:59.999Z'))?.leave?.id).toBe('z')
+    expect(presenceOf(both, 'c', TODAY, new Date('2026-09-27T03:00:00Z'))?.leave?.id).toBe('a')
+    expect(presenceOf({ ...both, leaves: [afternoon] }, 'c', TODAY, NOW)).toBeNull()
+    expect(presenceOf({ ...both, leaves: [morning] }, 'c', TODAY, new Date('2026-09-27T05:00:00Z'))).toBeNull()
+  })
+
+  it.each([
+    ['half', 'am', '오전 반차'], ['half', 'pm', '오후 반차'],
+    ['quarter', 'am', '오전 반반차'], ['quarter', 'pm', '오후 반반차'],
+  ] as const)('registers and displays %s/%s as %s', (vacationUnit, dayPeriod, label) => {
+    const input = leave({ startsOn: TODAY, endsOn: TODAY, vacationUnit, dayPeriod })
+    expect(validateMemberLeave(input, presence, NOW)).toEqual(input)
+    const partial = { ...presence.leaves[1], starts_on: TODAY, ends_on: TODAY, vacation_unit: vacationUnit, day_period: dayPeriod }
+    expect(leaveTypeLabel(partial)).toBe(label)
+    expect(presenceSummary({ kind: 'vacation', leave: partial }, TODAY)).toBe(`${label} · 오늘까지`)
+    expect(parseMemberPresence({ statuses: [], leaves: [partial] })?.leaves).toEqual([partial])
+  })
+
+  it('allows opposite partial periods, while rejecting same periods, full-day overlaps and invalid partial input', () => {
+    const morning = { ...presence.leaves[1], starts_on: TODAY, ends_on: TODAY, vacation_unit: 'half' as const, day_period: 'am' as const }
+    const existing = { statuses: [], leaves: [morning] }
+    expect(validateMemberLeave(leave({ startsOn: TODAY, endsOn: TODAY, vacationUnit: 'quarter', dayPeriod: 'pm' }), existing, NOW).dayPeriod).toBe('pm')
+    expect(() => validateMemberLeave(leave({ startsOn: TODAY, endsOn: TODAY, vacationUnit: 'quarter', dayPeriod: 'am' }), existing, NOW)).toThrow(MEMBER_LEAVE_OVERLAP_MESSAGE)
+    expect(() => validateMemberLeave(leave({ startsOn: TODAY, endsOn: TODAY }), existing, NOW)).toThrow(MEMBER_LEAVE_OVERLAP_MESSAGE)
+    for (const changes of [
+      { vacationUnit: 'half' as const },
+      { vacationUnit: 'quarter' as const, dayPeriod: 'am' as const, endsOn: '2026-09-28' },
+      { kind: 'trip' as const, vacationUnit: 'half' as const, dayPeriod: 'am' as const },
+      { vacationUnit: 'full' as const, dayPeriod: 'pm' as const },
+    ]) {
+      expect(() => validateMemberLeave(leave({ startsOn: TODAY, endsOn: TODAY, ...changes }), existing, NOW)).toThrow(MEMBER_PARTIAL_LEAVE_MESSAGE)
+    }
+    expect(parseMemberPresence({ statuses: [], leaves: [{ ...morning, day_period: null }] })).toBeNull()
+    expect(parseMemberPresence({ statuses: [], leaves: [{ ...morning, ends_on: '2026-09-28' }] })).toBeNull()
+  })
+
+  it('resets quick statuses at 06:00 Seoul, retaining new statuses and every leave period', () => {
+    const before = new Date('2026-10-13T20:59:59.999Z')
+    const boundary = new Date('2026-10-13T21:00:00.000Z')
+    const after = new Date('2026-10-14T01:00:00.000Z')
+    const quickStatuses: MemberPresence = {
+      statuses: ['meeting', 'field', 'lab', 'away'].map((status, index) => ({
+        profile_id: String(index), name: String(index), status: status as 'meeting' | 'field' | 'lab' | 'away', updated_at: before.toISOString(),
+      })),
+      leaves: presence.leaves,
+    }
+    expect(memberStatusResetCutoff(before)).toBe(Date.parse('2026-10-12T21:00:00Z'))
+    expect(memberStatusResetCutoff(boundary)).toBe(boundary.getTime())
+    expect(resetMemberStatuses(quickStatuses, before)).toBe(quickStatuses)
+    const reset = resetMemberStatuses(quickStatuses, boundary)
+    expect(reset.statuses).toEqual([])
+    expect(reset.leaves).toBe(quickStatuses.leaves)
+    const newStatus: MemberPresence = { ...reset, statuses: [{ ...quickStatuses.statuses[0], updated_at: boundary.toISOString() }] }
+    expect(resetMemberStatuses(newStatus, after)).toBe(newStatus)
+    expect(resetMemberStatuses(newStatus, new Date('2026-10-14T21:00:00Z')).statuses).toEqual([])
+    // A month/year boundary must use Seoul time regardless of the device timezone.
+    expect(memberStatusResetCutoff(new Date('2026-12-31T20:59:59Z'))).toBe(Date.parse('2026-12-30T21:00:00Z'))
+  })
+
   it('shows a vacation or trip before a short status, and nothing when someone is at their desk', () => {
     expect(presenceOf(presence, 'a', TODAY)).toEqual({ kind: 'lab', since: '2026-09-27T00:30:00.000Z' })
     // 출장 기간에는 짧은 상태(현장)보다 출장이 보인다.

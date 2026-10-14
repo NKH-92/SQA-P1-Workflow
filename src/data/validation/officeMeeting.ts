@@ -116,7 +116,7 @@ export function validateOfficeMeetingStart(
   if (invitees.some((id) => !seats.has(id))) throw new UserFacingError(OFFICE_MEETING_PARTICIPANT_MESSAGE)
   if (invitees.some((id) => seats.get(id)?.role === 'team_leader')) throw new UserFacingError(OFFICE_MEETING_TEAM_LEADER_MESSAGE)
   const meetingDay = businessDateKey(new Date(startsAt ? Date.parse(startsAt) : now))
-  if (invitees.some((id) => leaveOn(presence, id, meetingDay))) throw new UserFacingError(OFFICE_MEETING_AWAY_MESSAGE)
+  if (invitees.some((id) => leaveOn(presence, id, meetingDay, new Date(startsAt ? Date.parse(startsAt) : now)))) throw new UserFacingError(OFFICE_MEETING_AWAY_MESSAGE)
   return { title, invitees, startsAt, location }
 }
 

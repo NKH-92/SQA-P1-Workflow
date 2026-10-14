@@ -60,7 +60,10 @@ const MAX_INITIAL_GZIP_BYTES = 151 * 1024
 // remains below 150 KiB (150,424 B → 153,076 B). Keep ~3.8 KiB total headroom for chunk dictionaries.
 // 2026-10 team calendar + drawer navigation: 341,151 B → 344,145 B total;
 // initial 153,076 B → 153,566 B. Calendar/profile dialogs are lazy; both caps stay unchanged.
-const MAX_TOTAL_GZIP_BYTES = 337 * 1024
+// 2026-10 half/quarter vacations and period-aware meeting availability measure
+// 345,109 B across routes. Allow one additional KiB for the new dialog controls
+// and time-boundary behavior while retaining the per-chunk and initial gates.
+const MAX_TOTAL_GZIP_BYTES = 338 * 1024
 // 빠른 이동(Ctrl K)과 알림 패널은 열 때만 쓰므로 첫 화면에서 빼고 지연 로딩한다(한가할 때 미리 받음).
 const EXPECTED_ROUTE_DYNAMIC_IMPORTS = new Set([
   'src/components/CommandPalette.tsx',

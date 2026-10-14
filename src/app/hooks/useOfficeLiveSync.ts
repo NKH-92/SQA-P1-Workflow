@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { fetchMemberPresence, fetchOfficeMeeting } from '../../data'
 import type { AppDataUpdater } from '../../data/repositories/appDataUpdater'
-import { resetMemberStatuses } from '../../data/validation/memberPresence'
+import { memberPresencePeriodKey, resetMemberStatuses } from '../../data/validation/memberPresence'
 import { isPreviewMode, supabase } from '../../lib/supabase'
 import type { AppData, MemberPresence, OfficeMeeting } from '../../types'
 
@@ -43,12 +43,28 @@ export function useOfficeLiveSync(enabled: boolean, setData: AppDataUpdater) {
   })
 
   useEffect(() => {
+    let periodKey = memberPresencePeriodKey(new Date())
+    const periodChanged = () => {
+      const next = memberPresencePeriodKey(new Date())
+      if (next === periodKey) return false
+      periodKey = next
+      return true
+    }
+    const refreshPeriod = () => {
+      if (periodChanged()) setDataRef.current((current) => current.memberPresence
+        ? { ...current, memberPresence: { ...current.memberPresence } }
+        : current)
+    }
     if (isPreviewMode) {
-      const reset = () => setDataRef.current((current) => {
-        if (!current.memberPresence) return current
-        const presence = resetMemberStatuses(current.memberPresence, new Date())
-        return presence === current.memberPresence ? current : { ...current, memberPresence: presence }
-      })
+      const reset = () => {
+        const changed = periodChanged()
+        setDataRef.current((current) => {
+          if (!current.memberPresence) return current
+          const presence = resetMemberStatuses(current.memberPresence, new Date())
+          return presence === current.memberPresence && !changed ? current
+            : { ...current, memberPresence: changed ? { ...presence } : presence }
+        })
+      }
       reset()
       const poll = window.setInterval(reset, LIVE_POLL_MS)
       document.addEventListener('visibilitychange', reset)
@@ -93,7 +109,10 @@ export function useOfficeLiveSync(enabled: boolean, setData: AppDataUpdater) {
     }
     const reloadMeeting = () => reload(['meeting'])
     const reloadPresence = () => reload(['presence'])
-    const reloadAll = () => reload(['meeting', 'presence'])
+    const reloadAll = () => {
+      refreshPeriod()
+      reload(['meeting', 'presence'])
+    }
 
     let disconnected = false
     const channel = supabase

@@ -114,6 +114,9 @@ begin
      or position('day_period' in pg_get_functiondef('public.get_member_presence()'::regprocedure)) = 0 then
     raise exception 'SQA_DB_READY_MEMBER_PARTIAL_VACATIONS';
   end if;
+  if position('leave.day_period' in pg_get_functiondef('public.start_office_meeting(text,uuid[],timestamp with time zone,text)'::regprocedure)) = 0 then
+    raise exception 'SQA_DB_READY_MEMBER_PARTIAL_VACATION_MEETING';
+  end if;
 end
 $verify$;
 

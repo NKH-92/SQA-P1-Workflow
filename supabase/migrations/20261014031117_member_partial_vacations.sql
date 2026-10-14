@@ -159,3 +159,136 @@ $$;
 
 revoke all on function public.get_member_presence() from public, anon, authenticated;
 grant execute on function public.get_member_presence() to authenticated;
+
+-- Keep the meeting RPC signature and permissions; respect partial leave periods.
+create or replace function public.start_office_meeting(
+  p_title text,
+  p_participant_ids uuid[],
+  p_starts_at timestamptz,
+  p_location text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_actor_id uuid := auth.uid();
+  v_actor_name text;
+  v_title text := pg_catalog.btrim(coalesce(p_title, ''));
+  v_location text := pg_catalog.btrim(coalesce(p_location, ''));
+  v_invitees uuid[];
+  v_now timestamptz := pg_catalog.clock_timestamp();
+  -- 지금 바로 여는 회의는 연 때와 시작 시각이 똑같다(화면이 ‘예정’으로 잘못 보지 않게).
+  v_starts_at timestamptz := coalesce(p_starts_at, v_now);
+  v_meeting_id uuid;
+begin
+  if v_actor_id is null or not public.can_use_app() then
+    raise exception using
+      errcode = '42501',
+      message = 'active app user required',
+      detail = 'SQA_APP_ACCESS_REQUIRED';
+  end if;
+
+  select profile.name into v_actor_name
+    from public.profiles profile
+   where profile.id = v_actor_id
+     and profile.role in ('leader', 'member');
+  if v_actor_name is null then
+    raise exception using
+      errcode = 'P0001',
+      message = 'team leader access is read only',
+      detail = 'SQA_TEAM_LEADER_READ_ONLY';
+  end if;
+
+  if pg_catalog.char_length(v_title) > 60
+     or pg_catalog.char_length(v_location) > 30
+     or p_participant_ids is null
+     or pg_catalog.array_position(p_participant_ids, null) is not null then
+    raise exception using
+      errcode = '22023',
+      message = 'a meeting needs a title up to 60 characters, a location up to 30 and a list of invitees',
+      detail = 'SQA_OFFICE_MEETING_INVALID';
+  end if;
+
+  -- Now or later today (a few minutes of clock skew count as now).
+  if v_starts_at < v_now - interval '5 minutes'
+     or private.sqa_business_date(v_starts_at) <> private.sqa_business_date(v_now) then
+    raise exception using
+      errcode = '22023',
+      message = 'a meeting starts now or later today',
+      detail = 'SQA_OFFICE_MEETING_TIME_INVALID';
+  end if;
+  if v_starts_at < v_now then
+    v_starts_at := v_now;
+  end if;
+
+  select coalesce(pg_catalog.array_agg(distinct invitee_id), '{}'::uuid[]) into v_invitees
+    from pg_catalog.unnest(p_participant_ids) as invitee_id
+   where invitee_id <> v_actor_id;
+  if pg_catalog.cardinality(v_invitees) < 1 or pg_catalog.cardinality(v_invitees) > 8 then
+    raise exception using
+      errcode = '22023',
+      message = 'invite one to eight people',
+      detail = 'SQA_OFFICE_MEETING_INVALID';
+  end if;
+
+  -- Only active leaders and members who have a seat in the office can be invited.
+  if exists (
+    select 1
+      from pg_catalog.unnest(v_invitees) as invitee_id
+     where not exists (
+       select 1
+         from public.office_seats seat
+         join public.profiles profile on profile.id = seat.profile_id
+        where seat.profile_id = invitee_id
+          and profile.is_active
+          and profile.role in ('leader', 'member')
+     )
+  ) then
+    raise exception using
+      errcode = 'P0001',
+      message = 'only active people seated in the office can be invited',
+      detail = 'SQA_OFFICE_MEETING_PARTICIPANT_INVALID';
+  end if;
+
+  -- People on vacation or a business trip that day are not invited.
+  if exists (
+    select 1
+      from public.member_leaves leave
+     where leave.profile_id = any(v_invitees)
+       and private.sqa_business_date(v_starts_at) between leave.starts_on and leave.ends_on
+       and (leave.day_period is null or leave.day_period =
+            case when extract(hour from v_starts_at at time zone 'Asia/Seoul') < 12 then 'am' else 'pm' end)
+  ) then
+    raise exception using
+      errcode = 'P0001',
+      message = 'people on vacation or a business trip cannot be invited',
+      detail = 'SQA_OFFICE_MEETING_PARTICIPANT_AWAY';
+  end if;
+
+  -- One room: a single writer at a time sees whether it is free.
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('sqa:office-meeting'));
+  delete from public.office_meetings meeting where meeting.expires_at <= v_now;
+  if exists (select 1 from public.office_meetings) then
+    raise exception using
+      errcode = 'P0001',
+      message = 'the meeting room is in use',
+      detail = 'SQA_OFFICE_MEETING_BUSY';
+  end if;
+
+  insert into public.office_meetings (title, organizer_id, organizer_name, created_at, starts_at, location, expires_at)
+  values (v_title, v_actor_id, v_actor_name, v_now, v_starts_at, v_location, v_starts_at + interval '3 hours')
+  returning id into v_meeting_id;
+
+  insert into public.office_meeting_participants (meeting_id, user_id, participant_name, acknowledged_at)
+  values (v_meeting_id, v_actor_id, v_actor_name, v_now);
+
+  insert into public.office_meeting_participants (meeting_id, user_id, participant_name)
+  select v_meeting_id, profile.id, profile.name
+    from public.profiles profile
+   where profile.id = any(v_invitees);
+
+  return v_meeting_id;
+end;
+$$;

@@ -1,4 +1,4 @@
-import { businessDateKey } from '../../lib/businessTime'
+import { businessDateKey, businessDateParts } from '../../lib/businessTime'
 import { dateOnlyTime } from '../../lib/dates'
 import { PERMISSION_MESSAGE, UserFacingError } from '../../lib/errors'
 import { formatMonthDay } from '../../lib/format'
@@ -66,13 +66,23 @@ export function canEditPresence(actor: Profile, target: Pick<Profile, 'id' | 'ro
   return actor.role === 'leader' && hasPresence(target)
 }
 
+export function memberDayPeriod(now: Date): MemberDayPeriod {
+  return businessDateParts(now).hour < 12 ? 'am' : 'pm'
+}
+
+export function memberPresencePeriodKey(now: Date): string {
+  return `${businessDateKey(now)}:${memberDayPeriod(now)}`
+}
+
 function coversDate(leave: Pick<MemberLeave, 'starts_on' | 'ends_on'>, dateKey: string) {
   return leave.starts_on <= dateKey && dateKey <= leave.ends_on
 }
 
 /** 그 날(서울 날짜) 휴가·출장 중이면 그 기간 */
-export function leaveOn(presence: MemberPresence | undefined, profileId: string, dateKey: string): MemberLeave | undefined {
-  return presence?.leaves.find((leave) => leave.profile_id === profileId && coversDate(leave, dateKey))
+export function leaveOn(presence: MemberPresence | undefined, profileId: string, dateKey: string, now: Date = new Date()): MemberLeave | undefined {
+  const period = memberDayPeriod(now)
+  return presence?.leaves.find((leave) => leave.profile_id === profileId && coversDate(leave, dateKey)
+    && (!leave.day_period || leave.day_period === period))
 }
 
 export function statusOf(presence: MemberPresence | undefined, profileId: string): MemberStatus | undefined {
@@ -99,8 +109,9 @@ export function presenceOf(
   presence: MemberPresence | undefined,
   profileId: string,
   todayKey: string = businessDateKey(new Date()),
+  now: Date = new Date(),
 ): EffectivePresence | null {
-  const leave = leaveOn(presence, profileId, todayKey)
+  const leave = leaveOn(presence, profileId, todayKey, now)
   if (leave) return { kind: leave.kind, leave }
   const status = statusOf(presence, profileId)
   return status ? { kind: status.status, since: status.updated_at } : null

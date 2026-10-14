@@ -21,7 +21,7 @@ const presence: MemberPresence = {
   leaves: [{ id: 'leave-1', profile_id: other.id, name: other.name, kind: 'trip', starts_on: day(0), ends_on: day(2), note: '오송 공장 실사' }],
 }
 
-function renderDialog(people = [me], initialProfileId = me.id) {
+function renderDialog(people = [me], initialProfileId = me.id, inputPresence = presence) {
   const handlers = {
     onSetStatus: vi.fn(async () => true),
     onAddLeave: vi.fn(async () => true),
@@ -32,7 +32,7 @@ function renderDialog(people = [me], initialProfileId = me.id) {
       initialProfileId={initialProfileId}
       onClose={vi.fn()}
       people={people}
-      presence={presence}
+      presence={inputPresence}
       {...handlers}
     />,
   )
@@ -40,6 +40,17 @@ function renderDialog(people = [me], initialProfileId = me.id) {
 }
 
 describe('MemberPresenceDialog', () => {
+  it('shows both opposite-period vacation labels in the current day note and registered list', () => {
+    const base = { id: 'pm', profile_id: me.id, name: me.name, kind: 'vacation' as const, starts_on: day(0), ends_on: day(0), note: '' }
+    renderDialog([me], me.id, { statuses: [], leaves: [
+      { ...base, vacation_unit: 'quarter', day_period: 'pm' },
+      { ...base, id: 'am', vacation_unit: 'half', day_period: 'am' },
+    ] })
+    expect(screen.getByText('오늘 일정: 오전 반차 · 오후 반반차')).toBeInTheDocument()
+    expect(within(screen.getByRole('list', { name: '등록한 휴가·출장' })).getByText('오전 반차')).toBeInTheDocument()
+    expect(within(screen.getByRole('list', { name: '등록한 휴가·출장' })).getByText('오후 반반차')).toBeInTheDocument()
+  })
+
   it.each([
     ['half', 'am'], ['half', 'pm'], ['quarter', 'am'], ['quarter', 'pm'],
   ] as const)('registers a one-day %s vacation for %s', async (vacationUnit, dayPeriod) => {

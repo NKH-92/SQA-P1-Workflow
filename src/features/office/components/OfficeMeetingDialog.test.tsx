@@ -6,7 +6,10 @@ import type { OfficeMeeting } from '../../../types'
 import { sceneOccupants } from '../officeLayoutModel'
 import { OfficeMeetingDialog } from './OfficeMeetingDialog'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
 
 const preview = createPreviewData()
 const occupants = sceneOccupants(preview.officeLayout)
@@ -51,6 +54,22 @@ function renderDialog(props: Partial<Parameters<typeof OfficeMeetingDialog>[0]> 
   )
   return handlers
 }
+
+it('keeps a PM vacation selectable for an AM meeting and blocks it for a scheduled PM meeting', () => {
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-09-27T01:00:00Z'))
+  const target = occupants.find((person) => person.name === '파트원 C')!
+  renderDialog({ presence: { statuses: [], leaves: [{
+    id: 'pm', profile_id: target.profileId, name: target.name, kind: 'vacation', starts_on: '2026-09-27', ends_on: '2026-09-27', note: '', vacation_unit: 'half', day_period: 'pm',
+  }] } })
+  expect(screen.getByRole('checkbox', { name: /파트원 C/ })).toBeEnabled()
+  fireEvent.click(screen.getByRole('checkbox', { name: /파트원 C/ }))
+  fireEvent.click(screen.getByRole('radio', { name: '오늘 시간 정하기' }))
+  fireEvent.change(screen.getByRole('combobox', { name: '시각' }), { target: { value: '14:00' } })
+  expect(screen.getByRole('checkbox', { name: /파트원 C/ })).toBeDisabled()
+  expect(screen.getByRole('checkbox', { name: /파트원 C/ }).closest('label')).toHaveTextContent('오후 반차')
+  expect(screen.getByRole('button', { name: '회의 잡기' })).toBeDisabled()
+})
 
 describe('OfficeMeetingDialog', () => {
   it('opens a meeting right away in the office room with a topic and seated people other than me', async () => {

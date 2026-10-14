@@ -59,6 +59,16 @@ function input(overrides: Partial<OfficeMeetingStartInput>): OfficeMeetingStartI
 }
 
 describe('office meeting rules', () => {
+  it('checks partial leave against the meeting start period, including a scheduled afternoon meeting', () => {
+    const partial = { ...presence.leaves[0], ends_on: '2026-09-27', vacation_unit: 'quarter' as const, day_period: 'pm' as const }
+    const pmLeave = { statuses: [], leaves: [partial] }
+    expect(validateOfficeMeetingStart(input({ participantIds: ['member-03'] }), previewMember, layout, pmLeave, NOW).invitees).toEqual(['member-03'])
+    expect(() => validateOfficeMeetingStart(input({ participantIds: ['member-03'], startsAt: '2026-09-27T05:00:00Z' }), previewMember, layout, pmLeave, NOW)).toThrow(OFFICE_MEETING_AWAY_MESSAGE)
+    const amLeave = { statuses: [], leaves: [{ ...partial, day_period: 'am' as const }] }
+    expect(() => validateOfficeMeetingStart(input({ participantIds: ['member-03'] }), previewMember, layout, amLeave, NOW)).toThrow(OFFICE_MEETING_AWAY_MESSAGE)
+    expect(validateOfficeMeetingStart(input({ participantIds: ['member-03'], startsAt: '2026-09-27T05:00:00Z' }), previewMember, layout, amLeave, NOW).invitees).toEqual(['member-03'])
+  })
+
   it('lets active leaders and members open a meeting but keeps team leaders read-only', () => {
     expect(canOpenOfficeMeeting(previewMember)).toBe(true)
     expect(canOpenOfficeMeeting(previewLeader)).toBe(true)

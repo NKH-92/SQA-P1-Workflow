@@ -97,6 +97,19 @@ describe('useOfficeLiveSync', () => {
     sync.unmount()
   })
 
+  it('refreshes presence at the AM/PM boundary even when the server data did not change', async () => {
+    vi.setSystemTime(new Date('2026-10-14T02:59:30Z'))
+    mocks.fetchOfficeMeeting.mockResolvedValue(null)
+    mocks.fetchMemberPresence.mockResolvedValue(presence)
+    const sync = renderSync({ memberPresence: presence, officeMeeting: null })
+    act(() => vi.advanceTimersByTime(30_000))
+    await flush()
+    expect(sync.current().memberPresence).toEqual(presence)
+    expect(sync.current().memberPresence).not.toBe(presence)
+    expect(sync.changes).toHaveLength(1)
+    sync.unmount()
+  })
+
   it('keeps the same data object when the 30-second check finds nothing new, and applies both parts at once', async () => {
     mocks.fetchOfficeMeeting.mockResolvedValue(null)
     mocks.fetchMemberPresence.mockResolvedValue({ ...presence })

@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react'
 import { MapPin } from 'lucide-react'
 import { DialogActions, Modal } from '../../../components/ui'
 import {
-  leaveOn,
   leavePeriodLabel,
   leaveTypeLabel,
   MEMBER_LEAVE_MAX_DAYS,
@@ -85,7 +84,9 @@ export function MemberPresenceDialog({
   const target = people.find((person) => person.id === targetId) ?? people[0]
   const isSelf = target?.id === people[0]?.id
   const current = target ? statusOf(presence, target.id)?.status ?? null : null
-  const leaveToday = target ? leaveOn(presence, target.id, today) : undefined
+  const leavesToday = (presence?.leaves ?? []).filter((leave) => leave.profile_id === target?.id && leave.starts_on <= today && leave.ends_on >= today)
+    .sort((left, right) => (left.day_period ?? '').localeCompare(right.day_period ?? ''))
+  const leaveToday = leavesToday.find((leave) => !leave.day_period)
   const leaves = useMemo(() => (target ? upcomingLeaves(presence, target.id, today) : []), [presence, target, today])
   const problem = leaveProblem(startsOn, endsOn, today)
   const dirty = note.trim().length > 0
@@ -153,6 +154,9 @@ export function MemberPresenceDialog({
               {`오늘은 ${leaveTypeLabel(leaveToday)} 기간이라 사무실에는 ${leaveTypeLabel(leaveToday)}로 보여요.`}
             </p>
           )}
+          {!leaveToday && leavesToday.length > 0 && (
+            <p className="presence-note">오늘 일정: {leavesToday.map(leaveTypeLabel).join(' · ')}</p>
+          )}
         </section>
 
         <section aria-labelledby="presence-leave-title" className="presence-section">
@@ -166,7 +170,7 @@ export function MemberPresenceDialog({
                   <PresenceIcon id={leave.kind} />
                   <span className="presence-leave-text">
                     <strong>{leaveTypeLabel(leave)}</strong>
-                    <span>{leavePeriodLabel(leave)}{leave.starts_on <= today ? ' · 지금' : ''}</span>
+                    <span>{leavePeriodLabel(leave)}{leave.starts_on <= today ? (leave.day_period ? ' · 오늘' : ' · 지금') : ''}</span>
                     {leave.note && <small>{leave.note}</small>}
                   </span>
                   <button
@@ -217,11 +221,12 @@ export function MemberPresenceDialog({
                 </label>
                 {partial && (
                   <label className="presence-field">
-                    <span>오전·오후</span>
-                    <select value={dayPeriod} onChange={(event) => setDayPeriod(event.target.value as MemberDayPeriod)}>
+                    <span id="presence-period-label">오전·오후</span>
+                    <select aria-labelledby="presence-period-label" aria-describedby="presence-period-hint" value={dayPeriod} onChange={(event) => setDayPeriod(event.target.value as MemberDayPeriod)}>
                       <option value="am">오전</option>
                       <option value="pm">오후</option>
                     </select>
+                    <small id="presence-period-hint">한국 시간 정오 12시 기준</small>
                   </label>
                 )}
               </div>

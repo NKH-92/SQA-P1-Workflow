@@ -71,7 +71,7 @@ export function OfficeMeetingDialog({
   const [title, setTitle] = useState(() => initialTitle.slice(0, OFFICE_MEETING_TITLE_MAX))
   const [selected, setSelected] = useState<string[]>(() => [...new Set(initialInvitees)].filter(id => {
     const person = occupants.find(p => p.profileId === id)
-    const status = presenceOf(presence, id, businessDateKey(new Date(openedAt)))
+    const status = presenceOf(presence, id, businessDateKey(new Date(openedAt)), new Date(openedAt))
     return person && person.role !== 'team_leader' && id !== profile.id && !status?.leave
   }).slice(0, OFFICE_MEETING_MAX_INVITEES))
   const [when, setWhen] = useState<'now' | 'later'>('now')
@@ -84,7 +84,6 @@ export function OfficeMeetingDialog({
   const today = businessDateKey(new Date(now))
   const candidates = occupants.filter((occupant) => occupant.profileId !== profile.id)
   const teamLeaderIds = new Set(candidates.filter((candidate) => candidate.role === 'team_leader').map((candidate) => candidate.profileId))
-  const tooMany = selected.length > OFFICE_MEETING_MAX_INVITEES
   const chosenSlot = slots.find((item) => item.value === slot)
   const placeMissing = placeKind === 'other' && place.trim().length === 0
 
@@ -181,6 +180,9 @@ export function OfficeMeetingDialog({
   }
 
   const meetingDay = when === 'later' && chosenSlot ? businessDateKey(new Date(chosenSlot.startsAt)) : today
+  const meetingInstant = new Date(when === 'later' && chosenSlot ? chosenSlot.startsAt : now)
+  const availableSelected = selected.filter((id) => !leaveOn(presence, id, meetingDay, meetingInstant) && !teamLeaderIds.has(id))
+  const tooMany = availableSelected.length > OFFICE_MEETING_MAX_INVITEES
   const startLabel = when === 'later' && chosenSlot ? `${chosenSlot.label}에` : '지금 바로'
   const placeLabel = placeKind === 'room' ? OFFICE_MEETING_ROOM_NAME : place.trim() || '다른 곳'
 
@@ -276,8 +278,8 @@ export function OfficeMeetingDialog({
               <ul>
                 {candidates.map((candidate) => {
                   const readOnly = candidate.role === 'team_leader'
-                  const onLeave = !readOnly && leaveOn(presence, candidate.profileId, meetingDay)
-                  const status = readOnly ? null : presenceOf(presence, candidate.profileId, today)
+                  const onLeave = !readOnly && leaveOn(presence, candidate.profileId, meetingDay, meetingInstant)
+                  const status = readOnly ? null : presenceOf(presence, candidate.profileId, meetingDay, meetingInstant)
                   const blocked = readOnly || Boolean(onLeave)
                   const checked = selected.includes(candidate.profileId) && !blocked
                   return (
@@ -310,23 +312,23 @@ export function OfficeMeetingDialog({
       <DialogActions
         hint={!canOpen || candidates.length === 0
           ? undefined
-          : selected.length === 0
+          : availableSelected.length === 0
             ? '부를 사람을 한 명 이상 골라 주세요.'
             : tooMany
               ? `한 번에 ${OFFICE_MEETING_MAX_INVITEES}명까지 부를 수 있어요.`
               : placeMissing
                 ? '회의할 곳을 적어 주세요.'
-                : `${selected.length}명을 불러 ${startLabel} ${placeLabel}에서 해요. 시작 3시간 뒤 저절로 끝나요.`}
+                : `${availableSelected.length}명을 불러 ${startLabel} ${placeLabel}에서 해요. 시작 3시간 뒤 저절로 끝나요.`}
         onClose={onClose}
       >
         {canOpen && candidates.length > 0 && (
           <button
             aria-busy={busy || undefined}
             className="primary"
-            disabled={busy || selected.length === 0 || tooMany || placeMissing || (when === 'later' && !chosenSlot)}
+            disabled={busy || availableSelected.length === 0 || tooMany || placeMissing || (when === 'later' && !chosenSlot)}
             onClick={() => void run(() => onStart({
               title,
-              participantIds: selected.filter((id) => !leaveOn(presence, id, meetingDay) && !teamLeaderIds.has(id)),
+              participantIds: availableSelected,
               startsAt: when === 'later' && chosenSlot ? chosenSlot.startsAt : null,
               location: placeKind === 'other' ? place : '',
             }))}

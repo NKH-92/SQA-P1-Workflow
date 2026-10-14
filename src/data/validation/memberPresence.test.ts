@@ -46,6 +46,16 @@ function leave(overrides: Partial<MemberLeaveInput>): MemberLeaveInput {
 }
 
 describe('member presence rules', () => {
+  it('selects the matching AM/PM leave rather than whichever UUID was returned first', () => {
+    const morning = { ...presence.leaves[1], id: 'z', profile_id: 'c', starts_on: TODAY, ends_on: TODAY, vacation_unit: 'half' as const, day_period: 'am' as const }
+    const afternoon = { ...morning, id: 'a', vacation_unit: 'quarter' as const, day_period: 'pm' as const }
+    const both = { statuses: [], leaves: [afternoon, morning] }
+    expect(presenceOf(both, 'c', TODAY, new Date('2026-09-27T02:59:59.999Z'))?.leave?.id).toBe('z')
+    expect(presenceOf(both, 'c', TODAY, new Date('2026-09-27T03:00:00Z'))?.leave?.id).toBe('a')
+    expect(presenceOf({ ...both, leaves: [afternoon] }, 'c', TODAY, NOW)).toBeNull()
+    expect(presenceOf({ ...both, leaves: [morning] }, 'c', TODAY, new Date('2026-09-27T05:00:00Z'))).toBeNull()
+  })
+
   it.each([
     ['half', 'am', '오전 반차'], ['half', 'pm', '오후 반차'],
     ['quarter', 'am', '오전 반반차'], ['quarter', 'pm', '오후 반반차'],

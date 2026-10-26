@@ -42,7 +42,7 @@ export function TeamCalendarDialog({ presence, onClose, onManage }: {
         </select>
       </div>
       {presence === undefined ? <p role="status">일정을 불러오고 있어요.</p> : <>
-        <div className="team-calendar-legend"><span data-kind="vacation">휴가</span><span data-kind="trip">출장</span><small>날짜를 누르면 모두 볼 수 있어요.</small></div>
+        <div className="team-calendar-legend"><span data-kind="vacation">휴가</span><span data-kind="trip">출장</span><small>날짜를 누르면 아래에서 기간과 사유를 볼 수 있어요.</small></div>
         <table className="team-calendar-grid" aria-label={`${title} 휴가·출장 일정`}>
           <thead><tr>{WEEKDAYS.map(day => <th key={day} scope="col">{day}</th>)}</tr></thead>
           <tbody>{Array.from({ length: cells.length / 7 }, (_, week) => <tr key={week}>{cells.slice(week * 7, week * 7 + 7).map((day, index) => {
@@ -51,15 +51,22 @@ export function TeamCalendarDialog({ presence, onClose, onManage }: {
               aria-pressed={selected === day} aria-label={`${Number(day.slice(5, 7))}월 ${Number(day.slice(8))}일${day === today ? ', 오늘' : ''}, ${events.length}건`}
               onClick={() => setSelected(day)}>
               <span className="team-calendar-day">{Number(day.slice(8))}</span>
-              {events.slice(0, 3).map(leave => <span className="team-calendar-event" data-kind={leave.kind} key={leave.id}>{leave.name} · {leaveTypeLabel(leave)}</span>)}
+              {events.slice(0, 3).map(leave => <span className="team-calendar-event" data-kind={leave.kind} key={leave.id}>{leave.name} - {leaveTypeLabel(leave)}</span>)}
               {events.length > 3 && <small>외 {events.length - 3}건</small>}
             </button>}</td>
           })}</tr>)}</tbody>
         </table>
-        <section className="team-calendar-detail" aria-label="선택한 날짜 일정" data-px="panel">
+        <section className="team-calendar-detail" aria-label="선택한 날짜 일정" aria-live="polite" data-px="panel">
           <h3 data-px="title">{Number(selected.slice(5, 7))}월 {Number(selected.slice(8))}일</h3>
           {selectedLeaves.length ? <ul>{selectedLeaves.map(leave => <li data-px="row" key={leave.id}>
-            <span className="team-calendar-event" data-kind={leave.kind}>{leaveTypeLabel(leave)}</span><strong>{leave.name}</strong><span>{leavePeriodLabel(leave)}</span>
+            <div className="team-calendar-detail-heading">
+              <strong>{leave.name}</strong>
+              <span className="team-calendar-event" data-kind={leave.kind}>{leaveTypeLabel(leave)}</span>
+            </div>
+            <dl>
+              <div><dt>기간</dt><dd>{leavePeriodLabel(leave)}</dd></div>
+              <div><dt>사유</dt><dd>{leave.note.trim() || '등록된 사유가 없어요.'}</dd></div>
+            </dl>
           </li>)}</ul> : <p>등록된 휴가·출장이 없어요.</p>}
         </section>
       </>}

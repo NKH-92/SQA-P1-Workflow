@@ -87,7 +87,7 @@ describe('MemberPresenceDialog', () => {
 
     fireEvent.change(within(dialog).getByLabelText('시작일'), { target: { value: day(3) } })
     fireEvent.change(within(dialog).getByLabelText('마지막 날'), { target: { value: day(4) } })
-    fireEvent.change(within(dialog).getByRole('textbox', { name: '메모(선택)' }), { target: { value: '가족 여행' } })
+    fireEvent.change(within(dialog).getByRole('textbox', { name: '사유(선택)' }), { target: { value: '가족 여행' } })
     fireEvent.click(register)
     await waitFor(() => expect(onAddLeave).toHaveBeenCalledWith(me, {
       profileId: me.id,

@@ -251,14 +251,17 @@ export function MemberPresenceDialog({
               </label>}
             </div>
             <label className="presence-field">
-              <span>메모(선택)</span>
+              <span id="presence-leave-note-label">사유(선택)</span>
               <input
+                aria-labelledby="presence-leave-note-label"
+                aria-describedby="presence-leave-note-hint"
                 maxLength={MEMBER_LEAVE_NOTE_MAX}
                 onChange={(event) => setNote(event.target.value)}
-                placeholder={kind === 'trip' ? '예: 오송 공장 실사' : '예: 오후 반차'}
+                placeholder={kind === 'trip' ? '예: 오송 공장 실사' : '예: 가족 행사 참석'}
                 type="text"
                 value={note}
               />
+              <small id="presence-leave-note-hint">등록한 일정과 사유는 파트원 일정에서 모두가 볼 수 있어요.</small>
             </label>
             <div className="presence-leave-actions">
               <small aria-live="polite" className="presence-hint">{problem ?? `${leavePeriodLabel({ starts_on: startsOn, ends_on: endsOn })} · ${leaveTypeLabel({ kind, vacation_unit: kind === 'vacation' ? vacationUnit : 'full', day_period: partial ? dayPeriod : null })}로 등록해요.`}</small>

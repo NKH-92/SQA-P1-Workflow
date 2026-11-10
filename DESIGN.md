@@ -98,6 +98,7 @@
   신규 코드는 이 목록 안에서 고르고, 새 크기를 추가하려면 여기 먼저 등재한다. 11px 미만 한국어 글자는 쓰지 않는다.
 - **줄바꿈**: 한국어는 어절 단위로 끊는다(`body { word-break: keep-all; overflow-wrap: break-word }`). ID·URL처럼 긴 기계값 칸만 `overflow-wrap: anywhere`. 제목은 `text-wrap: balance`.
 - **고정폭 글꼴**: `--font-mono`는 ID·코드·키캡·순수 시각/숫자에만 쓴다. 한국어가 한 글자라도 섞인 줄(‘0명 배정’, ‘80일 지남’, ‘오후 5:00’)은 산스 + `tabular-nums`.
+- 업무분장 인쇄는 A4 세로 10mm 여백, 제목 17pt, 본문 10pt를 사용한다. 한 페이지에 맞출 때만 본문 9pt와 좁은 셀 여백을 사용한다.
 - **자간**: 한국어 라벨에 양수 letter-spacing을 주지 않는다(워드마크 예외).
 
 ## 4. 간격·레이아웃 (Spacing)

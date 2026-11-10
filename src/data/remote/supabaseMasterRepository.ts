@@ -20,6 +20,7 @@ export function createSupabaseMasterRepository(ctx: RepositoryDeps): MasterRepos
     addProduct: products.addProduct,
     addDutyMajorCategory: duties.addDutyMajorCategory,
     addDuty: duties.addDuty,
+    saveDutyAllocation: duties.saveDutyAllocation,
     saveProductAssignments: products.saveProductAssignments,
     saveDutyAssignments: duties.saveDutyAssignments,
     assignProduct: products.assignProduct,

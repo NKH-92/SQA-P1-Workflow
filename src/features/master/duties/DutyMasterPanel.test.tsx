@@ -3,9 +3,7 @@ import { act, cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { MASTER_STALE_MESSAGE } from '../../../data/validation/masterOcc'
 import { createPreviewData, previewLeader } from '../../../demoData'
-import { toUserMessage } from '../../../lib/errors'
 import type { AppData } from '../../../types'
 import { DutyMasterPanel } from './DutyMasterPanel'
 
@@ -14,229 +12,164 @@ vi.mock('../../../lib/supabase', async (importOriginal) => {
   return { ...actual, hasSupabaseConfig: false }
 })
 
+let latestData: AppData
+let updateData: Dispatch<SetStateAction<AppData>>
+
+function Harness({ initialData, readOnly = false }: { initialData: AppData; readOnly?: boolean }) {
+  const [data, setData] = useState(initialData)
+  useEffect(() => {
+    latestData = data
+    updateData = setData
+  }, [data])
+  return <DutyMasterPanel
+    profile={readOnly ? { ...previewLeader, role: 'team_leader' } : previewLeader}
+    data={data}
+    setData={setData}
+    mutate={async (operation) => {
+      try { await operation(); return true } catch { return false }
+    }}
+  />
+}
+
 afterEach(() => {
   cleanup()
   window.sessionStorage.clear()
 })
 
-let latestData: AppData | null = null
-
-function Harness({ initialData }: { initialData: AppData }) {
-  const [data, setData] = useState(initialData)
-  useEffect(() => {
-    latestData = data
-  }, [data])
-  return (
-    <DutyMasterPanel
-      profile={previewLeader}
-      data={data}
-      setData={setData}
-      mutate={async (operation) => {
-        await operation()
-        return true
-      }}
-    />
-  )
-}
-
-let latestSetData: Dispatch<SetStateAction<AppData>> | null = null
-const mutationErrors: string[] = []
-
-/** 실제 mutate처럼 실패를 삼키고 false를 돌려주는 하네스(오류 문구는 mutationErrors에 모은다). */
-function FailSafeHarness({ initialData }: { initialData: AppData }) {
-  const [data, setData] = useState(initialData)
-  useEffect(() => {
-    latestData = data
-    latestSetData = setData
-  }, [data])
-  return (
-    <DutyMasterPanel
-      profile={previewLeader}
-      data={data}
-      setData={setData}
-      mutate={async (operation) => {
-        try {
-          await operation()
-          return true
-        } catch (error) {
-          mutationErrors.push(toUserMessage(error))
-          return false
-        }
-      }}
-    />
-  )
-}
-
-function bumpDuty(dutyId: string) {
-  act(() => {
-    latestSetData!((current) => ({
-      ...current,
-      duties: current.duties.map((item) => (item.id === dutyId ? { ...item, updated_at: '2099-01-01T00:00:00.000Z' } : item)),
-    }))
-  })
-}
-
-describe('DutyMasterPanel duty reassignment (P0-3)', () => {
-  it('moves a duty to another member with a required reason from the table row', async () => {
+describe('업무분장 통합 편집', () => {
+  it('registers a new duty with a product label and notes, without assigning people', async () => {
     const user = userEvent.setup()
     const data = createPreviewData()
-    const assignment = data.dutyAssignments[0]!
-    const duty = data.duties.find((item) => item.id === assignment.duty_id)!
-    const currentOwner = data.profiles.find((item) => item.id === assignment.user_id)!
-    const nextOwner = data.profiles.find(
-      (item) => item.role === 'member' && item.is_active !== false
-        && !data.dutyAssignments.some((row) => row.duty_id === duty.id && row.user_id === item.id),
-    )!
     render(<Harness initialData={data} />)
+    await user.click(screen.getByRole('button', { name: '업무 등록' }))
+    const form = within(screen.getByRole('dialog', { name: '업무 등록' }))
+    await user.type(form.getByLabelText('업무명'), '분기별 제품 점검')
+    await user.selectOptions(form.getByLabelText('담당 방식'), 'product')
+    await user.type(form.getByLabelText('비고'), '분기마다 갱신')
+    await user.click(form.getByRole('button', { name: '업무 등록하기' }))
 
-    await user.click(screen.getByRole('button', { name: `${duty.name} 담당자 변경` }))
-    const dialog = screen.getByRole('dialog', { name: `‘${duty.name}’ 담당자를 바꿀까요?` })
-    expect(within(dialog).getByRole('checkbox', { name: new RegExp(currentOwner.name) })).toBeChecked()
-
-    await user.click(within(dialog).getByRole('checkbox', { name: new RegExp(currentOwner.name) }))
-    await user.click(within(dialog).getByRole('checkbox', { name: new RegExp(nextOwner.name) }))
-    const submit = within(dialog).getByRole('button', { name: '담당자 저장하기' })
-    expect(submit).toBeDisabled()
-    expect(within(dialog).getByText('변경 사유를 적으면 저장할 수 있어요.')).toBeInTheDocument()
-    expect(within(dialog).getByText(nextOwner.name, { selector: 'strong' })).toBeInTheDocument()
-
-    await user.type(within(dialog).getByLabelText(/변경 사유/), '담당 제품군 변경')
-    await user.click(submit)
-
+    const duty = latestData.duties.find(({ name }) => name === '분기별 제품 점검')!
+    expect(duty).toMatchObject({ assignee_label: '제품 담당자', notes: '분기마다 갱신' })
+    expect(latestData.dutyAssignments.some((row) => row.duty_id === duty.id)).toBe(false)
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    const owners = latestData!.dutyAssignments.filter((row) => row.duty_id === duty.id).map((row) => row.user_id)
-    expect(owners).toContain(nextOwner.id)
-    expect(owners).not.toContain(currentOwner.id)
   })
 
-  it('removes every owner so the duty shows that it has no owner', async () => {
+  it('keeps an inactive legacy owner and label when editing notes, then warns before replacing them', async () => {
     const user = userEvent.setup()
     const data = createPreviewData()
-    const assignment = data.dutyAssignments[0]!
-    const duty = data.duties.find((item) => item.id === assignment.duty_id)!
-    const owners = data.dutyAssignments.filter((row) => row.duty_id === duty.id)
-    data.duties = data.duties.map((item) => item.id === duty.id ? { ...item, assignee_label: null } : item)
+    const owner = data.dutyAssignments[0]
+    const duty = data.duties.find(({ id }) => id === owner.duty_id)!
+    data.profiles.find(({ id }) => id === owner.user_id)!.is_active = false
+    duty.assignee_label = '기존 별도 표기'
     render(<Harness initialData={data} />)
+    const trigger = screen.getByRole('button', { name: duty.name + ' 비고 수정' })
+    await user.click(trigger)
+    let form = within(screen.getByRole('dialog'))
+    const notes = form.getByLabelText('비고')
+    await user.clear(notes)
+    await user.type(notes, '비고만 수정')
+    const submit = form.getByRole('button', { name: '저장하기' })
+    expect(submit).toBeDisabled()
+    await user.type(form.getByLabelText(/변경 사유/), '비고 정리')
+    await user.click(submit)
+    expect(latestData.duties.find(({ id }) => id === duty.id)).toMatchObject({ notes: '비고만 수정', assignee_label: '기존 별도 표기' })
+    expect(latestData.dutyAssignments.some(({ id }) => id === owner.id)).toBe(true)
+    expect(trigger).toHaveFocus()
 
-    await user.click(screen.getByRole('button', { name: `${duty.name} 담당자 변경` }))
-    const dialog = screen.getByRole('dialog', { name: `‘${duty.name}’ 담당자를 바꿀까요?` })
-    for (const owner of owners) {
-      const name = data.profiles.find((item) => item.id === owner.user_id)!.name
-      await user.click(within(dialog).getByRole('checkbox', { name: new RegExp(name) }))
-    }
-    expect(within(dialog).getByRole('status')).toHaveTextContent('담당자가 없는 업무가 돼요')
-    await user.type(within(dialog).getByLabelText(/변경 사유/), '업무 종료')
-    await user.click(within(dialog).getByRole('button', { name: '담당자 저장하기' }))
-
-    expect(latestData!.dutyAssignments.filter((row) => row.duty_id === duty.id)).toEqual([])
-    const row = screen.getByRole('button', { name: `${duty.name} 담당자 변경` }).closest('tr')!
-    expect(within(row).getByText('담당자 없음')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: duty.name + ' 담당자 수정' }))
+    form = within(screen.getByRole('dialog'))
+    await user.selectOptions(form.getByLabelText(/담당 방식/), 'product')
+    expect(form.getByRole('status')).toHaveTextContent('저장하면 담당에서 빠져요')
+    await user.type(form.getByLabelText(/변경 사유/), '분장 기준 변경')
+    await user.click(form.getByRole('button', { name: '저장하기' }))
+    expect(latestData.duties.find(({ id }) => id === duty.id)?.assignee_label).toBe('제품 담당자')
+    expect(latestData.dutyAssignments.some((row) => row.duty_id === duty.id)).toBe(false)
   })
 
-  it('checks the reassignment against the revision captured when the dialog opened', async () => {
+  it('saves a replacement and metadata together', async () => {
     const user = userEvent.setup()
-    mutationErrors.length = 0
     const data = createPreviewData()
-    const assignment = data.dutyAssignments[0]!
-    const duty = data.duties.find((item) => item.id === assignment.duty_id)!
-    const currentOwner = data.profiles.find((item) => item.id === assignment.user_id)!
-    const before = data.dutyAssignments.filter((row) => row.duty_id === duty.id).map((row) => row.user_id)
-    render(<FailSafeHarness initialData={data} />)
-
-    await user.click(screen.getByRole('button', { name: `${duty.name} 담당자 변경` }))
-    const dialog = screen.getByRole('dialog', { name: `‘${duty.name}’ 담당자를 바꿀까요?` })
-    // 창을 열어 둔 사이 다른 곳에서 같은 업무가 바뀌고 목록이 새로고침됐다.
-    bumpDuty(duty.id)
-    await user.click(within(dialog).getByRole('checkbox', { name: new RegExp(currentOwner.name) }))
-    await user.type(within(dialog).getByLabelText(/변경 사유/), '담당 제품군 변경')
-    await user.click(within(dialog).getByRole('button', { name: '담당자 저장하기' }))
-
-    expect(mutationErrors).toEqual([MASTER_STALE_MESSAGE])
-    expect(latestData!.dutyAssignments.filter((row) => row.duty_id === duty.id).map((row) => row.user_id)).toEqual(before)
-    // 연 시점의 버전으로는 다시 저장해도 같은 충돌이 나므로 창을 닫는다. 다시 열면 최신 버전으로 저장된다.
-    expect(screen.queryByRole('dialog', { name: `‘${duty.name}’ 담당자를 바꿀까요?` })).not.toBeInTheDocument()
-
-    mutationErrors.length = 0
-    await user.click(screen.getByRole('button', { name: `${duty.name} 담당자 변경` }))
-    const reopened = screen.getByRole('dialog', { name: `‘${duty.name}’ 담당자를 바꿀까요?` })
-    await user.click(within(reopened).getByRole('checkbox', { name: new RegExp(currentOwner.name) }))
-    await user.type(within(reopened).getByLabelText(/변경 사유/), '담당 제품군 변경')
-    await user.click(within(reopened).getByRole('button', { name: '담당자 저장하기' }))
-    expect(mutationErrors).toEqual([])
-    expect(latestData!.dutyAssignments.filter((row) => row.duty_id === duty.id).map((row) => row.user_id)).not.toEqual(before)
-  })
-
-  it('closes the inline duty edit on a stale-write conflict so reopening takes the fresh revision', async () => {
-    const user = userEvent.setup()
-    mutationErrors.length = 0
-    const data = createPreviewData()
-    const duty = data.duties[0]!
-    render(<FailSafeHarness initialData={data} />)
-
-    await user.click(screen.getByRole('button', { name: `${duty.name} 업무 수정` }))
-    bumpDuty(duty.id)
-    const nameInput = screen.getByRole('textbox', { name: `${duty.name} 업무 이름` })
-    await user.clear(nameInput)
-    await user.type(nameInput, '충돌 난 이름')
-    await user.click(screen.getByRole('button', { name: `${duty.name} 업무 저장` }))
-    const dialog = screen.getByRole('dialog', { name: '업무 정보를 바꿀까요?' })
-    await user.type(within(dialog).getByRole('textbox'), '이름 정리')
-    await user.click(within(dialog).getByRole('button', { name: '저장하기' }))
-
-    expect(mutationErrors).toEqual([MASTER_STALE_MESSAGE])
-    expect(screen.queryByRole('dialog', { name: '업무 정보를 바꿀까요?' })).not.toBeInTheDocument()
-    expect(screen.queryByDisplayValue('충돌 난 이름')).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: `${duty.name} 업무 수정` }))
-    const reopened = screen.getByRole('textbox', { name: `${duty.name} 업무 이름` })
-    await user.clear(reopened)
-    await user.type(reopened, '새로 고친 이름')
-    await user.click(screen.getByRole('button', { name: `${duty.name} 업무 저장` }))
-    const retryDialog = screen.getByRole('dialog', { name: '업무 정보를 바꿀까요?' })
-    await user.type(within(retryDialog).getByRole('textbox'), '이름 정리')
-    await user.click(within(retryDialog).getByRole('button', { name: '저장하기' }))
-
-    expect(mutationErrors).toEqual([MASTER_STALE_MESSAGE])
-    expect(latestData!.duties.find((item) => item.id === duty.id)!.name).toBe('새로 고친 이름')
-  })
-
-  it('closes the inline major category edit on a stale-write conflict', async () => {
-    const user = userEvent.setup()
-    mutationErrors.length = 0
-    const data = createPreviewData()
-    const category = data.dutyMajorCategories[0]!
-    render(<FailSafeHarness initialData={data} />)
-
-    await user.click(screen.getByRole('button', { name: `${category.name} 대분류 수정` }))
-    act(() => {
-      latestSetData!((current) => ({
-        ...current,
-        dutyMajorCategories: current.dutyMajorCategories.map((item) => (
-          item.id === category.id ? { ...item, updated_at: '2099-01-01T00:00:00.000Z' } : item
-        )),
-      }))
-    })
-    const nameInput = screen.getByRole('textbox', { name: `${category.name} 대분류 이름` })
-    await user.clear(nameInput)
-    await user.type(nameInput, '충돌 난 대분류')
-    await user.click(screen.getByRole('button', { name: `${category.name} 대분류 저장` }))
-    const dialog = screen.getByRole('dialog', { name: '대분류 이름을 바꿀까요?' })
-    await user.type(within(dialog).getByRole('textbox'), '이름 정리')
-    await user.click(within(dialog).getByRole('button', { name: '저장하기' }))
-
-    expect(mutationErrors).toEqual([MASTER_STALE_MESSAGE])
-    expect(screen.queryByRole('dialog', { name: '대분류 이름을 바꿀까요?' })).not.toBeInTheDocument()
-    expect(screen.queryByDisplayValue('충돌 난 대분류')).not.toBeInTheDocument()
-  })
-
-  it('offers the next step on an empty table', () => {
-    const data = createPreviewData()
-    data.dutyMajorCategories = []
-    data.duties = []
-    data.dutyAssignments = []
+    const owner = data.dutyAssignments[0]
+    const duty = data.duties.find(({ id }) => id === owner.duty_id)!
+    const next = data.profiles.find((profile) => profile.role === 'member' && profile.id !== owner.user_id)!
     render(<Harness initialData={data} />)
+    await user.click(screen.getByRole('button', { name: duty.name + ' 담당자 수정' }))
+    const form = within(screen.getByRole('dialog'))
+    await user.click(form.getByRole('checkbox', { name: owner.profiles!.name }))
+    await user.click(form.getByRole('checkbox', { name: next.name }))
+    await user.clear(form.getByLabelText('비고'))
+    await user.type(form.getByLabelText('비고'), '인수인계 확인')
+    await user.type(form.getByLabelText(/변경 사유/), '담당 변경')
+    await user.click(form.getByRole('button', { name: '저장하기' }))
+    expect(latestData.dutyAssignments.filter(({ duty_id }) => duty_id === duty.id).map(({ user_id }) => user_id)).toEqual([next.id])
+    expect(latestData.duties.find(({ id }) => id === duty.id)?.notes).toBe('인수인계 확인')
+  })
 
+  it('preserves the draft on a concurrent change and only reloads when requested', async () => {
+    const user = userEvent.setup()
+    const data = createPreviewData()
+    const duty = data.duties[0]
+    render(<Harness initialData={data} />)
+    await user.click(screen.getByRole('button', { name: duty.name + ' 비고 수정' }))
+    const form = within(screen.getByRole('dialog'))
+    await user.clear(form.getByLabelText('비고'))
+    await user.type(form.getByLabelText('비고'), '작성 중인 비고')
+    act(() => updateData((current) => ({
+      ...current,
+      duties: current.duties.map((item) => item.id === duty.id
+        ? { ...item, notes: '먼저 저장된 비고', updated_at: '2099-01-01T00:00:00.000Z' } : item),
+    })))
+    expect(form.getByRole('alert')).toHaveTextContent('다른 사람이 먼저 수정')
+    expect(form.getByLabelText('비고')).toHaveValue('작성 중인 비고')
+    expect(form.getByRole('button', { name: '저장하기' })).toBeDisabled()
+    await user.click(form.getByRole('button', { name: '최신 내용 불러오기' }))
+    await user.click(form.getByRole('button', { name: '불러오기' }))
+    expect(screen.getByLabelText('비고')).toHaveValue('먼저 저장된 비고')
+  })
+
+  it('offers category creation when the table is empty', () => {
+    const data = { ...createPreviewData(), dutyMajorCategories: [], duties: [], dutyAssignments: [] }
+    render(<Harness initialData={data} />)
     expect(screen.getByText('아직 대분류가 없어요')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: /대분류 등록/ }).length).toBeGreaterThan(1)
+    expect(screen.getByRole('button', { name: '대분류 등록' })).toBeEnabled()
+  })
+
+  it('rejects a category rename opened against an older version', async () => {
+    const user = userEvent.setup()
+    const data = createPreviewData()
+    const category = data.dutyMajorCategories[0]
+    render(<Harness initialData={data} />)
+    await user.click(screen.getByRole('button', { name: category.name + ' 대분류 관리' }))
+    await user.click(screen.getByRole('menuitem', { name: '대분류 이름 수정' }))
+    const form = within(screen.getByRole('dialog', { name: '대분류 이름 수정' }))
+    await user.clear(form.getByLabelText('대분류명'))
+    await user.type(form.getByLabelText('대분류명'), '늦게 입력한 이름')
+    await user.type(form.getByLabelText(/변경 사유/), '분류 정리')
+    act(() => updateData((current) => ({
+      ...current,
+      dutyMajorCategories: current.dutyMajorCategories.map((item) => item.id === category.id
+        ? { ...item, name: '먼저 저장한 이름', updated_at: '2099-01-01T00:00:00.000Z' } : item),
+    })))
+    await user.click(form.getByRole('button', { name: '저장하기' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(latestData.dutyMajorCategories.find(({ id }) => id === category.id)?.name).toBe('먼저 저장한 이름')
+  })
+
+  it('lets read-only leaders print the full or filtered report without a management column', async () => {
+    const user = userEvent.setup()
+    const data = createPreviewData()
+    data.duties[0].notes = '고유한 검색 비고'
+    render(<Harness initialData={data} readOnly />)
+    await user.type(screen.getByRole('searchbox', { name: '업무분장 검색' }), '고유한 검색')
+    expect(screen.getByRole('status')).toHaveTextContent('검색 결과 1건')
+    expect(screen.queryByRole('button', { name: '업무 등록' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '인쇄 미리보기' }))
+    const form = within(screen.getByRole('dialog', { name: '업무분장표 인쇄 미리보기' }))
+    const table = within(form.getByRole('table'))
+    expect(table.getAllByRole('row')).toHaveLength(data.duties.length + 1)
+    expect(table.getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['대분류', '업무명', '담당자', '비고'])
+    await user.selectOptions(form.getByLabelText('출력 범위'), 'filtered')
+    expect(table.getAllByRole('row')).toHaveLength(2)
+    expect(table.getByText('고유한 검색 비고')).toBeVisible()
   })
 })

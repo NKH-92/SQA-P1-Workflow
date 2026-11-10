@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabase'
 import type { DutyAdminRepository, RepositoryDeps } from '../repositories/types'
+import { UserFacingError } from '../../lib/errors'
 import {
   assertMasterVersion,
   deleteMasterIfCurrent,
@@ -12,6 +13,27 @@ export function createSupabaseDutyAdminRepository(ctx: RepositoryDeps): DutyAdmi
   const { data, setData } = ctx
 
   return {
+    async saveDutyAllocation(input) {
+      const result = await runMasterOccRpc<{ id: string; noop: boolean }>(
+        input.edit ? 'save_duty_with_assignments_if_current' : 'create_duty_with_assignments',
+        {
+          p_name: input.name,
+          p_major_category_id: input.majorCategoryId,
+          p_notes: input.notes,
+          p_assignee_label: input.assignment?.label ?? null,
+          p_member_ids: input.assignment?.memberIds ?? null,
+          p_correlation_id: makeMasterCorrelationId(),
+          ...(input.edit && {
+            p_duty_id: input.edit.id,
+            p_expected_updated_at: input.edit.expectedUpdatedAt,
+            p_reason: input.edit.reason,
+          }),
+        },
+      )
+      if (!result) throw new UserFacingError('업무 저장 결과를 확인하지 못했어요. 목록을 새로고침해 주세요.')
+      return result
+    },
+
     async addDutyMajorCategory(payload) {
       const { error } = await supabase!.from('duty_major_categories').insert(payload)
       if (error) throw error

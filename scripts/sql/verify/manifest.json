@@ -19,6 +19,7 @@
     "96_office_seats.sql",
     "97_section_read_marks.sql",
     "98_office_meetings.sql",
+    "99_duty_allocation_editor.sql",
     "99_member_presence.sql",
     "99_ops_preflight_hardening.sql",
     "99_weekly_menu.sql"
@@ -110,6 +111,7 @@
     "20260928090000",
     "20261002154002",
     "20261014025501",
-    "20261014031117"
+    "20261014031117",
+    "20261110014439"
   ]
 }

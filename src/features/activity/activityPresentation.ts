@@ -90,6 +90,8 @@ export const auditSourceLabels: Record<string, string> = {
   assign_product_and_transfer_change_tasks: '제품 담당자 변경과 업무 넘기기',
   replace_product_assignments_if_current: '제품 담당자 변경',
   replace_duty_assignments_if_current: '업무 담당자 변경',
+  create_duty_with_assignments: '업무 등록',
+  save_duty_with_assignments_if_current: '업무분장 수정',
   update_product_if_current: '제품 정보 수정',
   update_duty_if_current: '업무 정보 수정',
   update_duty_major_category_if_current: '업무 대분류 수정',

@@ -105,7 +105,7 @@ describe('tab navigation metadata', () => {
       { tab: 'team', section: '워크스페이스', sidebar: '파트원', palette: '파트원', header: '워크스페이스 / 파트원' },
       { tab: 'activity', section: '워크스페이스', sidebar: '활동 로그', palette: '활동 로그', header: '워크스페이스 / 활동 로그' },
       { tab: 'products', section: '마스터', sidebar: '제품', palette: '제품', header: '마스터 / 제품' },
-      { tab: 'duties', section: '마스터', sidebar: '업무 카테고리', palette: '업무 카테고리', header: '마스터 / 업무 카테고리' },
+      { tab: 'duties', section: '마스터', sidebar: '업무분장', palette: '업무분장', header: '마스터 / 업무분장' },
       { tab: 'invites', section: '마스터', sidebar: '계정 관리', palette: '계정 관리', header: '마스터 / 계정 관리' },
     ])
   })

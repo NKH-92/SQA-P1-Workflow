@@ -23,6 +23,7 @@ import type {
 import type { OfficeSeatInput } from '../validation/officeSeats'
 import type { MemberLeaveInput } from '../validation/memberPresence'
 import type { OfficeMeetingStartInput } from '../validation/officeMeeting'
+import type { DutyAllocationInput } from '../validation/dutyAllocation'
 import type { AppDataUpdater } from './appDataUpdater'
 import type { ActivityLogWriter } from './activityLogWriter'
 
@@ -124,6 +125,7 @@ export type ProductAdminRepository = {
 }
 
 export type DutyAdminRepository = {
+  saveDutyAllocation(input: DutyAllocationInput): Promise<{ id: string; noop: boolean }>
   addDutyMajorCategory(payload: { name: string; sort_order: number | null }): Promise<void>
   addDuty(payload: { major_category_id: string; name: string; sort_order: number | null }): Promise<void>
   saveDutyAssignments(input: {

@@ -63,7 +63,10 @@ const MAX_INITIAL_GZIP_BYTES = 151 * 1024
 // 2026-10 half/quarter vacations and period-aware meeting availability measure
 // 345,109 B across routes. Allow one additional KiB for the new dialog controls
 // and time-boundary behavior while retaining the per-chunk and initial gates.
-const MAX_TOTAL_GZIP_BYTES = 338 * 1024
+// 2026-11 duty allocation editor, filters, CSV and print preview measure
+// 348,090 B across routes. Allow 3 KiB for the lazy admin feature; the
+// initial navigation and per-chunk limits still apply.
+const MAX_TOTAL_GZIP_BYTES = 341 * 1024
 // 빠른 이동(Ctrl K)과 알림 패널은 열 때만 쓰므로 첫 화면에서 빼고 지연 로딩한다(한가할 때 미리 받음).
 const EXPECTED_ROUTE_DYNAMIC_IMPORTS = new Set([
   'src/components/CommandPalette.tsx',

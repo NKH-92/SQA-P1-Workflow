@@ -47,7 +47,7 @@ describe('OfficeHome', () => {
     const objects = within(screen.getByRole('group', { name: '사무실 바로가기' })).getAllByRole('button')
     const names = objects.map((button) => button.getAttribute('aria-label') ?? '')
     for (const expected of [/^명패 보드, .*파트원으로 이동$/, /^검토 통계 모니터, 검토 통계로 이동$/, /^출입 게이트, 계정 관리로 이동$/,
-      /^출입 기록부, 활동 로그로 이동$/, /^제품 샘플 보관장, .*제품으로 이동$/, /^업무 분장표, 업무 카테고리로 이동$/, /^회의실, 회의 열기$/]) {
+      /^출입 기록부, 활동 로그로 이동$/, /^제품 샘플 보관장, .*제품으로 이동$/, /^업무 분장표, 업무분장으로 이동$/, /^회의실, 회의 열기$/]) {
       expect(names.some((name) => expected.test(name)), String(expected)).toBe(true)
     }
   })
@@ -59,7 +59,7 @@ describe('OfficeHome', () => {
     fireEvent.click(objects.getByRole('button', { name: '검토 통계 모니터, 검토 통계로 이동' }))
     fireEvent.click(objects.getByRole('button', { name: '출입 게이트, 계정 관리로 이동' }))
     fireEvent.click(objects.getByRole('button', { name: '출입 기록부, 활동 로그로 이동' }))
-    fireEvent.click(objects.getByRole('button', { name: '업무 분장표, 업무 카테고리로 이동' }))
+    fireEvent.click(objects.getByRole('button', { name: '업무 분장표, 업무분장으로 이동' }))
     expect(setActiveTab.mock.calls).toEqual([['review-stats'], ['invites'], ['activity'], ['duties']])
   })
 

@@ -3,6 +3,17 @@ import { quotedWithJosa } from '../../lib/korean'
 import type { RepositoryContext } from '../repositoryContext'
 import type { AuditedDeleteInput } from '../contracts'
 import { logAdminActivity } from './adminActivity'
+import { normalizeDutyAllocation, type DutyAllocationInput } from '../validation/dutyAllocation'
+
+export async function saveDutyAllocation(ctx: RepositoryContext, input: DutyAllocationInput) {
+  const payload = normalizeDutyAllocation(ctx.data, input)
+  const result = await ctx.repositories.duties.saveDutyAllocation(payload)
+  if (!result.noop) {
+    await logAdminActivity(ctx, 'duty', payload.edit ? 'updated' : 'created',
+      payload.edit ? '업무분장을 수정했어요.' : '업무를 등록했어요.', result.id, { name: payload.name })
+  }
+  return result
+}
 
 export async function addDutyMajorCategory(
   ctx: RepositoryContext,

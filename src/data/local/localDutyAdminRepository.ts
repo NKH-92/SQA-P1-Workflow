@@ -3,7 +3,7 @@ import { assertRecordExists, UserFacingError } from '../../lib/errors'
 import { makeId } from '../../lib/format'
 import type { DutyMajorCategory } from '../../types'
 import type { DutyAdminRepository, RepositoryDeps } from '../repositories/types'
-import { normalizeMasterReason } from '../validation/masterOcc'
+import { MASTER_STALE_MESSAGE, normalizeMasterReason } from '../validation/masterOcc'
 import {
   appendDutyAssignment,
   removeDuty,
@@ -32,6 +32,49 @@ export function createLocalDutyAdminRepository(deps: RepositoryDeps): DutyAdminR
   const { profile, data, setData } = deps
 
   return {
+    async saveDutyAllocation(input) {
+      assertLocalLeader(profile)
+      const current = data.duties.find((item) => item.id === input.edit?.id)
+      if (input.edit) {
+        if (!current) throw new UserFacingError(MASTER_STALE_MESSAGE)
+        assertLocalMasterCurrent(current, input.edit.expectedUpdatedAt)
+      }
+      const id = current?.id ?? makeId('duty')
+      const existingIds = data.dutyAssignments.filter((row) => row.duty_id === id).map((row) => row.user_id).sort()
+      const nextIds = input.assignment?.memberIds ?? existingIds
+      const label = input.assignment ? input.assignment.label : current?.assignee_label ?? null
+      const assignmentsChanged = nextIds.length !== existingIds.length || nextIds.some((member, index) => member !== existingIds[index])
+      assertLocalAssignmentMembers(data, nextIds.filter((member) => !existingIds.includes(member)))
+      if (current && current.name === input.name && current.major_category_id === input.majorCategoryId
+        && (current.notes ?? null) === input.notes && (current.assignee_label ?? null) === label && !assignmentsChanged) {
+        return { id, noop: true }
+      }
+
+      const now = new Date(Math.max(Date.now(), (Date.parse(current?.updated_at ?? '') || 0) + 1)).toISOString()
+      const category = data.dutyMajorCategories.find((item) => item.id === input.majorCategoryId)
+      const duty = {
+        ...current,
+        id,
+        name: input.name,
+        major_category_id: input.majorCategoryId,
+        assignee_label: label,
+        notes: input.notes,
+        created_at: current?.created_at ?? now,
+        updated_at: now,
+        duty_major_categories: category ? { name: category.name, sort_order: category.sort_order ?? null } : null,
+      }
+      setData((state) => {
+        const updated = {
+          ...state,
+          duties: current ? state.duties.map((item) => item.id === id ? duty : item) : [duty, ...state.duties],
+          dutyAssignments: state.dutyAssignments.map((row) =>
+            row.duty_id === id ? { ...row, duties: dutyRelation(duty) } : row),
+        }
+        return assignmentsChanged ? replaceDutyAssignments(updated, id, nextIds, duty, state.profiles, now) : updated
+      })
+      return { id, noop: false }
+    },
+
     async addDutyMajorCategory(payload) {
       assertLocalLeader(profile)
       const now = new Date().toISOString()

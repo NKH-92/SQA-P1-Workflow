@@ -366,7 +366,7 @@ describe('Shell navigation metadata parity', () => {
       },
       {
         label: '마스터',
-        items: ['제품', '업무 카테고리', '계정 관리'],
+        items: ['제품', '업무분장', '계정 관리'],
       },
     ])
   })

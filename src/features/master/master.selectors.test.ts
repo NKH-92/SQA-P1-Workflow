@@ -12,7 +12,7 @@ describe('master.selectors', () => {
   const data = createPreviewData()
 
   it('builds duty table groups from major categories', () => {
-    const groups = selectDutyTableGroups(data, '')
+    const groups = selectDutyTableGroups(data)
     expect(groups.length).toBe(data.dutyMajorCategories.length)
     expect(groups[0].duties.length).toBeGreaterThan(0)
   })

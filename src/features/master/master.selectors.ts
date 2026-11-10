@@ -43,39 +43,11 @@ function selectFilteredProducts(data: MasterFeatureData, query: string) {
   )
 }
 
-function selectFilteredDuties(data: MasterFeatureData, query: string) {
-  return data.duties.filter((item) =>
-    selectMasterSearchMatches(
-      query,
-      item.name,
-      item.duty_major_categories?.name,
-      data.dutyMajorCategories.find((category) => category.id === item.major_category_id)?.name,
-    ),
-  )
-}
-
-export function selectDutyTableGroups(data: MasterFeatureData, query: string) {
-  const filteredDuties = selectFilteredDuties(data, query)
-  const filteredMajorCategories = data.dutyMajorCategories
-    .filter((category) => {
-      if (!query.trim()) return true
-      if (selectMasterSearchMatches(query, category.name)) return true
-      return data.duties.some(
-        (duty) => duty.major_category_id === category.id && filteredDuties.some((item) => item.id === duty.id),
-      )
-    })
-    .sort(compareMajorCategories)
-
-  return filteredMajorCategories.map((category) => ({
+export function selectDutyTableGroups(data: MasterFeatureData) {
+  return [...data.dutyMajorCategories].sort(compareMajorCategories).map((category) => ({
     category,
     duties: data.duties
       .filter((duty) => duty.major_category_id === category.id)
-      .filter(
-        (duty) =>
-          !query.trim() ||
-          selectMasterSearchMatches(query, category.name) ||
-          filteredDuties.some((item) => item.id === duty.id),
-      )
       .sort(compareDuties),
   }))
 }
@@ -118,9 +90,6 @@ export function selectProductGroups(
     consignedProducts: filteredProducts.filter((product) => product.category === '위탁').sort(compareMasterProducts),
     unassignedProducts: data.products.filter(
       (product) => productAssignmentsOf(data, product.id, assignmentsByProduct).length === 0,
-    ),
-    unassignedDuties: data.duties.filter(
-      (duty) => !duty.assignee_label && !data.dutyAssignments.some((assignment) => assignment.duty_id === duty.id),
     ),
   }
 }

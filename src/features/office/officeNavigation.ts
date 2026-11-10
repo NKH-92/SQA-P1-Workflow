@@ -32,7 +32,7 @@ export const HOTSPOT_LABELS: Record<SceneHotspotId, { name: string; destination:
   gate: { name: '출입 게이트', destination: '계정 관리' },
   logbook: { name: '출입 기록부', destination: '활동 로그' },
   samples: { name: '제품 샘플 보관장', destination: '제품' },
-  duties: { name: '업무 분장표', destination: '업무 카테고리' },
+  duties: { name: '업무 분장표', destination: '업무분장' },
   meeting: { name: '회의실', destination: '회의' },
 }
 

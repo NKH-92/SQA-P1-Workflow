@@ -66,7 +66,7 @@ export const TAB_NAVIGATION_METADATA: Record<
     leader: { order: 8, section: '마스터', sidebarLabel: '제품', paletteLabel: '제품', headerLabel: '마스터 / 제품' },
   },
   duties: {
-    leader: { order: 9, section: '마스터', sidebarLabel: '업무 카테고리', paletteLabel: '업무 카테고리', headerLabel: '마스터 / 업무 카테고리' },
+    leader: { order: 9, section: '마스터', sidebarLabel: '업무분장', paletteLabel: '업무분장', headerLabel: '마스터 / 업무분장' },
   },
   invites: {
     leader: { order: 10, section: '마스터', sidebarLabel: '계정 관리', paletteLabel: '계정 관리', headerLabel: '마스터 / 계정 관리' },

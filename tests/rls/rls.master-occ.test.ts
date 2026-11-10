@@ -44,6 +44,72 @@ describeRls(`RLS master OCC and audit reasons (${RLS_SKIP_NOTE})`, () => {
     expect(error).toBeNull()
   }
 
+  it('writes duty metadata and members atomically with leader-only access and a guarded revision', async () => {
+    const client = leaderClient()
+    await signInLeader(client)
+    const member = leaderClient()
+    await signInMemberA(member)
+    const memberId = (await member.auth.getUser()).data.user!.id
+    const leaderId = (await client.auth.getUser()).data.user!.id
+    const category = await client.from('duties').select('major_category_id').eq('id', requiredEnv('RLS_TEST_DUTY_ID')).single()
+    expect(category.error).toBeNull()
+    const fields = {
+      p_name: '업무분장 통합 저장 ' + crypto.randomUUID(),
+      p_major_category_id: category.data!.major_category_id,
+      p_notes: '등록 비고',
+      p_assignee_label: null,
+      p_member_ids: [memberId],
+      p_correlation_id: crypto.randomUUID(),
+    }
+    expect((await leaderClient().rpc('create_duty_with_assignments', fields)).error).not.toBeNull()
+    expect((await member.rpc('create_duty_with_assignments', fields)).error?.code).toBe('42501')
+    const created = await client.rpc('create_duty_with_assignments', fields)
+    expect(created.error).toBeNull()
+    const dutyId = created.data.id
+    try {
+      const read = () => client.from('duties').select('notes, assignee_label, updated_at, duty_assignments(id, user_id)').eq('id', dutyId).single()
+      const before = await read()
+      expect(before.error).toBeNull()
+      expect(before.data?.duty_assignments).toEqual([{ id: expect.any(String), user_id: memberId }])
+      const assignmentId = before.data!.duty_assignments[0].id
+      const saveFields = {
+        ...fields,
+        p_duty_id: dutyId,
+        p_expected_updated_at: before.data!.updated_at,
+        p_reason: '담당 방식과 비고 변경',
+        p_correlation_id: crypto.randomUUID(),
+        p_notes: '변경 비고',
+      }
+      const invalid = await client.rpc('save_duty_with_assignments_if_current', { ...saveFields, p_member_ids: [leaderId] })
+      expect(invalid.error).not.toBeNull()
+      expect((await read()).data).toEqual(before.data)
+      expect((await member.rpc('save_duty_with_assignments_if_current', saveFields)).error?.code).toBe('42501')
+
+      const replacement = { ...saveFields, p_assignee_label: '제품 담당자', p_member_ids: [] }
+      const saved = await client.rpc('save_duty_with_assignments_if_current', replacement)
+      expect(saved.error).toBeNull()
+      expect(saved.data).toEqual({ id: dutyId, noop: false })
+      const after = await read()
+      expect(after.data).toMatchObject({ notes: '변경 비고', assignee_label: '제품 담당자', duty_assignments: [] })
+      const stale = await client.rpc('save_duty_with_assignments_if_current', replacement)
+      expect(stale.error?.details).toBe('SQA_MASTER_STALE')
+      const noop = await client.rpc('save_duty_with_assignments_if_current', { ...replacement, p_expected_updated_at: after.data!.updated_at })
+      expect(noop.error).toBeNull()
+      expect(noop.data).toEqual({ id: dutyId, noop: true })
+      const audit = await client.rpc('list_audit_events_v2', { p_limit: 50, p_before_id: null })
+      expect(audit.error).toBeNull()
+      const changes = (audit.data ?? []).filter((event: { entity_id: string; source: string }) =>
+        event.source === 'save_duty_with_assignments_if_current' && [dutyId, assignmentId].includes(event.entity_id))
+      expect(changes).toHaveLength(2)
+      expect(changes).toEqual(expect.arrayContaining([
+        expect.objectContaining({ entity_id: dutyId, action: 'updated', reason: saveFields.p_reason }),
+        expect.objectContaining({ entity_id: assignmentId, action: 'deleted', reason: saveFields.p_reason }),
+      ]))
+    } finally {
+      await client.from('duties').delete().eq('id', dutyId)
+    }
+  })
+
   it('rejects a stale product update after another leader already advanced the revision (two-actor race)', async () => {
     const productId = requiredEnv('RLS_TEST_PRODUCT_ID')
     const client = leaderClient()

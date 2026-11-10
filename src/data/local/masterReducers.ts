@@ -155,6 +155,7 @@ export function replaceDutyAssignments(
     duty_major_categories?: DutyMajorCategory | Pick<DutyMajorCategory, 'name' | 'sort_order'> | null
   } | null,
   memberOptions: Array<{ id: string; name: string; email: string }>,
+  updatedAt = new Date().toISOString(),
 ): AppData {
   const desiredIds = [...new Set(nextMemberIds)]
   const currentIds = data.dutyAssignments
@@ -170,7 +171,7 @@ export function replaceDutyAssignments(
     // Always bump the parent revision, mirroring
     // replace_duty_assignments_if_current.
     duties: data.duties.map((item) =>
-      item.id === dutyId ? { ...item, updated_at: new Date().toISOString() } : item,
+      item.id === dutyId ? { ...item, updated_at: updatedAt } : item,
     ),
     dutyAssignments: [
       ...data.dutyAssignments.filter((assignment) => !toRemove.some((item) => item.id === assignment.id)),

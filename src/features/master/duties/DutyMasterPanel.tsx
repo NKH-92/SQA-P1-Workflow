@@ -1,412 +1,235 @@
-import { useEffect, useState } from 'react'
-import { OfficePlace } from '../../office/components/OfficePlace'
-import { ClipboardList, Download, Plus, Search, Users } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
+import { ClipboardList, Download, Plus, Printer, Search } from 'lucide-react'
+import { FormGrid, Modal, OverflowMenu } from '../../../components/ui'
 import type { PendingAdminDelete } from '../../../app/types'
 import type { AuditedDeleteInput } from '../../../data/contracts'
-import { ReasonPromptModal } from '../../../components/ui'
+import { canManageTeamData } from '../../../domain/permissions'
 import { useViewState } from '../../../hooks/useViewState'
-import { downloadCsv } from '../../../lib/csv'
-import { roleLabels } from '../../../lib/format'
-import { quoted, quotedWithJosa } from '../../../lib/korean'
-import { canManageTeamData, canReceiveAssignment } from '../../../domain/permissions'
-import { selectDutyTableGroups, selectProductGroups } from '../master.selectors'
-import {
-  validateDutyCreate,
-  validateDutyUpdate,
-  validateMajorCategoryCreate,
-  validateMajorCategoryUpdate,
-} from '../master.validators'
+import { quotedWithJosa } from '../../../lib/korean'
+import type { DutyMajorCategory } from '../../../types'
+import { OfficePlace } from '../../office/components/OfficePlace'
+import { validateMajorCategoryCreate, validateMajorCategoryUpdate } from '../master.validators'
+import { DeleteConfirmAction } from '../shared/DeleteConfirmAction'
+import { masterDeleteWarnings } from '../shared/deleteCopy'
 import { isMasterStaleError } from '../shared/masterStale'
 import type { MasterSubPanelProps } from '../shared/types'
-import { DutyAssignModal } from './DutyAssignModal'
-import { DutyReassignModal, type DutyReassignResult } from './DutyReassignModal'
-import { DutyRegisterModal } from './DutyRegisterModal'
-import { DutyTable, type DutyEdit, type DutyMajorCategoryEdit } from './DutyTable'
-import { MajorCategoryRegisterModal } from './MajorCategoryRegisterModal'
+import { DutyEditor, type DutyEditorTarget } from './DutyEditor'
+import { DutyReportDialog, type DutyReportTarget } from './DutyReportDialog'
+import { DutyTable } from './DutyTable'
+import { dutyQuickFilters, dutyReportRows, filterDutyGroups, matchesDutyQuickFilter, selectDutyGroups, type DutyQuickFilter } from './dutyRows'
 import { useDutyAdminController } from './useDutyAdminController'
+
+type CategoryDraft = { category: DutyMajorCategory | null; name: string; reason: string }
 
 export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPanelProps) {
   const canManage = canManageTeamData(profile)
   const controller = useDutyAdminController(profile, data, setData)
-  const [dutyForm, setDutyForm] = useState({ major_category_id: '', name: '' })
-  const [majorCategoryForm, setMajorCategoryForm] = useState({ name: '' })
-  const [dutyAssignment, setDutyAssignment] = useState({ user_id: '', duty_id: '' })
-  const [adminSearch, setAdminSearch] = useViewState<string>('duties.leader.query', '', (value): value is string => typeof value === 'string')
+  const [query, setQuery] = useViewState<string>('duties.leader.query', '', (value): value is string => typeof value === 'string')
+  const [categoryId, setCategoryId] = useState('')
+  const [ownerId, setOwnerId] = useState('')
+  const [quick, setQuick] = useState<DutyQuickFilter>('all')
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
+  const [editor, setEditor] = useState<DutyEditorTarget | null>(null)
+  const [categoryDraft, setCategoryDraft] = useState<CategoryDraft | null>(null)
+  const [report, setReport] = useState<DutyReportTarget | null>(null)
   const [pendingDelete, setPendingDelete] = useState<PendingAdminDelete | null>(null)
-  const [dutyEdits, setDutyEdits] = useState<Record<string, DutyEdit>>({})
-  const [majorCategoryEdits, setMajorCategoryEdits] = useState<Record<string, DutyMajorCategoryEdit>>({})
-  const [dutyRegisterOpen, setDutyRegisterOpen] = useState(false)
-  const [dutyAssignOpen, setDutyAssignOpen] = useState(false)
-  const [majorCategoryRegisterOpen, setMajorCategoryRegisterOpen] = useState(false)
-  // 담당자 변경 창을 연 시점의 업무 버전. 저장할 때 이 값으로 동시 변경을 막는다(제품 담당자 창과 같은 방식).
-  const [reassignTarget, setReassignTarget] = useState<{ dutyId: string; expectedUpdatedAt: string | null } | null>(null)
-  const [saving, setSaving] = useState(false)
-  // 이름·대분류 수정은 저장 전에 변경 사유(감사 이력)를 받는다.
-  const [dutyReasonPrompt, setDutyReasonPrompt] = useState<{ kind: 'duty' | 'category'; id: string } | null>(null)
-  const [dutyReason, setDutyReason] = useState('')
+  const [savingCategory, setSavingCategory] = useState(false)
+  const returnFocusRef = useRef<HTMLElement | null>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
 
-  const memberOptions = data.profiles.filter(canReceiveAssignment)
-  const query = adminSearch.trim()
-  const { unassignedDuties } = selectProductGroups(data, query)
-  const dutyTableGroups = selectDutyTableGroups(data, query)
-  const reassignDuty = reassignTarget ? data.duties.find((duty) => duty.id === reassignTarget.dutyId) ?? null : null
+  const allGroups = useMemo(() => selectDutyGroups(data), [data])
+  const allRows = allGroups.flatMap(({ rows }) => rows)
+  const allOwners = [...new Map(allRows.flatMap(({ owners }) => owners.map((owner) => [owner.id, owner] as const))).values()]
+    .sort((a, b) => a.name.localeCompare(b.name, 'ko-KR'))
+  const visibleGroups = filterDutyGroups(allGroups, { query, categoryId, ownerId, quick })
+  const visibleCount = visibleGroups.reduce((sum, group) => sum + group.rows.length, 0)
+  const filtered = Boolean(query.trim() || categoryId || ownerId || quick !== 'all')
+  const latestRow = editor?.row ? allRows.find(({ duty }) => duty.id === editor.row?.duty.id) : undefined
+  const deleteItem = pendingDelete?.table === 'duties'
+    ? allRows.find(({ duty }) => duty.id === pendingDelete.id)?.duty
+    : data.dutyMajorCategories.find(({ id }) => id === pendingDelete?.id)
 
-  useEffect(() => {
-    setPendingDelete(null)
-  }, [adminSearch])
-
-  const run = async (operation: () => Promise<boolean>) => {
-    setSaving(true)
+  const rememberFocus = () => {
+    const active = document.activeElement
+    returnFocusRef.current = active?.closest('.overflow-menu')?.querySelector('button') ?? (active instanceof HTMLElement ? active : null)
+  }
+  const reset = () => {
+    setQuery('')
+    setCategoryId('')
+    setOwnerId('')
+    setQuick('all')
+    setCollapsed(new Set())
+  }
+  const openEditor = (target: DutyEditorTarget) => {
+    rememberFocus()
+    setEditor(target)
+  }
+  const closeEditor = () => {
+    const trigger = returnFocusRef.current
+    setEditor(null)
+    requestAnimationFrame(() => {
+      if (!trigger?.isConnected) searchRef.current?.focus()
+    })
+  }
+  const addDuty = (id: string) => openEditor({ row: null, categoryId: id, focus: 'name' })
+  const editCategory = (category: DutyMajorCategory | null) => {
+    rememberFocus()
+    setCategoryDraft({ category, name: category?.name ?? '', reason: '' })
+  }
+  const openReport = (kind: DutyReportTarget['kind']) => {
+    rememberFocus()
+    setReport({ kind, all: dutyReportRows(allGroups), filtered: dutyReportRows(visibleGroups) })
+  }
+  const requestDelete = (table: 'duties' | 'duty_major_categories', item: { id: string; updated_at?: string }) => {
+    rememberFocus()
+    setPendingDelete({ table, id: item.id, expectedUpdatedAt: item.updated_at ?? null })
+  }
+  const deleteSelected = async (input: AuditedDeleteInput) => {
+    if (!pendingDelete || !deleteItem) return
+    const ok = await mutate(async () => {
+      if (pendingDelete.table === 'duties') await controller.remove(deleteItem.id, input)
+      else await controller.removeCategory(deleteItem.id, input)
+    }, quotedWithJosa(deleteItem.name, '을/를') + ' 삭제했어요.')
+    if (ok) {
+      if (categoryId === deleteItem.id) setCategoryId('')
+      setPendingDelete(null)
+    }
+  }
+  const saveCategory = async () => {
+    if (!categoryDraft || savingCategory) return
+    setSavingCategory(true)
+    const { category, reason } = categoryDraft
+    let savedName = ''
+    let noop = false
     try {
-      return await operation()
+      const ok = await mutate(async () => {
+        if (category) {
+          savedName = validateMajorCategoryUpdate(data, category.id, categoryDraft.name)
+          try {
+            const result = await controller.updateCategory(category.id, {
+              name: savedName,
+              sort_order: category.sort_order ?? null,
+              expectedUpdatedAt: category.updated_at ?? null,
+              reason,
+            })
+            noop = result.noop
+          } catch (error) {
+            if (isMasterStaleError(error)) setCategoryDraft(null)
+            throw error
+          }
+        } else {
+          savedName = validateMajorCategoryCreate(data, categoryDraft.name)
+          await controller.addCategory({ name: savedName })
+        }
+      }, () => noop ? '바뀐 내용이 없어요.' : quotedWithJosa(savedName, '을/를') + (category ? ' 수정했어요.' : ' 대분류로 등록했어요.'))
+      if (ok) setCategoryDraft(null)
     } finally {
-      setSaving(false)
+      setSavingCategory(false)
     }
   }
 
-  const exportAdminCsv = () => {
-    downloadCsv('master-data.csv', [
-      ...data.allowedUsers.map((item) => ({
-        type: 'invite',
-        name: item.name,
-        email: item.email,
-        role: roleLabels[item.role],
-      })),
-      ...data.productAssignments.map((assignment) => ({
-        type: 'product',
-        member: assignment.profiles?.name ?? assignment.user_id,
-        email: assignment.profiles?.email ?? '',
-        target: assignment.products?.name ?? assignment.product_id,
-      })),
-      ...data.dutyAssignments.map((assignment) => ({
-        type: 'duty',
-        member: assignment.profiles?.name ?? assignment.user_id,
-        email: assignment.profiles?.email ?? '',
-        target: assignment.duties?.name ?? assignment.duty_id,
-      })),
-    ])
-  }
-
-  const openDutyRegister = (majorCategoryId?: string) => {
-    setDutyForm((current) => ({
-      ...current,
-      major_category_id: majorCategoryId || current.major_category_id || data.dutyMajorCategories[0]?.id || '',
-    }))
-    setDutyRegisterOpen(true)
-  }
-
-  const addMajorCategory = async () => {
-    let createdName = ''
-    const ok = await run(() => mutate(async () => {
-      const name = validateMajorCategoryCreate(data, majorCategoryForm.name)
-      await controller.addCategory({ name })
-      createdName = name
-      setMajorCategoryForm({ name: '' })
-    }, () => `${quotedWithJosa(createdName, '을/를')} 대분류로 등록했어요.`))
-    if (ok) setMajorCategoryRegisterOpen(false)
-  }
-
-  const addDuty = async () => {
-    let createdName = ''
-    const ok = await run(() => mutate(async () => {
-      const payload = validateDutyCreate(data, {
-        majorCategoryId: dutyForm.major_category_id,
-        name: dutyForm.name,
-      })
-      await controller.add({
-        majorCategoryId: payload.majorCategoryId,
-        name: payload.name,
-      })
-      createdName = payload.name
-      setDutyForm({ major_category_id: dutyForm.major_category_id, name: '' })
-    }, () => `${quotedWithJosa(createdName, '을/를')} 업무로 등록했어요.`))
-    if (ok) setDutyRegisterOpen(false)
-  }
-
-  const assignDuty = async () => {
-    // The server decides changed vs. no-op; resolve the toast text after that
-    // result is known, not when mutate() is called.
-    let noop = false
-    const memberName = data.profiles.find((item) => item.id === dutyAssignment.user_id)?.name ?? '파트원'
-    const dutyName = data.duties.find((item) => item.id === dutyAssignment.duty_id)?.name ?? '업무'
-    const ok = await run(() => mutate(async () => {
-      if (!dutyAssignment.user_id) return
-      const result = await controller.assign({
-        userId: dutyAssignment.user_id,
-        dutyId: dutyAssignment.duty_id,
-      })
-      noop = result.noop
-      setDutyAssignment({ user_id: dutyAssignment.user_id, duty_id: '' })
-    }, () => noop ? `${memberName}님은 이미 이 업무를 맡고 있어요.` : `${memberName}님에게 ${quotedWithJosa(dutyName, '을/를')} 배정했어요.`))
-    if (ok) setDutyAssignOpen(false)
-  }
-
-  /** P0-3: 업무 담당자를 빼거나 다른 사람에게 옮긴다. 사유와 함께 담당자 목록을 통째로 저장한다. */
-  const openDutyReassign = (dutyId: string) => {
-    const duty = data.duties.find((item) => item.id === dutyId)
-    setReassignTarget({ dutyId, expectedUpdatedAt: duty?.updated_at ?? null })
-  }
-
-  const saveDutyReassignment = async (result: DutyReassignResult) => {
-    if (!reassignDuty || !reassignTarget) return
-    const duty = reassignDuty
-    const { expectedUpdatedAt } = reassignTarget
-    let noop = false
-    const ok = await run(() => mutate(async () => {
-      let saved: Awaited<ReturnType<typeof controller.saveAssignments>>
-      try {
-        saved = await controller.saveAssignments({
-          dutyId: duty.id,
-          nextMemberIds: result.nextMemberIds,
-          reason: result.reason,
-          duty,
-          memberOptions: memberOptions.map((member) => ({ id: member.id, name: member.name, email: member.email })),
-          expectedUpdatedAt,
-        })
-      } catch (error) {
-        // 창을 연 시점의 버전으로는 다시 저장해도 같은 충돌이 나므로 창을 닫아, 다시 열 때 최신 상태를 받게 한다.
-        if (isMasterStaleError(error)) setReassignTarget(null)
-        throw error
-      }
-      noop = saved.noop
-    }, () => noop
-      ? '바뀐 내용이 없어요.'
-      : result.nextMemberIds.length === 0
-        ? `${quoted(duty.name)} 업무의 담당자를 모두 뺐어요.`
-        : `${quoted(duty.name)} 업무의 담당자를 바꿨어요.`))
-    if (ok) setReassignTarget(null)
-  }
-
-  const closeDutyEdit = (dutyId: string) =>
-    setDutyEdits((current) => {
-      const next = { ...current }
-      delete next[dutyId]
-      return next
-    })
-
-  const closeMajorCategoryEdit = (majorCategoryId: string) =>
-    setMajorCategoryEdits((current) => {
-      const next = { ...current }
-      delete next[majorCategoryId]
-      return next
-    })
-
-  const closeDutyReasonPrompt = () => {
-    setDutyReasonPrompt(null)
-    setDutyReason('')
-  }
-
-  const saveDutyEdit = (dutyId: string, reason: string) => {
-    let noop = false
-    let savedName = data.duties.find((item) => item.id === dutyId)?.name ?? '업무'
-    return mutate(async () => {
-      const edit = dutyEdits[dutyId]
-      if (!edit?.name.trim() || !edit.major_category_id) return
-      const duty = data.duties.find((item) => item.id === dutyId)
-      if (!duty) return
-      const payload = validateDutyUpdate(data, dutyId, {
-        majorCategoryId: edit.major_category_id,
-        name: edit.name,
-      })
-      savedName = payload.name
-      let result: Awaited<ReturnType<typeof controller.update>>
-      try {
-        result = await controller.update(dutyId, {
-          name: payload.name,
-          major_category_id: payload.majorCategoryId,
-          sort_order: duty.sort_order ?? null,
-          assignee_label: duty.assignee_label ?? null,
-          notes: duty.notes ?? null,
-          expectedUpdatedAt: edit.expectedUpdatedAt,
-          reason,
-        })
-      } catch (error) {
-        // 수정을 연 시점의 버전으로는 다시 저장해도 같은 충돌이 난다. 편집을 닫아 다시 열 때 최신 버전을 받게 한다.
-        if (isMasterStaleError(error)) {
-          closeDutyEdit(dutyId)
-          closeDutyReasonPrompt()
-        }
-        throw error
-      }
-      noop = result.noop
-      closeDutyEdit(dutyId)
-    }, () => noop ? '바뀐 내용이 없어요.' : `${quoted(savedName)} 업무를 수정했어요.`)
-  }
-
-  const saveMajorCategoryEdit = (majorCategoryId: string, reason: string) => {
-    let noop = false
-    let savedName = data.dutyMajorCategories.find((item) => item.id === majorCategoryId)?.name ?? '대분류'
-    return mutate(async () => {
-      const edit = majorCategoryEdits[majorCategoryId]
-      if (!edit?.name.trim()) return
-      const category = data.dutyMajorCategories.find((item) => item.id === majorCategoryId)
-      if (!category) return
-      const name = validateMajorCategoryUpdate(data, majorCategoryId, edit.name)
-      savedName = name
-      let result: Awaited<ReturnType<typeof controller.updateCategory>>
-      try {
-        result = await controller.updateCategory(majorCategoryId, {
-          name,
-          sort_order: category.sort_order ?? null,
-          expectedUpdatedAt: edit.expectedUpdatedAt,
-          reason,
-        })
-      } catch (error) {
-        if (isMasterStaleError(error)) {
-          closeMajorCategoryEdit(majorCategoryId)
-          closeDutyReasonPrompt()
-        }
-        throw error
-      }
-      noop = result.noop
-      closeMajorCategoryEdit(majorCategoryId)
-    }, () => noop ? '바뀐 내용이 없어요.' : `${quoted(savedName)} 대분류를 수정했어요.`)
-  }
-
-  const confirmDutyReasonPrompt = async () => {
-    if (!dutyReasonPrompt) return
-    const ok = await run(() => dutyReasonPrompt.kind === 'duty'
-      ? saveDutyEdit(dutyReasonPrompt.id, dutyReason)
-      : saveMajorCategoryEdit(dutyReasonPrompt.id, dutyReason))
-    if (ok) closeDutyReasonPrompt()
-  }
-
-  const deleteDuty = (dutyId: string, input: AuditedDeleteInput) => {
-    const name = data.duties.find((item) => item.id === dutyId)?.name ?? '업무'
-    return mutate(async () => {
-      await controller.remove(dutyId, input)
-      setPendingDelete(null)
-    }, `${quotedWithJosa(name, '을/를')} 삭제했어요.`)
-  }
-
-  const deleteMajorCategory = (majorCategoryId: string, input: AuditedDeleteInput) => {
-    const name = data.dutyMajorCategories.find((item) => item.id === majorCategoryId)?.name ?? '대분류'
-    return mutate(async () => {
-      await controller.removeCategory(majorCategoryId, input)
-      setPendingDelete(null)
-    }, `${quotedWithJosa(name, '을/를')} 삭제했어요.`)
-  }
-
   return (
-    <div className="stack">
+    <div className="stack duty-master">
       <div className="page-intro master-page-heading">
         <OfficePlace people={[{ profileId: profile.id, name: profile.name }]} place="duties" />
         <div>
-          <h1>업무 카테고리</h1>
-          <p>
-            대분류 {data.dutyMajorCategories.length}개 · 업무 {data.duties.length}개 · 담당자 없음 {unassignedDuties.length}개
-          </p>
+          <h1>파트 업무분장</h1>
+          <p>대분류 {allGroups.length}개 · 전체 업무 {allRows.length}건</p>
         </div>
-        {canManage && (
-          <button
-            className="primary"
-            disabled={data.dutyMajorCategories.length === 0}
-            onClick={() => openDutyRegister()}
-            title={data.dutyMajorCategories.length === 0 ? '대분류를 먼저 등록하면 업무를 추가할 수 있어요.' : undefined}
-            type="button"
-          >
-            <Plus size={16} />
-            업무 등록
+        <section className="duty-header-actions" aria-label="업무분장 작업">
+          {canManage && <button className="primary" type="button" disabled={!allGroups.length}
+            title={!allGroups.length ? '대분류를 먼저 등록해 주세요.' : undefined}
+            onClick={() => addDuty(categoryId || allGroups[0]?.category.id || '')}>
+            <Plus size={16} aria-hidden="true" /> 업무 등록
+          </button>}
+          <button className="ghost" type="button" disabled={!allRows.length} onClick={() => openReport('print')}>
+            <Printer size={16} aria-hidden="true" /> 인쇄 미리보기
           </button>
-        )}
+          <OverflowMenu label="업무분장 더보기" items={[
+            ...(canManage ? [{ label: '대분류 등록', icon: <Plus size={16} />, onSelect: () => editCategory(null) }] : []),
+            { label: 'CSV 내려받기', icon: <Download size={16} />, disabled: !allRows.length, onSelect: () => openReport('csv') },
+          ]} />
+        </section>
       </div>
-      <div className="admin-header master-header">
-        {canManage && <div className="master-header-actions">
-          <button className="ghost" onClick={() => setMajorCategoryRegisterOpen(true)} type="button">
-            <ClipboardList size={16} />
-            대분류 등록
-          </button>
-          <button className="ghost" onClick={() => setDutyAssignOpen(true)} type="button">
-            <Users size={16} />
-            업무 배정
-          </button>
-        </div>}
-        <label className="search-field">
-          <Search aria-hidden="true" size={16} />
-          <input
-            aria-label="업무 카테고리 검색"
-            placeholder="업무명·대분류 검색"
-            value={adminSearch}
-            onChange={(event) => setAdminSearch(event.target.value)}
-          />
-        </label>
-        <button className="ghost" onClick={exportAdminCsv} type="button">
-          <Download size={16} />
-          CSV 내려받기
-        </button>
+      <div className="duty-toolbar">
+        <div className="duty-filter-fields">
+          <label className="search-field">
+            <Search size={16} aria-hidden="true" />
+            <input ref={searchRef} aria-label="업무분장 검색" type="search" placeholder="업무명·대분류·담당자·비고 검색"
+              value={query} onChange={(event) => { setQuery(event.target.value); setCollapsed(new Set()) }} />
+          </label>
+          <select aria-label="대분류 필터" value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setCollapsed(new Set()) }}>
+            <option value="">대분류 전체</option>
+            {allGroups.map(({ category }) => <option value={category.id} key={category.id}>{category.name}</option>)}
+          </select>
+          <select aria-label="담당자 필터" value={ownerId} onChange={(event) => { setOwnerId(event.target.value); setCollapsed(new Set()) }}>
+            <option value="">담당자 전체</option>
+            {allOwners.map((owner) => <option value={owner.id} key={owner.id}>{owner.name}{owner.inactive ? ' (비활성)' : ''}</option>)}
+          </select>
+        </div>
+        <div className="duty-filter-status">
+          <div className="duty-quick-filters" role="group" aria-label="담당 상태 필터">
+            {(Object.keys(dutyQuickFilters) as DutyQuickFilter[]).map((filter) => (
+              <button key={filter} className="ghost compact" type="button" aria-pressed={quick === filter}
+                onClick={() => { setQuick(filter); setCollapsed(new Set()) }}>
+                {dutyQuickFilters[filter]} <span>{allRows.filter((row) => matchesDutyQuickFilter(row, filter)).length}</span>
+              </button>
+            ))}
+          </div>
+          <div className="inline-actions">
+            <span role="status">{filtered ? '검색 결과 ' + visibleCount + '건 / 전체 ' + allRows.length + '건' : '전체 ' + visibleCount + '건'}</span>
+            {filtered && <button className="ghost compact" type="button" onClick={reset}>초기화</button>}
+          </div>
+        </div>
       </div>
-
-      <DutyTable
-        data={data}
-        dutyTableGroups={dutyTableGroups}
-        dutyEdits={dutyEdits}
-        setDutyEdits={setDutyEdits}
-        majorCategoryEdits={majorCategoryEdits}
-        setMajorCategoryEdits={setMajorCategoryEdits}
-        pendingDelete={pendingDelete}
-        setPendingDelete={setPendingDelete}
-        onSaveDuty={(dutyId) => setDutyReasonPrompt({ kind: 'duty', id: dutyId })}
-        onSaveMajorCategory={(majorCategoryId) => setDutyReasonPrompt({ kind: 'category', id: majorCategoryId })}
-        onDeleteDuty={deleteDuty}
-        onDeleteMajorCategory={deleteMajorCategory}
-        onReassignDuty={canManage ? openDutyReassign : undefined}
-        onRegisterCategory={canManage ? () => setMajorCategoryRegisterOpen(true) : undefined}
-        onRegisterDuty={canManage ? openDutyRegister : undefined}
-        searchActive={Boolean(query)}
-        onClearSearch={() => setAdminSearch('')}
-        readOnly={!canManage}
+      <DutyTable groups={visibleGroups} filtered={filtered} reset={reset} collapsed={collapsed}
+        toggleGroup={(id) => setCollapsed((current) => {
+          const next = new Set(current)
+          if (next.has(id)) next.delete(id)
+          else next.add(id)
+          return next
+        })}
+        actions={canManage ? {
+          onAdd: addDuty,
+          onAddCategory: () => editCategory(null),
+          onEditCategory: editCategory,
+          onDeleteCategory: (category) => requestDelete('duty_major_categories', category),
+          onEdit: (row, focus) => openEditor({ row, focus, categoryId: row.duty.major_category_id }),
+          onDelete: ({ duty }) => requestDelete('duties', duty),
+        } : undefined}
       />
 
-      <MajorCategoryRegisterModal
-        open={majorCategoryRegisterOpen}
-        onClose={() => setMajorCategoryRegisterOpen(false)}
-        majorCategoryForm={majorCategoryForm}
-        setMajorCategoryForm={setMajorCategoryForm}
-        onSubmit={() => void addMajorCategory()}
-        submitting={saving}
-      />
-      <DutyRegisterModal
-        open={dutyRegisterOpen}
-        onClose={() => setDutyRegisterOpen(false)}
-        data={data}
-        dutyForm={dutyForm}
-        setDutyForm={setDutyForm}
-        onSubmit={() => void addDuty()}
-        submitting={saving}
-      />
-      <DutyAssignModal
-        open={dutyAssignOpen}
-        onClose={() => setDutyAssignOpen(false)}
-        memberOptions={memberOptions}
-        dutyTableGroups={dutyTableGroups}
-        dutyAssignment={dutyAssignment}
-        setDutyAssignment={setDutyAssignment}
-        onSubmit={() => void assignDuty()}
-        submitting={saving}
-      />
-      {reassignDuty && (
-        <DutyReassignModal
-          key={reassignDuty.id}
-          duty={reassignDuty}
-          data={data}
-          memberOptions={memberOptions}
-          onClose={() => setReassignTarget(null)}
-          onSubmit={(result) => void saveDutyReassignment(result)}
-          submitting={saving}
+      {canManage && editor && <DutyEditor key={editor.row ? editor.row.duty.id + ':' + editor.row.duty.updated_at : 'new'}
+        target={editor} latestRow={latestRow} groups={allGroups} profiles={data.profiles} mutate={mutate} onSave={controller.save}
+        onLoadLatest={(row) => setEditor({ row, focus: editor.focus, categoryId: row.duty.major_category_id })}
+        onClose={closeEditor} returnFocusRef={returnFocusRef} />}
+      {canManage && categoryDraft && <Modal open title={categoryDraft.category ? '대분류 이름 수정' : '대분류 등록'}
+        eyebrow="업무분장" icon={<ClipboardList size={18} />} returnFocusRef={returnFocusRef}
+        onClose={() => { if (!savingCategory) setCategoryDraft(null) }}
+        dirty={!savingCategory && (categoryDraft.name.trim() !== (categoryDraft.category?.name ?? '') || Boolean(categoryDraft.reason.trim()))}>
+        <FormGrid fields={<>
+          <label className="wide">대분류명
+            <input value={categoryDraft.name} required onChange={(event) => setCategoryDraft({ ...categoryDraft, name: event.target.value })} />
+          </label>
+          {categoryDraft.category && <label className="wide">변경 사유
+            <textarea value={categoryDraft.reason} maxLength={500} required onChange={(event) => setCategoryDraft({ ...categoryDraft, reason: event.target.value })} />
+            <small>감사 이력에 남아요.</small>
+          </label>}
+        </>} submitting={savingCategory}
+          disabled={!categoryDraft.name.trim() || Boolean(categoryDraft.category && (!categoryDraft.reason.trim() || categoryDraft.name.trim() === categoryDraft.category.name))}
+          disabledReason="대분류명과 필요한 변경 사유를 입력해 주세요."
+          onSubmit={() => void saveCategory()} onCancel={() => { if (!savingCategory) setCategoryDraft(null) }}
+          submitLabel={categoryDraft.category ? '저장하기' : '대분류 등록하기'}
         />
-      )}
-      <ReasonPromptModal
-        open={dutyReasonPrompt !== null}
-        onClose={closeDutyReasonPrompt}
-        title={dutyReasonPrompt?.kind === 'category' ? '대분류 이름을 바꿀까요?' : '업무 정보를 바꿀까요?'}
-        description="변경 사유는 감사 이력에 남아요. 다른 파트장도 볼 수 있어요."
-        reason={dutyReason}
-        setReason={setDutyReason}
-        onSubmit={() => void confirmDutyReasonPrompt()}
-        submitLabel="저장하기"
-        placeholder="예: 업무 이름을 실제 업무에 맞게 바꿔요."
-        submitting={saving}
-      />
+      </Modal>}
+      {canManage && pendingDelete && deleteItem && <Modal open title="삭제 확인"
+        onClose={() => setPendingDelete(null)} returnFocusRef={returnFocusRef}>
+        <DeleteConfirmAction table={pendingDelete.table} id={deleteItem.id} expectedUpdatedAt={deleteItem.updated_at}
+          label={pendingDelete.table === 'duties' ? '업무' : '대분류'} itemName={deleteItem.name}
+          warning={pendingDelete.table === 'duties' ? masterDeleteWarnings.duty : masterDeleteWarnings.dutyMajorCategory}
+          pendingDelete={pendingDelete} setPendingDelete={setPendingDelete} onConfirm={(input) => void deleteSelected(input)} hideTrigger />
+      </Modal>}
+      {report && <DutyReportDialog target={report} onClose={() => setReport(null)} returnFocusRef={returnFocusRef} />}
     </div>
   )
 }

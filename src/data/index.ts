@@ -53,6 +53,7 @@ export {
   addProduct,
   addDutyMajorCategory,
   addDuty,
+  saveDutyAllocation,
   assignProduct,
   assignDuty,
   saveProductAssignments,
@@ -68,6 +69,8 @@ export {
   deleteDuty,
   deleteDutyMajorCategory,
 } from './mutations/master'
+
+export { PRODUCT_DUTY_LABEL, ROTATION_DUTY_LABEL, type DutyAllocationInput } from './validation/dutyAllocation'
 
 export { addProfileNote } from './mutations/team'
 

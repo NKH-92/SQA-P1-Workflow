@@ -115,7 +115,7 @@ describe('CommandPalette review statistics navigation', () => {
       '파트원',
       '활동 로그',
       '제품',
-      '업무 카테고리',
+      '업무분장',
       '계정 관리',
     ])
   })

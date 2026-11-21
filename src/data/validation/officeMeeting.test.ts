@@ -99,7 +99,7 @@ describe('office meeting rules', () => {
     expect(officeMeetingPlace({ location: ' 3층 대회의실 ' })).toBe('3층 대회의실')
   })
 
-  it('invites seated people other than the organizer, one to eight at a time', () => {
+  it('invites seated people other than the organizer', () => {
     expect(validateOfficeMeetingStart(
       input({ title: '  주제  ', participantIds: ['member-02', previewMember.id, 'member-02'], location: ' 대회의실 ' }),
       previewMember,
@@ -119,6 +119,19 @@ describe('office meeting rules', () => {
     for (const [overrides, message] of invalid) {
       expect(() => validateOfficeMeetingStart(input(overrides), previewMember, layout, presence, NOW)).toThrow(message)
     }
+  })
+
+  it('can invite all ten desks when the organizer does not have a seat', () => {
+    const seats = Array.from({ length: 10 }, (_, index) => ({
+      seat_index: index + 1, profile_id: `profile-${index}`, name: `파트원 ${index}`, gender: 'female' as const, style_seed: index,
+    }))
+    const participantIds = seats.map(({ profile_id }) => profile_id)
+    expect(validateOfficeMeetingStart(input({ participantIds }), previewLeader, {
+      revision: 'r2', seats,
+    }, undefined, NOW).invitees).toEqual(participantIds)
+    expect(() => validateOfficeMeetingStart(input({ participantIds: [...participantIds, 'extra'] }), previewLeader, {
+      revision: 'r2', seats,
+    }, undefined, NOW)).toThrow(OFFICE_MEETING_INVALID_MESSAGE)
   })
 
   it('keeps people on vacation or a trip that day out of the meeting', () => {

@@ -23,8 +23,10 @@ function seat(overrides: Partial<OfficeSeatInput> = {}): OfficeSeatInput {
 }
 
 describe('office seat validation', () => {
-  it('accepts up to eight distinct active people', () => {
-    expect(() => validateOfficeSeats([seat(), seat({ seat_index: 8, profile_id: B, gender: 'male' })], profiles)).not.toThrow()
+  it('accepts all ten seats with distinct active people', () => {
+    const seats = Array.from({ length: 10 }, (_, index) => seat({ seat_index: index + 1, profile_id: `profile-${index}` }))
+    const activeProfiles = seats.map(({ profile_id }) => ({ id: profile_id, is_active: true }))
+    expect(() => validateOfficeSeats(seats, activeProfiles)).not.toThrow()
     expect(() => validateOfficeSeats([], profiles)).not.toThrow()
   })
 
@@ -41,7 +43,7 @@ describe('office seat validation', () => {
   it('rejects malformed seats, genders, seeds and too many seats', () => {
     for (const bad of [
       seat({ seat_index: 0 }),
-      seat({ seat_index: 9 }),
+      seat({ seat_index: 11 }),
       seat({ seat_index: 1.5 }),
       seat({ gender: 'other' as never }),
       seat({ style_seed: -1 }),
@@ -49,8 +51,8 @@ describe('office seat validation', () => {
     ]) {
       expect(() => validateOfficeSeats([bad], profiles)).toThrow(OFFICE_SEATS_INVALID_MESSAGE)
     }
-    const nine = Array.from({ length: 9 }, (_, index) => seat({ seat_index: index + 1 }))
-    expect(() => validateOfficeSeats(nine, profiles)).toThrow(OFFICE_SEATS_INVALID_MESSAGE)
+    const tooMany = Array.from({ length: 11 }, (_, index) => seat({ seat_index: index + 1 }))
+    expect(() => validateOfficeSeats(tooMany, profiles)).toThrow(OFFICE_SEATS_INVALID_MESSAGE)
   })
 
   it('requires UUID profile ids only for the remote adapter', () => {
@@ -66,14 +68,14 @@ describe('office layout parsing', () => {
     expect(parseOfficeLayout({
       revision: 'abc',
       seats: [
-        { seat_index: 5, profile_id: B, name: '나', gender: 'male', style_seed: 2 },
+        { seat_index: 10, profile_id: B, name: '나', gender: 'male', style_seed: 2 },
         { seat_index: 1, profile_id: A, name: '가', gender: 'female', style_seed: 1 },
       ],
     })).toEqual({
       revision: 'abc',
       seats: [
         { seat_index: 1, profile_id: A, name: '가', gender: 'female', style_seed: 1 },
-        { seat_index: 5, profile_id: B, name: '나', gender: 'male', style_seed: 2 },
+        { seat_index: 10, profile_id: B, name: '나', gender: 'male', style_seed: 2 },
       ],
     })
   })

@@ -7,7 +7,7 @@ import {
   validateOfficeSeats,
 } from '../validation/officeSeats'
 
-/** 미리보기 사무실 자리 배치. 원격 replace_office_seats와 같은 권한·검증·동시 수정 규칙을 따른다. */
+/** 미리보기 사무실 자리 배치. 원격 replace_office_seats_v2와 같은 권한·검증·동시 수정 규칙을 따른다. */
 export function createLocalOfficeRepository(ctx: RepositoryDeps): OfficeRepository {
   return {
     async replaceOfficeSeats({ seats, expectedRevision }) {

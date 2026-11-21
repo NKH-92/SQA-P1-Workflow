@@ -61,6 +61,14 @@ describe('office meeting model', () => {
       .toEqual(['오후 2:30', '3층 대회의실', '일탈'])
   })
 
+  it('shows the unseated organizer in the room alongside the seated participants', () => {
+    const guests = occupants.filter(({ profileId }) => profileId !== meeting.organizer_id)
+    expect(meetingSceneState(meeting, guests, NOW)).toEqual({
+      attendeeSeats: [7], awaySeats: [], invitedSeats: [5], unseatedOrganizerName: 'A',
+    })
+    expect(meetingSceneState({ ...meeting, location: '현장' }, guests, NOW).unseatedOrganizerName).toBeUndefined()
+  })
+
   it('counts confirmations including people without a seat', () => {
     expect(meetingProgress(meeting)).toEqual({ confirmed: 2, total: 4 })
   })

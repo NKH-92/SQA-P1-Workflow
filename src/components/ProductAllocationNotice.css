@@ -1,0 +1,30 @@
+.product-allocation-notice {
+  display: inline-block;
+  margin-inline-start: 0.4em;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+[data-product-allocation-watermark] {
+  position: relative;
+}
+
+[data-product-allocation-watermark]::before {
+  content: 'VOID' / '';
+  position: absolute;
+  z-index: 1;
+  inset-block-start: 3.5rem;
+  inset-inline: 0;
+  color: var(--text);
+  font-size: clamp(2rem, 7vw, 4.5rem);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  text-align: center;
+  opacity: 0.08;
+  transform: rotate(-18deg);
+  pointer-events: none;
+  user-select: none;
+}

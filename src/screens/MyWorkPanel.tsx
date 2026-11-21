@@ -1,3 +1,5 @@
+import { productAllocationWatermark } from '../lib/productAllocationStatus'
+import { ProductAllocationNotice } from '../components/ProductAllocationNotice'
 import { Badge, EmptyState, Rows, Section } from '../components/ui'
 import { OfficePlace } from '../features/office/components/OfficePlace'
 import type { RowItem } from '../components/ui/Rows'
@@ -83,6 +85,7 @@ export function MyWorkPanel({ profile, data }: { profile: Profile; data: AppData
         <OfficePlace people={[{ profileId: profile.id, name: profile.name }]} place={data.officeLayout?.seats.some(seat => seat.profile_id === profile.id) ? "my-desk" : "nameplates"} seatIndex={data.officeLayout?.seats.find(seat => seat.profile_id === profile.id)?.seat_index} />
         <div>
           <h1>내 담당</h1>
+          <ProductAllocationNotice />
           <p>
             {hasNothing ? (
               '아직 배정받은 제품이나 업무가 없어요.'
@@ -115,7 +118,7 @@ export function MyWorkPanel({ profile, data }: { profile: Profile; data: AppData
             icon={<Package size={18} />}
             aside={`자사 ${ownCompanyRows.length}개 · 위탁 ${consignedRows.length}개`}
           >
-            <div className="product-assignment-split">
+            <div className="product-assignment-split" data-product-allocation-watermark={ownProducts.length ? productAllocationWatermark : undefined}>
               <div>
                 <h3>자사</h3>
                 <Rows rows={ownCompanyRows} empty="담당 중인 자사제품이 없어요." wrap />

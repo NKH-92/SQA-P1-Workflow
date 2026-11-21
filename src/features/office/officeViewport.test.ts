@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { WORLD_CAMERA, WORLD_HEIGHT } from './officeGeometry'
-import { SCENE_FOCUS_LEFT, SCENE_FOCUS_RIGHT, SCENE_WIDTH, VIEW_HEIGHT } from './officeScene'
-import { computeOfficeViewport, initialOfficeScroll } from './officeViewport'
+import { CORE_CAMERA, WORLD_CAMERA, WORLD_HEIGHT } from './officeGeometry'
+import { SCENE_FOCUS_LEFT, SCENE_FOCUS_RIGHT, SCENE_SEATS, SCENE_WIDTH, VIEW_HEIGHT } from './officeScene'
+import { computeOfficeViewport, initialOfficeScroll, officeScrollForWorldX } from './officeViewport'
 
 describe('office viewport', () => {
   it('fills the whole card width on desktop instead of leaving empty sides', () => {
@@ -41,7 +41,7 @@ describe('office viewport', () => {
 
   it('keeps people readable on phones and lets the scene scroll sideways instead of shrinking', () => {
     const viewport = computeOfficeViewport(340, 3, 236)
-    expect(viewport.canvasWidth).toBe(SCENE_WIDTH * 5)
+    expect(viewport.canvasWidth).toBe(SCENE_WIDTH * 4.5)
     expect(viewport.cssScale).toBeGreaterThanOrEqual(1.5)
     expect(viewport.scrollable).toBe(true)
     expect(viewport.scrollHint).toBe(true)
@@ -57,6 +57,18 @@ describe('office viewport', () => {
     expect(visibleLeft).toBeLessThan(center)
     expect(visibleRight).toBeGreaterThan(center)
     expect(initialOfficeScroll(computeOfficeViewport(1100, 1, 560), 1100)).toBe(0)
+  })
+
+  it('scrolls the new rightmost seats into a narrow viewport', () => {
+    const width = 260
+    const viewport = computeOfficeViewport(width, 2, 236)
+    const windowSeat = SCENE_SEATS[8]
+    const aisleSeat = SCENE_SEATS[9]
+    expect(windowSeat).toMatchObject({ seatIndex: 9, row: 'window', column: 4 })
+    expect(aisleSeat).toMatchObject({ seatIndex: 10, row: 'aisle', column: 4, x: windowSeat.x })
+    const offset = officeScrollForWorldX(viewport, width, CORE_CAMERA, windowSeat.x)
+    expect(offset).toBeGreaterThan(initialOfficeScroll(viewport, width))
+    expect(Math.abs(windowSeat.x * viewport.cssScale - offset - width / 2)).toBeLessThanOrEqual(0.5)
   })
 
   it('fills the height of a tall phone in the full-screen office and scrolls sideways', () => {

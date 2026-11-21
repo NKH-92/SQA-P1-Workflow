@@ -1,3 +1,5 @@
+import { productAllocationWatermark } from '../../../lib/productAllocationStatus'
+import { ProductAllocationNotice } from '../../../components/ProductAllocationNotice'
 import { useId, useMemo, useState, type KeyboardEvent } from 'react'
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, ClipboardPlus, FileSpreadsheet, Search, Upload } from 'lucide-react'
 import { Badge, DateQuickPicks, Modal, ModalCloseButton } from '../../../components/ui'
@@ -684,6 +686,7 @@ export function ChangeApplicationComposer({
                     </label>
                     <a className="ghost" download href="/change-application-products-template.xlsx">양식 받기</a>
                   </div>
+                  <ProductAllocationNotice />
                   <div className="scope-toolbar">
                     <label className="scope-search">
                       <Search size={15} />
@@ -702,7 +705,7 @@ export function ChangeApplicationComposer({
                     </label>
                     <select aria-label="제품 구분" value={category} onChange={(event) => setCategory(event.target.value)}><option value="all">구분 전체</option><option value="자사">자사</option><option value="위탁">위탁</option></select>
                     <select aria-label="회사" value={company} onChange={(event) => setCompany(event.target.value)}><option value="all">회사 전체</option>{companies.map((value) => <option key={value} value={value}>{value}</option>)}</select>
-                    <select aria-label="제품 담당자" value={assigneeFilter} onChange={(event) => setAssigneeFilter(event.target.value)}><option value="all">담당자 전체</option>{data.changeAssigneeOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+                    <select aria-label="제품 담당자" value={assigneeFilter} onChange={(event) => setAssigneeFilter(event.target.value)}><option value="all">담당자 전체</option>{assignableAssignees.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
                   </div>
                   <div className="scope-quick-actions">
                     <button onClick={() => selectProducts(products.filter((product) => product.assignees.some((item) => item.id === profile.id)).map((product) => product.id))} type="button">내 담당 제품 선택</button>
@@ -712,7 +715,7 @@ export function ChangeApplicationComposer({
                       {allVisibleSelected ? '검색 결과 선택 해제' : `검색 결과 전체 ${visibleProducts.length}개 선택`}
                     </button>
                   </div>
-                  <div className="scope-list" role="list" aria-label="적용 제품 선택 목록">
+                  <div className="scope-list" data-product-allocation-watermark={visibleProducts.length ? productAllocationWatermark : undefined} role="list" aria-label="적용 제품 선택 목록">
                     {visibleProducts.map((product) => {
                       const isSelected = product.id in selected
                       const responsibilityOptions = product.assignees.length > 0

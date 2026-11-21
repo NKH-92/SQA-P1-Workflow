@@ -7,6 +7,8 @@ import type { AppData, Profile } from '../types'
 import type { MutateFn, TabId } from '../app/types'
 import { downloadCsv } from '../lib/csv'
 import { buildProductAllocationCsvRows } from '../lib/productAllocationCsv'
+import { productAllocationCsvFilename, productAllocationWatermark } from '../lib/productAllocationStatus'
+import { ProductAllocationNotice } from '../components/ProductAllocationNotice'
 import { formatDate, projectStatusLabels, roleLabels } from '../lib/format'
 import { preferredScrollBehavior } from '../lib/motion'
 import { compareProducts, productCategory, productCompanyName, productName } from '../lib/products'
@@ -244,7 +246,7 @@ export function TeamPanel({
 
   const exportTeamCsv = () =>
     downloadCsv(
-      'product-allocations.csv',
+      productAllocationCsvFilename,
       buildProductAllocationCsvRows(data),
     )
 
@@ -439,8 +441,9 @@ export function TeamPanel({
                 )}
               </div>
             </div>
+            <ProductAllocationNotice />
             <div className="team-member-quad">
-              <div>
+              <div data-product-allocation-watermark={ownCompanyProducts.length ? productAllocationWatermark : undefined}>
                 <h3>자사제품</h3>
                 <Rows
                   empty="배정된 자사제품이 없어요."
@@ -451,7 +454,7 @@ export function TeamPanel({
                   wrap
                 />
               </div>
-              <div>
+              <div data-product-allocation-watermark={consignedProducts.length ? productAllocationWatermark : undefined}>
                 <h3>위탁제품</h3>
                 <Rows
                   empty="배정된 위탁제품이 없어요."

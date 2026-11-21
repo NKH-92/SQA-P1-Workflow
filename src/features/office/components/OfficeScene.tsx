@@ -5,12 +5,12 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProp
 import type { PresenceKind } from '../../../data/validation/memberPresence'
 import { businessDateParts } from '../../../lib/businessTime'
 import type { OfficeAlert } from '../officeAlerts'
-import { CORE_CAMERA, intersectsCamera, type OfficeCamera } from '../officeGeometry'
+import { CORE_CAMERA, DESK_SLOT_WIDTH, intersectsCamera, isWorldCamera, type OfficeCamera } from '../officeGeometry'
 import { seatRowLabel, type SceneOccupant } from '../officeLayoutModel'
 import { createOfficeRenderer, type OfficeBubble, type OfficeClock, type OfficeRenderer } from '../officeRenderer'
-import { SCENE_HOTSPOTS, SCENE_SEATS, type SceneHotspotId } from '../officeScene'
+import { MEETING_ORGANIZER_SPOT, SCENE_HOTSPOTS, SCENE_SEATS, type SceneHotspotId } from '../officeScene'
 import { skyPeriodForHour } from '../officeSky'
-import { computeOfficeViewport, initialOfficeScroll, type OfficeViewportState } from '../officeViewport'
+import { computeOfficeViewport, initialOfficeScroll, officeScrollForWorldX, type OfficeViewportState } from '../officeViewport'
 import { PixelIcon } from './PixelIcon'
 
 /** 캐릭터 동작은 도트 느낌이 나도록 초당 10장만 그린다. */
@@ -26,11 +26,9 @@ const MOBILE_HEIGHT_RATIO = 0.28
 const MIN_HEIGHT_MOBILE = 150
 const MAX_HEIGHT_MOBILE = 236
 /** 말풍선 꼬리를 자리 열마다 조금씩 옮겨 양 끝 자리 말풍선이 장면 밖으로 넘치지 않게 한다. */
-const BUBBLE_SHIFT = ['-24%', '-42%', '-58%', '-76%'] as const
+const BUBBLE_SHIFT = ['-24%', '-37%', '-50%', '-63%', '-76%'] as const
 /** 누르는 영역의 최소 크기(CSS px). 도트가 작아도 누르기 쉽게 한다. */
 const MIN_HIT = 36
-/** 옆자리 사이 거리(논리 픽셀). 자리 상태 칩이 옆 칩과 겹치지 않게 이 폭 안에서 줄인다. */
-const SEAT_GAP = 40
 
 export type OfficeHotspotLink = {
   id: SceneHotspotId
@@ -54,6 +52,7 @@ export type OfficePersonLink = {
 export type OfficeSceneMeeting = {
   attendeeSeats: readonly number[]
   invitedSeats: readonly number[]
+  unseatedOrganizerName?: string
 }
 
 /** 자리를 비운 사람: 캐릭터 대신 빈 의자와 도트 표지가 보이고, 이름표 아래에 짧은 설명이 붙는다. */
@@ -64,6 +63,8 @@ export type OfficeSceneAbsence = {
   summary: string
   /** 이름표 아래 칩에 보이는 짧은 글(예: ‘휴가 ~10/2’). 없으면 summary */
   chip?: string
+  /** 날짜와 장소를 생략한 좁은 화면용 상태 이름 */
+  compactChip?: string
 }
 
 const NO_SEATS: readonly number[] = []
@@ -359,9 +360,10 @@ export function OfficeScene({
         width: `${viewport.cssWidth}px`,
         height: `${viewport.cssHeight}px`,
         '--office-hit-w': `${Math.max(MIN_HIT, 22 * viewport.cssScale)}px`,
-        '--office-seat-gap': `${SEAT_GAP * viewport.cssScale}px`,
+        '--office-seat-gap': `${DESK_SLOT_WIDTH * viewport.cssScale}px`,
       } as CSSProperties
     : undefined
+  const compact = viewport !== null && viewport.cssScale < 2
   const bubbleBySeat = new Map(bubbles.map((bubble) => [bubble.seatIndex, bubble]))
   const absenceBySeat = new Map(absences.map((absence) => [absence.seatIndex, absence]))
   const invited = new Set(invitedSeats)
@@ -392,16 +394,20 @@ export function OfficeScene({
       if (seat) renderer.deliverPaper(seat, performance.now())
     }
   }, [workflow, occupants])
+  const focusedSeatIndex = focusedProfileId ? occupants.find((occupant) => occupant.profileId === focusedProfileId)?.seatIndex : undefined
   useEffect(() => {
-    if (!focusedProfileId) return
-    const seat = occupants.find(o => o.profileId === focusedProfileId)
-    const element = seat ? containerRef.current?.querySelector<HTMLElement>(`[data-seat="${seat.seatIndex}"]`) : null
-    if (!element) return
+    const container = containerRef.current
+    if (!viewport || !container || focusedSeatIndex === undefined) return
+    const element = peopleRef.current.get(focusedSeatIndex)
+    const seat = SCENE_SEATS[focusedSeatIndex - 1]
+    if (!element || !seat) return
+    const anchor = rendererRef.current?.anchors().find(({ seatIndex }) => seatIndex === focusedSeatIndex)
+    container.scrollLeft = officeScrollForWorldX(viewport, contentWidth(container), camera, anchor?.x ?? seat.x)
     element.dataset.focused = 'true'
     element.focus({ preventScroll: true })
     const timer = setTimeout(() => { delete element.dataset.focused }, 2000)
     return () => { clearTimeout(timer); delete element.dataset.focused }
-  }, [focusedProfileId, occupants])
+  }, [camera, focusedSeatIndex, viewport])
 
   return (
     <div className="office-scene-wrap" data-fit={fit} data-sky={skyPeriod}>
@@ -412,7 +418,7 @@ export function OfficeScene({
         data-scrollable={viewport?.scrollable ? 'true' : undefined}
         ref={containerRef}
       >
-        <div className="office-stage" style={stageStyle}>
+        <div className="office-stage" data-compact={compact ? 'true' : undefined} style={stageStyle}>
           <canvas aria-hidden="true" className="office-canvas" data-smooth={viewport?.smooth ? 'true' : undefined} ref={canvasRef} />
           <div className="office-overlay">
             {viewport && visibleHotspots.length > 0 && (
@@ -456,6 +462,18 @@ export function OfficeScene({
                   )
                 })}
               </div>
+            )}
+            {viewport && isWorldCamera(camera) && meeting?.unseatedOrganizerName && (
+              <span
+                className="office-unseated-host"
+                style={{
+                  left: (MEETING_ORGANIZER_SPOT.x - camera.x) * viewport.cssScale,
+                  top: (MEETING_ORGANIZER_SPOT.y - camera.y) * viewport.cssScale,
+                }}
+              >
+                <PixelIcon id="meeting" />
+                <span className="sr-only">회의 주최자 </span>{meeting.unseatedOrganizerName}
+              </span>
             )}
             <ul aria-label="자리 배치" className="office-people">
               {occupants.map((occupant) => {
@@ -501,14 +519,14 @@ export function OfficeScene({
                     {absence && (
                       <span aria-hidden="true" className="office-away-chip" data-kind={absence.kind}>
                         <PixelIcon id={absence.kind} />
-                        <span className="office-away-text">{absence.chip ?? absence.summary}</span>
+                        <span className="office-away-text">{(compact ? absence.compactChip : absence.chip) ?? absence.chip ?? absence.summary}</span>
                       </span>
                     )}
                     {bubble && (
                       <span
                         aria-hidden="true"
                         className="office-bubble"
-                        style={{ '--office-bubble-shift': BUBBLE_SHIFT[(occupant.seatIndex - 1) % 4] } as CSSProperties}
+                        style={{ '--office-bubble-shift': BUBBLE_SHIFT[seat.column] } as CSSProperties}
                       >
                         {bubble.text}
                       </span>

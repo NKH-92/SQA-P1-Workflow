@@ -1,4 +1,4 @@
-import { WORLD_BOTTOM, WORLD_LEFT, WORLD_RIGHT } from './officeGeometry'
+import { DESK_ISLAND_LEFT, DESK_ISLAND_RIGHT, WORLD_BOTTOM, WORLD_LEFT, WORLD_RIGHT } from './officeGeometry'
 
 /**
  * 사무실 구역별 기물(원래 장면 밖 포함). 좌표는 원래 장면과 같은 월드 좌표(논리 픽셀)다.
@@ -165,7 +165,7 @@ function drawLounge(ctx: Ctx) {
 // ── 회의실 ───────────────────────────────────────────────
 
 /** 유리벽 회의실(바깥 테두리). 문은 위쪽 벽 가운데 오른쪽에 있다. */
-export const MEETING_ROOM = { left: -40, right: 64, top: 160, bottom: 252, doorLeft: 22, doorRight: 38 } as const
+export const MEETING_ROOM = { left: -40, right: 80, top: 160, bottom: 252, doorLeft: 40, doorRight: 56 } as const
 /** 회의 테이블(서서 하는 높은 테이블)이 앞뒤 순서를 정하는 바닥 y */
 export const MEETING_TABLE_BASE_Y = 214
 /** 회의실 앞 유리 난간이 앞뒤 순서를 정하는 바닥 y */
@@ -181,9 +181,9 @@ const GLASS_SHINE = 'rgba(255, 255, 255, 0.55)'
 
 function drawMeetingRoomFloor(ctx: Ctx) {
   const { left, right, top, bottom } = MEETING_ROOM
-  rect(ctx, left, top, right - left, bottom - top, '#d9dee6')
+  rect(ctx, left, top, right - left, bottom - top, '#e4e8ed')
   for (let y = top + 4; y < bottom; y += 8) {
-    for (let x = left + ((y / 8) % 2 === 0 ? 0 : 8); x < right; x += 16) rect(ctx, x, y, 8, 1, '#cfd5de')
+    for (let x = left + ((y / 8) % 2 === 0 ? 0 : 8); x < right; x += 16) rect(ctx, x, y, 8, 1, '#d6dde5')
   }
   // 벽 쪽 걸레받이 그늘
   rect(ctx, left, top, right - left, 2, '#c3cad4')
@@ -220,13 +220,15 @@ export function drawMeetingBackGlass(ctx: Ctx) {
 
 /** 서서 하는 높은 회의 테이블(노트북·서류) */
 export function drawMeetingTable(ctx: Ctx) {
-  const x = -14
+  const x = -26
   const y = 198
-  rect(ctx, x, y, 54, 10, '#f6f5f1')
-  rect(ctx, x, y, 54, 1, '#e1dfd8')
-  rect(ctx, x, y + 10, 54, 3, '#cfccc4')
+  const width = 91
+  rect(ctx, x + 1, y + 13, width + 2, 5, '#cbd4df')
+  rect(ctx, x, y, width, 10, '#f6f5f1')
+  rect(ctx, x, y, width, 1, '#e1dfd8')
+  rect(ctx, x, y + 10, width, 3, '#cfccc4')
   rect(ctx, x + 4, y + 13, 3, 3, '#8f959e')
-  rect(ctx, x + 47, y + 13, 3, 3, '#8f959e')
+  rect(ctx, x + width - 7, y + 13, 3, 3, '#8f959e')
   // 노트북·서류·펜
   rect(ctx, x + 6, y + 2, 10, 6, '#c7ccd3')
   rect(ctx, x + 7, y + 3, 8, 4, '#5fa8e8')
@@ -236,6 +238,10 @@ export function drawMeetingTable(ctx: Ctx) {
   rect(ctx, x + 36, y + 3, 7, 5, '#fbfbf7')
   rect(ctx, x + 37, y + 4, 5, 1, '#e2554b')
   rect(ctx, x + 46, y + 4, 4, 1, '#34497a')
+  rect(ctx, x + 64, y + 2, 10, 6, '#c7ccd3')
+  rect(ctx, x + 65, y + 3, 8, 4, '#5fa8e8')
+  rect(ctx, x + 80, y + 3, 6, 5, '#fbfbf7')
+  rect(ctx, x + 81, y + 5, 4, 1, '#b8bcc2')
 }
 
 /** 회의실 앞쪽 낮은 유리 난간(안이 들여다보인다) */
@@ -301,12 +307,12 @@ function drawStatsMonitor(ctx: Ctx) {
 
 /** 업무 구역(책상 섬) 카펫. 벽 앞 복도부터 통로까지 깐다. */
 function drawWorkCarpet(ctx: Ctx) {
-  const left = 102
-  const right = 284
+  const left = DESK_ISLAND_LEFT - 7
+  const right = DESK_ISLAND_RIGHT + 7
   const top = 42
   const bottom = 128
   rect(ctx, left, top, right - left, bottom - top, '#a9b7c9')
-  rect(ctx, left + 1, top + 1, right - left - 2, bottom - top - 2, '#bfcad8')
+  rect(ctx, left + 1, top + 1, right - left - 2, bottom - top - 2, '#b9c6d7')
   for (let y = top + 3; y < bottom - 1; y += 4) {
     for (let x = left + 3 + ((y >> 2) % 2) * 2; x < right - 2; x += 4) rect(ctx, x, y, 1, 1, '#b3c0cf')
   }

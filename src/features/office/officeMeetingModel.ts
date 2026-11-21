@@ -70,12 +70,14 @@ export type OfficeMeetingSceneState = {
   awaySeats: number[]
   /** 부름을 받았지만 아직 확인하지 않은 사람의 자리 번호(머리 위에 느낌표) */
   invitedSeats: number[]
+  /** 사무실 좌석에 없는 주최자의 회의실 이름표 */
+  unseatedOrganizerName?: string
 }
 
 const EMPTY: OfficeMeetingSceneState = { attendeeSeats: [], awaySeats: [], invitedSeats: [] }
 
 /**
- * 열린 회의를 사무실 자리 기준으로 나눈다. 자리에 없는 사람은 캐릭터가 없어 빠진다.
+ * 열린 회의를 사무실 자리 기준으로 나눈다. 자리에 없는 주최자는 회의실에서 이름표로 보인다.
  * 예약한 회의는 시작 시각이 되기 전까지 아무도 자리를 뜨지 않는다(확인 전 느낌표만 뜬다).
  */
 export function meetingSceneState(
@@ -96,7 +98,15 @@ export function meetingSceneState(
     else if (started) (inRoom ? attendeeSeats : awaySeats).push(occupant.seatIndex)
   }
   const byNumber = (left: number, right: number) => left - right
-  return { attendeeSeats: attendeeSeats.sort(byNumber), awaySeats: awaySeats.sort(byNumber), invitedSeats: invitedSeats.sort(byNumber) }
+  const unseatedOrganizerName = started && inRoom && !occupants.some(({ profileId }) => profileId === meeting.organizer_id)
+    ? meeting.organizer_name
+    : undefined
+  return {
+    attendeeSeats: attendeeSeats.sort(byNumber),
+    awaySeats: awaySeats.sort(byNumber),
+    invitedSeats: invitedSeats.sort(byNumber),
+    ...(unseatedOrganizerName ? { unseatedOrganizerName } : {}),
+  }
 }
 
 /** 확인한 사람 수와 전체 대상자 수(연 사람 포함) */

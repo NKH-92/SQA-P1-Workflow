@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Armchair, ChevronDown, ChevronUp, Maximize2, Users } from 'lucide-react'
 import type { MutateFn, TabId } from '../app/types'
 import type { AppDataUpdater } from '../data/repositories/appDataUpdater'
+import { OFFICE_SEAT_COUNT } from '../data/validation/officeSeats'
 import { OfficeScene } from '../features/office/components/OfficeScene'
 import { formatClock } from '../lib/format'
 import type { AppData, Profile } from '../types'
@@ -60,7 +61,7 @@ export function HomeOffice({
       <div className="home-card-head office-card-head">
         <div className="office-card-title">
           <h2 id="home-office-title">우리 파트 사무실</h2>
-          <small>{occupants.length > 0 ? `8자리 중 ${occupants.length}자리` : '빈 사무실'}</small>
+          <small>{occupants.length > 0 ? `${OFFICE_SEAT_COUNT}자리 중 ${occupants.length}자리` : '빈 사무실'}</small>
         </div>
         <div className="office-card-actions">
           <button

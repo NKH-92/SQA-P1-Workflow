@@ -1,3 +1,4 @@
+import { productAllocationWatermark } from '../../../lib/productAllocationStatus'
 import type { Dispatch, SetStateAction } from 'react'
 import { Pencil, Trash2, UserPlus, UserRoundCog } from 'lucide-react'
 import { OverflowMenu } from '../../../components/ui'
@@ -82,7 +83,7 @@ export function ProductCard({
     })
 
   return (
-    <article data-px="panel" className={needsAssignee ? 'master-card unassigned' : 'master-card'} data-product-id={product.id}>
+    <article data-px="panel" className={needsAssignee ? 'master-card unassigned' : 'master-card'} data-product-id={product.id} data-product-allocation-watermark={edit ? undefined : productAllocationWatermark}>
       {edit && !readOnly ? (
         <div className="project-edit-form product-edit-form">
           <label>

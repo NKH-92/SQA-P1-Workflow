@@ -384,7 +384,7 @@ export type OfficeGender = 'male' | 'female'
 
 /** public.get_office_seats가 돌려주는 자리 한 칸. 활성 계정만 들어 있다. */
 export interface OfficeSeat {
-  /** 1~4는 창가 쪽 줄, 5~8은 통로 쪽 줄 */
+  /** 1~4·9번은 창가 쪽 줄, 5~8·10번은 통로 쪽 줄 */
   seat_index: number
   profile_id: string
   name: string

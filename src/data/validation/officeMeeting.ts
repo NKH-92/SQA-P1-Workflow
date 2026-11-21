@@ -1,11 +1,12 @@
 import { businessDateKey } from '../../lib/businessTime'
 import { PERMISSION_MESSAGE, UserFacingError } from '../../lib/errors'
+import { OFFICE_SEAT_COUNT } from './officeSeats'
 import type { MemberPresence, OfficeLayout, OfficeMeeting, OfficeMeetingParticipant, Profile } from '../../types'
 import { leaveOn } from './memberPresence'
 
 export const OFFICE_MEETING_TITLE_MAX = 60
 export const OFFICE_MEETING_LOCATION_MAX = 30
-export const OFFICE_MEETING_MAX_INVITEES = 8
+export const OFFICE_MEETING_MAX_INVITEES = OFFICE_SEAT_COUNT
 /** 아무도 끝내지 않은 회의가 저절로 끝나는 시간(시작 시각부터, start_office_meeting과 같다) */
 export const OFFICE_MEETING_DURATION_MS = 3 * 60 * 60 * 1000
 /** 시작 시각이 지금보다 이만큼 앞서도 ‘지금 바로’로 친다(기기 시계 차이). */

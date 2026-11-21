@@ -8,6 +8,8 @@ import { EmptyState, ReasonPromptModal } from '../../../components/ui'
 import { useViewState } from '../../../hooks/useViewState'
 import { downloadCsv } from '../../../lib/csv'
 import { buildProductAllocationCsvRows } from '../../../lib/productAllocationCsv'
+import { productAllocationCsvFilename } from '../../../lib/productAllocationStatus'
+import { ProductAllocationNotice } from '../../../components/ProductAllocationNotice'
 import { parseCsvRows, parseProductImportRows, readCsvFileText } from '../../../lib/csvImport'
 import { toUserMessage, UserFacingError } from '../../../lib/errors'
 import { quoted, quotedWithJosa, withJosa } from '../../../lib/korean'
@@ -366,6 +368,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
         <OfficePlace people={[{ profileId: profile.id, name: profile.name }]} place="samples" />
         <div>
           <h1>제품</h1>
+          <ProductAllocationNotice />
           <p>등록 {data.products.length}개 · 담당자 없음 {unassignedProducts.length}개</p>
         </div>
         {canManage && (
@@ -385,7 +388,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
             onChange={(event) => setAdminSearch(event.target.value)}
           />
         </label>
-        <button className="ghost" onClick={() => downloadCsv('product-allocations.csv', buildProductAllocationCsvRows(data))} type="button">
+        <button className="ghost" onClick={() => downloadCsv(productAllocationCsvFilename, buildProductAllocationCsvRows(data))} type="button">
           <Download size={16} />
           CSV 내려받기
         </button>

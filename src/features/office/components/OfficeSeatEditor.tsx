@@ -1,11 +1,10 @@
 import { useMemo, useRef, useState } from 'react'
 import { Armchair, Dices } from 'lucide-react'
 import { DialogActions, Modal } from '../../../components/ui'
-import type { OfficeSeatInput } from '../../../data/validation/officeSeats'
+import { AISLE_ROW_SEATS, OFFICE_SEAT_COUNT, WINDOW_ROW_SEATS, type OfficeSeatInput } from '../../../data/validation/officeSeats'
 import type { OfficeGender, OfficeLayout, Profile } from '../../../types'
 import { createStyleSeed, OFFICE_GENDER_LABELS, OFFICE_GENDERS, resolveOfficeCharacter } from '../officeCharacter'
 import {
-  AISLE_ROW_SEATS,
   assignSeat,
   draftsFromLayout,
   rerollSeat,
@@ -13,7 +12,6 @@ import {
   seatCandidates,
   seatsToSave,
   setSeatGender,
-  WINDOW_ROW_SEATS,
   type SeatDraft,
 } from '../officeLayoutModel'
 import { OfficePortrait } from './OfficePortrait'
@@ -182,7 +180,7 @@ export function OfficeSeatEditor({
             ? '자리나 캐릭터를 바꾸면 저장할 수 있어요.'
             : occupiedCount === 0
               ? '저장하면 사무실이 비어요.'
-              : `8자리 중 ${occupiedCount}자리에 앉아요.`}
+              : `${OFFICE_SEAT_COUNT}자리 중 ${occupiedCount}자리에 앉아요.`}
         onClose={onClose}
       >
         <button aria-busy={saving || undefined} className="primary" disabled={saving || !dirty} onClick={() => void save()} type="button">

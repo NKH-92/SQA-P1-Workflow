@@ -1,12 +1,14 @@
 import { UserFacingError } from '../../lib/errors'
 import type { OfficeGender, OfficeLayout, OfficeSeat, Profile } from '../../types'
 
-/** 홈 사무실 책상 수(창가 쪽 4 + 통로 쪽 4). 서버 office_seats_seat_index_check와 같다. */
-export const OFFICE_SEAT_COUNT = 8
+// 기존 좌석 번호의 줄을 유지하며 창가와 통로 오른쪽에 자리를 하나씩 추가한다.
+export const WINDOW_ROW_SEATS: readonly number[] = [1, 2, 3, 4, 9]
+export const AISLE_ROW_SEATS: readonly number[] = [5, 6, 7, 8, 10]
+export const OFFICE_SEAT_COUNT = WINDOW_ROW_SEATS.length + AISLE_ROW_SEATS.length
 /** 스타일 시드 상한(서버 integer 범위). */
 export const OFFICE_STYLE_SEED_MAX = 0x7fffffff
 
-/** replace_office_seats에 보내는 자리 한 칸. 빈자리는 보내지 않는다. */
+/** replace_office_seats_v2에 보내는 자리 한 칸. 빈자리는 보내지 않는다. */
 export type OfficeSeatInput = {
   seat_index: number
   profile_id: string
@@ -34,7 +36,7 @@ function isSeatIndex(value: unknown): value is number {
 }
 
 /**
- * 저장 전에 서버와 같은 조건을 확인한다(자리 1~8, 사람·자리 중복 없음, 활성 계정, 성별·시드 형식).
+ * 저장 전에 서버와 같은 조건을 확인한다(자리 1~10, 사람·자리 중복 없음, 활성 계정, 성별·시드 형식).
  * requireUuid는 원격 저장처럼 프로필 id가 UUID여야 할 때만 켠다(미리보기 데이터 id는 UUID가 아니다).
  */
 export function validateOfficeSeats(

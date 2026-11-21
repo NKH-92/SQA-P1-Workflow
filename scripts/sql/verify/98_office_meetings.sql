@@ -76,6 +76,7 @@ begin
      or position('public.office_seats' in pg_get_functiondef(to_regprocedure('public.start_office_meeting(text,uuid[],timestamptz,text)'))) = 0
      or position('SQA_OFFICE_MEETING_BUSY' in pg_get_functiondef(to_regprocedure('public.start_office_meeting(text,uuid[],timestamptz,text)'))) = 0
      or position('pg_advisory_xact_lock' in pg_get_functiondef(to_regprocedure('public.start_office_meeting(text,uuid[],timestamptz,text)'))) = 0
+     or position('pg_catalog.cardinality(v_invitees) > 10' in pg_get_functiondef(to_regprocedure('public.start_office_meeting(text,uuid[],timestamptz,text)'))) = 0
      or position('public.member_leaves' in pg_get_functiondef(to_regprocedure('public.start_office_meeting(text,uuid[],timestamptz,text)'))) = 0
      or position('SQA_OFFICE_MEETING_TIME_INVALID' in pg_get_functiondef(to_regprocedure('public.start_office_meeting(text,uuid[],timestamptz,text)'))) = 0
      or position('public.can_manage_team_data()' in pg_get_functiondef(to_regprocedure('public.end_office_meeting(uuid)'))) = 0

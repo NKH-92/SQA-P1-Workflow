@@ -117,6 +117,11 @@
     color var(--dur-fast) var(--ease-out);
 }
 
+/* 좁은 배율에서는 인접 기물의 간판과 숫자 표시가 두 줄에 놓인다. */
+.office-stage[data-compact='true'] .office-hotspot:is([data-hotspot='cabinet'], [data-hotspot='calendar']) .office-hotspot-sign {
+  margin-top: 21px;
+}
+
 .office-hotspot-arrow {
   opacity: 0.7;
   font-size: 12px;
@@ -249,7 +254,7 @@
   position: absolute;
   top: -2px;
   left: 0;
-  max-width: 88px;
+  max-width: min(88px, calc(var(--office-seat-gap, 92px) - 4px));
   overflow: hidden;
   color: var(--paper-on-accent);
   font-size: 11px;
@@ -912,6 +917,33 @@
   white-space: nowrap;
   pointer-events: none;
   transform: translate(-50%, -100%);
+}
+
+.office-stage[data-compact='true'] .office-away-chip {
+  gap: 2px;
+  padding-inline: 3px;
+}
+
+.office-unseated-host {
+  position: absolute;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  border: 1px solid var(--paper-border);
+  border-radius: var(--radius-sm);
+  background: var(--paper-panel);
+  color: var(--paper-ink);
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 700;
+  pointer-events: none;
+  transform: translate(-50%, -100%);
+}
+
+.office-unseated-host .pixel-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .office-away-text {

@@ -203,6 +203,19 @@ test('04 project create update and delete remain one local workflow', async ({ p
 
 test('05 product assignment exposes pending change-task transfer', async ({ page }) => {
   await page.goto('/#/products')
+  await expect(page.getByText('담당제품 임시 배정', { exact: true })).toBeVisible()
+  const allocation = page.locator('[data-product-id][data-product-allocation-watermark]').first()
+  await expect(allocation).toBeVisible()
+  expect(await allocation.evaluate((element) => getComputedStyle(element, '::before').opacity)).toBe('0.08')
+  for (const route of ['products', 'team']) {
+    await page.goto('/#/' + route)
+    const download = page.waitForEvent('download')
+    await page.getByRole('button', { name: 'CSV 내려받기' }).click()
+    const file = await download
+    expect(file.suggestedFilename()).toBe('product-allocations-VOID.csv')
+    expect((await readFile((await file.path())!, 'utf8')).split('\n')[0]).toBe('\uFEFF구분,제품명,담당자명,위탁사명')
+  }
+  await page.goto('/#/products')
   await expect(page.getByRole('button', { name: '제품 배정', exact: true })).toHaveCount(0)
   const card = page.getByRole('article').filter({ has: page.getByRole('heading', { name: '자사제품 B', exact: true }) })
   // 카드의 행동은 하나(담당자 변경)뿐이고, 정보 수정·삭제는 더보기(⋯)에 있다.
@@ -695,17 +708,20 @@ test('22 home office shows one shared layout and only the leader rearranges seat
 
   await office.getByRole('button', { name: '자리 배치', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '사무실 자리 배치' })
-  await dialog.getByLabel('1번 자리').selectOption({ label: '파트원 B · 지금 6번 자리' })
+  await dialog.getByLabel('9번 자리', { exact: true }).selectOption({ label: '파트원 B · 지금 6번 자리' })
+  await dialog.getByLabel('10번 자리', { exact: true }).selectOption({ label: '파트원 C · 지금 7번 자리' })
   await expect(dialog.getByText('6번 자리에서 옮겨 왔어요.')).toBeVisible()
   await dialog.getByRole('button', { name: '저장하기' }).click()
   await expect(dialog).toHaveCount(0)
   await expect(page.locator('.toast').filter({ hasText: '사무실 자리 배치를 저장했어요.' })).toBeVisible()
-  await expect(seats).toContainText('파트원 B, 1번 자리 · 창가 쪽 줄')
+  await expect(seats).toContainText('파트원 B, 9번 자리 · 창가 쪽 줄')
+  await expect(seats).toContainText('파트원 C, 10번 자리 · 통로 쪽 줄')
   await expect(seats).not.toContainText('6번 자리')
 
   await switchPreviewRole(page, '파트원')
   const memberOffice = page.getByRole('region', { name: '우리 파트 사무실' })
-  await expect(memberOffice.getByRole('list', { name: '자리 배치' })).toContainText('파트원 B, 1번 자리 · 창가 쪽 줄')
+  await expect(memberOffice.getByRole('list', { name: '자리 배치' })).toContainText('파트원 B, 9번 자리 · 창가 쪽 줄')
+  await expect(memberOffice.getByRole('list', { name: '자리 배치' })).toContainText('파트원 C, 10번 자리 · 통로 쪽 줄')
   await expect(memberOffice.getByRole('button', { name: '자리 배치', exact: true })).toHaveCount(0)
 })
 

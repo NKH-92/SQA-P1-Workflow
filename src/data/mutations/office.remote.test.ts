@@ -41,7 +41,7 @@ describe('office seat mutation contract (remote)', () => {
       seats: [{ seat_index: 3, profile_id: MEMBER, gender: 'male', style_seed: 99, name: 'extra' } as never],
     })
     expect(result).toEqual({ changed: true })
-    expect(mocks.rpc).toHaveBeenCalledWith('replace_office_seats', {
+    expect(mocks.rpc).toHaveBeenCalledWith('replace_office_seats_v2', {
       p_seats: [{ seat_index: 3, profile_id: MEMBER, gender: 'male', style_seed: 99 }],
       p_expected_revision: 'rev-1',
     })

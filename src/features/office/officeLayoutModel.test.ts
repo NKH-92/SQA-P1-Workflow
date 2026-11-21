@@ -22,10 +22,12 @@ const layout: OfficeLayout = {
 const seedFor = (seatIndex: number) => 1000 + seatIndex
 
 describe('office layout model', () => {
-  it('opens all eight seats with the stored people and fresh seeds for empty seats', () => {
+  it('opens all ten seats with the stored people and fresh seeds for empty seats', () => {
     const drafts = draftsFromLayout(layout, seedFor)
-    expect(drafts).toHaveLength(8)
+    expect(drafts).toHaveLength(10)
     expect(drafts[1]).toMatchObject({ seatIndex: 2, profileId: 'a', gender: 'female', styleSeed: 10 })
+    expect(drafts[8]).toMatchObject({ seatIndex: 9, profileId: null })
+    expect(drafts[9]).toMatchObject({ seatIndex: 10, profileId: null })
     expect(drafts[0]).toMatchObject({ seatIndex: 1, profileId: null, gender: null, styleSeed: 1001 })
   })
 

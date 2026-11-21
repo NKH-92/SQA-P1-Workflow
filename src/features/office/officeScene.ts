@@ -1,32 +1,32 @@
+import { AISLE_ROW_SEATS, OFFICE_SEAT_COUNT, WINDOW_ROW_SEATS } from '../../data/validation/officeSeats'
 import type { DeskItem, OfficeLook, ScreenKind } from './officeCharacter'
-import { SCENE_TOP_BAND, WALL_BOTTOM, WORLD_BOTTOM, WORLD_LEFT, WORLD_RIGHT } from './officeGeometry'
+import { DESK_ISLAND_LEFT, DESK_ISLAND_RIGHT, DESK_SLOT_WIDTH, SCENE_TOP_BAND, WALL_BOTTOM, WORLD_BOTTOM, WORLD_LEFT, WORLD_RIGHT } from './officeGeometry'
 import { BACK_SEAT_ROW, FRONT_TABLE_ROW, SPRITE_WIDTH, type SpriteView } from './officeSprites'
 import type { Facing } from './officeStandingSprites'
-import { drawFloorZones, drawWindowWallBase, drawWorldExtras } from './officeWorld'
+import { drawFloorZones, drawWindowWallBase, drawWorldExtras, MEETING_ROOM } from './officeWorld'
 
 export { SCENE_HEIGHT, SCENE_TOP_BAND, SCENE_WIDTH, VIEW_HEIGHT } from './officeGeometry'
 
 /**
  * 제약회사 QA 사무실 장면(바람의나라풍 3/4 탑다운 시점).
  * 좌표는 논리 픽셀이다. 화면에서는 카드 폭에 맞춰 키우되 한 칸이 흐려지지 않게 그대로 늘린다.
- * 원래 장면(x 0~384, y 0~128) 바깥은 전체 화면 사무실에서만 보이는 곳이다(officeWorld.ts).
+ * 원래 장면(x 0~384, y 0~140) 바깥은 전체 화면 사무실에서만 보이는 곳이다(officeWorld.ts).
  */
-const ISLAND_LEFT = 112
-const SLOT_WIDTH = 40
 const TABLE_FAR = 64
 const TABLE_MID = 74
 const TABLE_NEAR = 84
 const NEAR_SEAT = 105
 
 /** 좁은 화면에서 처음 보여 줄 가운데(책상 섬). 나머지는 옆으로 밀어서 본다. */
-export const SCENE_FOCUS_LEFT = ISLAND_LEFT - 20
-export const SCENE_FOCUS_RIGHT = ISLAND_LEFT + SLOT_WIDTH * 4 + 20
+export const SCENE_FOCUS_LEFT = DESK_ISLAND_LEFT - 20
+export const SCENE_FOCUS_RIGHT = DESK_ISLAND_RIGHT + 20
 
 export type SeatRow = 'window' | 'aisle'
 
 export type SceneSeat = {
   seatIndex: number
   row: SeatRow
+  column: number
   view: SpriteView
   /** 자리 가운데 x */
   x: number
@@ -39,18 +39,18 @@ export type SceneSeat = {
   headTopY: number
 }
 
-export const SEAT_COUNT = 8
-
-export const SCENE_SEATS: readonly SceneSeat[] = Array.from({ length: SEAT_COUNT }, (_, index) => {
+export const SCENE_SEATS: readonly SceneSeat[] = Array.from({ length: OFFICE_SEAT_COUNT }, (_, index) => {
   const seatIndex = index + 1
-  const row: SeatRow = index < 4 ? 'window' : 'aisle'
-  const x = ISLAND_LEFT + SLOT_WIDTH * (index % 4) + SLOT_WIDTH / 2
+  const row: SeatRow = WINDOW_ROW_SEATS.includes(seatIndex) ? 'window' : 'aisle'
+  const column = (row === 'window' ? WINDOW_ROW_SEATS : AISLE_ROW_SEATS).indexOf(seatIndex)
+  const x = DESK_ISLAND_LEFT + DESK_SLOT_WIDTH * (column + 0.5)
   const view: SpriteView = row === 'window' ? 'front' : 'back'
   const spriteX = x - SPRITE_WIDTH / 2
   const spriteY = row === 'window' ? TABLE_FAR - FRONT_TABLE_ROW : NEAR_SEAT - BACK_SEAT_ROW
   return {
     seatIndex,
     row,
+    column,
     view,
     x,
     spriteX,
@@ -68,8 +68,8 @@ export const CORRIDOR_Y = 48
 /** 통로 쪽 의자 앞 통로 */
 export const AISLE_Y = 120
 /** 책상 섬 왼쪽·오른쪽 세로 길 */
-export const LEFT_LANE_X = 98
-export const RIGHT_LANE_X = 284
+export const LEFT_LANE_X = DESK_ISLAND_LEFT - 14
+export const RIGHT_LANE_X = DESK_ISLAND_RIGHT + 14
 /** 전체 화면 사무실의 아래쪽 복도(회의실·복합기·출입 기록부·샘플 보관장으로 이어진다) */
 export const LOWER_Y = 150
 /** 통창 앞 창가 바 앞길(커피 머신·창밖 구경·정수기) */
@@ -105,23 +105,16 @@ export const TRIP_SPOTS: Record<TripDestination, TripSpot> = {
 }
 
 /** 회의실 문(아래쪽 복도에서 들어가는 곳)과 안쪽 둘레 길 */
-export const MEETING_DOOR_X = 30
-export const MEETING_RING = { top: 176, bottom: 228, left: -28, right: 52 } as const
+export const MEETING_DOOR_X = (MEETING_ROOM.doorLeft + MEETING_ROOM.doorRight) / 2
+export const MEETING_RING = { top: 176, bottom: 231, left: MEETING_ROOM.left + 8, right: MEETING_ROOM.right - 8 } as const
 
-/**
- * 회의실 안에서 서는 자리(테이블을 둘러싼다). 앞 여섯 자리가 먼저 찬다.
- * 위줄은 테이블 너머(아래를 봄), 아래줄은 테이블 앞(위를 봄), 양 끝은 옆을 본다.
- */
-export const MEETING_SPOTS: readonly TripSpot[] = [
-  { x: -6, y: 190, facing: 'down' },
-  { x: 12, y: 190, facing: 'down' },
-  { x: 30, y: 190, facing: 'down' },
-  { x: -6, y: 228, facing: 'up' },
-  { x: 12, y: 228, facing: 'up' },
-  { x: 30, y: 228, facing: 'up' },
-  { x: MEETING_RING.left, y: 210, facing: 'right' },
-  { x: MEETING_RING.right, y: 210, facing: 'left' },
-]
+/** 회의실 테이블 양쪽에는 좌석에 앉은 참여자가 들어갈 수 있는 자리 10곳이 있다. */
+export const MEETING_SPOTS: readonly TripSpot[] = [-20, -1, 18, 37, 56].flatMap((x) => [
+  { x, y: 192, facing: 'down' },
+  { x, y: MEETING_RING.bottom, facing: 'up' },
+])
+/** 자리에 배치되지 않은 회의 주최자는 입구 쪽에 이름표로 보인다. */
+export const MEETING_ORGANIZER_SPOT: ScenePoint = { x: MEETING_RING.right - 4, y: MEETING_ROOM.top + 7 }
 
 /** 자리에서 일어나 서는 곳. 창가 쪽은 의자 뒤(복도 쪽), 통로 쪽은 의자 앞(통로 쪽)이다. */
 export function seatStandSpot(seat: Pick<SceneSeat, 'x' | 'row'>): TripSpot {
@@ -166,7 +159,7 @@ export const SCENE_HOTSPOTS: readonly SceneHotspot[] = [
   { id: 'notice', x: 224, y: 3, w: 50, h: 31, sign: { x: 249, y: 4 } },
   { id: 'projects', x: 3, y: 41, w: 54, h: 58, sign: { x: 31, y: 43 } },
   { id: 'menu', x: 298, y: 79, w: 28, h: 34, sign: { x: 312, y: 79 } },
-  { id: 'meeting', x: -42, y: 146, w: 108, h: 108, sign: { x: 30, y: 146 } },
+  { id: 'meeting', x: MEETING_ROOM.left - 2, y: 146, w: MEETING_ROOM.right - MEETING_ROOM.left + 4, h: 108, sign: { x: MEETING_DOOR_X, y: 146 } },
   { id: 'samples', x: 328, y: 154, w: 48, h: 54, sign: { x: 359, y: 155 } },
   { id: 'duties', x: 386, y: 154, w: 44, h: 52, sign: { x: 408, y: 155 } },
   { id: 'gate', x: 178, y: 216, w: 56, h: 40, sign: { x: 206, y: 217 } },
@@ -373,7 +366,13 @@ export function drawBackground(ctx: Ctx) {
   drawDocumentCabinet(ctx)
   drawProjectCorner(ctx)
   // 책상 섬 그림자
-  rect(ctx, ISLAND_LEFT - 4, TABLE_NEAR + 4, SLOT_WIDTH * 4 + 8, 6, '#b3c0cf')
+  rect(ctx, DESK_ISLAND_LEFT - 6, TABLE_NEAR + 5, DESK_ISLAND_RIGHT - DESK_ISLAND_LEFT + 12, 7, '#acb8c9')
+  rect(ctx, DESK_ISLAND_LEFT - 3, TABLE_NEAR + 6, DESK_ISLAND_RIGHT - DESK_ISLAND_LEFT + 6, 5, '#a0aebe')
+  for (const seat of SCENE_SEATS) {
+    const y = seat.row === 'window' ? TABLE_FAR - 5 : AISLE_CHAIR_BASE_Y
+    rect(ctx, seat.x - 10, y, 20, 2, '#aab7c8')
+    rect(ctx, seat.x - 7, y + 2, 14, 1, '#b1bdcc')
+  }
   drawWorldExtras(ctx)
 }
 
@@ -478,12 +477,12 @@ export type DeskOccupant = {
  * 창가 쪽 사람 바로 앞에 그리고, 그 위에 손을 올린다. 한 번만 그린다.
  */
 export function drawIslandBack(ctx: Ctx) {
-  const left = ISLAND_LEFT - 4
-  const width = SLOT_WIDTH * 4 + 8
+  const left = DESK_ISLAND_LEFT - 4
+  const width = DESK_ISLAND_RIGHT - DESK_ISLAND_LEFT + 8
   rect(ctx, left, TABLE_FAR - 1, width, 1, '#cfccc4')
   rect(ctx, left, TABLE_FAR, width, TABLE_NEAR - TABLE_FAR, DESK_TOP)
-  for (let index = 1; index < 4; index += 1) {
-    rect(ctx, ISLAND_LEFT + SLOT_WIDTH * index, TABLE_FAR, 1, TABLE_NEAR - TABLE_FAR, DESK_LINE)
+  for (let index = 1; index < WINDOW_ROW_SEATS.length; index += 1) {
+    rect(ctx, DESK_ISLAND_LEFT + DESK_SLOT_WIDTH * index, TABLE_FAR, 1, TABLE_NEAR - TABLE_FAR, DESK_LINE)
   }
   rect(ctx, left, TABLE_NEAR, width, 3, '#dedcd5')
   rect(ctx, left, TABLE_NEAR + 3, width, 1, '#aeaba3')
@@ -501,12 +500,12 @@ export function drawIslandBack(ctx: Ctx) {
 
 /** 책상 섬 앞쪽 층: 가운데 칸막이와 통로 쪽 모니터·키보드·소품. */
 export function drawIslandFront(ctx: Ctx, occupants: readonly DeskOccupant[]) {
-  const left = ISLAND_LEFT - 4
-  const width = SLOT_WIDTH * 4 + 8
+  const left = DESK_ISLAND_LEFT - 4
+  const width = DESK_ISLAND_RIGHT - DESK_ISLAND_LEFT + 8
   rect(ctx, left + 2, TABLE_MID - 6, width - 4, 1, '#c7d8ea')
   rect(ctx, left + 2, TABLE_MID - 5, width - 4, 5, '#6f93bd')
   rect(ctx, left + 2, TABLE_MID - 1, width - 4, 1, '#5a7ca5')
-  for (let index = 1; index < 4; index += 1) rect(ctx, ISLAND_LEFT + SLOT_WIDTH * index, TABLE_MID - 5, 1, 5, '#5a7ca5')
+  for (let index = 1; index < WINDOW_ROW_SEATS.length; index += 1) rect(ctx, DESK_ISLAND_LEFT + DESK_SLOT_WIDTH * index, TABLE_MID - 5, 1, 5, '#5a7ca5')
 
   const bySeat = new Map(occupants.map((occupant) => [occupant.seatIndex, occupant]))
   for (const seat of SCENE_SEATS) {

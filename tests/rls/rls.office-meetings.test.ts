@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { isSupabaseRlsTargetConfigured, RLS_SKIP_NOTE } from './helpers'
@@ -85,7 +86,7 @@ suite(`RLS office meetings (${RLS_SKIP_NOTE})`, () => {
     expect((await admin.from('office_seats').delete().gte('seat_index', 1)).error).toBeNull()
     const seated = await admin.from('office_seats').insert([
       { seat_index: 1, profile_id: requiredEnv('RLS_MEMBER_A_USER_ID'), gender: 'female', style_seed: 1 },
-      { seat_index: 2, profile_id: requiredEnv('RLS_MEMBER_B_USER_ID'), gender: 'male', style_seed: 2 },
+      { seat_index: 10, profile_id: requiredEnv('RLS_MEMBER_B_USER_ID'), gender: 'male', style_seed: 2 },
       { seat_index: 3, profile_id: requiredEnv('RLS_LEADER_USER_ID'), gender: 'male', style_seed: 3 },
     ])
     expect(seated.error).toBeNull()
@@ -197,7 +198,10 @@ suite(`RLS office meetings (${RLS_SKIP_NOTE})`, () => {
   })
 
   it('invites only active people seated in the office and checks the input', async () => {
+    const invitees = Array.from({ length: 11 }, () => randomUUID())
     const cases: Array<[unknown, unknown, string]> = [
+      ['', invitees.slice(0, 10), 'SQA_OFFICE_MEETING_PARTICIPANT_INVALID'],
+      ['', invitees, 'SQA_OFFICE_MEETING_INVALID'],
       ['', [requiredEnv('RLS_INACTIVE_MEMBER_USER_ID')], 'SQA_OFFICE_MEETING_PARTICIPANT_INVALID'],
       ['', [requiredEnv('RLS_TEAM_LEADER_USER_ID')], 'SQA_OFFICE_MEETING_PARTICIPANT_INVALID'],
       ['', [], 'SQA_OFFICE_MEETING_INVALID'],

@@ -1,3 +1,4 @@
+import { ProductAllocationNotice } from '../components/ProductAllocationNotice'
 import { useMemo, useState } from 'react'
 import { ChevronRight, ListTodo, Send } from 'lucide-react'
 import { EmptyState } from '../components/ui'
@@ -174,7 +175,7 @@ export function Dashboard({
       <section aria-labelledby="member-home-owned" className="home-card home-owned">
         <div className="home-card-head">
           <h2 id="member-home-owned">내 담당</h2>
-          <small>제품 {ownProducts.length} · 정기 업무 {ownDuties.length}</small>
+          <small>제품 {ownProducts.length}<ProductAllocationNotice compact /> · 정기 업무 {ownDuties.length}</small>
         </div>
         {ownProducts.length === 0 && ownDuties.length === 0 ? (
           <p className="home-card-empty">아직 배정받은 제품이나 업무가 없어요. 배정받으려면 파트장에게 알려 주세요.</p>

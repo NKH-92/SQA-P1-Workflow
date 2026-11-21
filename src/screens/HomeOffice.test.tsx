@@ -62,7 +62,7 @@ describe('HomeOffice', () => {
     render(<Harness initial={createPreviewData()} profile={previewLeader} />)
 
     expect(screen.getByRole('heading', { name: '우리 파트 사무실' })).toBeInTheDocument()
-    expect(screen.getByText('8자리 중 4자리')).toBeInTheDocument()
+    expect(screen.getByText('10자리 중 4자리')).toBeInTheDocument()
     const items = seatTexts()
     expect(items).toHaveLength(4)
     expect(items[0]).toMatch(/^파트원 A, 2번 자리 · 창가 쪽 줄 · /)

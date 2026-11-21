@@ -93,7 +93,12 @@ export function computeOfficeViewport(
 
 /** 옆으로 밀어 보는 장면을 처음 열 때 책상 섬이 가운데 오도록 하는 가로 스크롤 위치 */
 export function initialOfficeScroll(viewport: OfficeViewportState, containerWidth: number, camera: OfficeCamera = CORE_CAMERA): number {
+  return officeScrollForWorldX(viewport, containerWidth, camera, (SCENE_FOCUS_LEFT + SCENE_FOCUS_RIGHT) / 2)
+}
+
+/** 월드의 좌표를 스크롤 영역 가운데로 옮긴다. */
+export function officeScrollForWorldX(viewport: OfficeViewportState, containerWidth: number, camera: OfficeCamera, worldX: number): number {
   if (!viewport.scrollable) return 0
-  const center = ((SCENE_FOCUS_LEFT + SCENE_FOCUS_RIGHT) / 2 - camera.x) * viewport.cssScale
+  const center = (worldX - camera.x) * viewport.cssScale
   return Math.max(0, Math.min(viewport.cssWidth - containerWidth, Math.round(center - containerWidth / 2)))
 }

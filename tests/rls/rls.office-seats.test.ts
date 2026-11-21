@@ -108,6 +108,31 @@ suite(`RLS office seats (${RLS_SKIP_NOTE})`, () => {
     expect((await layout(leader)).seats).toHaveLength(2)
   })
 
+  it('saves and replaces both new seats without allowing the legacy writer to erase them', async () => {
+    const before = await layout(leader)
+    const seats = [
+      { seat_index: 9, profile_id: requiredEnv('RLS_MEMBER_A_USER_ID'), gender: 'female', style_seed: 9 },
+      { seat_index: 10, profile_id: requiredEnv('RLS_MEMBER_B_USER_ID'), gender: 'female', style_seed: 10 },
+    ]
+    const saved = await leader.rpc('replace_office_seats_v2', { p_expected_revision: before.revision, p_seats: seats })
+    expect(saved.error).toBeNull()
+    expect(saved.data).toBe(true)
+
+    const expanded = await layout(leader)
+    expect(expanded.seats.map((seat) => seat.seat_index)).toEqual([9, 10])
+    expect(await layout(member)).toEqual(expanded)
+
+    const legacy = await leader.rpc('replace_office_seats', { p_expected_revision: expanded.revision, p_seats: [] })
+    expect(legacy.error?.details).toBe('SQA_OFFICE_LAYOUT_CONFLICT')
+    const stale = await leader.rpc('replace_office_seats_v2', { p_expected_revision: before.revision, p_seats: [] })
+    expect(stale.error?.details).toBe('SQA_OFFICE_LAYOUT_CONFLICT')
+    expect(await layout(leader)).toEqual(expanded)
+
+    const repeat = await leader.rpc('replace_office_seats_v2', { p_expected_revision: expanded.revision, p_seats: seats })
+    expect(repeat.error).toBeNull()
+    expect(repeat.data).toBe(false)
+  })
+
   it('rejects duplicates, inactive accounts and malformed seats', async () => {
     const { revision } = await layout(leader)
     const cases: Array<[unknown, string]> = [
@@ -116,13 +141,13 @@ suite(`RLS office seats (${RLS_SKIP_NOTE})`, () => {
         { seat_index: 2, profile_id: requiredEnv('RLS_MEMBER_A_USER_ID'), gender: 'female', style_seed: 1 },
       ], 'SQA_OFFICE_SEATS_DUPLICATE'],
       [[{ seat_index: 1, profile_id: requiredEnv('RLS_INACTIVE_MEMBER_USER_ID'), gender: 'male', style_seed: 1 }], 'SQA_OFFICE_SEAT_PROFILE_INACTIVE'],
-      [[{ seat_index: 9, profile_id: requiredEnv('RLS_MEMBER_A_USER_ID'), gender: 'male', style_seed: 1 }], 'SQA_OFFICE_SEATS_INVALID'],
+      [[{ seat_index: 11, profile_id: requiredEnv('RLS_MEMBER_A_USER_ID'), gender: 'male', style_seed: 1 }], 'SQA_OFFICE_SEATS_INVALID'],
       [[{ seat_index: 1, profile_id: requiredEnv('RLS_MEMBER_A_USER_ID'), gender: 'other', style_seed: 1 }], 'SQA_OFFICE_SEATS_INVALID'],
       [[{ seat_index: 1, profile_id: requiredEnv('RLS_MEMBER_A_USER_ID'), gender: 'male', style_seed: 3000000000 }], 'SQA_OFFICE_SEATS_INVALID'],
       [{ seat_index: 1 }, 'SQA_OFFICE_SEATS_INVALID'],
     ]
     for (const [seats, detail] of cases) {
-      const result = await leader.rpc('replace_office_seats', { p_expected_revision: revision, p_seats: seats })
+      const result = await leader.rpc('replace_office_seats_v2', { p_expected_revision: revision, p_seats: seats })
       expect(result.error?.details ?? result.error?.message).toContain(detail)
     }
     expect((await layout(leader)).revision).toBe(revision)
@@ -134,8 +159,10 @@ suite(`RLS office seats (${RLS_SKIP_NOTE})`, () => {
       const view = await layout(client)
       expect(view).toEqual(leaderView)
       expect(view.seats.every((seat) => seat.name.length > 0)).toBe(true)
-      const attempt = await client.rpc('replace_office_seats', { p_expected_revision: view.revision, p_seats: [] })
-      expect(attempt.error).not.toBeNull()
+      for (const method of ['replace_office_seats', 'replace_office_seats_v2']) {
+        const attempt = await client.rpc(method, { p_expected_revision: view.revision, p_seats: [] })
+        expect(attempt.error?.details).toBe('SQA_ACTIVE_LEADER_REQUIRED')
+      }
       expect((await layout(leader)).revision).toBe(leaderView.revision)
     }
   })
@@ -144,8 +171,10 @@ suite(`RLS office seats (${RLS_SKIP_NOTE})`, () => {
     for (const client of [inactive, pending, anonymous]) {
       const read = await client.rpc('get_office_seats')
       expect(read.error).not.toBeNull()
-      const write = await client.rpc('replace_office_seats', { p_expected_revision: '', p_seats: [] })
-      expect(write.error).not.toBeNull()
+      for (const method of ['replace_office_seats', 'replace_office_seats_v2']) {
+        const write = await client.rpc(method, { p_expected_revision: '', p_seats: [] })
+        expect(write.error).not.toBeNull()
+      }
     }
   })
 

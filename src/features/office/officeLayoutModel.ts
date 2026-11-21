@@ -1,5 +1,5 @@
 import type { OfficeSeatInput } from '../../data/validation/officeSeats'
-import { OFFICE_SEAT_COUNT } from '../../data/validation/officeSeats'
+import { OFFICE_SEAT_COUNT, WINDOW_ROW_SEATS } from '../../data/validation/officeSeats'
 import type { OfficeGender, OfficeLayout, Profile, Role } from '../../types'
 import { resolveOfficeCharacter, type OfficeCharacter } from './officeCharacter'
 
@@ -22,11 +22,8 @@ export type SceneOccupant = {
   character: OfficeCharacter
 }
 
-export const WINDOW_ROW_SEATS = [1, 2, 3, 4] as const
-export const AISLE_ROW_SEATS = [5, 6, 7, 8] as const
-
 export function seatRowLabel(seatIndex: number) {
-  return seatIndex <= 4 ? '창가 쪽 줄' : '통로 쪽 줄'
+  return WINDOW_ROW_SEATS.includes(seatIndex) ? '창가 쪽 줄' : '통로 쪽 줄'
 }
 
 export function emptyOfficeLayout(): OfficeLayout {

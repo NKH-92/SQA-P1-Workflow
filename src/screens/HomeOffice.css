@@ -70,6 +70,25 @@
   text-align: center;
 }
 
+/* 작은 휴대폰에서 장면과 상태표를 유지하면서 첫 업무가 바로 보이게 한다. */
+@media (max-width: 360px) and (max-height: 640px) {
+  .home:has(.office-card) {
+    gap: 8px;
+  }
+
+  .office-card > .office-card-head {
+    padding-block: 6px;
+  }
+
+  .office-card .office-scroll-hint {
+    padding-block: 2px 3px;
+  }
+
+  .home:has(.office-card) > .home-todo > .home-card-head {
+    padding-block: 7px;
+  }
+}
+
 /* 누르면 화면을 옮기는 기물: 위에 늘 간판이 걸려 있고, 올리거나 포커스하면 테두리가 뜨고 간판이 노랗게 바뀐다. */
 .office-hotspots {
   position: absolute;
@@ -115,6 +134,11 @@
   transition:
     background-color var(--dur-fast) var(--ease-out),
     color var(--dur-fast) var(--ease-out);
+}
+
+/* 좁은 배율에서는 인접 기물의 간판과 숫자 표시가 두 줄에 놓인다. */
+.office-stage[data-compact='true'] .office-hotspot:is([data-hotspot='cabinet'], [data-hotspot='calendar']) .office-hotspot-sign {
+  margin-top: 21px;
 }
 
 .office-hotspot-arrow {
@@ -249,7 +273,7 @@
   position: absolute;
   top: -2px;
   left: 0;
-  max-width: 88px;
+  max-width: min(88px, calc(var(--office-seat-gap, 92px) - 4px));
   overflow: hidden;
   color: var(--paper-on-accent);
   font-size: 11px;
@@ -912,6 +936,33 @@
   white-space: nowrap;
   pointer-events: none;
   transform: translate(-50%, -100%);
+}
+
+.office-stage[data-compact='true'] .office-away-chip {
+  gap: 2px;
+  padding-inline: 3px;
+}
+
+.office-unseated-host {
+  position: absolute;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  border: 1px solid var(--paper-border);
+  border-radius: var(--radius-sm);
+  background: var(--paper-panel);
+  color: var(--paper-ink);
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 700;
+  pointer-events: none;
+  transform: translate(-50%, -100%);
+}
+
+.office-unseated-host .pixel-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .office-away-text {

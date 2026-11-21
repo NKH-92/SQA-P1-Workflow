@@ -38,7 +38,7 @@ describe('office vignettes', () => {
 })
 
 it('keeps every personal desk inside the world and falls back without a seat', () => {
-  for (let seat = 1; seat <= 8; seat++) {
+  for (let seat = 1; seat <= 10; seat++) {
     const area = vignetteArea('my-desk', seat)
     expect(area.x).toBeGreaterThanOrEqual(WORLD_LEFT)
     expect(area.y).toBeGreaterThanOrEqual(WORLD_TOP)

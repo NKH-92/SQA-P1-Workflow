@@ -5,7 +5,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import type { MutationRunner } from '../app/hooks/useMutationRunner'
 import type { TabId } from '../app/types'
 import type { AppDataUpdater } from '../data/repositories/appDataUpdater'
-import { presenceChipLabel, presenceOf, presenceSummary, PRESENCE_TEXT } from '../data/validation/memberPresence'
+import { leaveTypeLabel, presenceChipLabel, presenceOf, presenceSummary, PRESENCE_TEXT } from '../data/validation/memberPresence'
 import { hasOfficeMeetingStarted, isOfficeMeetingOpen, officeMeetingPlace, type OfficeMeetingStartInput } from '../data/validation/officeMeeting'
 import { canManageTeamData } from '../domain/permissions'
 import type { OfficeHotspotLink, OfficePersonLink, OfficeSceneAbsence } from '../features/office/components/OfficeScene'
@@ -125,11 +125,12 @@ export function useOfficeHome({
         kind: effective.kind,
         summary: presenceSummary(effective, today),
         chip: presenceChipLabel(effective, today),
+        compactChip: effective.leave ? leaveTypeLabel(effective.leave) : PRESENCE_TEXT[effective.kind].short,
       })
       if (status?.leave) return [entry(status)]
       if (inMeetingElsewhere.has(occupant.seatIndex) && meeting) {
         const place = officeMeetingPlace(meeting)
-        return [{ seatIndex: occupant.seatIndex, kind: 'meeting', summary: `회의 · ${place}`, chip: `회의 · ${place}` }]
+        return [{ seatIndex: occupant.seatIndex, kind: 'meeting', summary: `회의 · ${place}`, chip: `회의 · ${place}`, compactChip: '회의' }]
       }
       return status ? [entry(status)] : []
     })

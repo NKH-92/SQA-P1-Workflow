@@ -219,7 +219,7 @@ function buildGraph(): WalkGraph {
 
   // 회의실: 문에서 테이블 둘레 길로 들어가 자리에 선다.
   const ringNode = (x: number, y: number) => add(`ring:${x}:${y}`, x, y)
-  const ringTop = [MEETING_RING.left, -6, 12, MEETING_DOOR_X, MEETING_RING.right].map((x) => ringNode(x, MEETING_RING.top))
+  const ringTop = [MEETING_RING.left, MEETING_DOOR_X, MEETING_RING.right].map((x) => ringNode(x, MEETING_RING.top))
   const bottomLeft = ringNode(MEETING_RING.left, MEETING_RING.bottom)
   const bottomRight = ringNode(MEETING_RING.right, MEETING_RING.bottom)
   const ringBottom = [bottomLeft, bottomRight]
@@ -228,9 +228,11 @@ function buildGraph(): WalkGraph {
   MEETING_SPOTS.forEach((spot, index) => {
     const id = add(meetingSpotNodeId(index), spot.x, spot.y)
     if (spot.y === MEETING_RING.bottom) ringBottom.push(id)
-    else if (spot.x === MEETING_RING.left) ringLeft.push(id)
-    else if (spot.x === MEETING_RING.right) ringRight.push(id)
-    else link(id, ringNode(spot.x, MEETING_RING.top))
+    else {
+      const pathNode = ringNode(spot.x, MEETING_RING.top)
+      ringTop.push(pathNode)
+      link(id, pathNode)
+    }
   })
   link(onLower(MEETING_DOOR_X), ringNode(MEETING_DOOR_X, MEETING_RING.top))
 

@@ -1,4 +1,4 @@
-import type { ReviewRequest } from '../types'
+import type { ReviewFeedback, ReviewRequest } from '../types'
 import { supabase } from '../lib/supabase'
 import { assembleAppData, emptyAppData, type AssembledAppData } from './fetch/assembleAppData'
 import { fetchChangeQueries } from './fetch/changeQueries'
@@ -44,6 +44,10 @@ function earliestSnapshot(timestamps: ReadonlyArray<string | null>): string | nu
   return valid.reduce((earliest, current) => (Date.parse(current) < Date.parse(earliest) ? current : earliest))
 }
 
+function feedbackFreshness(feedback: ReviewFeedback): number {
+  return Date.parse(feedback.voided_at ?? feedback.updated_at ?? feedback.created_at ?? '') || 0
+}
+
 export function mergeReviewRequests(
   pending: ReviewRequest[] | null | undefined,
   recentClosed: ReviewRequest[] | null | undefined,
@@ -62,10 +66,14 @@ export function mergeReviewRequests(
       || (nextFreshness === currentFreshness && request.status === 'pending' && current.status !== 'pending')
         ? request
         : current
-    const feedbackById = new Map<string, NonNullable<ReviewRequest['review_feedback']>[number]>()
+    const feedbackById = new Map<string, ReviewFeedback>()
     for (const feedback of [...(current.review_feedback ?? []), ...(request.review_feedback ?? [])]) {
       const previous = feedbackById.get(feedback.id)
-      if (!previous || Date.parse(feedback.created_at ?? '') >= Date.parse(previous.created_at ?? '')) {
+      // Feedback can change without changing its request or its own creation time.
+      const previousFreshness = previous && feedbackFreshness(previous)
+      const incomingFreshness = feedbackFreshness(feedback)
+      if (previousFreshness === undefined || incomingFreshness > previousFreshness
+        || (incomingFreshness === previousFreshness && (!previous?.voided_at || feedback.voided_at))) {
         feedbackById.set(feedback.id, feedback)
       }
     }

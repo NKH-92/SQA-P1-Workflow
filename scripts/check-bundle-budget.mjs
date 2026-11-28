@@ -73,10 +73,8 @@ const EXPECTED_ROUTE_DYNAMIC_IMPORTS = new Set([
   'src/components/NotificationPanel.tsx',
   // 로그인·비밀번호 변경·계정 안내·설정 오류 화면은 해당 상태일 때만 받는다.
   'src/screens/AuthPanel.tsx',
-  'src/screens/BlockedProfile.tsx',
-  'src/screens/ConfigErrorScreen.tsx',
+  'src/screens/AuthGatePanels.ts',
   'src/screens/PasswordChangePanel.tsx',
-  'src/screens/ProfileLoadErrorScreen.tsx',
   // 내 상태(잠깐 비움·휴가·출장) 창은 열 때만 받는다.
   'src/features/office/components/MemberPresenceDialog.tsx',
   'src/screens/AnnouncementsPanel.tsx',

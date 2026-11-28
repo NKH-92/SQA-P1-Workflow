@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react'
 import { businessDateKey } from '../lib/businessTime'
 
-/** 지금부터 다음 서울 날짜가 될 때까지 남은 시간(ms). businessDateKey가 바뀌는 시점까지 1분 단위로 찾는다. */
+/** 지금부터 서울 날짜가 처음 바뀌는 시각까지 남은 밀리초. */
 export function millisecondsUntilNextBusinessDay(now: Date) {
-  // Asia/Seoul day boundary: advance until businessDateKey changes.
   const currentKey = businessDateKey(now)
-  let cursor = now.getTime() + 1000
-  const limit = now.getTime() + 36 * 60 * 60 * 1000
-  while (cursor < limit && businessDateKey(new Date(cursor)) === currentKey) {
-    cursor += 60_000
+  const timestamp = now.getTime()
+  let lower = 0
+  let upper = 36 * 60 * 60 * 1000
+  while (upper - lower > 1) {
+    const middle = lower + Math.floor((upper - lower) / 2)
+    if (businessDateKey(new Date(timestamp + middle)) === currentKey) lower = middle
+    else upper = middle
   }
-  return Math.max(1000, cursor - now.getTime())
+  return upper
 }
 
 /**

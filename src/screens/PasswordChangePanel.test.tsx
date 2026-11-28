@@ -25,7 +25,7 @@ afterEach(() => {
 
 describe('PasswordChangePanel', () => {
   it('keeps the remote E2E labels and lets password managers suggest a new password', () => {
-    render(<PasswordChangePanel onComplete={vi.fn()} onSignOut={vi.fn()} profile={profile} />)
+    render(<PasswordChangePanel onSignOut={vi.fn()} profile={profile} />)
 
     expect(screen.getByRole('heading', { name: '비밀번호 변경 필요' })).toBeInTheDocument()
     expect(screen.getByLabelText('새 비밀번호')).toHaveAttribute('autocomplete', 'new-password')
@@ -35,7 +35,7 @@ describe('PasswordChangePanel', () => {
 
   it('tells people right away when the confirmation differs', async () => {
     const user = userEvent.setup()
-    render(<PasswordChangePanel onComplete={vi.fn()} onSignOut={vi.fn()} profile={profile} />)
+    render(<PasswordChangePanel onSignOut={vi.fn()} profile={profile} />)
 
     await user.type(screen.getByLabelText('새 비밀번호'), 'new-password-1')
     const confirmation = screen.getByLabelText('새 비밀번호 확인')
@@ -49,7 +49,7 @@ describe('PasswordChangePanel', () => {
 
   it('can show both fields as plain text', async () => {
     const user = userEvent.setup()
-    render(<PasswordChangePanel onComplete={vi.fn()} onSignOut={vi.fn()} profile={profile} />)
+    render(<PasswordChangePanel onSignOut={vi.fn()} profile={profile} />)
 
     await user.click(screen.getByRole('checkbox', { name: '입력한 비밀번호 보기' }))
     expect(screen.getByLabelText('새 비밀번호')).toHaveAttribute('type', 'text')
@@ -63,7 +63,7 @@ describe('PasswordChangePanel', () => {
     const onSignOut = vi.fn(() => {
       flagWhenSignedOut = window.sessionStorage.getItem(PASSWORD_CHANGED_FLAG_KEY)
     })
-    render(<PasswordChangePanel onComplete={vi.fn()} onSignOut={onSignOut} profile={profile} />)
+    render(<PasswordChangePanel onSignOut={onSignOut} profile={profile} />)
 
     await user.type(screen.getByLabelText('새 비밀번호'), 'new-password-1')
     await user.type(screen.getByLabelText('새 비밀번호 확인'), 'new-password-1')
@@ -80,7 +80,7 @@ describe('PasswordChangePanel', () => {
       error: { name: 'FunctionsHttpError', context: new Response(JSON.stringify({ error: 'password_change_failed', message: 'Password is known to be weak' })) },
     })
     const onSignOut = vi.fn()
-    render(<PasswordChangePanel onComplete={vi.fn()} onSignOut={onSignOut} profile={profile} />)
+    render(<PasswordChangePanel onSignOut={onSignOut} profile={profile} />)
 
     await user.type(screen.getByLabelText('새 비밀번호'), 'new-password-1')
     await user.type(screen.getByLabelText('새 비밀번호 확인'), 'new-password-1')
@@ -102,7 +102,7 @@ describe('PasswordChangePanel', () => {
         error: { name: 'FunctionsHttpError', context: new Response(JSON.stringify({ error: code })) },
       })
       const onSignOut = vi.fn()
-      render(<PasswordChangePanel onComplete={vi.fn()} onSignOut={onSignOut} profile={profile} />)
+      render(<PasswordChangePanel onSignOut={onSignOut} profile={profile} />)
 
       await user.type(screen.getByLabelText('새 비밀번호'), 'new-password-1')
       await user.type(screen.getByLabelText('새 비밀번호 확인'), 'new-password-1')
@@ -118,7 +118,7 @@ describe('PasswordChangePanel', () => {
   it('points to the new password when the server response never arrives', async () => {
     const user = userEvent.setup()
     functions.invoke.mockResolvedValue({ data: null, error: { name: 'FunctionsFetchError' } })
-    render(<PasswordChangePanel onComplete={vi.fn()} onSignOut={vi.fn()} profile={profile} />)
+    render(<PasswordChangePanel onSignOut={vi.fn()} profile={profile} />)
 
     await user.type(screen.getByLabelText('새 비밀번호'), 'new-password-1')
     await user.type(screen.getByLabelText('새 비밀번호 확인'), 'new-password-1')
@@ -131,7 +131,7 @@ describe('PasswordChangePanel', () => {
 
   it('checks length, match and temporary-password reuse before calling the server', async () => {
     const user = userEvent.setup()
-    render(<PasswordChangePanel onComplete={vi.fn()} onSignOut={vi.fn()} profile={profile} />)
+    render(<PasswordChangePanel onSignOut={vi.fn()} profile={profile} />)
 
     await user.type(screen.getByLabelText('새 비밀번호'), '12345678')
     await user.type(screen.getByLabelText('새 비밀번호 확인'), '12345678')

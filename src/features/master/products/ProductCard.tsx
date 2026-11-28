@@ -2,7 +2,7 @@ import { productAllocationWatermark } from '../../../lib/productAllocationStatus
 import type { Dispatch, SetStateAction } from 'react'
 import { Pencil, Trash2, UserPlus, UserRoundCog } from 'lucide-react'
 import { OverflowMenu } from '../../../components/ui'
-import type { AppData, ProductCategory } from '../../../types'
+import type { Product, ProductAssignment, ProductCategory, Profile } from '../../../types'
 import type { PendingAdminDelete } from '../../../app/types'
 import type { AuditedDeleteInput } from '../../../data/contracts'
 import { DeleteConfirmAction } from '../shared/DeleteConfirmAction'
@@ -18,14 +18,15 @@ export type ProductEdit = {
 }
 
 /** 카드 부제: 자사제품은 ‘자사’만, 위탁제품은 위탁사 이름까지. */
-function productOriginLabel(product: Pick<AppData['products'][number], 'category' | 'company_name'>) {
+function productOriginLabel(product: Pick<Product, 'category' | 'company_name'>) {
   if (product.category === '위탁') return `위탁 · ${product.company_name?.trim() || '위탁사 없음'}`
   return '자사'
 }
 
 export function ProductCard({
   product,
-  data,
+  assignments,
+  profilesById,
   productEdits,
   setProductEdits,
   onSave,
@@ -34,10 +35,10 @@ export function ProductCard({
   onDelete,
   onAssign,
   readOnly = false,
-  assignments: providedAssignments,
 }: {
-  product: AppData['products'][number]
-  data: AppData
+  product: Product
+  assignments: readonly ProductAssignment[]
+  profilesById: ReadonlyMap<string, Profile>
   productEdits: Record<string, ProductEdit>
   setProductEdits: Dispatch<SetStateAction<Record<string, ProductEdit>>>
   onSave: (productId: string) => void
@@ -46,14 +47,17 @@ export function ProductCard({
   onDelete: (productId: string, input: AuditedDeleteInput) => void
   onAssign?: (productId: string) => void
   readOnly?: boolean
-  /** 패널이 제품별로 묶어 둔 이 제품의 배정. 없으면 data에서 찾는다(결과는 같다). */
-  assignments?: AppData['productAssignments']
 }) {
-  const assignments = providedAssignments
-    ?? data.productAssignments.filter((assignment) => assignment.product_id === product.id)
   const edit = productEdits[product.id]
-  const isInactive = (userId: string) => data.profiles.find((profile) => profile.id === userId)?.is_active === false
-  const hasInactiveAssignee = assignments.some((assignment) => isInactive(assignment.user_id))
+  const assignees = assignments.map((assignment) => {
+    const profile = profilesById.get(assignment.user_id)
+    return {
+      id: assignment.id,
+      name: assignment.profiles?.name ?? profile?.name ?? '알 수 없는 사용자',
+      inactive: profile?.is_active === false,
+    }
+  })
+  const hasInactiveAssignee = assignees.some((assignee) => assignee.inactive)
   const needsAssignee = assignments.length === 0 || hasInactiveAssignee
 
   const startEdit = () =>
@@ -178,16 +182,14 @@ export function ProductCard({
             )}
           </div>
           <div className="pill-row">
-            {assignments.map((assignment) => (
+            {assignees.map((assignee) => (
               <span
-                className={isInactive(assignment.user_id) ? 'pill-warn' : undefined}
-                key={assignment.id}
-                title={isInactive(assignment.user_id) ? '비활성 계정이에요. 다른 담당자를 배정해 주세요.' : undefined}
+                className={assignee.inactive ? 'pill-warn' : undefined}
+                key={assignee.id}
+                title={assignee.inactive ? '비활성 계정이에요. 다른 담당자를 배정해 주세요.' : undefined}
               >
-                {assignment.profiles?.name
-                  ?? data.profiles.find((profile) => profile.id === assignment.user_id)?.name
-                  ?? '알 수 없는 사용자'}
-                {isInactive(assignment.user_id) ? ' · 비활성' : ''}
+                {assignee.name}
+                {assignee.inactive ? ' · 비활성' : ''}
               </span>
             ))}
             {assignments.length === 0 && <span className="pill-warn">담당자 없음</span>}
@@ -211,17 +213,12 @@ export function ProductCard({
               </button>
             </div>
           )}
-          {!readOnly && (
+          {!readOnly && pendingDelete?.table === 'products' && pendingDelete.id === product.id && (
             <DeleteConfirmAction
-              hideTrigger
-              table="products"
-              id={product.id}
-              expectedUpdatedAt={product.updated_at}
-              label="제품"
+              expectedUpdatedAt={pendingDelete.expectedUpdatedAt}
               itemName={product.name}
               warning={assignments.length > 0 ? masterDeleteWarnings.productWithAssignments(assignments.length) : masterDeleteWarnings.product}
-              pendingDelete={pendingDelete}
-              setPendingDelete={setPendingDelete}
+              onClose={() => setPendingDelete(null)}
               onConfirm={(input) => onDelete(product.id, input)}
             />
           )}

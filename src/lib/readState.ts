@@ -1,5 +1,5 @@
 import type { AppData, Profile, ReviewEvent, ReviewReadReceipt, ReviewRequest } from '../types'
-import { compareDecimalIds, maxDecimalId } from './decimalId'
+import { compareDecimalIds } from './decimalId'
 import { canViewTeamData } from '../domain/permissions'
 
 const leaderRelevantEvents = new Set<ReviewEvent['event_type']>(['submitted', 'resubmitted'])
@@ -28,21 +28,19 @@ export function latestRelevantReviewEvent(
   }, null)
 }
 
-export function latestRelevantReviewEventIdsByRequest(
-  requests: ReviewRequest[],
+function latestRelevantReviewEventsByRequest(
+  requests: readonly ReviewRequest[],
   profile: Profile,
-  events: ReviewEvent[],
-): Map<string, string> {
+  events: readonly ReviewEvent[],
+): Map<string, ReviewEvent> {
   const requestsById = new Map(requests.map((request) => [request.id, request]))
-  const latestByRequest = new Map<string, string>()
+  const latestByRequest = new Map<string, ReviewEvent>()
 
   for (const event of events) {
     const request = requestsById.get(event.review_request_id)
     if (!request || !isRelevantReviewEvent(event, request, profile)) continue
-    latestByRequest.set(
-      request.id,
-      maxDecimalId(latestByRequest.get(request.id) ?? null, event.id),
-    )
+    const latest = latestByRequest.get(request.id)
+    if (!latest || compareDecimalIds(event.id, latest.id) > 0) latestByRequest.set(request.id, event)
   }
 
   return latestByRequest
@@ -54,26 +52,38 @@ export function buildReviewReadReceipts(
   events: ReviewEvent[],
   readAt = new Date().toISOString(),
 ): ReviewReadReceipt[] {
-  return [...latestRelevantReviewEventIdsByRequest(requests, profile, events)].map(
-    ([reviewRequestId, lastSeenEventId]) => ({
-      user_id: profile.id,
-      review_request_id: reviewRequestId,
-      last_seen_event_id: lastSeenEventId,
-      read_at: readAt,
-    }),
-  )
+  return Array.from(latestRelevantReviewEventsByRequest(requests, profile, events), ([reviewRequestId, event]) => ({
+    user_id: profile.id,
+    review_request_id: reviewRequestId,
+    last_seen_event_id: String(event.id),
+    read_at: readAt,
+  }))
 }
 
-/** 목록 dot, 사이드바 뱃지, 알림 센터가 같은 서버 영수증 판정을 공유한다. */
-export function isReviewUnread(request: ReviewRequest, profile: Profile, data: AppData): boolean {
-  const latest = latestRelevantReviewEvent(request, profile, data)
-  if (!latest) return false
-  const receipt = (data.reviewReadReceipts ?? []).find(
-    (item) => item.user_id === profile.id && item.review_request_id === request.id,
-  )
-  return !receipt || compareDecimalIds(receipt.last_seen_event_id, latest.id) < 0
+/** 여러 요청을 표시할 때는 이벤트와 읽음 기록을 각각 한 번만 훑는다. */
+export function buildReviewReadState(
+  requests: readonly ReviewRequest[],
+  profile: Profile,
+  data: Pick<AppData, 'reviewEvents' | 'reviewReadReceipts'>,
+) {
+  const latestByRequest = latestRelevantReviewEventsByRequest(requests, profile, data.reviewEvents ?? [])
+  const receipts = new Map<string, ReviewReadReceipt>()
+  for (const receipt of data.reviewReadReceipts ?? []) {
+    if (receipt.user_id === profile.id && !receipts.has(receipt.review_request_id)) {
+      receipts.set(receipt.review_request_id, receipt)
+    }
+  }
+  return new Map(Array.from(latestByRequest, ([requestId, latest]) => {
+    const receipt = receipts.get(requestId)
+    const unread = !receipt || compareDecimalIds(receipt.last_seen_event_id, latest.id) < 0
+    return [requestId, { latest, unread }]
+  }))
 }
 
 export function countUnreadReviews(profile: Profile, data: AppData) {
-  return data.reviewRequests.filter((request) => isReviewUnread(request, profile, data)).length
+  let count = 0
+  for (const { unread } of buildReviewReadState(data.reviewRequests, profile, data).values()) {
+    if (unread) count += 1
+  }
+  return count
 }

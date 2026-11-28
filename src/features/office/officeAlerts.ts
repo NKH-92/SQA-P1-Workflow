@@ -2,7 +2,7 @@ import type { AppData, Profile, ReadMarkSection, ReviewRequest } from '../../typ
 import { selectLeaderChangeActions, selectMemberPendingTasks } from '../../domain/changeApplications/attention'
 import { canManageTeamData } from '../../domain/permissions'
 import { daysUntil, eventTime } from '../../lib/dates'
-import { isReviewUnread, latestRelevantReviewEvent } from '../../lib/readState'
+import { buildReviewReadState } from '../../lib/readState'
 import {
   newestSectionTarget,
   receivesSectionNews,
@@ -47,13 +47,15 @@ function alertOf(fresh: Fresh, freshLabel: string, todo = 0, todoLabel = ''): Of
 
 /** 읽지 않은 검토요청 수와 그중 가장 최근 소식이 온 요청 */
 function unreadReviews(requests: readonly ReviewRequest[], profile: Profile, data: AppData): Fresh {
+  const readState = buildReviewReadState(requests, profile, data)
   let targetId: string | undefined
   let newest = -Infinity
   let count = 0
   for (const request of requests) {
-    if (!isReviewUnread(request, profile, data)) continue
+    const state = readState.get(request.id)
+    if (!state?.unread) continue
     count += 1
-    const at = eventTime(latestRelevantReviewEvent(request, profile, data)?.occurred_at)
+    const at = eventTime(state.latest.occurred_at)
     if (targetId === undefined || at > newest) {
       targetId = request.id
       newest = at

@@ -544,6 +544,21 @@ export function Shell({
         </div>
   )
 
+  const notificationPanel = notifOpen && (
+    <Suspense fallback={null}>
+      <NotificationPanel
+        notifications={notifications}
+        desktopNotifications={desktopNotifications}
+        onClose={closeNotifications}
+        onMarkAllRead={() => {
+          onMarkAllRead()
+          closeNotifications()
+        }}
+        onSelect={setActiveTab}
+      />
+    </Suspense>
+  )
+
   return (
     <div
       className="app-shell brand-shell"
@@ -655,20 +670,7 @@ export function Shell({
               syncWarning={showSyncWarning ? syncWarning : null}
               unreadNotifications={unreadNotifications}
             >
-              {notifOpen && (
-                <Suspense fallback={null}>
-                  <NotificationPanel
-                    notifications={notifications}
-                    desktopNotifications={desktopNotifications}
-                    onClose={closeNotifications}
-                    onMarkAllRead={() => {
-                      onMarkAllRead()
-                      closeNotifications()
-                    }}
-                    onSelect={setActiveTab}
-                  />
-                </Suspense>
-              )}
+              {notificationPanel}
           </OfficeHudBar>
         ) : (
         <header className="topbar" data-px={placePlate ? 'hud' : undefined}>
@@ -787,20 +789,7 @@ export function Shell({
               <RefreshCw aria-hidden="true" className={refreshing ? 'spin' : undefined} size={16} />
             </button>
           </div>
-          {notifOpen && (
-            <Suspense fallback={null}>
-              <NotificationPanel
-                notifications={notifications}
-                desktopNotifications={desktopNotifications}
-                onClose={closeNotifications}
-                onMarkAllRead={() => {
-                  onMarkAllRead()
-                  closeNotifications()
-                }}
-                onSelect={setActiveTab}
-              />
-            </Suspense>
-          )}
+          {notificationPanel}
         </header>
         )}
         {profileOpen && <Suspense fallback={null}><ProfileDialog onClose={() => setProfileOpen(false)}>{profileControls}</ProfileDialog></Suspense>}

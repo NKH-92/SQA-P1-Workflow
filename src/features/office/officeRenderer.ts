@@ -488,18 +488,18 @@ export function createOfficeRenderer(
       const spot = roomSpots.get(entry.seat.seatIndex)
       const trip = entry.trip
       if (spot === undefined) {
-        if (trip?.destination === 'room' && trip.phase !== 'back' && trip.phase !== 'settle') {
-          if (animate) releaseTrip(trip, now)
-          else entry.trip = null
+        if (!animate) entry.trip = null
+        else if (trip?.destination === 'room' && trip.phase !== 'back' && trip.phase !== 'settle') {
+          releaseTrip(trip, now)
         }
         continue
       }
-      if (trip && trip.destination !== 'room') {
+      if (!animate && (trip?.destination !== 'room' || trip.phase !== 'stay')) {
+        entry.trip = null
+      } else if (trip && trip.destination !== 'room') {
         // 다른 곳에 다녀오는 중이면: 막 일어나는 중이면 도로 앉히고, 도착해 있으면 거기서 바로 회의실로 간다.
-        if (!animate) entry.trip = null
-        else if (trip.phase === 'rise') releaseTrip(trip, now)
+        if (trip.phase === 'rise') releaseTrip(trip, now)
         else redirectToMeeting(trip, spot, now)
-        if (entry.trip) continue
       }
       // 돌아오는 중이면 자리에 앉은 뒤 다시 회의실로 간다(순간 이동하지 않는다).
       if (entry.trip) continue
@@ -628,13 +628,9 @@ export function createOfficeRenderer(
           bubbles = alive
           publishBubbles()
         }
-      } else {
-        // 동작 줄이기: 회의실에 있는 사람만 그 자리에 두고 나머지는 모두 앉힌다.
-        for (const entry of actors) if (entry.trip?.destination !== 'room') entry.trip = null
-        if (bubbles.length > 0) {
-          bubbles = []
-          publishBubbles()
-        }
+      } else if (bubbles.length > 0) {
+        bubbles = []
+        publishBubbles()
       }
 
       const ctx = frame.ctx

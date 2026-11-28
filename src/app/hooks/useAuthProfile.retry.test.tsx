@@ -1,6 +1,7 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { AuthApiError, AuthRetryableFetchError, AuthSessionMissingError } from '@supabase/supabase-js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { deferred } from '../../test/deferred'
 import type { AppData, Profile } from '../../types'
 
 const user = { id: 'user-1' }
@@ -55,7 +56,8 @@ describe('useAuthProfile retry', () => {
 
   beforeEach(() => {
     profileState.current = profile
-    authMocks.getSession.mockClear()
+    authMocks.getSession.mockReset()
+    authMocks.getSession.mockImplementation(async () => ({ data: { session: { user } } }))
     authMocks.getUser.mockReset()
     authMocks.getUser.mockImplementation(async () => ({ data: { user }, error: null }))
     authMocks.signOut.mockClear()
@@ -156,6 +158,50 @@ describe('useAuthProfile retry', () => {
   const stableSetData = vi.fn() as unknown as React.Dispatch<React.SetStateAction<AppData>>
   const stableSetMessage = vi.fn()
   const stableNoop = vi.fn()
+
+  it('keeps an authenticated session when the fallback session read fails later', async () => {
+    const fallback = deferred<Awaited<ReturnType<typeof authMocks.getSession>>>()
+    authMocks.getSession.mockReturnValueOnce(fallback.promise)
+    const { result } = renderHook(() =>
+      useAuthProfile(stableRefreshData, stableSetData, stableSetMessage, stableNoop, stableNoop),
+    )
+
+    act(() => authMocks.authStateListener?.('INITIAL_SESSION', { user }))
+    await waitFor(() => expect(result.current.initialLoading).toBe(false))
+
+    await act(async () => fallback.reject(new Error('Fallback session read failed')))
+
+    expect(result.current.profile).toEqual(profile)
+    expect(authMocks.signOut).not.toHaveBeenCalled()
+  })
+
+  it('clears the previous workspace when an auth event switches accounts directly', async () => {
+    const setData = vi.fn<React.Dispatch<React.SetStateAction<AppData>>>()
+    const resetSyncState = vi.fn()
+    const clearAllToasts = vi.fn()
+    const refreshData = vi.fn(async () => undefined)
+    const { result } = renderHook(() =>
+      useAuthProfile(refreshData, setData, stableSetMessage, stableNoop, resetSyncState, clearAllToasts),
+    )
+    await waitFor(() => expect(result.current.profile).toEqual(profile))
+
+    const nextUser = { id: 'user-2' }
+    const nextProfile = { ...profile, id: nextUser.id, must_change_password: true }
+    const nextSession = deferred<Awaited<ReturnType<typeof authMocks.getUser>>>()
+    authMocks.getUser.mockReturnValueOnce(nextSession.promise)
+    profileState.current = nextProfile
+
+    act(() => authMocks.authStateListener?.('SIGNED_IN', { user: nextUser }))
+    expect(result.current.profile).toBeNull()
+    expect(result.current.initialLoading).toBe(true)
+    expect(resetSyncState).toHaveBeenCalledOnce()
+    expect(setData).toHaveBeenCalledWith(expect.objectContaining({ profiles: [], reviewRequests: [] }))
+    expect(clearAllToasts).toHaveBeenCalledOnce()
+
+    await act(async () => nextSession.resolve({ data: { user: nextUser }, error: null }))
+    expect(result.current.profile).toEqual(nextProfile)
+    expect(refreshData).toHaveBeenCalledOnce()
+  })
 
   it('keeps the session and offers a retry when getUser fails transiently', async () => {
     authMocks.getUser.mockResolvedValue({

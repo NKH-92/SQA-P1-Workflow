@@ -1,7 +1,7 @@
 import type { AppData, Profile } from '../../../types'
 import { buildDeskCounts, deskPileLevel, buildOfficeAlerts, newOfficeAssignmentKeys } from '../officeAlerts'
 import { prefersReducedMotion } from '../../../lib/motion'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { PresenceKind } from '../../../data/validation/memberPresence'
 import { businessDateParts } from '../../../lib/businessTime'
 import type { OfficeAlert } from '../officeAlerts'
@@ -127,10 +127,12 @@ export function OfficeScene({
   /** 장면 위에 겹쳐 보여 줄 안내(빈 사무실 등) */
   children?: ReactNode
 }) {
-  const previousViewer = useRef<string | null>(null)
-  const previousWorkKeys = useRef<string[]>([])
-  const previousAlerts = useRef<ReturnType<typeof buildOfficeAlerts> | null>(null)
-  const deskCounts = workflow ? buildDeskCounts(workflow.profile, workflow.data) : new Map<number, number>()
+  const previousWork = useRef<{ viewerId: string; keys: string[]; hasReviewAlert: boolean } | null>(null)
+  const workflowProfile = workflow?.profile
+  const workflowData = workflow?.data
+  const deskCounts = useMemo(() => workflowProfile && workflowData
+    ? buildDeskCounts(workflowProfile, workflowData)
+    : new Map<number, number>(), [workflowData, workflowProfile])
   const cameraRef = useRef(camera)
   const attendeeSeats = meeting?.attendeeSeats ?? NO_SEATS
   const invitedSeats = meeting?.invitedSeats ?? NO_SEATS
@@ -374,26 +376,27 @@ export function OfficeScene({
 
   useEffect(() => {
     const renderer = rendererRef.current
-    if (!renderer || !workflow) return
-    const counts = buildDeskCounts(workflow.profile, workflow.data)
-    renderer.setDeskPiles(new Map([...counts].map(([seat, count]) => [seat, deskPileLevel(count)])))
+    if (!renderer) return
+    renderer.setDeskPiles(new Map(Array.from(deskCounts, ([seat, count]) => [seat, deskPileLevel(count)])))
     redrawRef.current()
-    const next = buildOfficeAlerts(workflow.profile, workflow.data)
-    const keys = newOfficeAssignmentKeys(workflow.profile, workflow.data)
-    const previous = previousViewer.current === workflow.profile.id ? previousAlerts.current : null
-    const oldKeys = previousWorkKeys.current
-    previousViewer.current = workflow.profile.id
-    previousWorkKeys.current = keys
-    previousAlerts.current = workflow.data.sectionReadMarks === undefined ? null : next
-    if (!previous) return
-    const ownSeat = occupants.find(o => o.profileId === workflow.profile.id)?.seatIndex
-    if (ownSeat && keys.some(key => !oldKeys.includes(key))) renderer.announceWork(ownSeat, performance.now())
-    if (workflow.profile.role === 'leader' && !previous.kanban && next.kanban?.level === 'new') {
-      const request = workflow.data.reviewRequests.find(r => r.id === next.kanban?.targetId && r.status === 'pending')
+    if (!workflowProfile || !workflowData) {
+      previousWork.current = null
+      return
+    }
+    const reviewAlert = workflowProfile.role === 'leader' ? buildOfficeAlerts(workflowProfile, workflowData).kanban : undefined
+    const keys = newOfficeAssignmentKeys(workflowProfile, workflowData)
+    const previous = previousWork.current
+    previousWork.current = workflowData.sectionReadMarks === undefined ? null
+      : { viewerId: workflowProfile.id, keys, hasReviewAlert: Boolean(reviewAlert) }
+    if (previous?.viewerId !== workflowProfile.id) return
+    const ownSeat = occupants.find(o => o.profileId === workflowProfile.id)?.seatIndex
+    if (ownSeat && keys.some(key => !previous.keys.includes(key))) renderer.announceWork(ownSeat, performance.now())
+    if (!previous.hasReviewAlert && reviewAlert?.level === 'new') {
+      const request = workflowData.reviewRequests.find(r => r.id === reviewAlert.targetId && r.status === 'pending')
       const seat = occupants.find(o => o.profileId === request?.requester_id)?.seatIndex
       if (seat) renderer.deliverPaper(seat, performance.now())
     }
-  }, [workflow, occupants])
+  }, [deskCounts, occupants, workflowData, workflowProfile])
   const focusedSeatIndex = focusedProfileId ? occupants.find((occupant) => occupant.profileId === focusedProfileId)?.seatIndex : undefined
   useEffect(() => {
     const container = containerRef.current

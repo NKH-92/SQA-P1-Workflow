@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { AppRoutes } from './app/AppRoutes'
 import { useAppData } from './app/hooks/useAppData'
 import { useSectionReadMarker } from './app/hooks/useSectionReadMarker'
@@ -26,12 +26,9 @@ import { reconciledProfile } from './app/profileSync'
 import { canManageTeamData, canViewTeamData } from './domain/permissions'
 import { toUserMessage } from './lib/errors'
 import { prefetchWhenIdle } from './lib/prefetch'
-import type { NavigateOptions } from './lib/navigation'
 import { buildNotifications } from './lib/notifications'
 import { countUnreadReviews } from './lib/readState'
 import { hasSupabaseConfig, isPreviewMode } from './lib/supabase'
-import type { Profile } from './types'
-import type { TabId } from './app/types'
 import type { DataWarningReport } from './app/hooks/useAppData'
 import { LoadingScreen } from './screens/LoadingScreen'
 import { Shell } from './screens/Shell'
@@ -50,10 +47,11 @@ const MemberPresenceDialog = lazy(() => loadMemberPresenceDialog().then((module)
  * 해당 상태일 때만 받아 첫 화면 번들을 가볍게 유지한다(받는 동안은 로딩 화면).
  */
 const AuthPanel = lazy(() => import('./screens/AuthPanel').then((module) => ({ default: module.AuthPanel })))
-const BlockedProfile = lazy(() => import('./screens/BlockedProfile').then((module) => ({ default: module.BlockedProfile })))
-const ConfigErrorScreen = lazy(() => import('./screens/ConfigErrorScreen').then((module) => ({ default: module.ConfigErrorScreen })))
+const loadAuthGatePanels = () => import('./screens/AuthGatePanels')
+const BlockedProfile = lazy(() => loadAuthGatePanels().then((module) => ({ default: module.BlockedProfile })))
+const ConfigErrorScreen = lazy(() => loadAuthGatePanels().then((module) => ({ default: module.ConfigErrorScreen })))
 const PasswordChangePanel = lazy(() => import('./screens/PasswordChangePanel').then((module) => ({ default: module.PasswordChangePanel })))
-const ProfileLoadErrorScreen = lazy(() => import('./screens/ProfileLoadErrorScreen').then((module) => ({ default: module.ProfileLoadErrorScreen })))
+const ProfileLoadErrorScreen = lazy(() => loadAuthGatePanels().then((module) => ({ default: module.ProfileLoadErrorScreen })))
 
 function GateScreen({ children }: { children: ReactNode }) {
   return <Suspense fallback={<LoadingScreen />}>{children}</Suspense>
@@ -115,10 +113,7 @@ function App() {
   // 팀장처럼 보기만 하는 역할은 처리할 수 없는 검토 알림·데스크톱 알림을 받지 않는다.
   const canManage = canManageTeamData(profile)
   const navigation = useHashNavigation(leaderMode, Boolean(profile))
-  const { setActiveTab: setNavigationActiveTab } = navigation
-  const setActiveTab = useCallback((tab: TabId, entityId?: string, options?: NavigateOptions) => {
-    setNavigationActiveTab(tab, entityId, options)
-  }, [setNavigationActiveTab])
+  const { setActiveTab } = navigation
   useEffect(() => {
     resetNavigationRef.current = navigation.resetNavigation
   }, [navigation.resetNavigation])
@@ -141,9 +136,7 @@ function App() {
   const backgroundSyncEnabled =
     hasSupabaseConfig && Boolean(profile) && profile?.is_active !== false && !profile?.must_change_password
   // 새 검토요청을 처리하는 사람은 파트장뿐이므로 구독도 파트장만 연다.
-  useRealtimeReviewInserts(backgroundSyncEnabled && canManage, () => {
-    refreshData({ silent: true }).catch(() => {})
-  })
+  useRealtimeReviewInserts(backgroundSyncEnabled && canManage, () => refreshData({ silent: true }))
   // 사무실 회의실(인스턴트 회의)은 모두가 바로 봐야 해서 역할과 관계없이 구독한다.
   useOfficeLiveSync(backgroundSyncEnabled, setData)
   const desktopNotifications = useDesktopNotifications(
@@ -217,11 +210,6 @@ function App() {
   )
   const myPresence = useMemo(() => (profile ? presenceOf(data.memberPresence, profile.id) : null), [data.memberPresence, profile])
 
-  // signOut이 resetNavigation까지 수행한다(useAuthProfile → useHashNavigation).
-  const handleSignOut = async () => {
-    await signOut()
-  }
-
   if (!authReady || initialLoading || sessionUser === undefined) {
     return <LoadingScreen />
   }
@@ -237,7 +225,7 @@ function App() {
         <BlockedProfile
           inactive={profileInactive}
           onRetry={retryProfileLoad}
-          onSignOut={() => void handleSignOut()}
+          onSignOut={signOut}
         />
       </GateScreen>
     )
@@ -249,7 +237,7 @@ function App() {
         <ProfileLoadErrorScreen
           message={profileLoadError}
           onRetry={retryProfileLoad}
-          onSignOut={() => void handleSignOut()}
+          onSignOut={signOut}
         />
       </GateScreen>
     )
@@ -264,23 +252,13 @@ function App() {
   }
 
   if (profile.is_active === false) {
-    return <GateScreen><BlockedProfile inactive onRetry={retryProfileLoad} onSignOut={() => void handleSignOut()} /></GateScreen>
+    return <GateScreen><BlockedProfile inactive onRetry={retryProfileLoad} onSignOut={signOut} /></GateScreen>
   }
 
   if (hasSupabaseConfig && profile.must_change_password) {
     return (
       <GateScreen>
-        <PasswordChangePanel
-          profile={profile}
-          onComplete={(updatedProfile: Profile) => {
-            setProfile(updatedProfile)
-            setMessage({ text: '비밀번호를 바꿨어요. 다음 로그인부터 새 비밀번호를 써 주세요.', tone: 'success' })
-            // 변경 전 초기 로드는 RLS가 막아 빈 데이터였으므로 이 refresh가 유일한 로드 경로다.
-            // 실패를 삼키면 성공 토스트와 빈 대시보드만 남는다.
-            refreshData().catch((error) => setMessage({ text: toUserMessage(error), tone: 'error' }))
-          }}
-          onSignOut={() => void handleSignOut()}
-        />
+        <PasswordChangePanel profile={profile} onSignOut={signOut} />
       </GateScreen>
     )
   }
@@ -310,7 +288,7 @@ function App() {
         onRefresh={() => {
           refreshData().catch((error) => setMessage({ text: toUserMessage(error), tone: 'error' }))
         }}
-        onSignOut={() => void handleSignOut()}
+        onSignOut={signOut}
         onPreviewRoleChange={previewRoleChange}
         uiTheme={uiTheme.theme}
         onToggleUiTheme={() => uiTheme.setTheme(uiTheme.theme === 'pixel' ? 'classic' : 'pixel')}

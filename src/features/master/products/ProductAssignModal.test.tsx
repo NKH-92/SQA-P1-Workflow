@@ -16,21 +16,19 @@ afterEach(cleanup)
 function Harness({
   data,
   initial,
-  fixedProduct = false,
   onSubmit = vi.fn(),
 }: {
   data: AppData
   initial: ProductAssignmentForm
-  fixedProduct?: boolean
   onSubmit?: () => void
 }) {
   const [form, setForm] = useState<ProductAssignmentForm>(initial)
   return (
     <ProductAssignModal
-      open
-      fixedProduct={fixedProduct}
       onClose={vi.fn()}
       data={data}
+      assignments={data.productAssignments.filter((assignment) => assignment.product_id === initial.product_id)}
+      profilesById={new Map(data.profiles.map((profile) => [profile.id, profile]))}
       memberOptions={data.profiles.filter((profile) => profile.role === 'member' && profile.is_active !== false)}
       productAssignment={form}
       setProductAssignment={setForm}
@@ -39,17 +37,21 @@ function Harness({
   )
 }
 
-const emptyForm: ProductAssignmentForm = { user_id: '', product_id: '', unassigned_reason: '', transfer_pending_tasks: false }
+const assignmentDefaults = { unassigned_reason: '', transfer_pending_tasks: false }
 
 describe('ProductAssignModal', () => {
   it('takes the reason for removing the owner inside the same dialog', async () => {
     const user = userEvent.setup()
     const data = createPreviewData()
-    const product = data.products[0]!
+    const assignment = data.productAssignments[0]!
     const onSubmit = vi.fn()
 
-    render(<Harness data={data} initial={emptyForm} onSubmit={onSubmit} />)
-    await user.selectOptions(screen.getByLabelText('제품'), product.id)
+    render(<Harness data={data} initial={{
+      ...assignmentDefaults,
+      product_id: assignment.product_id,
+      user_id: assignment.user_id,
+      previous_user_id: assignment.user_id,
+    }} onSubmit={onSubmit} />)
     await user.selectOptions(screen.getByLabelText('담당자'), UNASSIGNED_PRODUCT_USER_ID)
 
     const submit = screen.getByRole('button', { name: '담당자 없이 저장하기' })
@@ -77,9 +79,8 @@ describe('ProductAssignModal', () => {
     render(
       <Harness
         data={data}
-        fixedProduct
         initial={{
-          ...emptyForm,
+          ...assignmentDefaults,
           product_id: pendingTask.product_id,
           user_id: currentAssignment.user_id,
           previous_user_id: currentAssignment.user_id,

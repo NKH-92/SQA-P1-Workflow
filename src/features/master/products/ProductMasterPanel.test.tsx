@@ -267,6 +267,39 @@ describe('ProductMasterPanel', () => {
     expect(await screen.findByText('Fresh rename')).toBeInTheDocument()
   })
 
+  it('closes a stale assignment dialog and uses the current product revision when reopened', async () => {
+    const user = userEvent.setup()
+    mutationErrors.length = 0
+    const data = createPreviewData()
+    const product = data.products.find((item) => data.productAssignments.some((assignment) => assignment.product_id === item.id))!
+    const owners = data.productAssignments.filter((assignment) => assignment.product_id === product.id)
+    const replacement = data.profiles.find((item) => item.role === 'member' && item.is_active !== false
+      && !owners.some((owner) => owner.user_id === item.id))!
+    render(<FailSafeHarness initialData={data} />)
+
+    const trigger = screen.getByRole('button', { name: `${product.name} 담당자 변경` })
+    await user.click(trigger)
+    act(() => {
+      latestSetData!((current) => ({
+        ...current,
+        products: current.products.map((item) => item.id === product.id
+          ? { ...item, updated_at: '2099-01-01T00:00:00.000Z' }
+          : item),
+      }))
+    })
+    await user.selectOptions(screen.getByLabelText('담당자'), replacement.id)
+    await user.click(screen.getByRole('button', { name: '담당자 저장하기' }))
+    expect(mutationErrors).toEqual([MASTER_STALE_MESSAGE])
+    expect(screen.queryByRole('dialog', { name: '제품 담당자 변경' })).not.toBeInTheDocument()
+    expect(latestData!.productAssignments).toEqual(data.productAssignments)
+
+    await user.click(trigger)
+    await user.selectOptions(screen.getByLabelText('담당자'), replacement.id)
+    await user.click(screen.getByRole('button', { name: '담당자 저장하기' }))
+    expect(mutationErrors).toEqual([MASTER_STALE_MESSAGE])
+    expect(within(cardFor(product.name)).getByText(replacement.name)).toBeInTheDocument()
+  })
+
   it('says the owner already changed when only the pending-task transfer fails', async () => {
     const user = userEvent.setup()
     mutationErrors.length = 0

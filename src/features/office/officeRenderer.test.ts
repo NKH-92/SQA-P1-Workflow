@@ -104,6 +104,22 @@ describe('office renderer meeting room', () => {
     expect(anchorOf(renderer, 5)).toMatchObject({ standing: false, x: SCENE_SEATS[4].x })
   })
 
+  it('puts attendees at their destination when motion is reduced during a meeting walk', () => {
+    const renderer = officeWith([5])
+    const spot = MEETING_SPOTS[0]
+    renderer.setMeeting([5])
+    renderer.draw(0, { animate: true, clock })
+    expect(anchorOf(renderer, 5)).not.toMatchObject({ x: spot.x, bottom: spot.y })
+    renderer.draw(100, { animate: false, clock })
+    expect(anchorOf(renderer, 5)).toMatchObject({ standing: true, x: spot.x, bottom: spot.y })
+
+    renderer.setMeeting([])
+    renderer.draw(200, { animate: true, clock })
+    expect(anchorOf(renderer, 5).standing).toBe(true)
+    renderer.draw(300, { animate: false, clock })
+    expect(anchorOf(renderer, 5)).toMatchObject({ standing: false, x: SCENE_SEATS[4].x })
+  })
+
   it('does not wander to the lower floor in the classic card, where it would be off screen', () => {
     const renderer = officeWith([1, 2, 3, 4, 5, 6])
     renderer.setCamera(CORE_CAMERA)

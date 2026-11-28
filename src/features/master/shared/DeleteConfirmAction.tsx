@@ -1,66 +1,32 @@
 import { useId, useState } from 'react'
-import { Trash2 } from 'lucide-react'
-import { IconAction } from '../../../components/ui'
-import type { AdminDeleteTable, PendingAdminDelete } from '../../../app/types'
 import type { AuditedDeleteInput } from '../../../data/contracts'
 
-/**
- * 삭제 확인(사유 필수·감사 기록). 휴지통 버튼을 누르면 그 자리에서 사유를 받고 [닫기] [삭제하기]로 끝낸다.
- * hideTrigger면 휴지통 버튼 없이, 다른 곳(더보기 메뉴 등)에서 pendingDelete를 열었을 때만 확인 칸을 보여준다.
- */
+/** 삭제 확인을 열 때만 마운트하여 닫은 창의 사유나 오류를 다음 확인에 남기지 않는다. */
 export function DeleteConfirmAction({
-  table,
-  id,
   expectedUpdatedAt,
-  label,
   itemName,
   warning,
-  pendingDelete,
-  setPendingDelete,
+  onClose,
   onConfirm,
-  hideTrigger = false,
 }: {
-  table: AdminDeleteTable
-  id: string
-  expectedUpdatedAt: string | null | undefined
-  label: string
+  expectedUpdatedAt: AuditedDeleteInput['expectedUpdatedAt']
   itemName: string
   /** 삭제하면 함께 사라지는 것과 대신 할 수 있는 일(해요체). features/master/shared/deleteCopy.ts의 문구를 쓴다. */
   warning: string
-  pendingDelete: PendingAdminDelete | null
-  setPendingDelete: (value: PendingAdminDelete | null) => void
+  onClose: () => void
   onConfirm: (input: AuditedDeleteInput) => void
-  hideTrigger?: boolean
 }) {
   const [reason, setReason] = useState('')
   const [showError, setShowError] = useState(false)
   const reasonId = useId()
   const errorId = useId()
-  const selected = pendingDelete?.table === table && pendingDelete.id === id
-  if (!selected) {
-    if (hideTrigger) return null
-    return (
-      <IconAction
-        title={`${label} 삭제`}
-        label={`${itemName} 삭제`}
-        onClick={() => {
-          setReason('')
-          setShowError(false)
-          setPendingDelete({ table, id, expectedUpdatedAt: expectedUpdatedAt ?? null })
-        }}
-      >
-        <Trash2 size={16} />
-      </IconAction>
-    )
-  }
-
   const confirm = () => {
     if (!reason.trim()) {
       setShowError(true)
       document.getElementById(reasonId)?.focus()
       return
     }
-    void onConfirm({ expectedUpdatedAt: pendingDelete.expectedUpdatedAt, reason })
+    void onConfirm({ expectedUpdatedAt, reason })
   }
 
   return (
@@ -89,7 +55,7 @@ export function DeleteConfirmAction({
         {showError && <p className="field-error" id={errorId}>삭제 사유를 적어 주세요. 사유는 감사 이력에 남아요.</p>}
       </label>
       <div className="inline-actions delete-confirm-actions">
-        <button className="ghost compact" onClick={() => setPendingDelete(null)} type="button">
+        <button className="ghost compact" onClick={onClose} type="button">
           닫기
         </button>
         <button className="danger compact" onClick={confirm} type="button">

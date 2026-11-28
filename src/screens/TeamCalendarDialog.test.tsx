@@ -1,11 +1,13 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MemberPresence } from '../types'
 import { TeamCalendarDialog } from './TeamCalendarDialog'
 
-vi.mock('../hooks/useBusinessToday', () => ({ useBusinessToday: () => new Date('2026-10-26T03:00:00Z') }))
+const { useBusinessToday } = vi.hoisted(() => ({ useBusinessToday: vi.fn() }))
+vi.mock('../hooks/useBusinessToday', () => ({ useBusinessToday }))
 
+beforeEach(() => useBusinessToday.mockReturnValue(new Date('2026-10-26T03:00:00Z')))
 afterEach(cleanup)
 
 const presence: MemberPresence = {
@@ -62,5 +64,33 @@ describe('TeamCalendarDialog shared leave details', () => {
     rerender(<TeamCalendarDialog presence={{ statuses: [], leaves: [{ ...presence.leaves[1]!, starts_on: '2026-10-26', note: '변경된 출장 사유' }] }} onClose={vi.fn()} />)
     expect(detail).toHaveTextContent('변경된 출장 사유')
     expect(detail).not.toHaveTextContent('오송 공장 실사')
+  })
+
+  it('follows the current month when the selected day becomes past and only shows future details', () => {
+    useBusinessToday.mockReturnValue(new Date('2026-10-31T14:59:59Z'))
+    const props = { presence, onClose: vi.fn() }
+    const { rerender } = render(<TeamCalendarDialog {...props} />)
+    expect(screen.getByRole('button', { name: '10월 31일, 오늘, 1건' })).toHaveAttribute('aria-pressed', 'true')
+
+    useBusinessToday.mockReturnValue(new Date('2026-10-31T15:00:00Z'))
+    rerender(<TeamCalendarDialog {...props} />)
+    expect(screen.getByRole('table')).toHaveAccessibleName('2026년 11월 휴가·출장 일정')
+    expect(screen.getByRole('button', { name: '11월 1일, 오늘, 1건' })).toHaveAttribute('aria-pressed', 'true')
+    const detail = screen.getByRole('region', { name: '선택한 날짜 일정' })
+    expect(within(detail).getByRole('heading')).toHaveTextContent('11월 1일')
+    expect(detail).toHaveTextContent('오송 공장 실사')
+  })
+
+  it('shows all events when the last event for a selected person is removed', () => {
+    const onClose = vi.fn()
+    const { rerender } = render(<TeamCalendarDialog presence={presence} onClose={onClose} />)
+    fireEvent.click(screen.getByRole('button', { name: '10월 27일, 4건' }))
+    const filter = screen.getByRole('combobox', { name: '일정 볼 파트원' })
+    fireEvent.change(filter, { target: { value: 'member' } })
+
+    rerender(<TeamCalendarDialog presence={{ ...presence, leaves: presence.leaves.filter(leave => leave.profile_id !== 'member') }} onClose={onClose} />)
+    expect(filter).toHaveValue('')
+    expect(screen.getByRole('button', { name: '10월 27일, 3건' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('region', { name: '선택한 날짜 일정' })).toHaveTextContent('가족 행사 참석')
   })
 })

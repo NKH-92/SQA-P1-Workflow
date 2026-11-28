@@ -224,10 +224,9 @@ export function DutyMasterPanel({ profile, data, mutate, setData }: MasterSubPan
       </Modal>}
       {canManage && pendingDelete && deleteItem && <Modal open title="삭제 확인"
         onClose={() => setPendingDelete(null)} returnFocusRef={returnFocusRef}>
-        <DeleteConfirmAction table={pendingDelete.table} id={deleteItem.id} expectedUpdatedAt={deleteItem.updated_at}
-          label={pendingDelete.table === 'duties' ? '업무' : '대분류'} itemName={deleteItem.name}
+        <DeleteConfirmAction expectedUpdatedAt={pendingDelete.expectedUpdatedAt} itemName={deleteItem.name}
           warning={pendingDelete.table === 'duties' ? masterDeleteWarnings.duty : masterDeleteWarnings.dutyMajorCategory}
-          pendingDelete={pendingDelete} setPendingDelete={setPendingDelete} onConfirm={(input) => void deleteSelected(input)} hideTrigger />
+          onClose={() => setPendingDelete(null)} onConfirm={(input) => void deleteSelected(input)} />
       </Modal>}
       {report && <DutyReportDialog target={report} onClose={() => setReport(null)} returnFocusRef={returnFocusRef} />}
     </div>

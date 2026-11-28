@@ -9,16 +9,6 @@ import type { AppData, Profile } from '../../types'
 import type { SetToast } from '../types'
 
 const AUTH_BOOTSTRAP_TIMEOUT_MS = 10_000
-const AUTH_SESSION_TIMEOUT_MS = 8_000
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => {
-      window.setTimeout(() => reject(new Error(label)), timeoutMs)
-    }),
-  ])
-}
 
 /** 세션 자체가 더는 쓸 수 없다는 뜻의 getUser() 오류인지 확인한다(세션 없음, 401/403/404). */
 function isInvalidSessionError(error: unknown) {
@@ -105,9 +95,7 @@ export function useAuthProfile(
 
     const timeoutId = window.setTimeout(() => {
       if (cancelled || bootstrapDoneRef.current) return
-      void client.auth.signOut({ scope: 'local' })
       completeBootstrap(null)
-      setInitialLoading(false)
       setMessage({
         text: '로그인 정보를 확인하지 못했어요. 다시 로그인해 주세요.',
         tone: 'warning',
@@ -134,15 +122,13 @@ export function useAuthProfile(
       }
     })
 
-    void withTimeout(client.auth.getSession(), AUTH_SESSION_TIMEOUT_MS, 'auth-session-timeout')
-      .then(({ data: sessionData }) => {
-        completeBootstrap(sessionData.session?.user ?? null)
-      })
-      .catch(() => {
-        void client.auth.signOut({ scope: 'local' })
-        completeBootstrap(null)
-        setInitialLoading(false)
-      })
+    // getSession은 초기 이벤트가 오지 않을 때도 세션을 확인하는 보조 경로다.
+    // 실패하면 초기 이벤트나 제한 시간을 기다린다. 이미 확인된 세션을 로그아웃하지 않는다.
+    if (!bootstrapDoneRef.current) {
+      void client.auth.getSession().then(({ data: sessionData, error }) => {
+        if (!error) completeBootstrap(sessionData.session?.user ?? null)
+      }, () => {})
+    }
 
     return () => {
       cancelled = true
@@ -154,19 +140,22 @@ export function useAuthProfile(
   useEffect(() => {
     if (!supabase || profileEffectKey === 'auth-pending') return
 
-    // 로그인한 사람이 바뀌면(다른 탭의 로그아웃·세션 만료 포함) 앞사람의 계정 안내가 남지 않게 모두 지운다.
-    if (lastSessionKeyRef.current !== null && lastSessionKeyRef.current !== profileEffectKey) {
+    const sessionChanged = lastSessionKeyRef.current !== null && lastSessionKeyRef.current !== profileEffectKey
+    if (sessionChanged) {
       clearAllToastsRef.current()
+      clearViewState()
     }
     lastSessionKeyRef.current = profileEffectKey
 
-    if (profileEffectKey === 'signed-out') {
+    if (sessionChanged || profileEffectKey === 'signed-out') {
       resetSyncState()
       setProfile(null)
       setSessionWithoutProfile(false)
       setProfileInactive(false)
       setProfileLoadError(null)
       setData(emptyData)
+    }
+    if (profileEffectKey === 'signed-out') {
       setInitialLoading(false)
       return
     }
@@ -182,40 +171,24 @@ export function useAuthProfile(
 
         if (result.invalidSession) {
           await supabase.auth.signOut({ scope: 'local' })
+          if (cancelled || profileLoadGenerationRef.current !== generation) return
           setSessionUser(null)
-          setProfile(null)
-          setSessionWithoutProfile(false)
-          setData(emptyData)
           return
         }
 
-        if (result.inactive) {
-          setProfile(null)
-          setSessionWithoutProfile(true)
-          setProfileInactive(true)
-          setProfileLoadError(null)
-          return
-        }
-
+        setProfile(result.profile)
+        setSessionWithoutProfile(!result.profile)
+        setProfileInactive(result.inactive)
         if (result.profile) {
           // 로그인 전에 쌓인 안내(로그인 정보 확인 실패·프로필 오류 등)는 이제 맞지 않으므로 지운다.
           // 사용자가 닫을 때까지 남기기로 한 안내(persistent)는 그대로 둔다.
           setMessage(null)
-          setProfile(result.profile)
-          setSessionWithoutProfile(false)
-          setProfileInactive(false)
-          setProfileLoadError(null)
           // Password-pending users must be able to read their own profile so
           // the change-password route can render, but every app-data bootstrap
           // is deliberately blocked by can_use_app() until the change finishes.
           if (!result.profile.must_change_password) {
             await refreshDataRef.current({ initial: true })
           }
-        } else {
-          setProfile(null)
-          setSessionWithoutProfile(true)
-          setProfileInactive(false)
-          setProfileLoadError(null)
         }
       } catch (error) {
         if (!cancelled && profileLoadGenerationRef.current === generation) {
@@ -259,16 +232,17 @@ export function useAuthProfile(
     resetNavigation()
   }, [previewEnabled, resetNavigation, resetSyncState, setData])
 
+  const profileSessionMismatch = hasSupabaseConfig && profile !== null && profile.id !== sessionUser?.id
   return {
     sessionUser,
-    profile,
+    profile: profileSessionMismatch ? null : profile,
     setProfile,
     authReady,
     sessionWithoutProfile,
     profileInactive,
     profileLoadError,
     retryProfileLoad,
-    initialLoading,
+    initialLoading: initialLoading || profileSessionMismatch,
     signOut,
   }
 }

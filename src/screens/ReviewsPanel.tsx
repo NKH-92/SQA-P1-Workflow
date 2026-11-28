@@ -5,7 +5,7 @@ import type { AppData, Profile, ReviewRequest } from '../types'
 import type { ReviewStatusFilter, MutateFn } from '../app/types'
 import { toUserMessage } from '../lib/errors'
 import { quotedWithJosa } from '../lib/korean'
-import { isReviewUnread } from '../lib/readState'
+import { buildReviewReadState } from '../lib/readState'
 import { isLeaderDefaultReviewRequest, matchesReviewSearch } from '../lib/reviewHistory'
 import { preferredScrollBehavior } from '../lib/motion'
 import {
@@ -205,16 +205,16 @@ function ReviewsWorkspace({
     ),
     [data, leaderMode, profile, searchQuery, sortMode, statusFilter],
   )
-  const decisionEvents = useMemo(() => buildDecisionEventIndex(data.reviewEvents ?? []), [data.reviewEvents])
-  const unreadReviewIds = useMemo(
-    () =>
-      new Set(
-        defaultReviewRequests
-          .filter((request) => isReviewUnread(request, profile, data))
-          .map((request) => request.id),
-      ),
-    [data, defaultReviewRequests, profile],
-  )
+  const { reviewEvents, reviewReadReceipts } = data
+  const decisionEvents = useMemo(() => buildDecisionEventIndex(reviewEvents ?? []), [reviewEvents])
+  const unreadReviewIds = useMemo(() => {
+    const readState = buildReviewReadState(defaultReviewRequests, profile, { reviewEvents, reviewReadReceipts })
+    const unread = new Set<string>()
+    for (const [requestId, state] of readState) {
+      if (state.unread) unread.add(requestId)
+    }
+    return unread
+  }, [defaultReviewRequests, profile, reviewEvents, reviewReadReceipts])
   const { selectedReviewId, setSelectedReviewId, selectedReview } = useReviewSelection(
     visibleReviewRequests,
     initialSelectedId,

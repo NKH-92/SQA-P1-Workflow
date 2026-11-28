@@ -15,10 +15,10 @@ import { toUserMessage, UserFacingError } from '../../../lib/errors'
 import { quoted, quotedWithJosa, withJosa } from '../../../lib/korean'
 import { canManageTeamData, canReceiveAssignment } from '../../../domain/permissions'
 import {
+  filterMasterProducts,
   groupProductAssignments,
   isProductAssigneeFilter,
-  matchesProductAssigneeFilter,
-  productAssigneeState,
+  selectProductAssigneeStatuses,
   selectProductGroups,
   selectTransferableProductTasks,
   type ProductAssigneeFilter,
@@ -63,16 +63,29 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
   const [pendingDelete, setPendingDelete] = useState<PendingAdminDelete | null>(null)
   const [productEdits, setProductEdits] = useState<Record<string, ProductEdit>>({})
   const [productRegisterOpen, setProductRegisterOpen] = useState(false)
-  const [productAssignOpen, setProductAssignOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   // 제품 정보 수정은 저장 전에 변경 사유(감사 이력)를 받는다.
   const [productReasonPrompt, setProductReasonPrompt] = useState<{ productId: string } | null>(null)
   const [productReason, setProductReason] = useState('')
   const [productImportIssues, setProductImportIssues] = useState<CsvImportIssue[]>([])
 
-  const memberOptions = data.profiles.filter(canReceiveAssignment)
+  const { products, productAssignments, profiles } = data
+  const profilesById = useMemo(() => new Map(profiles.map((member) => [member.id, member])), [profiles])
+  const memberOptions = useMemo(() => profiles.filter(canReceiveAssignment), [profiles])
+  const assignmentsByProduct = useMemo(() => groupProductAssignments(productAssignments), [productAssignments])
+  const { ownCompanyProducts, consignedProducts } = useMemo(() => selectProductGroups(products), [products])
+  const { counts: filterCounts, states: assigneeStates } = useMemo(
+    () => selectProductAssigneeStatuses(products, assignmentsByProduct, profilesById),
+    [products, assignmentsByProduct, profilesById],
+  )
+  const query = adminSearch.trim()
+  const { visibleOwnProducts, visibleConsignedProducts } = useMemo(() => ({
+    visibleOwnProducts: filterMasterProducts(ownCompanyProducts, query, assigneeFilter, assigneeStates),
+    visibleConsignedProducts: filterMasterProducts(consignedProducts, query, assigneeFilter, assigneeStates),
+  }), [ownCompanyProducts, consignedProducts, query, assigneeFilter, assigneeStates])
+  const filtersApplied = assigneeFilter !== 'all' || Boolean(query)
   const productName = (productId: string) => data.products.find((item) => item.id === productId)?.name ?? '제품'
-  const memberName = (userId: string) => data.profiles.find((item) => item.id === userId)?.name ?? '담당자'
+  const memberName = (userId: string) => profilesById.get(userId)?.name ?? '담당자'
 
   const run = async (operation: () => Promise<boolean>) => {
     setSaving(true)
@@ -85,7 +98,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
 
   const editProductAssignment = (productId: string) => {
     const product = data.products.find((item) => item.id === productId)
-    const assignment = data.productAssignments.find((item) => item.product_id === productId)
+    const assignment = assignmentsByProduct.get(productId)?.[0]
     setProductAssignment({
       product_id: productId,
       user_id: assignment?.user_id ?? UNASSIGNED_PRODUCT_USER_ID,
@@ -94,21 +107,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
       unassigned_reason: assignment ? '' : product?.unassigned_reason ?? '',
       transfer_pending_tasks: false,
     })
-    setProductAssignOpen(true)
   }
-  const query = adminSearch.trim()
-  // 제품별 배정을 한 번만 묶어 둔다. 칩 개수·필터·카드가 제품마다 전체 배정을 다시 훑지 않는다.
-  const assignmentsByProduct = useMemo(() => groupProductAssignments(data.productAssignments), [data.productAssignments])
-  const { ownCompanyProducts, consignedProducts, unassignedProducts } = selectProductGroups(data, query, assignmentsByProduct)
-  const filterCounts: Record<ProductAssigneeFilter, number> = {
-    all: data.products.length,
-    unassigned: unassignedProducts.length,
-    inactive: data.products.filter((product) => productAssigneeState(data, product.id, assignmentsByProduct) === 'inactive').length,
-  }
-  const visibleOwnProducts = ownCompanyProducts.filter((product) => matchesProductAssigneeFilter(data, product.id, assigneeFilter, assignmentsByProduct))
-  const visibleConsignedProducts = consignedProducts.filter((product) => matchesProductAssigneeFilter(data, product.id, assigneeFilter, assignmentsByProduct))
-  const filtersApplied = assigneeFilter !== 'all' || Boolean(query)
-
   useEffect(() => {
     setPendingDelete(null)
   }, [adminSearch, assigneeFilter])
@@ -184,6 +183,17 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
     if (ok) setProductRegisterOpen(false)
   }
 
+  const closeProductAssignment = () => setProductAssignment(emptyAssignment)
+
+  const saveProductAssignments = async (input: Parameters<typeof controller.saveAssignments>[0]) => {
+    try {
+      return await controller.saveAssignments(input)
+    } catch (error) {
+      if (isMasterStaleError(error)) closeProductAssignment()
+      throw error
+    }
+  }
+
   /**
    * 담당자 저장은 한 번에 끝낸다. 담당자를 바꾸면서 미완료 적용 업무도 넘기기로 했다면
    * 담당자 교체 → 업무 넘기기를 한 저장 안에서 차례로 처리한다(다시 열어 한 번 더 저장할 필요가 없다).
@@ -197,7 +207,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
       if (!reason) return
       let noop = false
       const ok = await run(() => mutate(async () => {
-        const result = await controller.saveAssignments({
+        const result = await saveProductAssignments({
           productId: form.product_id,
           nextMemberIds: [],
           unassignedReason: reason,
@@ -205,17 +215,14 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
           expectedUpdatedAt: form.expected_updated_at,
         })
         noop = result.noop
-        setProductAssignment(emptyAssignment)
       }, () => noop ? '바뀐 내용이 없어요.' : `${withJosa(name, '은/는')} 이제 담당자가 없어요.`))
-      if (ok) setProductAssignOpen(false)
+      if (ok) closeProductAssignment()
       return
     }
     const transferCount = form.transfer_pending_tasks
       ? selectTransferableProductTasks(data, form.product_id, form.user_id).length
       : 0
-    const currentIds = data.productAssignments
-      .filter((item) => item.product_id === form.product_id)
-      .map((item) => item.user_id)
+    const currentIds = assignmentsByProduct.get(form.product_id)?.map((item) => item.user_id) ?? []
     const replacing = form.user_id !== form.previous_user_id
     const needsReplacement = replacing && !currentIds.includes(form.user_id)
     // 서버가 실제로 바뀌었는지(중복 배정 여부)를 정한다. 토스트 문구는 그 결과를 본 뒤에 고른다.
@@ -223,7 +230,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
     const ok = await run(() => mutate(async () => {
       let changed = false
       if (needsReplacement) {
-        const result = await controller.saveAssignments({
+        const result = await saveProductAssignments({
           productId: form.product_id,
           nextMemberIds: [...new Set([
             ...currentIds.filter((userId) => userId !== form.previous_user_id),
@@ -253,13 +260,12 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
         changed = changed || !result.noop
       }
       noop = !changed
-      setProductAssignment(emptyAssignment)
     }, () => noop
       ? '이미 배정한 담당자예요.'
       : transferCount > 0
         ? `${name} 담당자를 ${memberName(form.user_id)}님으로 정하고 미완료 적용 업무 ${transferCount}건을 넘겼어요.`
         : `${name} 담당자를 ${memberName(form.user_id)}님으로 정했어요.`))
-    if (ok) setProductAssignOpen(false)
+    if (ok) closeProductAssignment()
   }
 
   const closeProductEdit = (productId: string) =>
@@ -285,7 +291,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
           name,
           category: edit.category || '자사',
           company_name: edit.category === '자사' ? '자사' : edit.companyName.trim(),
-          unassigned_reason: data.productAssignments.some((assignment) => assignment.product_id === productId)
+          unassigned_reason: assignmentsByProduct.get(productId)?.length
             ? null
             : edit.unassignedReason.trim() || null,
           sort_order: product.sort_order ?? null,
@@ -334,7 +340,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
           <ProductCard
             key={product.id}
             product={product}
-            data={data}
+            profilesById={profilesById}
             assignments={assignmentsByProduct.get(product.id) ?? NO_ASSIGNMENTS}
             productEdits={productEdits}
             setProductEdits={setProductEdits}
@@ -369,7 +375,7 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
         <div>
           <h1>제품</h1>
           <ProductAllocationNotice />
-          <p>등록 {data.products.length}개 · 담당자 없음 {unassignedProducts.length}개</p>
+          <p>등록 {filterCounts.all}개 · 담당자 없음 {filterCounts.unassigned}개</p>
         </div>
         {canManage && (
           <button className="primary" onClick={() => setProductRegisterOpen(true)} type="button">
@@ -442,20 +448,17 @@ export function ProductMasterPanel({ profile, data, mutate, setData }: MasterSub
         onSubmit={() => void addProduct()}
         submitting={saving}
       />
-      <ProductAssignModal
-        fixedProduct
-        open={productAssignOpen}
-        onClose={() => {
-          setProductAssignOpen(false)
-          setProductAssignment(emptyAssignment)
-        }}
+      {productAssignment.product_id && <ProductAssignModal
+        onClose={closeProductAssignment}
         data={data}
+        assignments={assignmentsByProduct.get(productAssignment.product_id) ?? NO_ASSIGNMENTS}
+        profilesById={profilesById}
         memberOptions={memberOptions}
         productAssignment={productAssignment}
         setProductAssignment={setProductAssignment}
         onSubmit={() => void assignProduct()}
         submitting={saving}
-      />
+      />}
       <ReasonPromptModal
         open={productReasonPrompt !== null}
         onClose={() => {

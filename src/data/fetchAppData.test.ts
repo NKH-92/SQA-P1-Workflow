@@ -5,7 +5,7 @@ import {
   REVIEW_HISTORY_MONTHS,
   REVIEW_REQUEST_SELECT,
 } from './fetchAppData'
-import type { ReviewRequest } from '../types'
+import type { ReviewFeedback, ReviewRequest } from '../types'
 
 function review(id: string, created_at: string, status: ReviewRequest['status'] = 'approved'): ReviewRequest {
   return {
@@ -83,5 +83,33 @@ describe('review request load budget', () => {
 
     const result = mergeReviewRequests([left], [right])
     expect(result[0]?.review_feedback?.map((item) => item.id)).toEqual(['feedback-old', 'feedback-new'])
+  })
+
+  it('keeps the latest feedback edit regardless of which request snapshot arrived first', () => {
+    const request = review('same', '2026-07-11T00:00:00.000Z', 'pending')
+    const original: ReviewFeedback = {
+      id: 'feedback', review_request_id: request.id, leader_id: 'leader-1',
+      comment: 'original', created_at: '2026-07-11T00:01:00.000Z',
+    }
+    const edited = { ...original, comment: 'edited', updated_at: '2026-07-11T00:02:00.000Z' }
+    const older = { ...request, review_feedback: [original] }
+    const newer = { ...request, review_feedback: [edited] }
+
+    expect(mergeReviewRequests([newer], [older])[0]?.review_feedback).toEqual([edited])
+    expect(mergeReviewRequests([older], [newer])[0]?.review_feedback).toEqual([edited])
+  })
+
+  it('preserves a feedback void when snapshots share the same parsed timestamp', () => {
+    const request = review('same', '2026-07-11T00:00:00.000Z', 'pending')
+    const feedback: ReviewFeedback = {
+      id: 'feedback', review_request_id: request.id, leader_id: 'leader-1',
+      comment: 'original', created_at: '2026-07-11T00:01:00.000Z',
+    }
+    const voided = { ...feedback, voided_at: '2026-07-11T00:01:00.000001Z', void_reason: 'withdrawn' }
+    const older = { ...request, review_feedback: [feedback] }
+    const newer = { ...request, review_feedback: [voided] }
+
+    expect(mergeReviewRequests([newer], [older])[0]?.review_feedback).toEqual([voided])
+    expect(mergeReviewRequests([older], [newer])[0]?.review_feedback).toEqual([voided])
   })
 })

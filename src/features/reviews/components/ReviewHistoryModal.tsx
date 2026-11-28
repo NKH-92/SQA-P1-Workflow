@@ -46,6 +46,12 @@ type ReviewHistoryModalProps = {
   onReopen: (request: ReviewRequest) => Promise<boolean>
 }
 
+type HistoryPageRequest = {
+  filters: ReviewHistoryFilters
+  cursor: ReviewHistoryCursor | null
+  seed?: ReviewHistoryRow | null
+}
+
 function mergeRows(seed: ReviewHistoryRow | null, rows: ReviewHistoryRow[]): ReviewHistoryRow[] {
   const byId = new Map<string, ReviewHistoryRow>()
   if (seed) byId.set(seed.id, seed)
@@ -81,6 +87,7 @@ export function ReviewHistoryModal({
   const rowsRef = useRef<ReviewHistoryRow[]>([])
   const loadRef = useRef(onLoadPage)
   const requestVersionRef = useRef(0)
+  const lastRequestRef = useRef<HistoryPageRequest | null>(null)
 
   useEffect(() => {
     loadRef.current = onLoadPage
@@ -89,20 +96,24 @@ export function ReviewHistoryModal({
   const orderedRows = orderHistoryRows(rows, order)
   const selectedReview = rows.find((row) => row.id === selectedId) ?? orderedRows[0] ?? null
 
-  const loadPage = async (
-    filters: ReviewHistoryFilters,
-    nextCursor: ReviewHistoryCursor | null,
-    replace: boolean,
-    initialSeed: ReviewHistoryRow | null = null,
-  ) => {
+  const loadPage = async (request: HistoryPageRequest) => {
+    const { filters, cursor: nextCursor, seed = null } = request
     const version = ++requestVersionRef.current
+    lastRequestRef.current = request
     setLoading(true)
     setError(null)
+    if (nextCursor === null) {
+      rowsRef.current = seed ? [seed] : []
+      setRows(rowsRef.current)
+      setSelectedId(seed?.id ?? null)
+      setCursor(null)
+      setHasMore(false)
+    }
     try {
       const page = await loadRef.current(filters, nextCursor)
       if (version !== requestVersionRef.current) return
-      const nextRows = replace
-        ? mergeRows(initialSeed, page.rows)
+      const nextRows = nextCursor === null
+        ? mergeRows(seed, page.rows)
         : mergeRows(null, [...rowsRef.current, ...page.rows])
       rowsRef.current = nextRows
       setRows(nextRows)
@@ -110,7 +121,7 @@ export function ReviewHistoryModal({
       setHasMore(page.has_more)
       setSelectedId((current) => {
         if (current && nextRows.some((row) => row.id === current)) return current
-        return initialSeed?.id ?? orderHistoryRows(nextRows, 'newest')[0]?.id ?? null
+        return seed?.id ?? orderHistoryRows(nextRows, 'newest')[0]?.id ?? null
       })
     } catch (loadError) {
       if (version !== requestVersionRef.current) return
@@ -121,29 +132,19 @@ export function ReviewHistoryModal({
   }
 
   useEffect(() => {
-    if (!open) {
-      requestVersionRef.current += 1
-      return
-    }
+    if (!open) return
     const initialFilters = { ...EMPTY_FILTERS }
-    const initialSeed = initialRequest ? asReviewHistoryRow(initialRequest) : null
     setDraft(initialFilters)
     setApplied(initialFilters)
-    rowsRef.current = initialSeed ? [initialSeed] : []
-    setRows(rowsRef.current)
-    setSelectedId(initialSeed?.id ?? null)
-    setCursor(null)
-    setHasMore(false)
-    setError(null)
-    void loadPage(initialFilters, null, true, initialSeed)
+    void loadPage({ filters: initialFilters, cursor: null, seed: initialRequest && asReviewHistoryRow(initialRequest) })
+    return () => { requestVersionRef.current += 1 }
     // Opening is the lifecycle boundary. Filter changes call loadPage directly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialRequest?.id])
 
   const applyFilters = (filters: ReviewHistoryFilters) => {
     setApplied(filters)
-    setSelectedId(null)
-    void loadPage(filters, null, true)
+    void loadPage({ filters, cursor: null })
   }
 
   const resetFilters = () => {
@@ -163,7 +164,7 @@ export function ReviewHistoryModal({
     <button
       className="ghost review-history-more"
       disabled={loading || !cursor}
-      onClick={() => void loadPage(applied, cursor, false)}
+      onClick={() => void loadPage({ filters: applied, cursor })}
       type="button"
     >
       {loading ? '불러오는 중…' : '더 오래된 기록 보기'}
@@ -286,7 +287,10 @@ export function ReviewHistoryModal({
               <button
                 className="ghost compact"
                 disabled={loading}
-                onClick={() => void (rows.length > 0 && cursor ? loadPage(applied, cursor, false) : loadPage(applied, null, true))}
+                onClick={() => {
+                  const request = lastRequestRef.current
+                  if (request) void loadPage(request)
+                }}
                 type="button"
               >
                 다시 시도

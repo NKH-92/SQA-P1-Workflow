@@ -3,7 +3,7 @@ import type { TabId } from '../app/types'
 import { canManageTeamData } from '../domain/permissions'
 import { daysUntil, dueState, dueUrgency, eventTime, relativeDateLabel, relativeDaysAgo } from './dates'
 import { quoted, quotedWithJosa, withJosa } from './korean'
-import { isReviewUnread, latestRelevantReviewEvent } from './readState'
+import { buildReviewReadState } from './readState'
 import { selectProductChangeTaskContexts } from '../domain/changeApplications/taskContexts'
 
 /** 새 소식(검토 진행)과 확인할 일(기한·미적용 안내)을 나눠 보여 준다. */
@@ -85,52 +85,36 @@ export function buildNotifications(
   if (leaderMode && !canManageTeamData(profile)) return []
   const items: AppNotification[] = []
   const today = new Date(now)
-
-  if (leaderMode) {
-    data.reviewRequests
-      .filter((request) => request.status === 'pending')
-      .forEach((request) => {
-        const latest = latestRelevantReviewEvent(request, profile, data)
-        if (!latest) return
-        const at = eventTime(latest.occurred_at)
-        const actorName = latest.actor_name_snapshot.trim() || request.profiles?.name || '파트원'
-        const resubmitted = latest.event_type === 'resubmitted'
-        items.push({
-          id: `review-event-${latest.id}`,
-          actor: actorName.charAt(0) || '?',
+  const reviewRequests = data.reviewRequests.filter((request) =>
+    leaderMode ? request.status === 'pending' : request.requester_id === profile.id,
+  )
+  const reviewReadState = buildReviewReadState(reviewRequests, profile, data)
+  for (const request of reviewRequests) {
+    const state = reviewReadState.get(request.id)
+    if (!state) continue
+    const { latest, unread } = state
+    const at = eventTime(latest.occurred_at)
+    const authorName = latest.actor_name_snapshot.trim()
+    const actorName = leaderMode ? authorName || request.profiles?.name || '파트원' : authorName
+    const resubmitted = latest.event_type === 'resubmitted'
+    const news = leaderMode
+      ? {
           title: `${withJosa(actorName, '이/가')} ${quoted(request.title)} 검토를 ${resubmitted ? '다시 ' : ''}요청했어요.`,
-          when: relativeTime(at, now),
           kind: resubmitted ? '재요청' : '검토요청',
-          urgency: dueUrgency(request.due_date, today),
-          unread: isReviewUnread(request, profile, data),
-          tab: 'reviews',
-          entityId: request.id,
-          at,
-          section: 'news',
-        })
-      })
-  } else {
-    data.reviewRequests
-      .filter((request) => request.requester_id === profile.id)
-      .forEach((request) => {
-        const latest = latestRelevantReviewEvent(request, profile, data)
-        if (!latest) return
-        const at = eventTime(latest.occurred_at)
-        const news = memberReviewNews(latest.event_type, request.title)
-        items.push({
-          id: `review-event-${latest.id}`,
-          actor: latest.actor_name_snapshot.trim().charAt(0) || '파',
-          title: news.title,
-          when: relativeTime(at, now),
-          kind: news.kind,
-          urgency: latest.event_type === 'rejected' ? 'warning' : 'normal',
-          unread: isReviewUnread(request, profile, data),
-          tab: 'reviews',
-          entityId: request.id,
-          at,
-          section: 'news',
-        })
-      })
+        }
+      : memberReviewNews(latest.event_type, request.title)
+    items.push({
+      ...news,
+      id: `review-event-${latest.id}`,
+      actor: actorName.charAt(0) || '파',
+      when: relativeTime(at, now),
+      urgency: leaderMode ? dueUrgency(request.due_date, today) : latest.event_type === 'rejected' ? 'warning' : 'normal',
+      unread,
+      tab: 'reviews',
+      entityId: request.id,
+      at,
+      section: 'news',
+    })
   }
 
   // 변경 적용은 제품 행 단위로 알리지 않는다. 한 공통변경에 담당 제품이 15개여도

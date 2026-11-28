@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { UserFacingError } from '../../lib/errors'
 import { resetErrorReporter } from '../../lib/errorReporter'
+import { deferred } from '../../test/deferred'
 import { useMutationRunner } from './useMutationRunner'
 
 // 원격(Supabase) 모드: 저장 뒤에는 서버 목록을 다시 불러온다.
@@ -12,6 +13,26 @@ vi.mock('../../lib/supabase', () => ({
 describe('useMutationRunner (remote)', () => {
   afterEach(() => {
     resetErrorReporter()
+  })
+
+  it('discards a mutation result that arrives after the session has been cleared', async () => {
+    const operation = deferred<void>()
+    const refreshData = vi.fn(async () => undefined)
+    const { result } = renderHook(() => useMutationRunner(refreshData))
+    const success = vi.fn(() => ({ text: '계정 등록 안내', persistent: true }))
+    let finished!: Promise<boolean>
+
+    act(() => {
+      finished = result.current.mutate(() => operation.promise, success)
+      result.current.clearAllToasts()
+    })
+    await act(async () => operation.resolve())
+
+    expect(await finished).toBe(false)
+    expect(success).not.toHaveBeenCalled()
+    expect(refreshData).not.toHaveBeenCalled()
+    expect(result.current.toasts).toEqual([])
+    expect(result.current.saving).toBe(false)
   })
 
   it('reloads the list after a failed operation so work the server already saved shows up', async () => {

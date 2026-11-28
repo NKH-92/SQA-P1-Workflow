@@ -1,5 +1,6 @@
 import { renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { deferred } from '../../test/deferred'
 import { useRealtimeReviewInserts } from './useRealtimeReviewInserts'
 
 type ChannelRecord = {
@@ -64,13 +65,17 @@ describe('useRealtimeReviewInserts', () => {
     expect(state.channels).toHaveLength(0)
   })
 
-  it('triggers the refetch callback on INSERT and UPDATE events', () => {
-    const onChange = vi.fn()
+  it('queues one follow-up fetch for a burst of INSERT and UPDATE events', async () => {
+    const first = deferred<void>()
+    const onChange = vi.fn(async () => {}).mockReturnValueOnce(first.promise)
     renderHook(() => useRealtimeReviewInserts(true, onChange))
 
     state.channels[0].subscriptions[0]?.handler()
-    state.channels[0].subscriptions[1]?.handler()
+    for (let event = 0; event < 20; event += 1) state.channels[0].subscriptions[1]?.handler()
+    expect(onChange).toHaveBeenCalledTimes(1)
 
+    first.resolve()
+    await first.promise
     expect(onChange).toHaveBeenCalledTimes(2)
   })
 
@@ -105,11 +110,19 @@ describe('useRealtimeReviewInserts', () => {
     expect(state.channels).toHaveLength(1)
   })
 
-  it('removes the channel on unmount', () => {
-    const { unmount } = renderHook(() => useRealtimeReviewInserts(true, vi.fn()))
+  it('removes the channel and drops pending refreshes on unmount', async () => {
+    const first = deferred<void>()
+    const onChange = vi.fn(() => first.promise)
+    const { unmount } = renderHook(() => useRealtimeReviewInserts(true, onChange))
+    const [insert, update] = state.channels[0].subscriptions
+    insert.handler()
+    update.handler()
 
     unmount()
-
+    first.resolve()
+    await first.promise
+    update.handler()
+    expect(onChange).toHaveBeenCalledTimes(1)
     expect(state.removeChannel).toHaveBeenCalledTimes(1)
   })
 })

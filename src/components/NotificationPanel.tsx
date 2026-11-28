@@ -1,6 +1,6 @@
 import { OfficeEmptyArt } from '../features/office/officeEmptyArt'
 import { usePixelUi } from '../features/office/pixelUiContext'
-import { useEffect, useId, useRef } from 'react'
+import { useId, useLayoutEffect, useRef } from 'react'
 import { Bell, Monitor } from 'lucide-react'
 import type { AppNotification } from '../lib/notifications'
 import type { DesktopNotificationControls } from '../app/hooks/useDesktopNotifications'
@@ -28,13 +28,8 @@ export function NotificationPanel({
   const reminders = notifications.filter((item) => item.section === 'reminder')
   const unread = news.filter((item) => item.unread).length
 
-  // 열리면 패널로 포커스를 옮겨 키보드로 바로 항목을 고를 수 있게 한다.
-  useEffect(() => {
-    panelRef.current?.focus({ preventScroll: true })
-  }, [])
-
-  // 바깥 클릭 / Esc 로 닫기. 알림 버튼 자체의 클릭은 토글이므로 제외한다.
-  useEffect(() => {
+  // 표시되는 순간부터 Esc·바깥 클릭으로 닫을 수 있게 하고 키보드 포커스를 옮긴다.
+  useLayoutEffect(() => {
     const onPointerDown = (event: MouseEvent) => {
       const target = event.target as Node
       if (panelRef.current?.contains(target)) return
@@ -46,6 +41,7 @@ export function NotificationPanel({
     }
     document.addEventListener('mousedown', onPointerDown)
     document.addEventListener('keydown', onKeyDown)
+    panelRef.current?.focus({ preventScroll: true })
     return () => {
       document.removeEventListener('mousedown', onPointerDown)
       document.removeEventListener('keydown', onKeyDown)

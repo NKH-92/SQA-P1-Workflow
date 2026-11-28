@@ -3,9 +3,17 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createPreviewData } from '../../../demoData'
+import type { AppData } from '../../../types'
 import { ProductCard } from './ProductCard'
 
 afterEach(cleanup)
+
+function assignmentProps(data: AppData, productId: string) {
+  return {
+    assignments: data.productAssignments.filter((assignment) => assignment.product_id === productId),
+    profilesById: new Map(data.profiles.map((profile) => [profile.id, profile])),
+  }
+}
 
 describe('ProductCard', () => {
   it('shows the unassigned status, the saved reason, and one assign action for a product without assignments', async () => {
@@ -15,16 +23,12 @@ describe('ProductCard', () => {
       (item) => !source.productAssignments.some((assignment) => assignment.product_id === item.id),
     )!
     const updatedProduct = { ...product, unassigned_reason: '담당 제품군 조정 중' }
-    const data = {
-      ...source,
-      products: source.products.map((item) => (item.id === product.id ? updatedProduct : item)),
-    }
     const onAssign = vi.fn()
 
     render(
       <ProductCard
         product={updatedProduct}
-        data={data}
+        {...assignmentProps(source, product.id)}
         productEdits={{}}
         setProductEdits={vi.fn()}
         onSave={vi.fn()}
@@ -54,7 +58,7 @@ describe('ProductCard', () => {
     render(
       <ProductCard
         product={product}
-        data={source}
+        {...assignmentProps(source, product.id)}
         productEdits={{}}
         setProductEdits={vi.fn()}
         onSave={vi.fn()}
@@ -79,7 +83,7 @@ describe('ProductCard', () => {
       pendingDelete = value
     })
     const baseProps = {
-      data: { ...source, products: [product] },
+      ...assignmentProps(source, product.id),
       productEdits: {},
       setProductEdits: vi.fn(),
       onSave: vi.fn(),
@@ -102,7 +106,6 @@ describe('ProductCard', () => {
     rerender(
       <ProductCard
         {...baseProps}
-        data={{ ...source, products: [refreshedProduct] }}
         product={refreshedProduct}
         pendingDelete={pendingDelete}
       />,
@@ -121,6 +124,14 @@ describe('ProductCard', () => {
       expectedUpdatedAt: '2026-07-20T00:00:00.000Z',
       reason: '중복 제품 정리',
     })
+
+    await user.click(screen.getByRole('button', { name: '닫기' }))
+    rerender(<ProductCard {...baseProps} product={refreshedProduct} pendingDelete={pendingDelete} />)
+    await user.click(screen.getByRole('button', { name: `${product.name} 더보기` }))
+    await user.click(screen.getByRole('menuitem', { name: '제품 삭제' }))
+    rerender(<ProductCard {...baseProps} product={refreshedProduct} pendingDelete={pendingDelete} />)
+    expect(screen.getByRole('textbox', { name: '삭제 사유' })).toHaveValue('')
+    expect(pendingDelete).toMatchObject({ expectedUpdatedAt: refreshedProduct.updated_at })
   })
 
   it('asks for the consignment company only for consigned products while editing', async () => {
@@ -133,7 +144,7 @@ describe('ProductCard', () => {
     const { rerender } = render(
       <ProductCard
         product={product}
-        data={{ ...source, products: [product] }}
+        {...assignmentProps(source, product.id)}
         productEdits={{ [product.id]: edit }}
         setProductEdits={setProductEdits}
         onSave={vi.fn()}
@@ -147,7 +158,7 @@ describe('ProductCard', () => {
     rerender(
       <ProductCard
         product={product}
-        data={{ ...source, products: [product] }}
+        {...assignmentProps(source, product.id)}
         productEdits={{ [product.id]: { ...edit, category: '위탁', companyName: '' } }}
         setProductEdits={setProductEdits}
         onSave={vi.fn()}
@@ -169,7 +180,7 @@ describe('ProductCard', () => {
     render(
       <ProductCard
         product={product}
-        data={source}
+        {...assignmentProps(source, product.id)}
         assignments={[]}
         productEdits={{}}
         setProductEdits={vi.fn()}
@@ -197,7 +208,7 @@ describe('ProductCard', () => {
     render(
       <ProductCard
         product={product}
-        data={{ ...source, products: [product] }}
+        {...assignmentProps(source, product.id)}
         productEdits={{ [product.id]: edit }}
         setProductEdits={setProductEdits}
         onSave={vi.fn()}

@@ -8,8 +8,6 @@ import { writePasswordChangedFlag } from './passwordChangedNotice'
 
 type PasswordChangePanelProps = {
   profile: Profile
-  /** 바꾼 뒤에는 다시 로그인하게 하므로 지금은 쓰지 않는다(App 계약 유지용). */
-  onComplete: (profile: Profile) => void
   onSignOut: () => void
 }
 
@@ -57,7 +55,7 @@ function confirmationMismatch(password: string, confirmation: string) {
   return !password.startsWith(confirmation)
 }
 
-export function PasswordChangePanel({ profile, onComplete, onSignOut }: PasswordChangePanelProps) {
+export function PasswordChangePanel({ profile, onSignOut }: PasswordChangePanelProps) {
   const [password, setPassword] = useState('')
   const [confirmation, setConfirmation] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -68,8 +66,6 @@ export function PasswordChangePanel({ profile, onComplete, onSignOut }: Password
   const confirmationId = useId()
   const confirmationHintId = useId()
   const noticeId = useId()
-  void onComplete
-
   const mismatch = confirmationMismatch(password, confirmation)
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {

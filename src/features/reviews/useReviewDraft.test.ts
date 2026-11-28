@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react'
+import { act, cleanup, renderHook } from '@testing-library/react'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import {
   clearReviewDraftStorage,
@@ -25,6 +25,7 @@ describe('useReviewDraft', () => {
   })
 
   afterEach(() => {
+    cleanup()
     vi.restoreAllMocks()
     vi.useRealTimers()
     localStorage.clear()
@@ -83,6 +84,38 @@ describe('useReviewDraft', () => {
     expect(JSON.parse(localStorage.getItem(reviewDraftStorageKey('user-1'))!).title).toBe('Draft title')
   })
 
+  it('flushes pending changes on pagehide without waiting for React to unmount', () => {
+    const { result } = renderHook(() => useReviewDraft('user-1'))
+    act(() => result.current.setForm(typedForm))
+
+    act(() => window.dispatchEvent(new Event('pagehide')))
+
+    expect(JSON.parse(localStorage.getItem(reviewDraftStorageKey('user-1'))!).title).toBe('Draft title')
+    expect(result.current.hasUnsavedChanges).toBe(false)
+  })
+
+  it('flushes pending changes when the browser is hidden', () => {
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    const { result } = renderHook(() => useReviewDraft('user-1'))
+    act(() => result.current.setForm(typedForm))
+
+    act(() => document.dispatchEvent(new Event('visibilitychange')))
+
+    expect(JSON.parse(localStorage.getItem(reviewDraftStorageKey('user-1'))!).title).toBe('Draft title')
+  })
+
+  it('flushes a pending draft to the previous profile when the profile changes', () => {
+    const { result, rerender } = renderHook(({ id }) => useReviewDraft(id), { initialProps: { id: 'user-1' } })
+    act(() => result.current.setForm(typedForm))
+
+    rerender({ id: 'user-2' })
+    act(() => vi.advanceTimersByTime(REVIEW_DRAFT_AUTOSAVE_MS))
+
+    expect(JSON.parse(localStorage.getItem(reviewDraftStorageKey('user-1'))!).title).toBe('Draft title')
+    expect(localStorage.getItem(reviewDraftStorageKey('user-2'))).toBeNull()
+    expect(result.current.form.title).toBe('')
+  })
+
   it('keeps the in-memory text when the composer reopens instead of reloading storage', () => {
     localStorage.setItem(reviewDraftStorageKey('user-1'), JSON.stringify({
       ...typedForm,
@@ -102,7 +135,7 @@ describe('useReviewDraft', () => {
   })
 
   it('keeps the form usable when storage quota rejects a save', () => {
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    const setSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('quota', 'QuotaExceededError')
     })
     const { result } = renderHook(() => useReviewDraft('user-1'))
@@ -110,7 +143,15 @@ describe('useReviewDraft', () => {
     act(() => vi.advanceTimersByTime(REVIEW_DRAFT_AUTOSAVE_MS))
 
     expect(result.current.form.title).toBe('Unsaved but retained')
+    expect(result.current.hasUnsavedChanges).toBe(true)
     expect(result.current.draftNotice).toBe(DRAFT_STORAGE_UNAVAILABLE_MESSAGE)
+
+    setSpy.mockRestore()
+    act(() => result.current.flushDraft())
+
+    expect(JSON.parse(localStorage.getItem(reviewDraftStorageKey('user-1'))!).title).toBe('Unsaved but retained')
+    expect(result.current.hasUnsavedChanges).toBe(false)
+    expect(result.current.draftNotice).toBeNull()
   })
 
   it('keeps a legacy draft when the v2 migration write is rejected', () => {
@@ -151,6 +192,18 @@ describe('useReviewDraft', () => {
     expect(localStorage.getItem(reviewDraftStorageKey('user-1'))).toBeNull()
   })
 
+  it('discards persisted drafts with invalid timestamps', () => {
+    const key = reviewDraftStorageKey('user-1')
+    localStorage.setItem(key, JSON.stringify({ ...typedForm, saved_at: 'invalid', expires_at: 'invalid' }))
+    const { result } = renderHook(() => useReviewDraft('user-1'))
+
+    act(() => result.current.openComposerDraft())
+
+    expect(result.current.form.title).toBe('')
+    expect(result.current.draftNotice).toBe(DRAFT_UNREADABLE_MESSAGE)
+    expect(localStorage.getItem(key)).toBeNull()
+  })
+
   it('discards memory and storage after the request is sent', () => {
     const { result } = renderHook(() => useReviewDraft('user-1'))
     act(() => result.current.setForm(typedForm))
@@ -160,6 +213,18 @@ describe('useReviewDraft', () => {
     expect(result.current.form.title).toBe('')
     expect(localStorage.getItem(reviewDraftStorageKey('user-1'))).toBeNull()
     act(() => vi.advanceTimersByTime(REVIEW_DRAFT_AUTOSAVE_MS))
+    expect(localStorage.getItem(reviewDraftStorageKey('user-1'))).toBeNull()
+  })
+
+  it('does not recreate a discarded draft when the browser immediately leaves', () => {
+    const { result } = renderHook(() => useReviewDraft('user-1'))
+    act(() => result.current.setForm(typedForm))
+
+    act(() => {
+      result.current.discardDraft()
+      window.dispatchEvent(new Event('pagehide'))
+    })
+
     expect(localStorage.getItem(reviewDraftStorageKey('user-1'))).toBeNull()
   })
 })

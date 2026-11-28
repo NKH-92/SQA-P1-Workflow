@@ -90,6 +90,30 @@ describe('ReviewHistoryModal', () => {
     expect(rowTitles()).toEqual(['더 오래된 검토', '과거 CAPA 검토'])
   })
 
+  it('retries a failed filter change from the first page when the previous filter had more rows', async () => {
+    const user = userEvent.setup()
+    const oldCursor = { terminal_at: historyRow.terminal_at, id: historyRow.id }
+    const onLoadPage = vi.fn()
+      .mockResolvedValueOnce({ ...page(), has_more: true, next_cursor: oldCursor })
+      .mockRejectedValueOnce(new Error('fetch failed'))
+      .mockResolvedValueOnce(page([olderRow]))
+
+    render(<ReviewHistoryModal onClose={vi.fn()} onLoadPage={onLoadPage} onReopen={vi.fn()} open profile={previewLeader} />)
+
+    const list = within(await screen.findByRole('complementary', { name: '검토 이력 목록' }))
+    expect(await list.findByRole('button', { name: '더 오래된 기록 보기' })).toBeInTheDocument()
+    await user.type(screen.getByRole('searchbox', { name: '검토 이력 검색' }), '더 오래된 검토')
+    await user.click(screen.getByRole('button', { name: '검색' }))
+    const retry = await list.findByRole('button', { name: '다시 시도' })
+
+    expect(list.queryByRole('button', { name: '더 오래된 기록 보기' })).not.toBeInTheDocument()
+    await user.click(retry)
+
+    expect(await list.findByText(olderRow.title)).toBeInTheDocument()
+    expect(list.queryByText(historyRow.title)).not.toBeInTheDocument()
+    expect(onLoadPage).toHaveBeenLastCalledWith({ status: null, query: olderRow.title, from: null, to: null }, null)
+  })
+
   it('reopens a terminal review with an inline confirmation and closes only after success', async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()

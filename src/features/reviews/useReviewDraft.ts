@@ -42,7 +42,10 @@ function isReviewForm(value: unknown): value is ReviewFormState {
 function isReviewDraft(value: unknown): value is ReviewDraft {
   if (!isReviewForm(value)) return false
   const draft = value as Partial<ReviewDraft>
-  return typeof draft.saved_at === 'string' && typeof draft.expires_at === 'string'
+  return typeof draft.saved_at === 'string'
+    && Number.isFinite(Date.parse(draft.saved_at))
+    && typeof draft.expires_at === 'string'
+    && Number.isFinite(Date.parse(draft.expires_at))
 }
 
 /** 제목·설명·기한이 모두 비어 있으면 저장할 내용이 없다. */
@@ -104,14 +107,10 @@ type PersistResult = { ok: true; savedAt: Date | null } | { ok: false }
 
 /** 새 검토요청 임시저장을 기기에 쓴다. 내용이 비었으면 저장본을 지운다. */
 function persistReviewDraft(profileId: string, form: ReviewFormState): PersistResult {
-  const storage = browserStorage()
   if (isEmptyReviewForm(form)) {
-    if (storage) {
-      safeRemoveItem(storage, reviewDraftStorageKey(profileId))
-      safeRemoveItem(storage, legacyReviewDraftStorageKey(profileId))
-    }
-    return { ok: true, savedAt: null }
+    return clearReviewDraftStorage(profileId) ? { ok: true, savedAt: null } : { ok: false }
   }
+  const storage = browserStorage()
   if (!storage) return { ok: false }
   const now = new Date()
   const draft: ReviewDraft = {
@@ -157,8 +156,14 @@ export function useReviewDraft(
     setUnsaved(true)
   }, [])
 
-  const applyPersistResult = useCallback((result: PersistResult) => {
+  /** 기다리지 않고 지금 저장한다(작성 창을 닫거나 브라우저가 숨겨질 때). */
+  const flushDraft = useCallback(() => {
+    const draft = latestRef.current
+    if (!draft.unsaved) return
+    const result = persistReviewDraft(draft.profileId, draft.form)
     if (result.ok) {
+      latestRef.current = { ...draft, unsaved: false }
+      setUnsaved(false)
       setDraftSavedAt(result.savedAt)
       setDraftNotice((current) => (current === DRAFT_STORAGE_UNAVAILABLE_MESSAGE ? null : current))
       return
@@ -169,26 +174,24 @@ export function useReviewDraft(
   // 입력이 멈추면 자동 임시저장
   useEffect(() => {
     if (!unsaved) return
-    const timer = window.setTimeout(() => {
-      setUnsaved(false)
-      applyPersistResult(persistReviewDraft(profileId, form))
-    }, autosaveDelayMs)
+    const timer = window.setTimeout(flushDraft, autosaveDelayMs)
     return () => window.clearTimeout(timer)
-  }, [applyPersistResult, autosaveDelayMs, form, profileId, unsaved])
+  }, [autosaveDelayMs, flushDraft, form, profileId, unsaved])
 
-  /** 기다리지 않고 지금 저장한다(창을 닫을 때). */
-  const flushDraft = useCallback(() => {
-    const { form: latestForm, unsaved: pending, profileId: latestProfileId } = latestRef.current
-    if (!pending) return
-    setUnsaved(false)
-    applyPersistResult(persistReviewDraft(latestProfileId, latestForm))
-  }, [applyPersistResult])
-
-  // 화면을 떠날 때(탭 이동 등) 아직 저장하지 않은 내용을 기기에 남긴다.
-  useEffect(() => () => {
-    const { form: latestForm, unsaved: pending, profileId: latestProfileId } = latestRef.current
-    if (pending) persistReviewDraft(latestProfileId, latestForm)
-  }, [])
+  // 브라우저 새로고침·닫기 때는 React가 언마운트되지 않을 수 있다.
+  useEffect(() => {
+    const saveWhenHidden = () => {
+      if (document.visibilityState === 'hidden') flushDraft()
+    }
+    window.addEventListener('pagehide', flushDraft)
+    document.addEventListener('visibilitychange', saveWhenHidden)
+    return () => {
+      window.removeEventListener('pagehide', flushDraft)
+      document.removeEventListener('visibilitychange', saveWhenHidden)
+      const draft = latestRef.current
+      if (draft.unsaved && draft.profileId === profileId) persistReviewDraft(profileId, draft.form)
+    }
+  }, [flushDraft, profileId])
 
   /**
    * 새 요청 작성 창을 열 때 부른다. 메모리에 쓰던 내용이 있으면 그대로 두고,
@@ -198,7 +201,7 @@ export function useReviewDraft(
     const { form: currentForm, unsaved: pending } = latestRef.current
     // 메모리에 쓰던 내용(또는 방금 지운 내용)이 있으면 기기 저장본으로 덮어쓰지 않는다.
     if (pending || !isEmptyReviewForm(currentForm)) {
-      setDraftNotice(null)
+      setDraftNotice((current) => current === DRAFT_STORAGE_UNAVAILABLE_MESSAGE ? current : null)
       return
     }
     const storage = browserStorage()
@@ -260,6 +263,7 @@ export function useReviewDraft(
 
   /** 요청을 보낸 뒤: 메모리와 기기의 임시저장을 모두 비운다. */
   const discardDraft = useCallback(() => {
+    latestRef.current = { form: emptyReviewForm, unsaved: false, profileId }
     setFormState(emptyReviewForm)
     setUnsaved(false)
     clearReviewDraftStorage(profileId)

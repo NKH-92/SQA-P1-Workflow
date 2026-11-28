@@ -17,7 +17,9 @@ export function moveMonth(month: string, delta: number): string {
   return new Date(Date.UTC(year, number - 1 + delta, 1)).toISOString().slice(0, 7)
 }
 
-export function leavesOnDay(leaves: readonly MemberLeave[], day: string): MemberLeave[] {
-  return leaves.filter(leave => leave.starts_on <= day && leave.ends_on >= day)
+/** Sort the leaves in the visible range once, preserving their order for each day. */
+export function leavesByDay(leaves: readonly MemberLeave[], days: readonly string[]): Map<string, MemberLeave[]> {
+  const sorted = leaves.filter(leave => leave.starts_on <= days[days.length - 1] && leave.ends_on >= days[0])
     .sort((a, b) => a.name.localeCompare(b.name, 'ko') || (a.day_period ?? '').localeCompare(b.day_period ?? '') || a.id.localeCompare(b.id))
+  return new Map(days.map(day => [day, sorted.filter(leave => leave.starts_on <= day && leave.ends_on >= day)]))
 }

@@ -196,17 +196,12 @@ export function InviteCard({
               </button>
             </div>
           ))}
-          {!readOnly && (
+          {!readOnly && pendingDelete?.table === 'allowed_users' && pendingDelete.id === item.id && (
             <DeleteConfirmAction
-              hideTrigger
-              table="allowed_users"
-              id={item.id}
-              expectedUpdatedAt={item.updated_at}
-              label="계정"
+              expectedUpdatedAt={pendingDelete.expectedUpdatedAt}
               itemName={item.email}
               warning={masterDeleteWarnings.allowedUser}
-              pendingDelete={pendingDelete}
-              setPendingDelete={setPendingDelete}
+              onClose={() => setPendingDelete(null)}
               onConfirm={(input) => onDelete(item.id, input)}
             />
           )}

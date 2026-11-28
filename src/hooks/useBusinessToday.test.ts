@@ -21,7 +21,8 @@ describe('millisecondsUntilNextBusinessDay', () => {
   it('waits until the Seoul date changes, not the host date', () => {
     const wait = millisecondsUntilNextBusinessDay(BEFORE_SEOUL_MIDNIGHT)
     expect(businessDateKey(new Date(BEFORE_SEOUL_MIDNIGHT.getTime() + wait))).toBe('2026-10-01')
-    expect(businessDateKey(new Date(BEFORE_SEOUL_MIDNIGHT.getTime() + wait - 60_000))).toBe('2026-09-30')
+    expect(businessDateKey(new Date(BEFORE_SEOUL_MIDNIGHT.getTime() + wait - 1))).toBe('2026-09-30')
+    expect(millisecondsUntilNextBusinessDay(new Date('2026-09-30T14:59:59.999Z'))).toBe(1)
   })
 })
 
@@ -33,12 +34,12 @@ describe('useBusinessToday', () => {
 
     // 같은 날 안에서는 같은 Date를 그대로 돌려준다(useMemo 의존성이 흔들리지 않게).
     act(() => {
-      vi.advanceTimersByTime(60_000)
+      vi.advanceTimersByTime(89_999)
     })
     expect(result.current).toBe(first)
 
     act(() => {
-      vi.advanceTimersByTime(2 * 60_000)
+      vi.advanceTimersByTime(1)
     })
     expect(businessDateKey(result.current)).toBe('2026-10-01')
   })

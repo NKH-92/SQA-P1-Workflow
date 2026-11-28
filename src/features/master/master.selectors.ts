@@ -1,4 +1,4 @@
-import type { AppData, Duty, DutyMajorCategory } from '../../types'
+import type { AppData, Duty, DutyMajorCategory, Product, Profile } from '../../types'
 import { roleLabels } from '../../lib/format'
 import { selectProductChangeTaskContexts } from '../change-applications/selectors'
 
@@ -13,34 +13,28 @@ export type MasterFeatureData = Pick<
   | 'allowedUsers'
 >
 
+const masterNameCollator = new Intl.Collator('ko-KR', { numeric: true, sensitivity: 'base' })
+
 function compareMajorCategories(left: DutyMajorCategory, right: DutyMajorCategory) {
   const leftOrder = left.sort_order ?? Number.MAX_SAFE_INTEGER
   const rightOrder = right.sort_order ?? Number.MAX_SAFE_INTEGER
-  return leftOrder - rightOrder || left.name.localeCompare(right.name, 'ko-KR', { numeric: true, sensitivity: 'base' })
+  return leftOrder - rightOrder || masterNameCollator.compare(left.name, right.name)
 }
 
 function compareDuties(left: Duty, right: Duty) {
   const leftOrder = left.sort_order ?? Number.MAX_SAFE_INTEGER
   const rightOrder = right.sort_order ?? Number.MAX_SAFE_INTEGER
-  return leftOrder - rightOrder || left.name.localeCompare(right.name, 'ko-KR', { numeric: true, sensitivity: 'base' })
+  return leftOrder - rightOrder || masterNameCollator.compare(left.name, right.name)
 }
 
-function compareMasterProducts(left: AppData['products'][number], right: AppData['products'][number]) {
+function compareMasterProducts(left: Product, right: Product) {
   const leftOrder = left.sort_order ?? Number.MAX_SAFE_INTEGER
   const rightOrder = right.sort_order ?? Number.MAX_SAFE_INTEGER
-  return leftOrder - rightOrder || left.name.localeCompare(right.name, 'ko-KR', { numeric: true, sensitivity: 'base' })
+  return leftOrder - rightOrder || masterNameCollator.compare(left.name, right.name)
 }
 
-function selectMasterSearchMatches(query: string, ...values: Array<string | null | undefined>) {
-  const normalized = query.trim().toLowerCase()
-  if (!normalized) return true
-  return values.filter(Boolean).join(' ').toLowerCase().includes(normalized)
-}
-
-function selectFilteredProducts(data: MasterFeatureData, query: string) {
-  return data.products.filter((item) =>
-    selectMasterSearchMatches(query, item.name, item.category, item.company_name, item.unassigned_reason),
-  )
+function matchesMasterSearch(normalizedQuery: string, ...values: Array<string | null | undefined>) {
+  return !normalizedQuery || values.filter(Boolean).join(' ').toLowerCase().includes(normalizedQuery)
 }
 
 export function selectDutyTableGroups(data: MasterFeatureData) {
@@ -67,61 +61,52 @@ export function groupProductAssignments(assignments: readonly ProductAssignmentR
   return grouped
 }
 
-function productAssignmentsOf(
-  data: MasterFeatureData,
-  productId: string,
-  assignmentsByProduct?: ProductAssignmentsByProduct,
-) {
-  if (assignmentsByProduct) return assignmentsByProduct.get(productId) ?? []
-  return data.productAssignments.filter((assignment) => assignment.product_id === productId)
-}
-
-/** assignmentsByProduct를 넘기면 제품마다 전체 배정을 훑지 않는다(결과는 같다). */
-export function selectProductGroups(
-  data: MasterFeatureData,
-  query: string,
-  assignmentsByProduct?: ProductAssignmentsByProduct,
-) {
-  const filteredProducts = selectFilteredProducts(data, query)
+export function selectProductGroups(products: Product[]) {
+  const sortedProducts = [...products].sort(compareMasterProducts)
   return {
-    ownCompanyProducts: filteredProducts
-      .filter((product) => (product.category ?? '자사') !== '위탁')
-      .sort(compareMasterProducts),
-    consignedProducts: filteredProducts.filter((product) => product.category === '위탁').sort(compareMasterProducts),
-    unassignedProducts: data.products.filter(
-      (product) => productAssignmentsOf(data, product.id, assignmentsByProduct).length === 0,
-    ),
+    ownCompanyProducts: sortedProducts.filter((product) => product.category !== '위탁'),
+    consignedProducts: sortedProducts.filter((product) => product.category === '위탁'),
   }
 }
 
 /** 제품 목록 위 칩: 전체 · 담당자 없음 · 비활성 담당. 홈 안내에서 ‘unassigned’로 바로 들어온다. */
 export type ProductAssigneeFilter = 'all' | 'unassigned' | 'inactive'
+type ProductAssigneeState = Exclude<ProductAssigneeFilter, 'all'> | 'assigned'
 
 export function isProductAssigneeFilter(value: unknown): value is ProductAssigneeFilter {
   return value === 'all' || value === 'unassigned' || value === 'inactive'
 }
 
-export function productAssigneeState(
-  data: MasterFeatureData,
-  productId: string,
-  assignmentsByProduct?: ProductAssignmentsByProduct,
-): Exclude<ProductAssigneeFilter, 'all'> | 'assigned' {
-  const assignments = productAssignmentsOf(data, productId, assignmentsByProduct)
-  if (assignments.length === 0) return 'unassigned'
-  const hasInactive = assignments.some(
-    (assignment) => data.profiles.find((profile) => profile.id === assignment.user_id)?.is_active === false,
-  )
-  return hasInactive ? 'inactive' : 'assigned'
+export function selectProductAssigneeStatuses(
+  products: Product[],
+  assignmentsByProduct: ProductAssignmentsByProduct,
+  profilesById: ReadonlyMap<string, Profile>,
+) {
+  const states = new Map<string, ProductAssigneeState>()
+  const counts: Record<ProductAssigneeFilter, number> = { all: products.length, unassigned: 0, inactive: 0 }
+  for (const { id } of products) {
+    const assignments = assignmentsByProduct.get(id)
+    let status: ProductAssigneeState = 'assigned'
+    if (!assignments?.length) status = 'unassigned'
+    else if (assignments.some((assignment) => profilesById.get(assignment.user_id)?.is_active === false)) status = 'inactive'
+    states.set(id, status)
+    if (status !== 'assigned') counts[status] += 1
+  }
+  return { states, counts }
 }
 
-export function matchesProductAssigneeFilter(
-  data: MasterFeatureData,
-  productId: string,
+export function filterMasterProducts(
+  products: Product[],
+  query: string,
   filter: ProductAssigneeFilter,
-  assignmentsByProduct?: ProductAssignmentsByProduct,
+  states: ReadonlyMap<string, ProductAssigneeState>,
 ) {
-  if (filter === 'all') return true
-  return productAssigneeState(data, productId, assignmentsByProduct) === filter
+  const normalizedQuery = query.trim().toLowerCase()
+  if (filter === 'all' && !normalizedQuery) return products
+  return products.filter((product) =>
+    (filter === 'all' || states.get(product.id) === filter)
+    && matchesMasterSearch(normalizedQuery, product.name, product.category, product.company_name, product.unassigned_reason),
+  )
 }
 
 /** 새 담당자에게 넘길 수 있는 미완료 적용 업무(배포된 공통변경의 미적용 업무 중 다른 사람이 맡은 것). */
@@ -141,7 +126,8 @@ export function selectTransferableProductTasks(
 }
 
 export function selectFilteredAllowedUsers(data: MasterFeatureData, query: string) {
+  const normalizedQuery = query.trim().toLowerCase()
   return data.allowedUsers.filter((item) =>
-    selectMasterSearchMatches(query, item.name, item.email, item.role, roleLabels[item.role]),
+    matchesMasterSearch(normalizedQuery, item.name, item.email, item.role, roleLabels[item.role]),
   )
 }

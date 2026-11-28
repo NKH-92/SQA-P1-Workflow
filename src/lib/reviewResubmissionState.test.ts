@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AppData, Profile, ReviewEvent, ReviewRequest } from '../types'
 import { buildNotifications } from './notifications'
-import { isReviewUnread } from './readState'
+import { buildReviewReadState } from './readState'
 
 const member: Profile = { id: 'member-1', email: 'member@example.com', name: '파트원', role: 'member' }
 const leader: Profile = { id: 'leader-1', email: 'leader@example.com', name: '파트장', role: 'leader' }
@@ -31,12 +31,12 @@ function appData(receiptEventId?: number): AppData {
 
 describe('review resubmission read state', () => {
   it('marks an unseen same-row resubmission unread for the leader', () => {
-    expect(isReviewUnread(request, leader, appData())).toBe(true)
-    expect(isReviewUnread(request, leader, appData(2))).toBe(false)
+    expect(buildReviewReadState([request], leader, appData()).get(request.id)?.unread).toBe(true)
+    expect(buildReviewReadState([request], leader, appData(2)).get(request.id)?.unread).toBe(false)
   })
 
   it('does not mark a member own resubmission unread', () => {
-    expect(isReviewUnread(request, member, appData())).toBe(false)
+    expect(buildReviewReadState([request], member, appData()).has(request.id)).toBe(false)
   })
 
   it('builds a leader notification from the immutable resubmission event', () => {

@@ -50,6 +50,7 @@ export function useMutationRunner(
   const [saving, setSaving] = useState(false)
   const [toasts, setToasts] = useState<ToastMessage[]>([])
   const inFlightRef = useRef(false)
+  const sessionGenerationRef = useRef(0)
   const toastSeqRef = useRef(0)
   const getReportContextRef = useRef(getReportContext)
   useEffect(() => {
@@ -82,6 +83,7 @@ export function useMutationRunner(
    * — 같은 브라우저 탭을 다음 사람이 쓰면 앞사람의 계정 안내가 보이면 안 된다.
    */
   const clearAllToasts = useCallback(() => {
+    sessionGenerationRef.current += 1
     setToasts([])
   }, [])
 
@@ -96,12 +98,14 @@ export function useMutationRunner(
         return false
       }
       inFlightRef.current = true
+      const sessionGeneration = sessionGenerationRef.current
       setSaving(true)
       setMessage(null)
       try {
         try {
           await operation()
         } catch (error) {
+          if (sessionGeneration !== sessionGenerationRef.current) return false
           const { text } = resolveSuccess(success)
           setMessage({ text: toUserMessage(error), tone: 'error' })
           const { role, route } = getReportContextRef.current()
@@ -112,6 +116,7 @@ export function useMutationRunner(
           if (supabase) await refreshData().catch(() => undefined)
           return false
         }
+        if (sessionGeneration !== sessionGenerationRef.current) return false
         // The operation succeeded — only now is it safe to resolve a success() closure,
         // since it may read a result flag (e.g. no-op) that operation() just set.
         const spec = resolveSuccess(success)
@@ -121,6 +126,7 @@ export function useMutationRunner(
           try {
             await refreshData()
           } catch {
+            if (sessionGeneration !== sessionGenerationRef.current) return false
             setMessage({
               text: `${spec.text} 다만 목록을 새로 불러오지 못했어요. 새로고침 버튼을 눌러 주세요.`,
               tone: 'warning',
@@ -128,6 +134,7 @@ export function useMutationRunner(
             return true
           }
         }
+        if (sessionGeneration !== sessionGenerationRef.current) return false
         setMessage({ ...spec, tone: 'success' })
         return true
       } finally {
